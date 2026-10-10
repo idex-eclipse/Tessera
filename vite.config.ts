@@ -38,6 +38,14 @@ function serveExtensions(): Plugin {
   };
 }
 
+svelte({
+  compilerOptions: {
+    warningFilter: (warning) => {
+      return !warning.code.startsWith('a11y-') || !warning.code.startsWith('state_referenced') || !warning.code.startsWith('node_invalid');
+    },
+  },
+});
+
 export default defineConfig({
   plugins: [svelte(), serveExtensions()],
   root: 'host',
