@@ -1,0 +1,203 @@
+/* ============================================================
+   Modular Printer UI v2 — Global Styles
+   Theming via CSS variables + [data-theme] attribute
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Layout */
+  --grid-row-height: 80px;
+  --header-height: 48px;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 64px;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-size-sm: 0.925rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.2rem;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+}
+
+/* Light theme (default) */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-app: #f0f2f5;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f5f5f5;
+  --bg-surface-hover-no-override: #f5f5f5;
+  --bg-surface-active: #e8f0fe;
+  --bg-header: #1a1a2e;
+  --bg-sidebar: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.4);
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #5f6368;
+  --text-muted: #9aa0a6;
+  --text-on-header: #ffffff;
+  --text-on-header-muted: rgba(255, 255, 255, 0.7);
+
+  --border-color: #e0e0e0;
+  --border-focus: color-mix(in srgb, var(--accent) 80%, #000);
+
+  --accent: #4285f4;
+  --accent-text: #ffffff;     /* светлый текст на любом акценте — упрощение */
+  --danger: #ea4335;
+  --warning: #fbbc04;
+  --success: #34a853;
+  --heat: #e65100;
+  --cool: #0277bd;  
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* Dark theme */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-app: #121212;
+  --bg-surface: #1e1e1e;
+  --bg-surface-hover: #2a2a2a;
+  --bg-surface-hover-no-override: #2a2a2a;
+  --bg-surface-active: #1a3a5c;
+  --bg-header: #0d0d1a;
+  --bg-sidebar: #1e1e1e;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+
+  --text-primary: #e0e0e0;
+  --text-secondary: #9aa0a6;
+  --text-muted: #6b7280;
+  --text-on-header: #ffffff;
+  --text-on-header-muted: rgba(255, 255, 255, 0.6);
+
+  --border-color: #333333;
+  --border-focus: color-mix(in srgb, var(--accent) 85%, #fff);
+
+  --accent: #669df6;
+  --accent-text: #0f172a;   /* на тёмной теме акценты часто светлее — тёмный текст контрастнее */
+  --danger: #ea4335;
+  --warning: #fdd663;
+  --success: #81c995;
+  --heat: #ff6d00;
+  --cool: #40c4ff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* Производные акцента — общие для обеих тем, отталкиваются от --accent */
+:root {
+  --accent-hover: color-mix(in srgb, var(--accent) 82%, #000);
+  --accent-active: color-mix(in srgb, var(--accent) 72%, #000);
+  --accent-subtle: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-subtle-strong: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 40%, transparent);
+
+  --bg-surface-active: color-mix(in srgb, var(--accent) 15%, var(--bg-surface));
+  --bg-surface-hover: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+#app {
+  height: 100%;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Utility */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: var(--space-md);
+  flex-shrink: 0;
+}
+
+.page-title {
+  order: 0;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.page-header .actions {
+  order: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}

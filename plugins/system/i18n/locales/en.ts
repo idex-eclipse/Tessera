@@ -1,0 +1,248 @@
+export const en = {
+  system: {
+    pageTitle: 'Machine',
+    confirm: 'Confirm',
+    rightPanel: {
+      title: 'Machine Control',
+    },
+
+    // E-stop + restarts
+    eStop: {
+      title: 'Emergency Stop',
+      label: 'EMERGENCY STOP',
+    },
+    restarts: {
+      klipper: 'Restart Klipper',
+      firmware: 'Firmware Restart',
+      moonraker: 'Restart Moonraker',
+      confirmKlipper: 'Restart the Klipper service?',
+      confirmFirmware: 'Run FIRMWARE_RESTART? The printer will reset the firmware and reload the config.',
+      confirmMoonraker: 'Restart Moonraker? The UI will reconnect automatically.',
+    },
+
+    // Host
+    host: {
+      title: 'Host',
+      shutdown: 'Shutdown Host',
+      reboot: 'Reboot Host',
+      shutdownConfirm: 'Shut down the host machine? Printer will become unreachable.',
+      rebootConfirm: 'Reboot the host machine? Connection will be lost temporarily.',
+    },
+
+    // Upload & print
+    uploadPrint: {
+      title: 'Upload & Print',
+      dropzone: 'Drop G-code file here',
+      selectFile: 'Select file…',
+      printAfter: 'Start print after upload',
+      uploading: 'Uploading {name}…',
+      uploaded: 'Uploaded, starting print…',
+      uploadFailed: 'Upload failed',
+      printSkipped: 'Print skipped — Klipper is not ready',
+      parseFailed: 'Failed to parse 3MF file.',
+      printingBusy: 'Printer is busy.',
+    },
+
+    // Power
+    power: {
+      title: 'Power Devices',
+      empty: 'No power devices configured',
+      on: 'Power on',
+      off: 'Power off',
+      chipSection: 'Power devices',
+      onChip: 'Device on',
+      offChip: 'Device off',
+      unavailable: 'Unavailable',
+      unavailableHint:
+        'Device was not found in Moonraker config (renamed or removed). Open dashboard edit mode to remove this chip and place the current device.',
+    },
+
+    // Services
+    services: {
+      title: 'Services',
+      restart: 'Restart',
+      stop: 'Stop',
+      start: 'Start',
+      active: 'active',
+      inactive: 'inactive',
+      failed: 'failed',
+      confirmRestart: 'Restart service "{name}"?',
+      confirmStop: 'Stop service "{name}"?',
+      confirmStart: 'Start service "{name}"?',
+    },
+
+    // Notifications
+    notifications: {
+      title: 'Notifications',
+      empty: 'No notifications',
+      dismiss: 'Dismiss',
+      dismissAll: 'Dismiss all',
+      filterAll: 'All',
+      settings: 'Settings',
+      soundEnabled: 'Play sound on critical notifications',
+      ignoredPatterns: 'Ignored patterns (regex)',
+      patternPlaceholder: 'regex pattern to ignore',
+      addPattern: 'Add',
+      remove: 'Remove',
+      sev: {
+        critical: 'Critical',
+        error: 'Error',
+        info: 'Info',
+      },
+      src: { 
+        gcode: 'G-code response', 
+        klippy: 'Klipper', 
+        tmc: 'TMC driver', 
+        guard: 'Guard agent' 
+      },
+      guardDecisionTimeout: 'Guard {guard} ({plugin}) did not decide in time — {method} denied',
+      guardParkTimeout: 'Confirmation for {method} expired — request denied',
+      guardDenied: 'Request {method} denied by guard of {plugin}',
+    },
+
+    // Accounts / auth
+    auth: {
+      title: 'Accounts',
+      currentUser: 'Signed in as {user}',
+      logout: 'Sign out',
+      login: 'Sign in',
+      loginRequired: 'Authentication required',
+      username: 'Username',
+      password: 'Password',
+      loginFailed: 'Invalid credentials',
+      trusted: 'Trusted mode — authentication disabled',
+    },
+
+    accounts: {
+      title: 'Accounts',
+      current: 'Signed in as {user}',
+      logout: 'Sign out',
+      add: 'Add user',
+      delete: 'Delete',
+      confirmDelete: 'Delete user "{name}"?',
+      changePassword: 'Change password',
+      currentPassword: 'Current password',
+      newPassword: 'New password',
+    },
+
+    // Klipper state banner
+    klipperBanner: {
+      error: 'Klipper error',
+      shutdown: 'Klipper shutdown',
+      starting: 'Klipper starting…',
+      disconnected: 'Klipper disconnected',
+      restartKlipper: 'Restart Klipper',
+      firmwareRestart: 'Firmware Restart',
+      downloadKlippyLog: 'Download klippy.log',
+      downloadMoonrakerLog: 'Download moonraker.log',
+    },
+
+    // Page sections
+    info: {
+      title: 'System Information',
+      hostname: 'Hostname',
+      os: 'Operating System',
+      kernel: 'Kernel',
+      cpu: 'CPU',
+      memory: 'Memory',
+      klipperVersion: 'Klipper',
+      moonrakerVersion: 'Moonraker',
+      python: 'Python',
+      network: 'Networks',
+      sdTitle: 'SD Card',
+    },
+    mcu: {
+      title: 'MCU',
+      offline: 'MCU offline',
+      version: 'Firmware',
+      build: 'Build',
+      freq: 'Clock',
+      statsLoad: 'MCU task load',
+      details: 'Details',
+      constants: 'Constants',
+      lastStats: 'Last statistics',
+    },
+    charts: {
+      title: 'Load',
+      cpuLoad: 'CPU load',
+      osLoad: 'OS load',
+      ram: 'RAM used',
+      klipper: 'Klipper load',
+      moonraker: 'Moonraker load',
+      mcuLoad: 'MCU load',
+      mcuActivity: 'MCU activity',
+      temp: 'CPU temperature',
+    },
+    storage: {
+      title: 'Storage',
+      used: 'used',
+      free: 'free',
+      name: 'Name',
+      size: 'Size',
+      modified: 'Modified',
+      empty: 'Empty',
+      folderSize: 'Folder content',
+    },
+    database: {
+      title: 'Moonraker Database',
+      compact: 'Compact database',
+      backup: 'Create backup',
+      ok: 'Done',
+      fail: 'Operation failed',
+    },
+    updates: {
+      title: 'Updates',
+      refresh: 'Refresh list',
+      update: 'Update',
+      available: 'update available',
+      upToDate: 'up to date',
+      log: 'Update log',
+      clearLog: 'Clear',
+      rollback: 'Rollback',
+      confirmRollback: 'Roll back {name} to {version}?',
+      corrupt: 'corrupt',
+      dirty: 'dirty',
+      detached: 'detached HEAD',
+      notPristine: 'untracked files',
+      invalid: 'invalid',
+      packages: 'packages',
+      fullVersion: 'Full version',
+      currentHash: 'Current commit',
+      remoteHash: 'Remote commit',
+      remoteUrl: 'Remote URL',
+      rollbackVersion: 'Rollback version',
+      warnings: 'Warnings',
+      anomalies: 'Anomalies',
+      gitErrors: 'Git errors',
+      commitsBehind: '{count} commits behind',
+    },
+  },
+
+  tmf: {
+    title: '3MF project',
+    close: 'Close',
+    upload: 'Upload',
+    uploadPrint: 'Upload & print',
+    firstLayer: 'First layer',
+    vendor: {
+      unknown: 'unknown slicer',
+    },
+    unit: {
+      sec: '{n} s',
+      min: '{n} min',
+      hmin: '{h} h {m} min',
+      g: '{n} g',
+      kb: '{n} KB',
+      mb: '{n} MB',
+    },
+    warn: {
+      noPlates: 'No build plates found in this file.',
+      noGcode: 'No printable G-code inside: this is a slicer project file. Export G-code from the slicer to print.',
+      plateGcodeMissing: 'Plate {plate}: G-code declared but not found in the archive.',
+      unknownVendor: 'Unknown slicer dialect: metadata shown on a best-effort basis.',
+      modelSettingsMissing: 'Plate metadata is missing or damaged: showing fallback layout.',
+      projectSettingsBroken: 'Project settings are damaged: filament/printer info unavailable.',
+      plateJsonBroken: 'Plate {plate}: plate metadata is damaged.',
+    },
+  },
+};

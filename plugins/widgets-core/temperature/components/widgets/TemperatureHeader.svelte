@@ -1,0 +1,226 @@
+<script lang="ts">
+  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../shared/icons/Icon.svelte';
+  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
+
+  import { useTemperaturePrefs, type TempColumns } from '../../use-temperature.svelte';
+
+  const api = useWidget();
+  const i18n = useI18n();
+  const prefs = useTemperaturePrefs(api);
+
+  let menuOpen = $state(false);
+  let btnEl = $state<HTMLButtonElement | null>(null);
+  let menuEl = $state<HTMLDivElement | null>(null);
+  let pos = $state({ top: -9999, right: -9999 });
+
+  /** Flip по вертикали + клампы: меню не выходит за вьюпорт (виджет может быть внизу). */
+  function place(): void {
+    const r = btnEl?.getBoundingClientRect();
+    const el = menuEl;
+    if (!r || !el) return;
+
+    const mh = el.offsetHeight;
+    const mw = el.offsetWidth;
+
+    const spaceBelow = window.innerHeight - r.bottom - 4;
+    let top: number;
+    if (mh <= spaceBelow) top = r.bottom + 4;
+    else if (mh <= r.top - 4) top = r.top - 4 - mh;
+    else top = Math.max(8, window.innerHeight - mh - 8);
+
+    const rightPreferred = Math.max(8, window.innerWidth - r.right);
+    const right = Math.min(rightPreferred, Math.max(8, window.innerWidth - mw - 8));
+
+    pos = { top, right };
+  }
+
+  function toggleMenu(): void {
+    if (!menuOpen) pos = { top: -9999, right: -9999 }; // без вспышки в старой точке
+    menuOpen = !menuOpen;
+  }
+
+  $effect(() => {
+    if (!menuOpen || !menuEl) return;
+    place();
+    const re = () => place();
+    window.addEventListener('resize', re);
+    document.addEventListener('scroll', re, true); // capture: скроллят контейнеры
+    return () => {
+      window.removeEventListener('resize', re);
+      document.removeEventListener('scroll', re);
+    };
+  });
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape') menuOpen = false;
+  }
+
+  $effect(() => {
+    if (!menuOpen) return;
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  function toggleColumn(key: keyof TempColumns): void {
+    prefs.setColumn(key, !prefs.columns[key]);
+  }
+</script>
+
+<div class="hdr">
+  <button
+    class="hdr-btn"
+    class:active={menuOpen}
+    bind:this={btnEl}
+    title={i18n.t('widgets.temperature.settings')}
+    onclick={toggleMenu}
+  >
+    <Icon name="settings" size={15} />
+  </button>
+
+  <HeaderHelp title={i18n.t('widgets.temperature.help.Title')}>
+    <h4>{i18n.t('widgets.temperature.help.ChartTitle')}</h4>
+    <p>{i18n.t('widgets.temperature.help.ChartText')}</p>
+
+    <h4>{i18n.t('widgets.temperature.help.TargetTitle')}</h4>
+    <p>{i18n.t('widgets.temperature.help.TargetText')}</p>
+
+    <h4>{i18n.t('widgets.temperature.help.ColumnsTitle')}</h4>
+    <p>{i18n.t('widgets.temperature.help.ColumnsText')}</p>
+  </HeaderHelp>
+</div>
+
+{#if menuOpen}
+  <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>
+
+  <div
+    class="menu"
+    bind:this={menuEl}
+    style:top="{pos.top}px"
+    style:right="{pos.right}px"
+    role="menu"
+  >
+    <div class="menu-title">{i18n.t('widgets.temperature.columns')}</div>
+
+    <button
+      class="menu-item"
+      class:checked={prefs.columns.power}
+      onclick={() => toggleColumn('power')}
+    >
+      <span class="check">{prefs.columns.power ? '✓' : ''}</span>
+      {i18n.t('widgets.temperature.power')}
+    </button>
+    <button
+      class="menu-item"
+      class:checked={prefs.columns.rate}
+      onclick={() => toggleColumn('rate')}
+    >
+      <span class="check">{prefs.columns.rate ? '✓' : ''}</span>
+      {i18n.t('widgets.temperature.rate')}
+    </button>
+    <button
+      class="menu-item"
+      class:checked={prefs.columns.current}
+      onclick={() => toggleColumn('current')}
+    >
+      <span class="check">{prefs.columns.current ? '✓' : ''}</span>
+      {i18n.t('widgets.temperature.current')}
+    </button>
+    <button
+      class="menu-item"
+      class:checked={prefs.columns.target}
+      onclick={() => toggleColumn('target')}
+    >
+      <span class="check">{prefs.columns.target ? '✓' : ''}</span>
+      {i18n.t('widgets.temperature.target')}
+    </button>
+  </div>
+{/if}
+
+<style>
+  .hdr {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .hdr-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  .hdr-btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .hdr-btn.active {
+    background: var(--bg-surface-active);
+    color: #fff;
+  }
+
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 460;
+    background: transparent;
+  }
+
+  .menu {
+    position: fixed;
+    z-index: 461;
+    min-width: 210px;
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    padding: var(--space-xs);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .menu-title {
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .menu-item:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .menu-item .check {
+    width: 14px;
+    flex-shrink: 0;
+    color: var(--accent);
+    font-size: 12px;
+  }
+</style>

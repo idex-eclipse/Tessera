@@ -1,0 +1,87 @@
+/* Unified inputs: используем в плагинах вместо голых native-инпутов */
+
+.mpu-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.mpu-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
+
+.mpu-input:disabled {
+  opacity: 0.5;
+}
+
+/* убираем нативные спиннеры — чище и единообразнее */
+.mpu-input::-webkit-outer-spin-button,
+.mpu-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.mpu-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* fieldset-поле: легенда на рамке, юнит справа */
+.mpu-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  padding: 12px 10px 8px;
+  min-width: 0;
+  margin-top: 8px;
+}
+
+.mpu-field-legend {
+  position: absolute;
+  top: -8px;
+  left: 8px;
+  padding: 0 4px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mpu-field .mpu-input {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: monospace;
+  font-size: var(--font-size-md);
+}
+
+.mpu-field .mpu-input:focus {
+  outline: none;
+}
+
+.mpu-field-value {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.mpu-field-unit {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+}

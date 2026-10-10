@@ -1,0 +1,37 @@
+export const en = {
+  history: {
+    title: 'History',
+    list: 'Print history',
+    loadAll: 'Load all',
+    deleteAll: 'Delete all',
+    colFile: 'File',
+    colStatus: 'Status',
+    colStart: 'Start',
+    colTotal: 'Total',
+    colPrint: 'Print',
+    colFilament: 'Filament',
+    confirmReset: 'Reset printer statistics?',
+    confirmDeleteAll: 'Delete entire print history?',
+    empty: 'No print history',
+    resetConfirmBody: 'Are you sure? This action can not be cancelled.',
+    confirm: 'Yes',
+    statsError: 'Unable to load printer statisctics',
+  },
+  stats:{
+    title: 'Printer statistics',
+    reset: 'Reset statistics',
+    totalJobs: 'Total prints',
+    longestPrint: 'Longest print',
+    totalTime: 'Total time',
+    avgTime: 'Average time',
+    totalPrintTime: 'Total print time',
+    avgPrintTime: 'Average print time',
+    totalFilament: 'Filament used',
+    avgFilament: 'Avg per print',
+  },
+  ft:{
+    loading: 'Loading…',
+    error: 'Failed to load data',
+    retry: 'Retry',
+  }
+};

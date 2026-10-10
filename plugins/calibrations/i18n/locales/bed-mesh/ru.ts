@@ -1,0 +1,81 @@
+export const ru = {
+  bedMesh: {
+    pageTitle: 'Карта стола',
+    widgetTitle: 'Карта стола',
+
+    map: {
+      title: 'Карта стола',
+      profile: 'Профиль',
+      variance: 'Перепад',
+      min: 'Мин',
+      max: 'Макс',
+      exaggeration: 'Преувеличение',
+      interpolated: 'Интерполированная сетка',
+      basePlane: 'Базовая плоскость (Z=0)',
+      wireframe: 'Каркас',
+      clear: 'Очистить сетку',
+      calibrate: 'Калибровать',
+      scale: 'Шкала (мм)',
+      clipReset: 'Сбросить шкалу',
+    },
+
+    profiles: {
+      title: 'Сохранённые профили',
+      name: 'Имя',
+      actions: 'Действия',
+      load: 'Загрузить',
+      delete: 'Удалить',
+      deleteConfirm: 'Удалить профиль "{name}"?',
+      empty: 'Нет сохранённых профилей',
+      algo: 'Алгоритм',
+      points: 'Точки',
+      active: 'Активный профиль',
+    },
+
+    tools: {
+      title: 'Инструменты правки стола',
+      zTilt: 'Z-Tilt Adjust',
+      qgl: 'Quad Gantry Level',
+      screws: 'Screws Tilt Calculate',
+      probe: 'Probe Calibrate',
+      manual: 'Manual Probe',
+      empty: 'В конфигурации принтера нет инструментов правки',
+    },
+
+    testZ: {
+      title: 'Ручное зондирование',
+      position: 'Позиция Z',
+      accept: 'Принять',
+      abort: 'Отмена',
+      lower: 'ниже',
+      upper: 'выше',
+      hint: 'Подводите сопло к столу маленькими шагами и нажмите «Принять» в момент контакта.',
+    },
+
+    widget: {
+      noMesh: 'Сетка не загружена',
+      openPage: 'Открыть страницу',
+      tools: 'Инструменты выравнивания',
+    },
+    save: {
+      trigger: 'Сохранить',
+      title: 'Сохранить профиль',
+      name: 'Имя профиля',
+      save: 'Сохранить',
+      cancel: 'Отмена',
+      required: 'Укажите имя профиля',
+      exists: 'Профиль с таким именем уже существует и будет перезаписан.',
+    },
+    screws: {
+      title: 'Регулировка винтов (Screw Tilt)',
+      screw: 'Винт',
+      adjust: 'Подстройка',
+      base: 'база',
+      error: 'Превышена максимальная девиация',
+      maxDeviation: 'макс. девиация',
+      recalculate: 'Пересчитать',
+      close: 'Закрыть',
+      hint: 'CW — по часовой, CCW — против. HH:MM = полных оборота : минуты циферблата (01:15 = 1¼ оборота).',
+    },
+  },
+};
