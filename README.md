@@ -47,7 +47,7 @@ A drag-and-drop grid of autonomous widgets, arranged per printer:
 - **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series
 - **Status** — print progress, layer & ETA, pause / resume / cancel, speed & flow factors
 - **Macros** — buttons with automatic parameter forms parsed from your macro bodies (defaults pre-filled, required fields flagged)
-- **Tools** — jog cross/rows, extrude & retract, motor timeout, IDEX carriage modes (PRIMARY / COPY / MIRROR), active-tool awareness
+- **Tools** — jog cross/rows, extrude & retract, force move, motors off, IDEX carriage modes (PRIMARY / COPY / MIRROR / experimental DIRECT-mode from [Dmitry Butyugin's fork of Klipper for IDEX printers](https://github.com/dmbutyugin/klipper/tree/generic-cartesian)), active-tool awareness
 - **Limits** — velocity, acceleration and square-corner velocity on the fly
 - **Outputs** — fan sliders and output-pin control (PWM and digital), plus read-only indicators for Klipper-managed auto-fans (heater_fan / controller_fan / temperature_fan)
 - **Camera** — live MJPEG/HLS views, multiple streams
@@ -75,6 +75,11 @@ Chips survive navigation and printer switches. In dashboard edit mode you add
 them from per-provider accordion pickers; removed or renamed devices show an
 explicit *unavailable* state instead of silently decaying.
 
+<p align="left">
+  <img src="docs/screenshots/Dashboard.png" alt="Dashboard" width="40%"/>
+  <img src="docs/screenshots/Dashboard2.png" alt="Dashboard" width="40%"/>
+</p>
+
 ### Calibration suite
 
 One page, four tabs, one consistent panel language — every action shows a
@@ -90,12 +95,21 @@ Long-running calibrations survive tab switches and printer switching — activit
 is tracked from Moonraker's g-code store, so a tune started in another client is
 visible here too.
 
+<p align="left">
+  <img src="docs/screenshots/Calib1.png" alt="Probe section" width="40%"/>
+  <img src="docs/screenshots/Calib2.png" alt="Heater section" width="40%"/>
+</p>
+
 ### Files, editor, preview
 
 - **Universal file table** across jobs / config / logs: extended G-code metadata (filament, time, thumbnails, printed/queued status), column manager with drag-to-reorder, per-printer sort & columns, context menus
 - **3MF inspector** — open OrcaSlicer / Bambu-lineage projects in the browser: inspect plates, slice summaries and filament slots, preview thumbnails, and **extract the embedded G-code** for printing (raw `.3mf` is never uploaded to Moonraker)
 - **Config & G-code editor** — fullscreen editor with Klipper-config and G-code syntax highlighting, Jinja highlighting, section TOC, own find/replace (layout-independent hotkeys), line numbers, auto-pairs, and *Save & Restart* for `.cfg` / `moonraker.conf`
 - **G-code preview** — 2D and 3D (three.js) viewers with live print-progress overlay, layer scrubbing, **follow-print** mode, and **exclude object** (irreversible, confirmation-guarded, with 3D cage markers)
+
+<p align="left">
+  <img src="docs/screenshots/3MF.png" alt="3MF upload dialog" width="40%"/>
+</p>
 
 ### System & notifications
 
@@ -110,6 +124,10 @@ A view over Moonraker's g-code store with command autocomplete (including
 **macro-parameter mode**: type `MACRO ` and get `NAME=` suggestions with types
 and defaults), a built-in G/M-code catalog with parameter signatures, regex
 message filters, and reverse/autoscroll preferences.
+
+<p align="left">
+  <img src="docs/screenshots/Console.png" alt="Console" width="40%"/>
+</p>
 
 ### Multi-printer & personalization
 
