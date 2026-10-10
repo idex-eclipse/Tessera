@@ -12,7 +12,7 @@ set -euo pipefail
 # ---------------------------------------------------------------- configuration
 REPO_URL="${TESSERA_REPO:-https://github.com/idex-eclipse/tessera.git}"
 BRANCH="${TESSERA_BRANCH:-main}"
-PORT="${TESSERA_PORT:-8080}"
+PORT="${TESSERA_PORT:-8000}"
 MOONRAKER="${TESSERA_MOONRAKER:-127.0.0.1:7125}"
 SKIP_NGINX="${TESSERA_SKIP_NGINX:-0}"
 SKIP_KLIPPER="${TESSERA_SKIP_KLIPPER_CFG:-0}"
