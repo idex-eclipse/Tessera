@@ -173,7 +173,7 @@ server {
     }
 
     location /websocket {
-        proxy_pass http://@MOONRAKER@/websocket;
+        proxy_pass http://@MOONRAKER/websocket;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -184,7 +184,7 @@ server {
     }
 
     location ~ ^/(printer|api|access|machine|server)/ {
-        proxy_pass http://@MOONRAKER@$request_uri;
+        proxy_pass http://@MOONRAKER$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
