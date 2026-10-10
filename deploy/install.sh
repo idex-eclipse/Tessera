@@ -102,7 +102,6 @@ fi
 
 log "dependencies + build (may take several minutes on SBC)"
 as_user "cd '$INSTALL_DIR' && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund)"
-as_user "cd '$INSTALL_DIR' && (npm run icons || true)"   # favicon.ico best-effort
 as_user "cd '$INSTALL_DIR' && npm run build"
 
 BUILD_DIR=""
