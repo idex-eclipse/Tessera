@@ -2,7 +2,7 @@
 # Tessera installer — Armbian/Debian-first, best-effort universal.
 #
 # One-liner (interactive):
-#   curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/@GH_ORG@/tessera/main/deploy/install.sh \
 #     -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
 # Non-interactive:
 #   TESSERA_NO_PROMPT=1 TESSERA_PORT=8080 bash /tmp/tessera-install.sh
@@ -173,7 +173,7 @@ server {
     }
 
     location /websocket {
-        proxy_pass http://apiserver/websocket;
+        proxy_pass http://@MOONRAKER@/websocket;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -184,7 +184,7 @@ server {
     }
 
     location ~ ^/(printer|api|access|machine|server)/ {
-        proxy_pass http://apiserver$request_uri;
+        proxy_pass http://@MOONRAKER@$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -200,7 +200,7 @@ server {
     #                      proxy_pass http://127.0.0.1:8080/; }
 }
 NGINX
-  sed -i "s|@PORT@|$PORT|g; s|@MOONRAKER@|$MOONRAKER@|g; s|@BUILD_DIR@|$BUILD_DIR|g; s|@INSTALL_DIR@|$INSTALL_DIR|g" \
+  sed -i "s|@PORT@|$PORT|g; s|@MOONRAKER@|$MOONRAKER|g; s|@BUILD_DIR@|$BUILD_DIR|g; s|@INSTALL_DIR@|$INSTALL_DIR|g" \
     /tmp/tessera-nginx.conf
 
   NGINX_AV=/etc/nginx/sites-available; NGINX_EN=/etc/nginx/sites-enabled
