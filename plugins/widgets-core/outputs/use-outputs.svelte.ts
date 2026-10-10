@@ -3,7 +3,7 @@ import { onDestroy } from 'svelte';
 import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
 
 export interface OutputItem {
-  id: string; // имя объекта: 'fan' / 'fan_generic extruder' / 'output_pin led' / 'heater_fan x'…
+  id: string; // 'fan' / 'fan_generic extruder' / 'output_pin led' / 'heater_fan x'…
   kind:
     | 'fan'
     | 'fan_generic'
@@ -11,14 +11,13 @@ export interface OutputItem {
     | 'heater_fan'
     | 'controller_fan'
     | 'output_pin';
-  name: string; // короткое имя для команд
+  name: string; // command name
   label: string;
   min: number;
   max: number;
   step: number;
   decimals: number;
-  /** Авто-вентиляторы (heater_fan/controller_fan/temperature_fan): скорость ведёт
-   *  Klipper по своим алгоритмам; UI только читает ['speed'] и показывает состояние. */
+  /** klipper controlled */
   readOnly: boolean;
 }
 
@@ -30,7 +29,7 @@ function prettify(name: string): string {
     .join(' ');
 }
 
-// module-level: виджет и чипы читают одно состояние (внутренность плагина)
+// module-level
 let items = $state<OutputItem[]>([]);
 let values = $state<Record<string, number>>({}); // fan*: 0..1; output_pin: raw value
 
@@ -64,7 +63,6 @@ export function useOutputs(api: PluginApi) {
     for (const it of items) {
       const obj = d[it.id];
       if (!obj) continue;
-      // output_pin живёт в 'value', всё остальное (включая авто-венты) — в 'speed'
       const raw = it.kind === 'output_pin' ? num(obj.value) : num(obj.speed);
       if (raw != null) {
         next[it.id] = raw;
@@ -74,9 +72,8 @@ export function useOutputs(api: PluginApi) {
     if (changed) values = next;
   }
 
-  // ------------------------------------------------------------------
   // Метаданные: управляемые выходы из конфига + авто-венты из objects.list
-  // ------------------------------------------------------------------
+
 
   async function loadMeta(gen: number): Promise<void> {
     const h = safeHandle();
@@ -200,13 +197,11 @@ export function useOutputs(api: PluginApi) {
     if (gen === generation && seeded?.status) applyDelta(seeded.status);
   }
 
-  // ------------------------------------------------------------------
-  // Действия (только для управляемых предметов)
-  // ------------------------------------------------------------------
+  // Actions
 
   function setValue(id: string, raw: number): void {
     const it = items.find((x) => x.id === id);
-    if (!it || it.readOnly) return; // авто-венты: команд не шлём вовсе
+    if (!it || it.readOnly) return;
 
     if (it.kind === 'fan') {
       script(raw <= 0 ? 'M107' : `M106 S${Math.round(raw * 255)}`);
@@ -217,9 +212,7 @@ export function useOutputs(api: PluginApi) {
     }
   }
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;

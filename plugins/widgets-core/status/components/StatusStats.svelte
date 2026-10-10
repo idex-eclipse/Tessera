@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useI18n } from '../../../plugin-sdk/src/svelte/index';
+  import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
   import {
     computeRemaining,
@@ -11,7 +11,7 @@
     type PrintStatusModel,
     type ProgressMode,
     type StatusFieldId,
-  } from './use-print-status.svelte.ts';
+  } from '../use-print-status.svelte.ts';
 
   let { m, mode, fields }: {
     m: PrintStatusModel;
@@ -70,7 +70,6 @@
 </div>
 
 <style>
-  /* группа = отдельная колонка; на узких экранах колонки переносятся */
   .stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -78,8 +77,6 @@
     align-items: start;
   }
 
-  /* внутри колонки: label-колонка по самому широкому лейблу группы,
-     значения стартуют с одной оси */
   .stat-col {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);

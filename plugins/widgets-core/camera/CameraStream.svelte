@@ -19,8 +19,8 @@
     }
   }
 
-  // adaptive — поллинг snapshot; img — multipart MJPEG / IP-камера;
-  // video — HLS; iframe — HTTP-страница; webrtc-* — заглушка в v1
+  // adaptive — snapshot polling; img — multipart MJPEG / IP-camera;
+  // video — HLS; iframe — HTTP-page
   type Kind = 'adaptive' | 'img' | 'video' | 'iframe' | 'unsupported';
 
   let kind = $derived<Kind>(

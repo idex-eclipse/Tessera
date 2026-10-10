@@ -219,7 +219,10 @@
 </div>
 
 <style>
-  .chip-root { position: relative; height: 100%; }
+  .chip-root {
+    position: relative;
+    height: 100%;
+  }
 
   .chip {
     position: relative;
@@ -234,35 +237,95 @@
     overflow: hidden;
     transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
-  .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
-  .chip.fan.active .stripe { background: var(--cool); }
-  .chip.pin.active .stripe { background: var(--heat); }
 
-  .body { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; min-width: 0; flex: 1; }
-  .top { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
-  .label { font-size: var(--font-size-lg); color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stripe {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+  }
+  .chip.fan.active .stripe {
+    background: var(--cool);
+  }
+  .chip.pin.active .stripe {
+    background: var(--heat);
+  }
 
-  .bottom { display: flex; align-items: center; gap: 6px; }
+  .body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-weight: 600;
+  }
+
+  .label {
+    font-size: var(--font-size-lg);
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bottom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
   .state-text {
-    margin-left: auto;              /* прижато вправо, как .value у температуры */
+    margin-left: auto;
     flex-shrink: 0;
     font-family: ui-monospace, monospace;
     font-size: var(--font-size-lg);
-    font-weight: 700;               /* паритет с .value температурного чипа */
+    font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
+
   .chip.fan.active .state-text { color: var(--text-primary); }
   .chip.pin.active .state-text { color: var(--text-primary); }
 
-  .kind { display: flex; line-height: 0; color: var(--text-muted); opacity: 0.55; flex-shrink: 0; }
+  .kind {
+    display: flex;
+    line-height: 0;
+    color: var(--text-muted);
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
+
   .kind.lit { opacity: 1; }
+
   .chip.fan .kind.lit { color: var(--cool); }
   .chip.pin .kind.lit { color: var(--heat); }
 
-  .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: transparent; z-index: 100; }
-  .fill { display: block; height: 100%; background: var(--cool); transition: width var(--transition-normal); }
+  .bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: transparent;
+    z-index: 100;
+  }
+
+  .fill {
+    display: block;
+    height: 100%;
+    background: var(--cool);
+    transition: width var(--transition-normal);
+  }
+
   .chip.pin .fill { background: transparent; }
   .body { z-index: 100; }
 
@@ -275,24 +338,65 @@
     border-color: color-mix(in srgb, var(--heat) 32%, var(--border-color));
   }
   .chip.interactive { cursor: pointer; }
-  .chip.interactive:hover { box-shadow: var(--shadow-sm); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+
+  .chip.interactive:hover {
+    box-shadow: var(--shadow-sm);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  }
+
   .chip.interactive:active { transform: translateY(1px); }
+
   .chip.missing { border-style: dashed; }
+
   .chip.missing .label, .chip.missing .state-text { color: var(--text-muted); }
 
-  .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
-  .chip-popover {
-    position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1001;
-    background: var(--bg-surface); border: 1px solid var(--border-color);
-    border-radius: var(--radius-md); box-shadow: var(--shadow-md);
-    padding: var(--space-sm); min-width: 220px;
-    display: flex; flex-direction: column; gap: var(--space-xs);
+  .chip-popover-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
   }
-  .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  .chip-popover.align-right { left: auto; right: 0; }
-  .pop-title { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-primary); padding: 0 var(--space-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .preset-row { display: flex; gap: var(--space-xs); }
+  .chip-popover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 1001;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: var(--space-sm);
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .chip-popover.below {
+    bottom: auto;
+    top: calc(100% + 6px);
+  }
+
+  .chip-popover.align-right {
+    left: auto;
+    right: 0;
+  }
+
+  .pop-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    padding: 0 var(--space-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preset-row {
+    display: flex;
+    gap: var(--space-xs);
+  }
+
   .preset-btn {
     flex: 1;
     padding: var(--space-xs);
@@ -306,6 +410,7 @@
     transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   }
   .preset-btn:hover { background: var(--bg-surface-active); }
+  
   .preset-btn.active {
     background: var(--accent-subtle-strong);
     border-color: var(--accent);

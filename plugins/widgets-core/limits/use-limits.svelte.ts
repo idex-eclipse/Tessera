@@ -59,7 +59,7 @@ export function useLimits(api: PluginApi) {
     const h = safeHandle();
     if (!h) return;
 
-    // дефолты для reset — из [printer] конфига
+    // defaults
     const cfgRes = await h
       .request<any>('printer.objects.query', { objects: { configfile: ['settings'] } })
       .catch(() => null);
@@ -77,7 +77,6 @@ export function useLimits(api: PluginApi) {
       },
     };
 
-    // переподписка без утечки (mount + onReady)
     if (unsubMeta) {
       unsubMeta();
       unsubMeta = null;
@@ -98,8 +97,8 @@ export function useLimits(api: PluginApi) {
       { immediate: true },
     );
 
-    // SEED после F5: дельты несут только изменившиеся поля,
-    // null = «все поля объекта»
+    // SEED after F5: deltas - changed values,
+    // null = all
     const seeded = await h
       .request<any>('printer.objects.query', { objects: { toolhead: null } })
       .catch(() => null);

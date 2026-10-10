@@ -78,9 +78,7 @@ export function useCameras(api: PluginApi) {
     if (res) applyList(res);
   }
 
-  // ------------------------------------------------------------------
   // Активная камера: settings + фолбэк на первую включённую
-  // ------------------------------------------------------------------
 
   let enabled = $derived(cameras.filter((c) => c.enabled));
 
@@ -93,15 +91,12 @@ export function useCameras(api: PluginApi) {
     api.settings.set('camera.active', name);
   }
 
-  // ------------------------------------------------------------------
   // CRUD (стандартный Moonraker Webcams API)
-  // ------------------------------------------------------------------
 
   async function saveCamera(item: WebcamItem, isNew: boolean): Promise<void> {
     const h = safeHandle();
     if (!h) return;
 
-    // add и update — один метод: post_item; update идентифицируется uid
     const params: Record<string, unknown> = {
       name: item.name,
       location: item.location,
@@ -140,9 +135,7 @@ export function useCameras(api: PluginApi) {
   const closeDialog = () => (dialog = null);
   const closeDelete = () => (toDelete = null);
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;

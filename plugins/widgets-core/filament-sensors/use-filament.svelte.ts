@@ -5,9 +5,9 @@ import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/ty
 export type FilamentKind = 'switch' | 'motion' | 'hall';
 
 export interface FilamentSensor {
-  id: string; // имя объекта: 'filament_switch_sensor runout' / 'hall_filament_width_sensor'
+  id: string; // 'filament_switch_sensor runout' / 'hall_filament_width_sensor'
   kind: FilamentKind;
-  name: string; // короткое имя (параметр SENSOR=)
+  name: string;
 }
 
 export interface FilamentState {
@@ -126,7 +126,6 @@ export function useFilament(api: PluginApi) {
       { immediate: true },
     );
 
-    // SEED после F5: enabled/detected меняются редко — дельты их не принесут
     const seeded = await h
       .request<any>('printer.objects.query', {
         objects: Object.fromEntries(sensors.map((s) => [s.id, null])),
@@ -135,13 +134,10 @@ export function useFilament(api: PluginApi) {
     if (gen === generation && seeded?.status) applyDelta(seeded.status);
   }
 
-  // ------------------------------------------------------------------
-  // Действия — только стандартные команды Klipper
-  // ------------------------------------------------------------------
+  // Actions
 
   function setEnabled(s: FilamentSensor, v: boolean): void {
     if (s.kind === 'hall') {
-      // у hall-датчика ширины свои команды вкл/выкл
       script(v ? 'ENABLE_FILAMENT_WIDTH_SENSOR' : 'DISABLE_FILAMENT_WIDTH_SENSOR');
     } else {
       script(`SET_FILAMENT_SENSOR SENSOR=${s.name} ENABLE=${v ? 1 : 0}`);
@@ -156,9 +152,7 @@ export function useFilament(api: PluginApi) {
     script('RESET_FILAMENT_WIDTH_SENSOR');
   }
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;

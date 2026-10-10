@@ -13,9 +13,6 @@
   let draft = $state<string | number>('');
   let suppressBlurCommit = false;
 
-  // pendingCommit-замок (паттерн SliderField): после commit не синхронизируем
-  // draft из пропа, пока дельта не подтвердит отправленное значение —
-  // иначе поле мигает старым (0) до приезда подтверждения.
   let pendingCommit = $state<number | null>(null);
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -30,7 +27,7 @@
         }
         draft = String(Math.round(value));
       }
-      return; // ждём подтверждения, не прыгаем на старое
+      return;
     }
     draft = value != null ? String(Math.round(value)) : '';
   });
@@ -45,7 +42,7 @@
     pendingCommit = n;
     if (pendingTimer) clearTimeout(pendingTimer);
     pendingTimer = setTimeout(() => {
-      pendingCommit = null; // страховка 3с: дельта может не прийти (offline)
+      pendingCommit = null;
       pendingTimer = null;
     }, 3000);
 
@@ -69,8 +66,8 @@
     }}
     onkeydown={(e) => {
       if (e.key === 'Enter') {
-        commit();               // ровно один commit…
-        suppressBlurCommit = true; // …blur после Enter не коммитит повторно
+        commit();
+        suppressBlurCommit = true;
         (e.currentTarget as HTMLInputElement).blur();
       }
     }}

@@ -22,7 +22,6 @@ export interface MacrosCfg {
   groups: MacroGroupCfg[];
   items: Record<string, MacroItemCfg>;
   ui: { tooltips: boolean; ungroupedCollapsed: boolean };
-  /** Порядок безгруппных макросов (все, включая скрытые) — задаёт пользователь. */
   ungrouped: string[];
 }
 
@@ -41,7 +40,6 @@ function createId(): string {
   return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// module-level: виджет и шапка читают одно состояние (внутренность плагина)
 let liveNames = $state<string[]>([]);
 let help = $state<Record<string, string>>({});
 let paramsByMacro = $state<Record<string, MacroParam[]>>({});
@@ -60,10 +58,8 @@ export function useMacros(api: PluginApi) {
     }
   }
 
-  // ------------------------------------------------------------------
-  // Настройки: срез byPrinter[printerId] — не синхронизируется фактически
-  // даже при sync=ON у плагина (списки макросов на машинах разные)
-  // ------------------------------------------------------------------
+  // Settings
+  // not sync by printers
 
   function readCfg(): MacrosCfg {
     const all = api.settings.get<{ byPrinter?: Record<string, MacrosCfg> }>('macros') ?? {};
@@ -88,21 +84,17 @@ export function useMacros(api: PluginApi) {
     });
   }
 
-  /** Persist текущего состояния в storage. */
   function commit(): void {
     writeCfg(JSON.parse(JSON.stringify(cfg)));
   }
 
-  /** Явная мутация с немедленным persist (для настроек, не для DnD). */
   function mutate(fn: (draft: MacrosCfg) => void): void {
     const draft = JSON.parse(JSON.stringify(cfg)) as MacrosCfg;
     fn(draft);
     writeCfg(draft);
   }
 
-  // ------------------------------------------------------------------
-  // Живой список макросов + описания
-  // ------------------------------------------------------------------
+  // Macr0 + description
 
   async function loadLive(gen: number): Promise<void> {
     const h = safeHandle();
@@ -115,15 +107,12 @@ export function useMacros(api: PluginApi) {
     ]);
     if (gen !== generation) return;
 
-    // запрос упал — не трогаем сохранённый порядок
     if (!list) return;
 
     const names = ((list.objects ?? []) as string[])
       .filter((n) => n.startsWith('gcode_macro '))
       .map((n) => n.slice('gcode_macro '.length));
 
-    // Klipper ещё не ready: макросов в objects нет. НЕ вытираем сохранённые
-    // группы/порядок пустым списком — дождёмся notify_klippy_ready и перечитаем.
     if (names.length === 0) return;
 
     liveNames = names;
@@ -138,7 +127,7 @@ export function useMacros(api: PluginApi) {
         if (p.length > 0) pm[n] = p;
       }
     }
-    paramsByMacro = pm; // полная пересборка: устаревшие имена исчезают
+    paramsByMacro = pm;
     help = map;
 
     const knownSet = new Set(liveNames);
@@ -158,9 +147,7 @@ export function useMacros(api: PluginApi) {
     });
   }
 
-  // ------------------------------------------------------------------
-  // Представление
-  // ------------------------------------------------------------------
+  // Show
 
   function itemOf(name: string): MacroItemCfg {
     return cfg.items[name] ?? {};
@@ -170,7 +157,6 @@ export function useMacros(api: PluginApi) {
     return liveNames.includes(n);
   }
 
-  /** Явное значение hidden; по умолчанию сервисные `_…` скрыты. */
   function isHidden(name: string): boolean {
     const h = cfg.items[name]?.hidden;
     if (typeof h === 'boolean') return h;
@@ -197,7 +183,6 @@ export function useMacros(api: PluginApi) {
     return '';
   }
 
-  /** Возвращает контейнер и индекс макроса в актуальном порядке — для DnD-решений. */
   function containerOf(name: string): { container: string; index: number } {
     for (const g of cfg.groups) {
       const i = g.macros.indexOf(name);
@@ -206,15 +191,11 @@ export function useMacros(api: PluginApi) {
     return { container: '', index: cfg.ungrouped.indexOf(name) };
   }
 
-  // ------------------------------------------------------------------
-  // Live DnD: transient-перестановки (реактивно, без persist).
-  // Persist — один раз на commit() (drop / dragend).
-  // ------------------------------------------------------------------
 
-  /**
-   * Вставить макрос в позицию (container, index). Если макрос в том же контейнере —
-   * классический list-reorder с учётом сдвига индексов. Вытягивает из «Скрытых».
-   */
+  // Live DnD: transient-reorder.
+  // Persist — one time in commit() (drop / dragend).
+
+
   function placeMacroTransient(name: string, container: string, index: number): void {
     const fromGroup = cfg.groups.find((g) => g.macros.includes(name));
     const toGroup = container ? cfg.groups.find((g) => g.id === container) : null;
@@ -227,7 +208,6 @@ export function useMacros(api: PluginApi) {
     let idx = Math.max(0, Math.min(index, toArr.length));
 
     if (fromArr === toArr) {
-      // внутри того же массива: удаляем, потом вставляем (с учётом сдвига)
       if (cur === idx || cur + 1 === idx) return;
       fromArr.splice(cur, 1);
       if (cur < idx) idx--;
@@ -237,12 +217,10 @@ export function useMacros(api: PluginApi) {
       toArr.splice(idx, 0, name);
     }
 
-    // Если вытащили из скрытых — явно делаем видимым
     const item = cfg.items[name] ?? (cfg.items[name] = {});
     if (item.hidden) item.hidden = false;
   }
 
-  /** Вставить группу на позицию (по индексу в cfg.groups). */
   function moveGroupTransient(dragId: string, index: number): void {
     const cur = cfg.groups.findIndex((g) => g.id === dragId);
     if (cur < 0) return;
@@ -253,9 +231,7 @@ export function useMacros(api: PluginApi) {
     cfg.groups.splice(idx, 0, g);
   }
 
-  // ------------------------------------------------------------------
-  // Явные действия с persist
-  // ------------------------------------------------------------------
+  // Actions with persist
 
   function run(name: string): void {
     safeHandle()
@@ -293,7 +269,6 @@ export function useMacros(api: PluginApi) {
     });
   }
 
-  /** Удалить группу: макросы переезжают в конец ungrouped. */
   function deleteGroup(id: string): void {
     mutate((d) => {
       const g = d.groups.find((x) => x.id === id);
@@ -305,7 +280,6 @@ export function useMacros(api: PluginApi) {
     });
   }
 
-  /** Явное перемещение из select (popover): persist сразу. */
   function moveMacro(name: string, groupId: string): void {
     mutate((d) => {
       d.ungrouped = d.ungrouped.filter((n) => n !== name);
@@ -369,9 +343,7 @@ export function useMacros(api: PluginApi) {
     });
   }
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;

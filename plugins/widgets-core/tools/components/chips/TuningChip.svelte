@@ -24,8 +24,6 @@
   const FLOW_MIN = 1;
   const FLOW_MAX = 200;
 
-  // --- PA: draft-поля с pendingCommit-замком ---
-  // --- PA: draft-поля с pendingCommit-замком + dirty-флагом ---
   let draftPA = $state({ advance: '0.000', smooth: '0.040' });
   let focusedPA = $state(false);
   let pendingPA = $state<{ advance: number; smooth: number } | null>(null);
@@ -33,7 +31,6 @@
 
   $effect(() => {
     if (subject !== 'pressure_advance') return;
-    // Не синхронизируем, пока пользователь редактирует или ждём подтверждения от Klipper
     if (focusedPA || dirtyPA) return;
     const e = tools.th.activeExtruder;
     const cur = tools.th.pa[e] ?? tools.meta.defaults.pa[e] ?? { advance: 0, smooth: 0.04 };
@@ -44,7 +41,7 @@
       ) {
         pendingPA = null;
       } else {
-        return; // ждём подтверждения от Klipper
+        return;
       }
     }
     draftPA = { advance: cur.advance.toFixed(3), smooth: cur.smooth.toFixed(3) };
@@ -70,7 +67,6 @@
     dirtyPA = false;
     tools.setPA({ advance: a, smooth: s });
     popoverOpen = false;
-    // страховка: если Klipper не ответит за 3с, сбрасываем pending
     setTimeout(() => {
       if (pendingPA && pendingPA.advance === a && pendingPA.smooth === s) {
         pendingPA = null;
@@ -157,7 +153,7 @@
     dirtyR = false;
   }
 
-  // --- Синхронизация draft при открытии popover ---
+  //Sync
   function openPopover(): void {
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
@@ -165,7 +161,6 @@
       placement = { above: rect.top > 220, alignRight: rect.left + 260 > window.innerWidth };
     }
     popoverOpen = true;
-    // При открытии синхронизируем draft с текущим значением Klipper
     if (subject === 'pressure_advance') {
       const e = tools.th.activeExtruder;
       const cur = tools.th.pa[e] ?? tools.meta.defaults.pa[e] ?? { advance: 0, smooth: 0.04 };
@@ -201,7 +196,7 @@
   function resetFlow(): void { tools.setFlow(100); }
   function resetSpeed(): void { tools.setSpeed(100); }
 
-  // --- общие: popover ---
+  //popover
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
   let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
@@ -390,100 +385,239 @@
 </div>
 
 <style>
-  .chip-root { position: relative; height: 100%; }
+  .chip-root { 
+    position: relative; 
+    height: 100%; 
+  }
+
   .chip {
-    position: relative; display: flex; height: 100%;
-    min-width: 104px; max-width: 220px;
+    position: relative;
+    display: flex;
+    height: 100%;
+    min-width: 104px;
+    max-width: 220px;
     padding: 4px 10px 6px 12px;
-    border: 1px solid var(--border-color); border-radius: var(--radius-md);
-    background: var(--bg-surface); overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    overflow: hidden;
     transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
-  .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
-
-  .body { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; min-width: 0; flex: 1; }
-  .top { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-weight: 600; }
-  .label { font-size: var(--font-size-lg); color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-  .sub {
-    font-family: ui-monospace, monospace; font-size: var(--font-size-sm);
-    color: var(--text-muted); flex-shrink: 0;
+  .stripe {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
   }
 
-  .bottom { display: flex; align-items: center; gap: 6px; }
-  .kind { display: flex; line-height: 0; color: var(--text-muted); opacity: 0.55; flex-shrink: 0; }
+  .body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .top {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    font-weight: 600;
+  }
+
+  .label {
+    font-size: var(--font-size-lg);
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sub {
+    font-family: ui-monospace, monospace;
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .bottom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .kind {
+    display: flex;
+    line-height: 0;
+    color: var(--text-muted);
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
   .kind.active {
     color: var(--accent);
   }
 
   .value {
-    margin-left: auto; flex-shrink: 0;
-    font-family: ui-monospace, monospace; font-size: var(--font-size-lg); font-weight: 700;
-    color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1;
+    margin-left: auto;
+    flex-shrink: 0;
+    font-family: ui-monospace, monospace;
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
   }
 
   .chip.interactive { cursor: pointer; }
-  .chip.interactive:hover { box-shadow: var(--shadow-sm); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+  .chip.interactive:hover {
+    box-shadow: var(--shadow-sm);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  }
   .chip.interactive:active { transform: translateY(1px); }
   .chip.missing { border-style: dashed; }
-  .chip.missing .label, .chip.missing .value { color: var(--text-muted); }
 
-  .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
+  .chip.missing .label, .chip.missing .value {
+    color: var(--text-muted);
+  }
+
+  .chip-popover-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+  }
+
   .chip-popover {
-    position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1001;
-    background: var(--bg-surface); border: 1px solid var(--border-color);
-    border-radius: var(--radius-md); box-shadow: var(--shadow-md);
-    padding: var(--space-sm); min-width: 240px; max-width: 300px;
-    display: flex; flex-direction: column; gap: var(--space-xs);
-  }
-  .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  .chip-popover.align-right { left: auto; right: 0; }
-  .pop-title {
-    font-size: var(--font-size-sm); font-weight: 600; color: var(--text-primary);
-    padding: 0 var(--space-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 1001;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: var(--space-sm);
+    min-width: 240px;
+    max-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
   }
 
-  .field { display: flex; flex-direction: column; gap: 2px; }
-  .field-label { font-size: var(--font-size-sm); color: var(--text-secondary); }
+  .chip-popover.below {
+    bottom: auto;
+    top: calc(100% + 6px);
+  }
+
+  .chip-popover.align-right {
+    left: auto;
+    right: 0;
+  }
+
+  .pop-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    padding: 0 var(--space-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .field-label {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
+
   .field-input {
     padding: var(--space-xs) var(--space-sm);
-    border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-    background: var(--bg-surface); color: var(--text-primary);
-    font-family: ui-monospace, monospace; font-size: var(--font-size-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: ui-monospace, monospace;
+    font-size: var(--font-size-sm);
   }
-  .field-input:focus { outline: none; border-color: var(--accent); }
+  
+  .field-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
 
   .preview {
-    display: block; padding: var(--space-xs);
-    background: var(--bg-surface-hover-no-override); border-radius: var(--radius-sm);
-    font-family: ui-monospace, monospace; font-size: var(--font-size-sm);
+    display: block;
+    padding: var(--space-xs);
+    background: var(--bg-surface-hover-no-override);
+    border-radius: var(--radius-sm);
+    font-family: ui-monospace, monospace;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     white-space: pre-wrap;
-    word-break: break-word; 
+    word-break: break-word;
     border: 1px solid var(--border-color);
   }
 
-  .pop-actions { display: flex; gap: var(--space-xs); }
-  .pop-btn {
-    flex: 1; padding: var(--space-xs) var(--space-sm);
-    border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover); color: var(--text-primary);
-    font-size: var(--font-size-sm); cursor: pointer;
+  .pop-actions {
+    display: flex;
+    gap: var(--space-xs);
   }
+  .pop-btn {
+    flex: 1;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+
   .pop-btn:hover { background: var(--bg-surface-active); }
-  .pop-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+  .pop-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+
   .pop-btn.primary:hover { filter: brightness(1.1); }
 
-  .preset-row { display: flex; gap: var(--space-xs); }
+  .preset-row {
+    display: flex;
+    gap: var(--space-xs);
+  }
+
   .preset-btn {
-    flex: 1; padding: var(--space-xs);
-    border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover-no-override); color: var(--text-primary);
-    font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; cursor: pointer;
-    transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    flex: 1;
+    padding: var(--space-xs);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-hover-no-override);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: 
+      background var(--transition-fast), 
+      border-color var(--transition-fast), 
+      color var(--transition-fast);
   }
   .preset-btn:hover { background: var(--bg-surface-active); }
+
   .preset-btn.active {
-    background: var(--accent-subtle-strong); border-color: var(--accent);
-    color: var(--accent); font-weight: 600;
+    background: var(--accent-subtle-strong);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
   }
 </style>

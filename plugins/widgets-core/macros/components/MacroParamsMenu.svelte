@@ -25,7 +25,6 @@
 
   let hasRequired = $derived(params.some((p) => p.required));
 
-  // flip у краёв экрана — как edit-popover макросов
   $effect(() => {
     if (!el) return;
     const w = el.offsetWidth;

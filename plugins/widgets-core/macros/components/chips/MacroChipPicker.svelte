@@ -34,7 +34,7 @@
     return { name, label: item.alias || name, hidden: macros.isHidden(name) };
   }
 
-  /** Группы пользователя (порядок как в виджете) → Ungrouped → Hidden (edit). */
+  //User macro groups
   let groups = $derived.by(() => {
     const placed = new Set(placedIds);
     const out: Array<{ id: string; title: string; items: Entry[] }> = [];

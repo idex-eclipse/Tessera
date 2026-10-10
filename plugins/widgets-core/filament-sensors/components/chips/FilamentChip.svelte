@@ -23,7 +23,7 @@
   let missing = $derived(klippy.state === 'ready' && sensor === null);
   let disabled = $derived(editMode || missing);
 
-  // состояние для glance: detected/empty/off
+  //state
   let statusText = $derived.by(() => {
     if (!sensorState) return '—';
     if (!sensorState.enabled) return i18n.t('widgets.filament.off');
@@ -36,7 +36,7 @@
     return sensorState.detected ? 'ok' : 'error';
   });
 
-  // feature-detect: RESET_WIDTH_SENSOR для hall-сенсоров
+  // feature-detect
   let hasResetCommand = $state(false);
   $effect(() => {
     if (sensor?.kind !== 'hall') return;

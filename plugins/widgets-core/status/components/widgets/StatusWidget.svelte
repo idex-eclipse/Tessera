@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import KlipperNotReady from '../../shared/klippy-state/KlippyNotReady.svelte';
-  import StatusStats from './StatusStats.svelte';
+  import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
+  import StatusStats from '../StatusStats.svelte';
   import {
     usePrintStatus,
     computeProgress,
     type ProgressMode,
-  } from './use-print-status.svelte.ts';
+  } from '../../use-print-status.svelte.ts';
 
-  import { readEnabledFields, type StatusFieldId } from './use-print-status.svelte.ts';
+  import { readEnabledFields, type StatusFieldId } from '../../use-print-status.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();
@@ -112,13 +112,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .layers {
-    font-size: 11px;
-    font-family: monospace;
-    color: var(--text-muted);
-    flex-shrink: 0;
   }
 
   .progress-line {

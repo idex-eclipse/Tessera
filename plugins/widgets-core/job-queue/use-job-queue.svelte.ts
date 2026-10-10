@@ -13,7 +13,7 @@ export interface QueuedJob {
 
 let jobs = $state<QueuedJob[]>([]);
 let state = $state<QueueState>('unknown');
-let available = $state<boolean>(true); // false, если [job_queue] не настроен
+let available = $state<boolean>(true);
 
 export function useJobQueue(api: PluginApi) {
   let generation = 0;
@@ -41,7 +41,6 @@ export function useJobQueue(api: PluginApi) {
   function applyStatus(s: any): void {
     if (!s || typeof s !== 'object') return;
 
-    // ответы job_queue.* несут queued_jobs; notify_job_queue_changed — updated_queue
     const list = Array.isArray(s.queued_jobs)
       ? s.queued_jobs
       : Array.isArray(s.updated_queue)
@@ -77,9 +76,9 @@ export function useJobQueue(api: PluginApi) {
     }
   }
 
-  // ------------------------------------------------------------------
+
   // Actions
-  // ------------------------------------------------------------------
+
 
   async function remove(ids: string[]): Promise<void> {
     const s = await req<any>('server.job_queue.delete_job', { job_ids: ids });
@@ -106,9 +105,7 @@ export function useJobQueue(api: PluginApi) {
     if (s) applyStatus(s);
   }
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;
@@ -126,7 +123,7 @@ export function useJobQueue(api: PluginApi) {
     unsubs.push(
       h.onNotify('notify_job_queue_changed', (p: any) => {
         if (gen !== generation) return;
-        // params приходит массивом: [{ action, updated_queue, queue_state }]
+        // params: [{ action, updated_queue, queue_state }]
         const delta = Array.isArray(p) ? p[0] : p;
         applyStatus(delta);
       }),

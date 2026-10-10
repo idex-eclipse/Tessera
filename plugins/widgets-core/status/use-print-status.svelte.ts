@@ -12,14 +12,14 @@ export interface PrintStatusModel {
   filename: string;
   printDuration: number;
   totalDuration: number;
-  filamentUsed: number | null; // мм
+  filamentUsed: number | null; // mm
   fileProgress: number | null; // 0..1
   liveVelocity: number | null;
   liveExtruderVelocity: number | null;
   currentLayer: number | null;
   totalLayer: number | null;
-  estimatedTime: number | null; // сек, из метаданных
-  filamentTotal: number | null; // мм, из метаданных
+  estimatedTime: number | null; // sec
+  filamentTotal: number | null; // mm
   filamentDiameter: number;
 }
 
@@ -75,9 +75,7 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-// ------------------------------------------------------------------
-// Чистые вычисления (режимы прогресса/ETA/расход)
-// ------------------------------------------------------------------
+// math (progress/ETA/flowrate)
 
 export function computeProgress(m: PrintStatusModel, mode: ProgressMode): number | null {
   if (mode === 'time') {
@@ -113,7 +111,7 @@ export function computeEta(m: PrintStatusModel, mode: ProgressMode): Date | null
   return new Date(Date.now() + rem * 1000);
 }
 
-/** Объёмный расход, мм³/с */
+/** Flow */
 export function computeFlow(m: PrintStatusModel): number | null {
   if (m.liveExtruderVelocity == null) return null;
   const r = m.filamentDiameter / 2;
@@ -136,9 +134,7 @@ export function fmtClock(d: Date | null): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-// ------------------------------------------------------------------
-// Хук
-// ------------------------------------------------------------------
+// hook
 
 export function usePrintStatus(api: PluginApi) {
   let generation = 0;
@@ -224,8 +220,6 @@ export function usePrintStatus(api: PluginApi) {
     if (filenameChanged) void loadMetadata(generation);
   }
 
-  /** Принудительный seed после возврата Klipper в ready: дельты приходят
-  *  только на изменение, stale-модель иначе живёт до первой дельты. */
   async function reseed(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h) return;
@@ -286,8 +280,6 @@ export function usePrintStatus(api: PluginApi) {
         if (ev === 'notify_klippy_ready') {
           void reseed(gen);
         } else {
-          // Klipper ушёл из ready: print_stats молчит — сбрасываем модель сразу,
-          // иначе баннер/виджет держат stale «Printing» до первой дельты
           model = { ...empty(), filamentDiameter: model.filamentDiameter };
         }
       }));

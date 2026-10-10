@@ -5,7 +5,6 @@
 import type { SeriesDef } from '../../shared/uplot-core';
 import type { TemperatureSensor } from './use-temperature.svelte';
 
-// re-exports для совместимости прежних импортов
 export { buildChartData, linspace, niceRange, niceStep } from '../../shared/uplot-core';
 export type { ChartData, SeriesDef } from '../../shared/uplot-core';
 

@@ -24,9 +24,6 @@
 
   let defs = $derived<SeriesDef[]>(buildSeriesDefs(sensors));
 
-  // buffers мутируют in-place (SeriesBuffer.push) — для runes это невидимо.
-  // tick — единственный сигнал свежести: без void tick derived вернёт stale-массивы
-  // и график замрёт после первого кадра.
   let data = $derived.by<ChartData>(() => {
     void tick;
     return buildChartData(buffers, defs)

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import type { PluginApi } from '../../../plugin-sdk/src/types';
-  import Icon from '../../shared/icons/Icon.svelte';
+  import type { PluginApi } from '../../../../plugin-sdk/src/types.ts';
+  import Icon from '../../../shared/icons/Icon.svelte';
 
   import {
     FIELD_GROUPS,
@@ -10,7 +10,7 @@
     readEnabledFields,
     type ProgressMode,
     type StatusFieldId,
-  } from './use-print-status.svelte.ts';
+  } from '../use-print-status.svelte.ts';
 
   let { api, showBannerToggle = false }: { api: PluginApi; showBannerToggle?: boolean } =
     $props();
@@ -36,7 +36,6 @@
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
-      // Esc сначала сворачивает секцию полей, потом всё меню
       if (fieldsOpen) fieldsOpen = false;
       else open = false;
     }
@@ -48,8 +47,6 @@
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  /** Flip по вертикали + клампы по обоим осям: меню не выходит за вьюпорт
-   *  ни вниз (виджет у низа страницы), ни влево (узкие экраны). */
   function place(): void {
     const r = btnEl?.getBoundingClientRect();
     const el = menuEl;
@@ -61,8 +58,8 @@
     const spaceBelow = window.innerHeight - r.bottom - 4;
     let top: number;
     if (mh <= spaceBelow) top = r.bottom + 4;
-    else if (mh <= r.top - 4) top = r.top - 4 - mh; // вверх от кнопки
-    else top = Math.max(8, window.innerHeight - mh - 8); // не влезает никуда — в экран со скроллом
+    else if (mh <= r.top - 4) top = r.top - 4 - mh;
+    else top = Math.max(8, window.innerHeight - mh - 8);
 
     const rightPreferred = Math.max(8, window.innerWidth - r.right);
     const right = Math.min(rightPreferred, Math.max(8, window.innerWidth - mw - 8));
@@ -78,8 +75,6 @@
     open = !open;
   }
 
-  // замер ПОСЛЕ рендера: контент зависит от fieldsOpen;
-  // пересчёт на скролл/resize, пока меню открыто
   $effect(() => {
     if (!open || !menuEl) return;
     void fieldsOpen;
@@ -87,7 +82,7 @@
 
     const re = () => place();
     window.addEventListener('resize', re);
-    document.addEventListener('scroll', re, true); // capture: скроллят контейнеры, не window
+    document.addEventListener('scroll', re, true);
     return () => {
       window.removeEventListener('resize', re);
       document.removeEventListener('scroll', re);
@@ -107,7 +102,7 @@
   function toggleField(f: StatusFieldId): void {
     const next = fields.includes(f) ? fields.filter((x) => x !== f) : [...fields, f];
     fields = next;
-    api.settings.set('status.fields', next); // live в виджет+баннер через onChange
+    api.settings.set('status.fields', next);
   }
 
   function resetFields(): void {

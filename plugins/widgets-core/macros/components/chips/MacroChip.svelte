@@ -27,7 +27,6 @@
   let label = $derived(customLabel || item.alias || macroName);
   let stripeColor = $derived(item.color ?? 'var(--accent)');
 
-  // разбивка имени по `_` и `-` для безопасных переносов через <wbr>
   let nameParts = $derived(label.split(/([_-])/));
 
   let missing = $derived(klippy.state === 'ready' && !known);
@@ -196,7 +195,6 @@
     flex: 1;
   }
 
-  /* строка 1: категория */
   .top { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-weight: 600; }
   .category {
     font-size: var(--font-size-lg);
@@ -204,7 +202,6 @@
     white-space: nowrap;
   }
 
-  /* строка 2: иконка + имя */
   .bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .kind { display: flex; line-height: 0; color: var(--text-muted); opacity: 0.55; flex-shrink: 0; }
   .kind.active {
@@ -216,7 +213,6 @@
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.15;
-    /* переносы по wbr + word-break на всякий случай */
     word-break: break-word;
   }
 
@@ -227,11 +223,9 @@
   }
   .chip.interactive:active { transform: translateY(1px); }
 
-  /* missing: dashed-рамка + muted-имя; категория остаётся видимой */
   .chip.missing { border-style: dashed; }
   .chip.missing .name { color: var(--text-muted); }
 
-  /* popover — без изменений */
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
   .chip-popover {
     position: absolute;

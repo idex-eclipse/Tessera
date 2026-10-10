@@ -7,7 +7,7 @@ export const DEFAULT_STEPS = [0.1, 1, 10, 25, 50, 100];
 export const DC_MODES = ['PRIMARY', 'COPY', 'MIRROR'] as const;
 export type DualCarriageMode = (typeof DC_MODES)[number];
 
-/** Данные филамента из Spoolman (подмножество, нужное UI). */
+//Spoolman
 export interface SpoolFilament {
   id: number;
   name: string;
@@ -19,7 +19,6 @@ export interface SpoolFilament {
   weight?: number;
 }
 
-/** Катушка Spoolman (детали для тултипа). */
 export interface SpoolData {
   id: number;
   filament: SpoolFilament;
@@ -30,6 +29,7 @@ export interface SpoolData {
   archived?: boolean;
 }
 
+//Tool
 interface ToolheadMeta {
   ready: boolean;
   tools: string[];
@@ -46,7 +46,6 @@ interface ToolheadMeta {
     retraction: { length: number; speed: number; extra: number; unspeed: number };
   };
   hasSaveVars: boolean;
-  /** server.info.components включает 'spoolman'. */
   hasSpoolman: boolean;
 }
 
@@ -82,9 +81,7 @@ let th = $state({
   pa: {} as Record<string, { advance: number; smooth: number }>,
   retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
   activeToolSaved: null as string | null,
-  /** spool ID на каждый тул из save_variables: { T0: 5, T1: 12 } */
   spoolIds: {} as Record<string, number | null>,
-  /** фолбэк: нативный spool_id Moonraker (одноэкструдерные без T*-макросов) */
   nativeSpoolId: null as number | null,
 });
 
@@ -96,9 +93,8 @@ let ui = $state<{
   steps: number[];
   feedXY: number;
   feedZ: number;
-  /** Пользовательский флаг: доступна ли ветка с DIRECT-режимом. */
+  //experimental direct mode
   directMode: boolean;
-  /** Буква доп. оси для DIRECT-режима (дефолт 'U'). */
   directAxis: string;
 }>({
   style: 'cross',
@@ -112,9 +108,8 @@ let ui = $state<{
 
 let uiLoaded = false;
 
-// ------------------------------------------------------------------
-// Spoolman-кэш: модульный, РЕАКТИВНЫЙ (иначе фетч не перерисует чипы).
-// ------------------------------------------------------------------
+// Spoolman-cache
+
 const SPOOL_TTL = 60_000;
 let spoolData = $state<Record<number, SpoolData>>({});
 const spoolTs = new Map<number, number>();
@@ -145,9 +140,7 @@ export function useToolhead(api: PluginApi) {
       .catch((e) => console.error('[tools] gcode failed:', cmd, e));
   }
 
-  // ------------------------------------------------------------------
-  // Spoolman: фетч деталей катушки через прокси (v2 response)
-  // ------------------------------------------------------------------
+  // Spoolman fetch spool
 
   async function fetchSpool(id: number): Promise<SpoolData | null> {
     const inflight = spoolInflight.get(id);
@@ -187,7 +180,7 @@ export function useToolhead(api: PluginApi) {
     return p;
   }
 
-  /** ID катушки для тула: save_variables → native fallback → null. */
+  // Spool ID
   function spoolIdForTool(tool: string): number | null {
     if (!meta.hasSpoolman) return null;
     const fromVars = th.spoolIds[tool];
@@ -196,7 +189,7 @@ export function useToolhead(api: PluginApi) {
     return null;
   }
 
-  /** Данные катушки из кэша (синхронно, реактивно). Стартует фетч при промахе/протухании. */
+  // Get spool data
   function getSpool(id: number): SpoolData | null {
     const cached = spoolData[id];
     if (cached) {
@@ -210,12 +203,10 @@ export function useToolhead(api: PluginApi) {
     return null;
   }
 
-  /** Принудительная ревалидация (при открытии тултипа). */
   async function refreshSpool(id: number): Promise<SpoolData | null> {
     return fetchSpool(id);
   }
 
-  /** Цвет точки на чипе: только из данных катушки (filament.color_hex). */
   function spoolColorForTool(tool: string): string | undefined {
     const sid = spoolIdForTool(tool);
     if (sid == null) return undefined;
@@ -223,9 +214,7 @@ export function useToolhead(api: PluginApi) {
     return hex ? `#${hex}` : undefined;
   }
 
-  // ------------------------------------------------------------------
-  // Мета
-  // ------------------------------------------------------------------
+  // Meta
 
   async function loadMeta(gen: number): Promise<void> {
     const h = safeHandle();
@@ -266,8 +255,6 @@ export function useToolhead(api: PluginApi) {
       (k) => k === 'dual_carriage' || k.startsWith('dual_carriage '),
     );
     const dualKey = dcSection ? (dcSection.split(' ')[1] ?? 'carriage_1') : 'carriage_1';
-    // Ось первичной каретки — для гейта DIRECT-перемещений по хоумингу.
-    // generic_cartesian: primary_carriage=carriage_x → 'x'; стандартный Klipper: axis: x.
     const dcCfg = dcSection ? settings[dcSection] : null;
     let directPrimaryAxis = 'x';
     if (dcCfg) {
@@ -324,9 +311,6 @@ export function useToolhead(api: PluginApi) {
       subObjects.firmware_retraction = ['retract_length', 'retract_speed', 'unretract_extra_length', 'unretract_speed'];
     }
     if (meta.hasDualCarriage) {
-      // Ветка Бутюгина отдаёт оба формата: и 'carriages' dict, и плоские
-      // 'carriage_0'/'carriage_1'. Подписываемся на все три — универсально
-      // и для стандартного Klipper, и для generic_cartesian.
       subObjects.dual_carriage = ['carriage_0', 'carriage_1', 'carriages'];
     }
     if (objects.includes('print_stats')) subObjects.print_stats = ['state'];
@@ -359,7 +343,7 @@ export function useToolhead(api: PluginApi) {
       .catch(() => null);
     if (gen === generation && seeded?.status) applyDelta(seeded.status);
 
-    // нативный spool ID (фолбэк для одноэкструдерных без T*-переменных)
+    // native spool ID via moonraker
     if (hasSpoolman) {
       h.request<any>('server.spoolman.get_spool_id')
         .then((res) => {
@@ -376,7 +360,6 @@ export function useToolhead(api: PluginApi) {
 
     const t = d?.toolhead;
     if (t) {
-      // НЕ обрезаем до 3: в DIRECT-режиме ветка добавляет 5-й компонент (ось U).
       if (Array.isArray(t.position)) next.position = [...t.position];
       if (typeof t.homed_axes === 'string') next.homedAxes = t.homed_axes;
       if (typeof t.extruder === 'string') next.activeExtruder = t.extruder;
@@ -386,7 +369,6 @@ export function useToolhead(api: PluginApi) {
     if (gm) {
       if (typeof gm.speed_factor === 'number') next.speedFactor = gm.speed_factor;
       if (typeof gm.extrude_factor === 'number') next.extrudeFactor = gm.extrude_factor;
-      // Тоже без обрезки.
       if (Array.isArray(gm.gcode_position)) next.gcodePosition = [...gm.gcode_position];
     }
 
@@ -403,8 +385,7 @@ export function useToolhead(api: PluginApi) {
         next.activeToolSaved = Number.isFinite(n) ? `T${Math.round(n)}` : null;
       }
 
-      // Spoolman: ID катушек по тулам (цвет берём из данных катушки, не из save_variables).
-      // ВАЖНО: Klipper lowercasит ключи SAVE_VARIABLE → ищем 't0__…', не 'T0__…'.
+      // Spools ID per tool
       if (meta.hasSpoolman) {
         const ids: Record<string, number | null> = {};
         for (const tool of meta.tools) {
@@ -445,8 +426,6 @@ export function useToolhead(api: PluginApi) {
 
     const dc = d?.dual_carriage;
     if (dc && typeof dc === 'object') {
-      // Приоритет 'carriages' dict (generic_cartesian, осмысленные имена секций);
-      // фолбэк — плоские 'carriage_0'/'carriage_1' (стандартный Klipper).
       if (dc.carriages && typeof dc.carriages === 'object' && Object.keys(dc.carriages).length > 0) {
         const m: Record<string, string> = {};
         for (const [k, v] of Object.entries(dc.carriages)) {
@@ -464,9 +443,7 @@ export function useToolhead(api: PluginApi) {
     th = next;
   }
 
-  // ------------------------------------------------------------------
-  // Настройки-зависимые хелперы
-  // ------------------------------------------------------------------
+  // Settings helpers
 
   function invertSign(): number {
     return api.settings.get<boolean>('tools.invert') === true ? -1 : 1;
@@ -555,11 +532,8 @@ export function useToolhead(api: PluginApi) {
     if (parts.length > 0) script(`SET_RETRACTION ${parts.join(' ')}`);
   }
 
-  // ------------------------------------------------------------------
-  // Действия
-  // ------------------------------------------------------------------
+  // Actions
 
-  /** dist — подписанный шаг из UI; инверт применяем здесь. */
   function jog(axis: 'X' | 'Y' | 'Z', dist: number, useInvert = true): void {
     const inv =
       useInvert && ui.invert[axis.toLowerCase() as 'x' | 'y' | 'z'] ? -1 : 1;
@@ -619,13 +593,9 @@ export function useToolhead(api: PluginApi) {
     script(`SET_DUAL_CARRIAGE CARRIAGE=${cleanCarriage(carriage)} MODE=${mode}`);
   }
 
-  // ------------------------------------------------------------------
-  // DIRECT-режим (экспериментальная ветка generic_cartesian)
-  // Доступность = настройка tools.directMode (ответственность пользователя).
-  // Факт активации парсим из статуса: 'DIRECT' в dcModes ИЛИ 5-й компонент позиции.
-  // ------------------------------------------------------------------
+  // DIRECT mode (experimental branch generic_cartesian)
+  // Available = settings from tools.directMode (user check).
 
-  /** Включить/выключить DIRECT для дуальной каретки. */
   function setCarriageDirect(carriage: string, enable: boolean): void {
     const c = cleanCarriage(carriage);
     if (enable) {
@@ -636,13 +606,11 @@ export function useToolhead(api: PluginApi) {
     }
   }
 
-  /** Jog по доп. оси DIRECT-режима (буква из настройки). */
   function jogDirect(dist: number): void {
     const axis = ui.directAxis || 'U';
     script(`G91\nG0 ${axis}${dist} F${Math.round(ui.feedXY * 60)}\nG90`);
   }
 
-  /** Абсолютное перемещение по доп. оси. */
   function moveToDirect(value: number): void {
     const axis = ui.directAxis || 'U';
     script(`G90\nG0 ${axis}${value} F${Math.round(ui.feedXY * 60)}`);
@@ -659,9 +627,7 @@ export function useToolhead(api: PluginApi) {
 
   const homed = (axis: string) => th.homedAxes.includes(axis.toLowerCase());
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;
@@ -809,8 +775,8 @@ export function useToolhead(api: PluginApi) {
 
 export type ToolheadStore = ReturnType<typeof useToolhead>;
 
-/** Имена кареток в статусе могут приходить с префиксом секции
-('dual_carriage carriage_u'); в SET_DUAL_CARRIAGE CARRIAGE= идёт чистое имя. */
+//helpers
+
 export function cleanCarriage(name: string): string {
   if (name.startsWith('dual_carriage'))
     return name.replace(/^dual_carriage\s+/, '').trim();
@@ -819,7 +785,6 @@ export function cleanCarriage(name: string): string {
   return name;
 }
 
-/** Буква оси из имени каретки: 'carriage_x' → 'x'. Фолбэк 'x'. */
 function axisOfCarriage(name: string): string {
   const lower = String(name).toLowerCase().trim();
   const m = lower.match(/[_\s]([xyz])$/) ?? lower.match(/^([xyz])$/);

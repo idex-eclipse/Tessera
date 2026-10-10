@@ -1,22 +1,22 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../shared/icons/Icon.svelte';
-  import ConfirmDialog from '../../shared/confirm-dialog.svelte';
-  import HeaderHelp from '../../shared/header-help/HeaderHelp.svelte';
+  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../shared/icons/Icon.svelte';
+  import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
+  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
 
-  import StatusSettingsMenu from './StatusSettingsMenu.svelte';
-  import StatusStats from './StatusStats.svelte';
+  import StatusSettingsMenu from '../StatusSettingsMenu.svelte';
+  import StatusStats from '../StatusStats.svelte';
   import {
     usePrintStatus,
     computeProgress,
     computeEta,
     fmtClock,
     type ProgressMode,
-  } from './use-print-status.svelte.ts';
+  } from '../../use-print-status.svelte.ts';
 
-  import { readEnabledFields, type StatusFieldId } from './use-print-status.svelte.ts';
+  import { readEnabledFields, type StatusFieldId } from '../../use-print-status.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

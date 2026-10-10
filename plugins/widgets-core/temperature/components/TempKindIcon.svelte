@@ -13,7 +13,6 @@
     class?: string;
   } = $props();
 
-  /** Период вращения: чем выше speed, тем быстрее (0.4с…1.9с). */
   let spinD = $derived.by<string | null>(() => {
     if (kind !== 'fan' || speed == null || speed <= 0.02) return null;
     const s = Math.min(1, Math.max(0, speed));
@@ -24,6 +23,6 @@
 <Icon
   name={`kind-${kind}`}
   {size}
-  class={cls}
+  cls={cls}
   style={spinD ? `--spin-d: ${spinD}` : ''}
 />

@@ -11,10 +11,7 @@ import {
 } from './data';
 import { SeriesBuffer } from '../../shared/uplot-core/series-buffer';
 
-// ------------------------------------------------------------------
-// Module-level prefs: шапка и виджет — разные custom-элементы, но один
-// модуль → $state-мутация здесь сразу отражается во всех читателях (без F5).
-// ------------------------------------------------------------------
+// Module-level prefs
 
 export interface TempColumns {
   power: boolean;
@@ -66,9 +63,7 @@ export function useTemperaturePrefs(api: PluginApi) {
   };
 }
 
-// ------------------------------------------------------------------
-// Данные сенсоров и буферы
-// ------------------------------------------------------------------
+// Sensors&Buffers
 
 export interface TemperatureSensor {
   name: string;
@@ -129,9 +124,7 @@ export function useTemperatureData(api: PluginApi) {
     }
   }
 
-  // ------------------------------------------------------------------
   // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;
@@ -163,7 +156,6 @@ export function useTemperatureData(api: PluginApi) {
       h.onConnectionStatusChange((s) => {
         connected = s === 'open';
 
-        // Страховка: повторный refresh при каждом открытии соединения
         if (s === 'open' && gen === generation) {
           void refresh(gen);
         }
@@ -172,7 +164,6 @@ export function useTemperatureData(api: PluginApi) {
 
     unsubs.push(
       h.onReady(() => {
-        // ВАЖНО: refresh, а не reseed — чтобы обновился klippyState
         if (gen === generation) void refresh(gen);
       }),
     );
@@ -194,9 +185,7 @@ export function useTemperatureData(api: PluginApi) {
     await refresh(gen);
   }
 
-  // ------------------------------------------------------------------
   // Klipper state + seed + subscribe
-  // ------------------------------------------------------------------
 
   async function refresh(gen: number): Promise<void> {
     const h = safeHandle();
@@ -306,8 +295,8 @@ export function useTemperatureData(api: PluginApi) {
     tick++;
   }
 
-  /** Лимиты целевой температуры: min_temp/max_temp из configfile.settings.
-   *  Ключи секций совпадают с именами объектов температуры (lowercase). */
+  //temperature limits
+
   async function refreshLimits(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h || gen !== generation) return;
@@ -364,11 +353,9 @@ export function useTemperatureData(api: PluginApi) {
   }
 
   function onDelta(delta: Record<string, any>): void {
-    // целая секунда: в один и тот же тик попадают все сенсоры,
-    // seed-времена из temperature_store тоже целые — ось монотонна и стабильна
     const t = Math.floor(Date.now() / 1000);
 
-    // 1) применяем свежие значения из дельты
+    // new value
     for (const s of sensors) {
       const d = delta[s.name];
       if (!d) continue;
@@ -379,15 +366,13 @@ export function useTemperatureData(api: PluginApi) {
       if (typeof d.speed === 'number' && s.kind === 'fan') s.speed = d.speed;
     }
 
-    // 2) единый временной тик: пушим ВСЕ сенсоры одним t (zero-order hold),
-    //    чтобы концы буферов совпадали и референс оси X не осциллировал
+    // push tick
     let pushed = false;
     for (const s of sensors) {
       const buf = buffers.get(s.name);
       if (!buf) continue;
 
       const times = buf.temp.timesArray;
-      // эта секунда уже записана (вторая дельта за ту же секунду) — не дублируем
       if (times.length > 0 && times[times.length - 1] === t) continue;
 
       if (s.temperature != null) buf.temp.push(t, s.temperature);
@@ -404,9 +389,7 @@ export function useTemperatureData(api: PluginApi) {
     if (pushed) tick++;
   }
 
-  // ------------------------------------------------------------------
   // Actions
-  // ------------------------------------------------------------------
 
   function toggleChart(name: string): void {
     const s = sensors.find((x) => x.name === name);
@@ -435,9 +418,7 @@ export function useTemperatureData(api: PluginApi) {
     }
   }
 
-  // ------------------------------------------------------------------
   // Boot
-  // ------------------------------------------------------------------
 
   init();
 

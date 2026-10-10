@@ -9,9 +9,9 @@ import TemperatureChipPicker from './temperature/components/chips/TemperatureChi
 defineMpuElement('mpu-core-widgets-chip-temperature', TemperatureChip);
 defineMpuElement('mpu-core-widgets-chip-temperature-picker', TemperatureChipPicker);
 
-import StatusWidget from './status/StatusWidget.svelte';
-import StatusHeader from './status/StatusHeader.svelte';
-import StatusBanner from './status/StatusBanner.svelte';
+import StatusWidget from './status/components/widgets/StatusWidget.svelte';
+import StatusHeader from './status/components/widgets/StatusHeader.svelte';
+import StatusBanner from './status/components/banners/StatusBanner.svelte';
 defineMpuElement('mpu-widgets-status', StatusWidget);
 defineMpuElement('mpu-widgets-status-header', StatusHeader);
 defineMpuElement('mpu-widgets-status-banner', StatusBanner);

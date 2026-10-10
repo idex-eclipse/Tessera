@@ -36,7 +36,7 @@
   let missing = $derived(temp.klippyState === 'ready' && !sensor);
   let kindLit = $derived(kind === 'fan' ? fanSpeed > 0 : targetActive);
 
-  // --- поповер (без изменений по механике) ---
+  // popover
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
   let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
@@ -203,7 +203,7 @@
   .value {
     margin-left: auto;
     font-size: var(--font-size-lg);
-    font-weight: 700;
+    font-weight: 600;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -233,30 +233,47 @@
   .fill { display: block; height: 100%; background: var(--heat); transition: width var(--transition-normal); }
   .fan .fill { background: var(--cool); }
 
-  /* семантический tint по состоянию */
   .chip.controlled.active {
     background: color-mix(in srgb, var(--heat) 10%, var(--bg-surface));
     border-color: color-mix(in srgb, var(--heat) 35%, var(--border-color));
   }
+
   .chip.fan.active {
     background: color-mix(in srgb, var(--heat) 9%, var(--bg-surface));
     border-color: color-mix(in srgb, var(--cool) 32%, var(--border-color));
   }
+
   .chip.interactive { cursor: pointer; }
-  .chip.interactive:hover { box-shadow: var(--shadow-sm); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+
+  .chip.interactive:hover { 
+    box-shadow: var(--shadow-sm); 
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); 
+  }
+
   .chip.interactive:active { transform: translateY(1px); }
+
   .chip.missing { border-style: dashed; }
+
   .chip.missing .label, .chip.missing .value { color: var(--text-muted); }
 
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
+
   .chip-popover {
-    position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1001;
-    background: var(--bg-surface); border: 1px solid var(--border-color);
-    border-radius: var(--radius-md); box-shadow: var(--shadow-md);
-    padding: var(--space-sm); min-width: 180px;
+    position: absolute; 
+    bottom: calc(100% + 6px); 
+    left: 0; z-index: 1001;
+    background: var(--bg-surface); 
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); 
+    box-shadow: var(--shadow-md);
+    padding: var(--space-sm); 
+    min-width: 180px;
   }
+
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
+
   .chip-popover.align-right { left: auto; right: 0; }
+
   .chip-popover label {
     display: flex;
     flex-direction: column;
@@ -273,12 +290,32 @@
     color: var(--text-primary);
     font-size: var(--font-size-md);
   }
-  .popover-actions { display: flex; gap: var(--space-xs); margin-top: var(--space-sm); }
-  .popover-actions button { flex: 1; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface-hover); color: var(--text-primary); font-size: var(--font-size-sm); cursor: pointer; }
-  .popover-actions button[type='submit'] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+  .popover-actions { 
+    display: flex; 
+    gap: var(--space-xs); 
+    margin-top: var(--space-sm); 
+  }
+
+  .popover-actions button { 
+    flex: 1; 
+    padding: var(--space-xs) var(--space-sm); 
+    border: 1px solid var(--border-color); 
+    border-radius: var(--radius-sm); 
+    background: var(--bg-surface-hover); 
+    color: var(--text-primary); 
+    font-size: var(--font-size-sm); 
+    cursor: pointer; 
+  }
+
+  .popover-actions button[type='submit'] { 
+    background: var(--accent); 
+    border-color: var(--accent); 
+    color: var(--accent-text); 
+  }
+  
   .pop-hint { color: var(--text-muted); font-size: 11px; margin-left: 4px; }
 
-  /* фоновая водамарка: не мешает тексту, не ловит клики */
   .kind {
     display: flex;
     line-height: 0;
@@ -290,7 +327,6 @@
   .chip.controlled .kind.lit { color: var(--heat); }
   .chip.fan .kind.lit { color: var(--cool); }
 
-  /* текст и бар поверх водамарки; тело не наезжает на неё */
   .body { z-index: 100; }
   .bar { z-index: 100; }
 </style>

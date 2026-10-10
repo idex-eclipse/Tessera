@@ -75,6 +75,7 @@
 <style>
   .picker-root { display: flex; flex-direction: column; gap: var(--space-xs); }
   .picker-accs { display: flex; flex-direction: column; gap: var(--space-xs); }
+
   .picker-item {
     display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);
     padding: var(--space-xs) var(--space-sm);
@@ -82,8 +83,10 @@
     background: transparent; cursor: pointer; text-align: left; font-size: var(--font-size-sm);
     transition: background var(--transition-fast);
   }
+
   .picker-item:hover { background: var(--bg-surface-hover); }
   .picker-name { font-weight: 600; color: var(--text-primary); }
+  
   .picker-empty {
     color: var(--text-muted); font-size: var(--font-size-sm);
     padding: var(--space-sm); text-align: center;
