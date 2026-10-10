@@ -42,9 +42,10 @@ export default defineConfig({
   plugins: [
     svelte({
       onwarn(warning, handler) {
-        if (warning.code?.startsWith('a11y-')) return;
+        if (warning.code?.startsWith('a11y')) return;
         if (warning.code?.startsWith('state_')) return;
         if (warning.code?.startsWith('node')) return;
+        if (warning.code?.startsWith('css')) return;
         handler(warning);
       },
     }), 
