@@ -480,9 +480,20 @@ export function useSystem(api: PluginApi) {
       const res = await h.request<any>('machine.device_power.devices');
       if (gen !== generation) return;
       applyPowerDevices(res);
-    } catch (e) {
-      console.error('[system] power load failed:', e);
-      if (gen === generation) applyPowerDevices(null);
+    } catch (e: any) {
+      if (gen !== generation) return;
+
+      // "Method not found" = no [power] in moonraker.conf.
+      const isMethodNotFound =
+        typeof e?.message === 'string' && /Method not found/i.test(e.message);
+
+      if (isMethodNotFound) {
+        // Don't show console error
+        applyPowerDevices(null);
+      } else {
+        console.error('[system] power load failed:', e);
+        applyPowerDevices(null);
+      }
     }
   }
 
@@ -494,14 +505,12 @@ export function useSystem(api: PluginApi) {
     const info = await rest<any>('/access/info');
     if (info && typeof info === 'object') {
       available = true;
-      // Moonraker оборачивает в {result: {...}} — берём .result или сам объект
       const r = info.result ?? info;
-      // поле называется login_required (по вашему дампу); страховка: login_enabled / authorization.enabled
       loginEnabled = Boolean(
         r?.login_required ?? r?.authorization?.enabled ?? r?.login_enabled ?? false,
       );
     } else {
-      // 2) нет /access/info — проба через /access/user
+      // 2) /access/info
       const probe = await rest<any>('/access/user');
       if (probe && typeof probe === 'object') {
         available = true;
@@ -515,20 +524,11 @@ export function useSystem(api: PluginApi) {
     if (available) {
       let arr: any[] | null = null;
 
-      // /access/users (может быть 404 → rest вернёт null)
-      const l1 = await rest<any>('/access/users');
+      // /access/users/list
+      const l1 = await rest<any>('/access/users/list');
       if (l1 && typeof l1 === 'object') {
         const r1 = l1.result ?? l1;
         arr = Array.isArray(r1?.users) ? r1.users : Array.isArray(r1) ? r1 : null;
-      }
-
-      // fallback: /access/users/list
-      if (!arr) {
-        const l2 = await rest<any>('/access/users/list');
-        if (l2 && typeof l2 === 'object') {
-          const r2 = l2.result ?? l2;
-          arr = Array.isArray(r2?.users) ? r2.users : Array.isArray(r2) ? r2 : null;
-        }
       }
 
       users = (arr ?? [])
