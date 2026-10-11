@@ -196,7 +196,7 @@
   // Оглавление секций (только lang=klipper)
   // ------------------------------------------------------------------
 
-  let tocOpen = $state(false);
+  let tocOpen = $state(true);
 
   interface TocItem {
     name: string;
