@@ -225,17 +225,17 @@ if [ "$SKIP_KLIPPER" != 1 ] && [ -d "$KLIPPER_CFG_DIR" ]; then
 [gcode_shell_command generate_x_shaper_graph]
 command: mkdir -p @CFG_DIR@/shapers && bash -c @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_x*.csv -o @CFG_DIR@/shapers/x_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/raw_data_axis.csv
 timeout: 180
-verbose: False
+verbose: True
 
 [gcode_shell_command generate_y_shaper_graph]
 command: mkdir -p @CFG_DIR@/shapers && bash -c @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_y*.csv -o @CFG_DIR@/shapers/y_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/raw_data_axis.csv
 timeout: 180
-verbose: False
+verbose: True
 
 [gcode_shell_command generate_belts_graph]
 command: mkdir -p @CFG_DIR@/shapers && python3 @KLIPPER_DIR@/scripts/graph_accelerometer.py -c /tmp/*_data*.csv -o @CFG_DIR@/shapers/belts_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/raw_data_axis.csv
 timeout: 180
-verbose: False
+verbose: True
 CFG
   sed -i "s|@CFG_DIR@|$KLIPPER_CFG_DIR|g; s|@KLIPPER_DIR@|$KLIPPER_DIR|g" /tmp/tessera-shell.cfg
 
