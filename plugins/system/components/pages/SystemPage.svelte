@@ -443,7 +443,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: var(--space-sm);
-    background: var(--bg-surface-hover);
+    background: var(--bg-surface-hover-no-override);
   }
 
   .mcu-name {
