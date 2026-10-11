@@ -78,8 +78,8 @@
   <window
     onkeydown={(e) => e.key === 'Escape' && closeMenu()}
     onclick={closeMenu}
-    onresize={closeMenu}
-  />
+    onresize={closeMenu}>
+  </window>
 
   <div
     class="filter-panel"
