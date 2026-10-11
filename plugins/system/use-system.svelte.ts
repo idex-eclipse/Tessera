@@ -702,16 +702,17 @@ export function useSystem(api: PluginApi) {
   async function init(): Promise<void> {
     const gen = ++generation;
 
-    $effect(() => {
-      const ready = klippy.ready;
-      if (ready && gen === generation) {
-        void loadKlipperMeta(gen);
-        void loadMcus(gen);
-      }
-    });
-
     const h = safeHandle();
     if (!h || !api.printer.url) return;
+
+    unsubs.push(
+      h.onNotify('notify_klippy_ready', () => {
+        if (gen === generation) {
+          void loadKlipperMeta(gen);
+          void loadMcus(gen);
+        }
+      }),
+    );
 
     unsubs.push(
       h.onReady(() => {
