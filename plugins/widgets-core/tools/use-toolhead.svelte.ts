@@ -299,7 +299,7 @@ export function useToolhead(api: PluginApi) {
       hasSpoolman,
     };
 
-    console.debug('[tools] spoolman:', hasSpoolman, 'tools:', tools);
+    //console.debug('[tools] spoolman:', hasSpoolman, 'tools:', tools);
 
     const subObjects: Record<string, string[]> = {
       toolhead: ['position', 'homed_axes', 'extruder'],
