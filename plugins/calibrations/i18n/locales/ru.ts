@@ -11,9 +11,9 @@ export const ru = {
 
     section: {
       shaper: 'Input Shaper',
-      probe: 'Зонд и Z-смещение',
+      probe: 'Автоуровень',
       heaters: 'Нагреватели',
-      mesh: 'Сетка стола',
+      mesh: 'Карта стола',
     },
 
     shaper: {
@@ -94,8 +94,8 @@ export const ru = {
       },
       chip: 'Eddy-чип',
       startWizard: 'Запустить мастер зонда',
-      startEddy: 'Калибровать Eddy-зонд',
-      startEndstop: 'Калибровать Z-эндстоп',
+      startEddy: 'Калибровка Eddy',
+      startEndstop: 'Калибровка Z-концевика',
       sessionActive: 'Сессия активна, z = {z} мм',
       sessionHint: 'Управление — в оверлее TEST_Z (плагин bed-mesh)',
       zOffsetProbe: 'probe z_offset',
@@ -148,7 +148,7 @@ export const ru = {
       tab: 'Live Z',
       title: 'Live Z-смещение',
       probeOffset: 'probe z_offset',
-      offsetDelta: 'дельта смещения',
+      offsetDelta: 'Изменение Z offset',
       notHomed: 'Z не припаркована — команды уходят с MOVE=0',
       steps: 'Шаг подстройки',
       increase: 'Увеличить смещение (+step)',

@@ -180,7 +180,7 @@ export const en = {
         ToolsTitle: 'Tool buttons',
         ToolsText: 'Buttons run T* macros. Active tool is highlighted from save_variables.active_tool. To enable this, add SAVE_VARIABLE VARIABLE=active_tool VALUE=<n> inside your T* macros. Without save_variables, active tool is inferred from dual_carriage mode if available.',
         ForceMoveTitle: 'Force move',
-        ForceMoveText: 'Bypasses kinematics and limits — individual stepper moves. Wrong distance can crash the carriage. Use only for homing adjustments.',
+        ForceMoveText: 'Bypasses kinematics and limits — individual stepper moves. Wrong distance can damage your printer.',
         DirectTitle: 'Direct mode',
         DirectText:
           'Independent dual-carriage control on a separate G-code axis (experimental generic_cartesian branch). Enable only if your firmware supports SET_DUAL_CARRIAGE MODE=DIRECT.',
