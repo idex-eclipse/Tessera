@@ -137,7 +137,7 @@
   let lines = $derived.by<string[]>(() => {
     if (selected === 'test') return [testScript()];
     if (selected === 'calib') return [calibrateScript()];
-    return [testScript(), gcode.runShellCommand(currentCmd)];
+    return [testScript(), gcode.waitComplete, gcode.pauseForData, gcode.runShellCommand(currentCmd)];
   });
 
   function beginRun(key: string): void {

@@ -40,7 +40,7 @@
   /** Единый источник: превью и отправка читают один derived. */
   let lines = $derived.by<string[]>(() => {
     const tests = axes.map((ax) => gcode.testResonances(ax, { output: 'raw_data' }));
-    return selected === 'pipe' ? [...tests, gcode.runShellCommand(beltsCmd)] : tests;
+    return selected === 'pipe' ? [...tests, gcode.waitComplete, gcode.pauseForData, gcode.runShellCommand(beltsCmd)] : tests;
   });
 
   async function run(): Promise<void> {

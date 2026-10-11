@@ -14,6 +14,8 @@ export const gcode = {
     if (opts?.output) cmd += ` OUTPUT=${opts.output}`;
     return cmd;
   },
+  waitComplete: 'M400',
+  pauseForData: 'G4 P10000',
   shaperCalibrate(axis?: string): string {
     return axis ? `SHAPER_CALIBRATE AXIS=${axis}` : 'SHAPER_CALIBRATE';
   },
