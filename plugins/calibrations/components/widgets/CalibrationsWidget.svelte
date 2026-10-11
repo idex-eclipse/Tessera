@@ -3,19 +3,14 @@
   import { useCalibrations } from '../../use-calibrations.svelte.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
   import KlipperNotReady from '../../../shared/klippy-state/KlippyNotReady.svelte';
-  import HeaderHelp from '../../../shared/header-help/HeaderHelp.svelte';
 
   import ProbeContent from '../panels/Probe/ProbeContent.svelte';
-  import ProbeHelp from '../panels/Probe/ProbePanelHelp.svelte';
 
   import LiveZContent from '../panels/LiveZ/LiveZContent.svelte';
-  import LiveZHelp from '../panels/LiveZ/LiveZPanelHelp.svelte';
 
   import PidContent from '../panels/Heaters/PidContent.svelte';
-  import PidHelp from '../panels/Heaters/PidPanelHelp.svelte';
 
   import MeshContent from '../panels/Mesh/MeshContent.svelte';
-  import MeshHelp from '../panels/Mesh/MeshPanelHelp.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -57,13 +52,6 @@
           </button>
         {/each}
       </div>
-      <HeaderHelp title={helpTitle}>
-        {#if tab === 'probe'}<ProbeHelp />
-        {:else if tab === 'livez'}<LiveZHelp />
-        {:else if tab === 'pid'}<PidHelp />
-        {:else}<MeshHelp />
-        {/if}
-      </HeaderHelp>
     </div>
 
     <div class="body">

@@ -67,7 +67,12 @@ const en: I18nMessages = {
     plugins: 'Plugins',
     pages: 'Pages',
     dashboard: 'Dashboard',
-    about: 'About / Debug',
+    about: {
+      title: 'About / Debug',
+      guards: 'Guards',
+      parkedChains: 'Running guards',
+      noParked: 'No running guards',
+    },
 
     theme: 'Theme',
     themeLight: 'Light',

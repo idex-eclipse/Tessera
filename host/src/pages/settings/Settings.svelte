@@ -17,7 +17,7 @@
     { id: 'printers', icon: 'printer', labelKey: 'settings.printers' },
     { id: 'plugins', icon: 'file', labelKey: 'settings.plugins' },
     { id: 'pages', icon: 'dashboard', labelKey: 'settings.pages' },
-    { id: 'about', icon: 'globe', labelKey: 'settings.about' },
+    { id: 'about', icon: 'globe', labelKey: 'settings.about.title' },
   ];
 
   const DASHBOARD_EDIT_HASH = '#/dashboard?edit=1';

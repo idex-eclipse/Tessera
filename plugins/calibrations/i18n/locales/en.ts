@@ -14,6 +14,7 @@ export const en = {
       probe: 'Probe & Z Offset',
       heaters: 'Heaters',
       mesh: 'Bed Mesh',
+      pid: 'PID',
     },
 
     shaper: {

@@ -82,49 +82,49 @@
   <div class="grid">
     <div class="controls">
       <label class="field">
-        <span class="label">{i18n.t('calibrations.pid.heater')}</span>
+        <span class="label">{i18n.t('calibrations.heaters.heater')}</span>
         <select class="select" bind:value={heater} disabled={tuning}>
           {#each store.state.heaters as h (h)}<option value={h}>{h}</option>{/each}
         </select>
       </label>
 
       <label class="field">
-        <span class="label">{i18n.t('calibrations.pid.target')} <span class="hint">/ max {maxTemp}</span></span>
+        <span class="label">{i18n.t('calibrations.heaters.target')} <span class="hint">/ max {maxTemp}</span></span>
         <input class="input" type="number" min="1" max={maxTemp} step="1" bind:value={target} disabled={tuning} />
         {#if !targetValid}
-          <span class="invalid">{i18n.t('calibrations.pid.invalidTarget', { max: String(maxTemp) })}</span>
+          <span class="invalid">{i18n.t('calibrations.heaters.invalidTarget', { max: String(maxTemp) })}</span>
         {/if}
       </label>
 
       <button class="btn" onclick={runPid} disabled={!targetValid || tuning || busy !== '' || isPrinting}>
         {#if tuning}
-          <Icon name="loader" size={14} /> {i18n.t('calibrations.pid.tuning')}
+          <Icon name="loader" size={14} /> {i18n.t('calibrations.heaters.tuning')}
         {:else}
-          <Icon name="play" size={14} /> {i18n.t('calibrations.pid.run')}
+          <Icon name="play" size={14} /> {i18n.t('calibrations.heaters.run')}
         {/if}
       </button>
 
       {#if tuning}
         <div class="live" role="status" aria-live="polite">
-          <div class="live-row"><span>{i18n.t('calibrations.pid.actual')}</span><span class="mono">{currentTemp.toFixed(1)} °C</span></div>
-          <div class="live-row"><span>{i18n.t('calibrations.pid.target')}</span><span class="mono">{currentTarget.toFixed(0)} °C</span></div>
+          <div class="live-row"><span>{i18n.t('calibrations.heaters.actual')}</span><span class="mono">{currentTemp.toFixed(1)} °C</span></div>
+          <div class="live-row"><span>{i18n.t('calibrations.heaters.target')}</span><span class="mono">{currentTarget.toFixed(0)} °C</span></div>
         </div>
       {/if}
     </div>
 
     <div class="results">
       {#if result}
-        <h4 class="results-title">{i18n.t('calibrations.pid.results')}</h4>
+        <h4 class="results-title">{i18n.t('calibrations.heaters.results')}</h4>
         <div class="cards">
-          <div class="card"><span class="card-k">{i18n.t('calibrations.pid.kp')}</span><span class="card-v mono">{result.kp.toFixed(3)}</span></div>
-          <div class="card"><span class="card-k">{i18n.t('calibrations.pid.ki')}</span><span class="card-v mono">{result.ki.toFixed(3)}</span></div>
-          <div class="card"><span class="card-k">{i18n.t('calibrations.pid.kd')}</span><span class="card-v mono">{result.kd.toFixed(3)}</span></div>
+          <div class="card"><span class="card-k">{i18n.t('calibrations.heaters.kp')}</span><span class="card-v mono">{result.kp.toFixed(3)}</span></div>
+          <div class="card"><span class="card-k">{i18n.t('calibrations.heaters.ki')}</span><span class="card-v mono">{result.ki.toFixed(3)}</span></div>
+          <div class="card"><span class="card-k">{i18n.t('calibrations.heaters.kd')}</span><span class="card-v mono">{result.kd.toFixed(3)}</span></div>
         </div>
         <button class="btn primary" disabled={busy !== '' || isPrinting} onclick={() => (saveOpen = true)}>
           <Icon name="save" size={14} /> {i18n.t('calibrations.saveConfig')}
         </button>
       {:else if !tuning}
-        <p class="placeholder muted">{i18n.t('calibrations.pid.run')} → {i18n.t('calibrations.pid.results')}</p>
+        <p class="placeholder muted">{i18n.t('calibrations.heaters.run')} → {i18n.t('calibrations.heaters.results')}</p>
       {/if}
     </div>
   </div>
@@ -133,9 +133,9 @@
 {#if saveOpen}
   <ConfirmDialog
     open={saveOpen}
-    title={i18n.t('calibrations.pid.saveConfirmTitle')}
-    message={i18n.t('calibrations.pid.saveConfirmText')}
-    confirmLabel={i18n.t('calibrations.pid.saveConfig')}
+    title={i18n.t('calibrations.heaters.saveConfirmTitle')}
+    message={i18n.t('calibrations.heaters.saveConfirmText')}
+    confirmLabel={i18n.t('calibrations.heaters.saveConfig')}
     danger={true}
     onConfirm={confirmSave}
     onClose={() => (saveOpen = false)}

@@ -64,7 +64,12 @@ const ru: I18nMessages = {
     plugins: 'Плагины',
     pages: 'Страницы',
     dashboard: 'Панель управления',
-    about: 'О программе / Отладка',
+    about: {
+      title: 'О программе',
+      guards: 'Охраняемые маршруты',
+      parkedChains: 'Выполняемые проверки',
+      noParked: 'Нет выполняемых проверок',
+    },
 
     theme: 'Тема',
     themeLight: 'Светлая',

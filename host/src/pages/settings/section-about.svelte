@@ -82,7 +82,7 @@
 
 <div class="section">
   <div class="about-row">
-    <span class="about-label">Modular Klipper UI</span>
+    <span class="about-label">Tessera</span>
     <span class="about-value">v{HOST_VERSION}</span>
   </div>
 
