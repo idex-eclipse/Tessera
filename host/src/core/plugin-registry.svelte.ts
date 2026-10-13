@@ -6,12 +6,16 @@ import type {
   RightPanelContribution,
   WidgetContribution,
   ChipContribution,
+  QuickChipLayoutItem,
 } from '../../../plugin-sdk/src/types';
 
 import type {
   DashboardWidgetLayoutItem,
   SettingsStore,
 } from './settings-store.svelte.ts';
+
+import { buildDefaultLayout } from './default-layout.ts';
+import { buildDefaultChips } from './default-chips.ts';
 
 /**
  * Modular Printer UI v2
@@ -292,23 +296,65 @@ export function createPluginRegistry(settings: SettingsStore) {
     settings.clearWidgetProvider(printerId, widgetType);
   }
 
-  // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
   // Per-printer preferences: dashboard layout
   // ------------------------------------------------------------------
 
   function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
-    return settings.getDashboardLayout(printerId);
+    const stored = settings.getPrinterSettings(printerId);
+    if (stored.dashboardLayoutCustomized) return stored.dashboardLayout;
+
+    // Виртуальный стандарт: состав — константа хоста, размеры/провайдер — из реестра
+    return buildDefaultLayout((type) => {
+      const providers = getProvidersForType(type);
+      if (providers.length === 0) return null;
+      const chosenProviderId = stored.widgetProviders[type];
+      const chosen = chosenProviderId
+        ? providers.find((p) => p.contribution.provider === chosenProviderId)
+        : null;
+      const picked = chosen ?? providers[0];
+      if (!picked) return null;
+      return {
+        provider: picked.contribution.provider,
+        defaultSize: picked.contribution.defaultSize,
+      };
+    });
   }
 
   function setDashboardLayout(
     printerId: string,
     layout: DashboardWidgetLayoutItem[],
   ): void {
-    settings.setDashboardLayout(printerId, layout);
+    settings.setDashboardLayout(printerId, layout); // флаг customized=true ставит store
   }
 
   function resetDashboardLayout(printerId: string): void {
-    settings.resetDashboardLayout(printerId);
+    settings.resetDashboardLayout(printerId);       // флаг customized=false ставит store
+  }
+
+  // ------------------------------------------------------------------
+  // Per-printer preferences: quick chips
+  // ------------------------------------------------------------------
+
+  function getQuickChips(printerId: string): QuickChipLayoutItem[] {
+    const stored = settings.getPrinterSettings(printerId);
+    if (stored.quickChipsCustomized) return stored.quickChips;
+
+    // Виртуальный стандарт: extruder + heater_bed + livez, провайдеры из константы;
+    // незарегистрированные вклады пропускаются (sanitize)
+    return buildDefaultChips((type, provider) =>
+      getChips().some(
+        (c) => c.contribution.type === type && c.contribution.provider === provider,
+      ),
+    );
+  }
+
+  function setQuickChips(printerId: string, chips: QuickChipLayoutItem[]): void {
+    settings.setQuickChips(printerId, chips);
+  }
+
+  function resetQuickChips(printerId: string): void {
+    settings.resetQuickChips(printerId);
   }
 
   // ------------------------------------------------------------------
@@ -346,5 +392,8 @@ export function createPluginRegistry(settings: SettingsStore) {
     getDashboardLayout,
     setDashboardLayout,
     resetDashboardLayout,
+    getQuickChips, 
+    setQuickChips, 
+    resetQuickChips,
   };
 }

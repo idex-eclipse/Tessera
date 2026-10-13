@@ -81,7 +81,9 @@ export interface PrinterSettingsState {
   widgetProviders: Record<string, string>;
 
   dashboardLayout: DashboardWidgetLayoutItem[];
+  dashboardLayoutCustomized?: boolean;
   quickChips: QuickChipLayoutItem[];
+  quickChipsCustomized?: boolean;
 }
 
 export type PluginSettingsState = Record<string, unknown>;
@@ -601,12 +603,14 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   ): void {
     updatePrinterSettings(printerId, (draft) => {
       draft.dashboardLayout = normalizeDashboardLayout(layout);
+      draft.dashboardLayoutCustomized = true;
     });
   }
 
   function resetDashboardLayout(printerId: string): void {
     updatePrinterSettings(printerId, (draft) => {
       draft.dashboardLayout = [];
+      draft.dashboardLayoutCustomized = false;
     });
   }
 
@@ -620,12 +624,14 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   ): void {
     updatePrinterSettings(printerId, (draft) => {
       draft.quickChips = chips;
+      draft.quickChipsCustomized = true;
     });
   }
 
   function resetQuickChips(printerId: string): void {
     updatePrinterSettings(printerId, (draft) => {
       draft.quickChips = [];
+      draft.quickChipsCustomized = false;
     });
   }
 
@@ -1216,7 +1222,15 @@ function normalizePrinterSettings(value: unknown): PrinterSettingsState {
     pages,
     widgetProviders,
     dashboardLayout: normalizeDashboardLayout(source.dashboardLayout),
+    dashboardLayoutCustomized:
+      typeof source.dashboardLayoutCustomized === 'boolean'
+        ? source.dashboardLayoutCustomized
+        : false,
     quickChips,
+    quickChipsCustomized:
+      typeof source.quickChipsCustomized === 'boolean'
+        ? source.quickChipsCustomized
+        : false,
   };
 }
 
@@ -1265,7 +1279,9 @@ function clonePrinterSettings(
     pages: { ...source.pages },
     widgetProviders: { ...source.widgetProviders },
     dashboardLayout: source.dashboardLayout.map((item) => ({ ...item })),
+    dashboardLayoutCustomized: source.dashboardLayoutCustomized,
     quickChips: source.quickChips.map((item) => ({ ...item })),
+    quickChipsCustomized: source.quickChipsCustomized,
   };
 }
 
