@@ -21,7 +21,7 @@
   );
   let stats = $derived(computeStats(matrix));
 
-  let pageHref = $derived(`#/p/${api.printer.id}/bed-mesh`);
+  let pageHref = $derived(`#/p/${api.printer.id}/calibrations`);
 
   // resize: canvas абсолютный внутри relative-контейнера —
   // нулевая высота невозможна, dpr учитывается

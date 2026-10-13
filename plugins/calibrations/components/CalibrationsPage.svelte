@@ -29,8 +29,8 @@
   const store = useCalibrations(api);
   const klippy = useKlippyState(api);
 
-  type Tab = 'shaper' | 'probe' | 'heaters' | 'mesh';
-  let tab = $state<Tab>('shaper');
+  type Tab = 'mesh' |'probe' | 'shaper' |  'heaters' ;
+  let tab = $state<Tab>('mesh');
 
   // Seed галереи на уровне страницы: гейт shaper-таба зависит от png.
   // Инвалидация по filelist-событиям, подписка на консоль и сброс state на смену принтера.
