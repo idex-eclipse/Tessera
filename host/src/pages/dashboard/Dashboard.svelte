@@ -10,6 +10,8 @@
   import WidgetContainer from './WidgetContainer.svelte';
   import AddWidgetDialog from './AddWidgetDialog.svelte';
 
+  import { findFreeSpot, overlaps } from '../../core/layout-utils.ts';
+
   let {
     printerManager,
     registry,
@@ -62,12 +64,6 @@
     return `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  interface Box { x: number; y: number; w: number; h: number; }
-
-  function overlaps(a: Box, b: Box): boolean {
-    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-  }
-
   function settle(
     items: DashboardWidgetLayoutItem[],
     activeInstanceId: string,
@@ -95,19 +91,6 @@
     }
 
     return result;
-  }
-
-  function findFreeSpot(items: DashboardWidgetLayoutItem[], w: number, h: number): Box {
-    const maxY = items.reduce((m, i) => Math.max(m, i.y + i.h), 0);
-
-    for (let y = 0; y <= maxY; y++) {
-      for (let x = 0; x + w <= 12; x++) {
-        const box = { x, y, w, h };
-        if (!items.some((i) => overlaps(i, box))) return box;
-      }
-    }
-
-    return { x: 0, y: maxY, w, h };
   }
 
   function gridMetrics(): { colStep: number; rowStep: number } {

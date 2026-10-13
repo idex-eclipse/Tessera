@@ -20,7 +20,7 @@
   let printerId = $derived(ctx.printerManager.activePrinterId);
 
   let chips = $derived<QuickChipLayoutItem[]>(
-    printerId ? ctx.settings.getQuickChips(printerId) : [],
+    printerId ? ctx.registry.getQuickChips(printerId) : [],
   );
   let contributions = $derived(ctx.registry.getChips());
 

@@ -8,13 +8,14 @@ import type { DashboardWidgetLayoutItem } from './settings-store.svelte';
  * Состав — продуктовое решение хоста, плагины сюда не вписываются.
  */
 const DEFAULT_DASHBOARD: ReadonlyArray<{ type: string; w?: number; h?: number }> = [
-  { type: 'tools',   w: 6, h: 10 },
-  { type: 'temperature', w: 6, h: 5 },
+  { type: 'tools',   w: 6, h: 11 },
+  { type: 'temperature-graph', w: 6, h: 9 },
   { type: 'console',  w: 6, h: 5 },
+  { type: 'outputs', w: 6, h: 3 },
   { type: 'jobs-table', w: 12, h: 5 },
   { type: 'gcode-preview', w: 4, h: 4 },
-  { type: 'outputs', w: 4, h: 4 },
   { type: 'bed-mesh', w: 4, h: 4 },
+  { type: 'camera', w: 4, h: 4 },
   { type: 'macros', w: 5, h: 8 },
 ];
 

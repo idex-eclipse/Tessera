@@ -16,6 +16,7 @@ import type {
 
 import { buildDefaultLayout } from './default-layout.ts';
 import { buildDefaultChips } from './default-chips.ts';
+import { findFreeSpot } from './layout-utils.ts';
 
 /**
  * Modular Printer UI v2
@@ -300,26 +301,34 @@ export function createPluginRegistry(settings: SettingsStore) {
   // Per-printer preferences: dashboard layout
   // ------------------------------------------------------------------
 
-  function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
-    const stored = settings.getPrinterSettings(printerId);
-    if (stored.dashboardLayoutCustomized) return stored.dashboardLayout;
+function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
+  const stored = settings.getPrinterSettings(printerId);
+  if (stored.dashboardLayoutCustomized) return stored.dashboardLayout;
 
-    // Виртуальный стандарт: состав — константа хоста, размеры/провайдер — из реестра
-    return buildDefaultLayout((type) => {
-      const providers = getProvidersForType(type);
-      if (providers.length === 0) return null;
-      const chosenProviderId = stored.widgetProviders[type];
-      const chosen = chosenProviderId
-        ? providers.find((p) => p.contribution.provider === chosenProviderId)
-        : null;
-      const picked = chosen ?? providers[0];
-      if (!picked) return null;
-      return {
-        provider: picked.contribution.provider,
-        defaultSize: picked.contribution.defaultSize,
-      };
-    });
+  const items = buildDefaultLayout((type) => {
+    const providers = getProvidersForType(type);
+    if (providers.length === 0) return null;
+    const chosenProviderId = stored.widgetProviders[type];
+    const chosen = chosenProviderId
+      ? providers.find((p) => p.contribution.provider === chosenProviderId)
+      : null;
+    const picked = chosen ?? providers[0];
+    if (!picked) return null;
+    return {
+      provider: picked.contribution.provider,
+      defaultSize: picked.contribution.defaultSize,
+    };
+  });
+
+  // Расставляем элементы через findFreeSpot (simple greedy packing)
+  const placed: DashboardWidgetLayoutItem[] = [];
+  for (const item of items) {
+    const spot = findFreeSpot(placed, item.w, item.h);
+    placed.push({ ...item, x: spot.x, y: spot.y });
   }
+
+  return placed;
+}
 
   function setDashboardLayout(
     printerId: string,
