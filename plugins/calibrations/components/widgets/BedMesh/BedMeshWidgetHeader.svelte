@@ -14,7 +14,7 @@
   const store = useBedMesh(api);
   const klippy = useKlippyState(api);  
 
-  let pageHref = $derived(`#/p/${api.printer.id}/bed-mesh`);
+  let pageHref = $derived(`#/p/${api.printer.id}/calibrations`);
 
   let busy = $state('');
   let menuOpen = $state(false);
