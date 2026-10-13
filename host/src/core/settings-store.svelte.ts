@@ -175,6 +175,22 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     warmPrinterSettings(printer.id);
   }
 
+  // Одноразовая миграция: у пользователей, которые уже настраивали раскладки
+  // (dashboardLayout.length > 0 или quickChips.length > 0) до появления флага
+  // customized, ставим customized = true, чтобы их выбор сохранился.
+  for (const printer of printers) {
+    const s = printerSettingsCache[printer.id];
+    if (!s) continue;
+    const needsDashboardFlag = s.dashboardLayout.length > 0 && !s.dashboardLayoutCustomized;
+    const needsChipsFlag = s.quickChips.length > 0 && !s.quickChipsCustomized;
+    if (needsDashboardFlag || needsChipsFlag) {
+      updatePrinterSettings(printer.id, (draft) => {
+        if (needsDashboardFlag) draft.dashboardLayoutCustomized = true;
+        if (needsChipsFlag) draft.quickChipsCustomized = true;
+      });
+    }
+  }
+
   const pluginSettingsPairs = new Map<string, { printerId: string; pluginId: string }>();
 
   const pluginSettingsListeners = new Map<
