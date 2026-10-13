@@ -97,10 +97,10 @@
 
   let tabs = $derived.by(() =>
     [
-      { id: 'shaper' as Tab, label: i18n.t('calibrations.section.shaper'), show: shaperAvailable },
+      { id: 'mesh' as Tab, label: i18n.t('calibrations.section.mesh'), show: meshAvailable },
       { id: 'probe' as Tab, label: i18n.t('calibrations.section.probe'), show: probeAvailable },
       { id: 'heaters' as Tab, label: i18n.t('calibrations.section.heaters'), show: heatersAvailable },
-      { id: 'mesh' as Tab, label: i18n.t('calibrations.section.mesh'), show: meshAvailable },
+      { id: 'shaper' as Tab, label: i18n.t('calibrations.section.shaper'), show: shaperAvailable },
     ].filter((t) => t.show),
   );
 
