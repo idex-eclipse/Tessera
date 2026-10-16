@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ConnectionStatus } from '../../../../plugin-sdk/src/types';
+import type { ConnectionStatus, PrinterInfo } from '../../../../plugin-sdk/src/types';
 
 import type { MoonrakerProxy } from '../moonraker-proxy';
 import { createPrinterManager } from '../printer-manager.svelte.ts';
@@ -10,6 +10,7 @@ import { MemoryStorage } from '../storage';
 type FakeProxy = MoonrakerProxy & {
   simulateOpen(): void;
   simulateClose(): void;
+  simulateAuthRequired(): void;
 };
 
 function createFakeProxy(url: string): FakeProxy {
@@ -59,8 +60,25 @@ function createFakeProxy(url: string): FakeProxy {
       };
     },
 
+    poll: () => {
+      return () => {
+        // no-op
+      };
+    },
+
+    onAuthRequired(callback: () => void): () => void {
+      return () => {
+        // no-op
+      };
+    },
+
     httpBaseUrl: url,
+    authToken: null,
   } as unknown as MoonrakerProxy['handle'];
+
+  const authListeners = new Set<() => void>();
+  let authToken: string | null = null;
+  let authRequired = false;
 
   const proxy = {
     get disposed() {
@@ -75,6 +93,7 @@ function createFakeProxy(url: string): FakeProxy {
     dispose(): void {
       disposed = true;
       statusListeners.clear();
+      authListeners.clear();
     },
 
     simulateOpen(): void {
@@ -98,6 +117,29 @@ function createFakeProxy(url: string): FakeProxy {
 
       for (const listener of Array.from(statusListeners)) {
         listener('closed');
+      }
+    },
+
+    setAuthToken(token: string | null): void {
+      authToken = token;
+    },
+
+    onAuthRequired(callback: () => void): () => void {
+      authListeners.add(callback);
+      return () => {
+        authListeners.delete(callback);
+      };
+    },
+
+    get authRequired() {
+      return authRequired;
+    },
+
+    /** Test-only: симулировать 401, чтобы auth-store поднял AuthOverlay. */
+    simulateAuthRequired(): void {
+      authRequired = true;
+      for (const listener of Array.from(authListeners)) {
+        listener();
       }
     },
   } as FakeProxy;
@@ -523,6 +565,87 @@ describe('printer-manager / syncFromSettings', () => {
     expect(manager.getConnection(printer.id)).toBeNull();
 
     manager.dispose();
+  });
+});
+
+describe('printer-manager / printers list change subscription', () => {
+  it('notifies listeners on add, update and remove', () => {
+    const { manager } = setup();
+    const seen: PrinterInfo[][] = [];
+
+    manager.onPrintersChange((list) => seen.push(list));
+
+    const a = manager.addPrinter({ name: 'A', url: 'http://a.local' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual([{ id: a.id, name: 'A', url: 'http://a.local' }]);
+
+    manager.updatePrinter(a.id, { name: 'A2' });
+    expect(seen).toHaveLength(2);
+    expect(seen[1]![0]!.name).toBe('A2');
+
+    const b = manager.addPrinter({ name: 'B', url: 'http://b.local' });
+    expect(seen).toHaveLength(3);
+
+    manager.removePrinter(a.id);
+    expect(seen).toHaveLength(4);
+    expect(seen[3]).toEqual([{ id: b.id, name: 'B', url: 'http://b.local' }]);
+
+    manager.dispose();
+  });
+
+  it('notifies on syncFromSettings after external settings mutation', () => {
+    const { settings, manager } = setup();
+    const seen: PrinterInfo[][] = [];
+
+    manager.onPrintersChange((list) => seen.push(list));
+
+    settings.addPrinter({ name: 'Direct', url: 'http://direct.local' });
+    expect(seen).toHaveLength(0); // sync ещё не вызывали
+
+    manager.syncFromSettings();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toHaveLength(1);
+    expect(seen[0]![0]!.name).toBe('Direct');
+
+    manager.dispose();
+  });
+
+  it('does not notify on setActivePrinter or retry (список не меняется)', () => {
+    const { manager, proxies } = setup();
+
+    const a = manager.addPrinter({ name: 'A', url: 'http://a.local' });
+    const b = manager.addPrinter({ name: 'B', url: 'http://b.local' });
+
+    const seen: PrinterInfo[][] = [];
+    manager.onPrintersChange((list) => seen.push(list));
+
+    manager.setActivePrinter(b.id);
+    (proxies[0] as FakeProxy).simulateOpen();
+    manager.retry(a.id);
+
+    expect(seen).toHaveLength(0);
+
+    manager.dispose();
+  });
+
+  it('stops notifying after unsubscribe and after dispose', () => {
+    const { manager } = setup();
+    const seen: PrinterInfo[][] = [];
+
+    const off = manager.onPrintersChange((list) => seen.push(list));
+
+    manager.addPrinter({ name: 'A', url: 'http://a.local' });
+    expect(seen).toHaveLength(1);
+
+    off();
+    manager.addPrinter({ name: 'B', url: 'http://b.local' });
+    expect(seen).toHaveLength(1);
+
+    const seen2: PrinterInfo[][] = [];
+    manager.onPrintersChange((list) => seen2.push(list));
+    manager.dispose();
+    manager.addPrinter({ name: 'C', url: 'http://c.local' }); // dispose очистил слушателей
+    expect(seen2).toHaveLength(0);
   });
 });
 

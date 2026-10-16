@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PluginManifest } from '../../../../plugin-sdk/src/types';
 
-import { createPluginLoader, type PluginLoaderDeps } from '../plugin-loader.svelte.ts';
+import { createPluginLoader, type PluginLoaderDeps, type I18nSink } from '../plugin-loader.svelte.ts';
 import { createPluginRegistry } from '../plugin-registry.svelte.ts';
 import { createSettingsStore } from '../settings-store.svelte.ts';
 import { MemoryStorage } from '../storage';
+import { createGuardAgent } from '../guard-agent';
 
 // ------------------------------------------------------------------
 // Test helpers
@@ -24,22 +25,27 @@ function createTestManifest(overrides: Partial<PluginManifest> = {}): PluginMani
 function setup(options: {
   fetchManifest?: PluginLoaderDeps['fetchManifest'];
   importModule?: PluginLoaderDeps['importModule'];
+  i18n?: I18nSink;
 } = {}) {
   const storage = new MemoryStorage();
   const settings = createSettingsStore({ storage });
   const registry = createPluginRegistry(settings);
+  const guardAgent = createGuardAgent();
 
   const fetchManifest = options.fetchManifest ?? vi.fn(async () => createTestManifest());
   const importModule = options.importModule ?? vi.fn(async () => ({ default: {} }));
+  const i18n = options.i18n;
 
   const loader = createPluginLoader({
     settings,
     registry,
+    guardAgent,
     fetchManifest,
     importModule,
+    i18n,
   });
 
-  return { storage, settings, registry, loader, fetchManifest, importModule };
+  return { storage, settings, registry, loader, fetchManifest, importModule, guardAgent };
 }
 
 // ------------------------------------------------------------------
@@ -87,6 +93,27 @@ describe('plugin-loader / core plugins', () => {
     expect(loaded[0]!.source).toBe('core');
     expect(loaded[0]!.manifestUrl).toBeUndefined();
   });
+
+  it('re-registers core plugin with same id (unregister + register)', () => {
+    const { loader, registry } = setup();
+
+    const manifest1 = createTestManifest({
+      id: '@core/console',
+      pages: [{ id: 'page1', titleKey: 't1', component: 'P1' }],
+    });
+    const manifest2 = createTestManifest({
+      id: '@core/console',
+      pages: [{ id: 'page2', titleKey: 't2', component: 'P2' }],
+    });
+
+    loader.registerCorePlugin(manifest1, { P1: {} });
+    expect(registry.getPages()).toHaveLength(1);
+    expect(registry.getPages()[0]!.contribution.id).toBe('page1');
+
+    loader.registerCorePlugin(manifest2, { P2: {} });
+    expect(registry.getPages()).toHaveLength(1);
+    expect(registry.getPages()[0]!.contribution.id).toBe('page2');
+  });
 });
 
 // ------------------------------------------------------------------
@@ -115,23 +142,31 @@ describe('plugin-loader / remote install', () => {
 
     await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
 
-    // Fetch was called with manifest URL
     expect(fetchManifest).toHaveBeenCalledWith('http://plugin.example.com/manifest.json');
-
-    // Import was called with entry resolved relative to manifest
     expect(importModule).toHaveBeenCalledWith('http://plugin.example.com/dist/index.js');
-
-    // Registered in registry
     expect(registry.getWidgets()).toHaveLength(1);
     expect(registry.getWidgets()[0]!.pluginId).toBe('@third/graph');
-
-    // Persisted in settings
     expect(settings.plugins).toHaveLength(1);
     expect(settings.plugins[0]!.manifestUrl).toBe('http://plugin.example.com/manifest.json');
     expect(settings.plugins[0]!.enabled).toBe(true);
-
-    // Loaded state
     expect(loader.isLoaded('@third/graph')).toBe(true);
+  });
+
+  it('installs with printerIds and source', async () => {
+    const manifest = createTestManifest({ id: '@third/graph' });
+
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin(
+      'http://plugin.example.com/manifest.json',
+      ['printer-1', 'printer-2'],
+      'catalog',
+    );
+
+    expect(settings.plugins[0]!.printerIds).toEqual(['printer-1', 'printer-2']);
+    expect(settings.plugins[0]!.source).toBe('catalog');
   });
 
   it('rejects invalid manifest (missing id)', async () => {
@@ -146,6 +181,34 @@ describe('plugin-loader / remote install', () => {
     await expect(
       loader.installRemotePlugin('http://bad.example.com/manifest.json'),
     ).rejects.toThrow('missing or invalid "id"');
+  });
+
+  it('rejects invalid manifest (missing name)', async () => {
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => ({
+        id: '@bad/plugin',
+        version: '1.0.0',
+        entry: '/index.js',
+      }) as unknown as PluginManifest),
+    });
+
+    await expect(
+      loader.installRemotePlugin('http://bad.example.com/manifest.json'),
+    ).rejects.toThrow('missing or invalid "name"');
+  });
+
+  it('rejects invalid manifest (missing version)', async () => {
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => ({
+        id: '@bad/plugin',
+        name: 'Bad',
+        entry: '/index.js',
+      }) as unknown as PluginManifest),
+    });
+
+    await expect(
+      loader.installRemotePlugin('http://bad.example.com/manifest.json'),
+    ).rejects.toThrow('missing or invalid "version"');
   });
 
   it('rejects invalid manifest (missing entry)', async () => {
@@ -213,6 +276,21 @@ describe('plugin-loader / entry resolution', () => {
     const manifest = createTestManifest({
       id: '@test/absolute',
       entry: 'http://other-cdn.example.com/bundle.js',
+    });
+
+    const { loader, importModule } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://cdn.example.com/manifest.json');
+
+    expect(importModule).toHaveBeenCalledWith('http://other-cdn.example.com/bundle.js');
+  });
+
+  it('resolves entry with protocol-relative URL', async () => {
+    const manifest = createTestManifest({
+      id: '@test/protocol-relative',
+      entry: '//other-cdn.example.com/bundle.js',
     });
 
     const { loader, importModule } = setup({
@@ -315,6 +393,14 @@ describe('plugin-loader / enable-disable', () => {
     loader.setPluginEnabled('http://plugin.example.com/manifest.json', true);
     expect(registry.getWidgets()).toHaveLength(1);
   });
+
+  it('enable/disable of non-existent plugin is a no-op', () => {
+    const { loader } = setup();
+
+    expect(() => {
+      loader.setPluginEnabled('http://nonexistent.example.com/manifest.json', false);
+    }).not.toThrow();
+  });
 });
 
 // ------------------------------------------------------------------
@@ -342,6 +428,40 @@ describe('plugin-loader / reload', () => {
 
     expect(loader.isLoaded('@third/graph')).toBe(true);
   });
+
+  it('preserves enabled state after reload', async () => {
+    const manifest = createTestManifest({ id: '@third/graph' });
+
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+    loader.setPluginEnabled('http://plugin.example.com/manifest.json', false);
+
+    expect(settings.plugins[0]!.enabled).toBe(false);
+
+    await loader.reloadRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(settings.plugins[0]!.enabled).toBe(false);
+  });
+
+  it('preserves printerIds after reload', async () => {
+    const manifest = createTestManifest({ id: '@third/graph' });
+
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin(
+      'http://plugin.example.com/manifest.json',
+      ['printer-1', 'printer-2'],
+    );
+
+    await loader.reloadRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(settings.plugins[0]!.printerIds).toEqual(['printer-1', 'printer-2']);
+  });
 });
 
 // ------------------------------------------------------------------
@@ -366,7 +486,6 @@ describe('plugin-loader / loadEnabledPlugins', () => {
       fetchManifest: vi.fn(async () => manifest),
     });
 
-    // Simulate previously installed plugin in settings
     settings.addPlugin('http://plugin.example.com/manifest.json');
 
     await loader.loadEnabledPlugins();
@@ -415,14 +534,31 @@ describe('plugin-loader / loadEnabledPlugins', () => {
     expect(loader.isLoaded('@third/good')).toBe(true);
     expect(registry.getPages()).toHaveLength(0);
   });
+
+  it('unloads plugins that are no longer in settings', async () => {
+    const manifest = createTestManifest({ id: '@third/old' });
+
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://old.example.com/manifest.json');
+    expect(loader.isLoaded('@third/old')).toBe(true);
+
+    settings.removePlugin('http://old.example.com/manifest.json');
+
+    await loader.loadEnabledPlugins();
+
+    expect(loader.isLoaded('@third/old')).toBe(false);
+  });
 });
 
 // ------------------------------------------------------------------
-// getModule
+// getModule / getLoadedPlugin / getLoadedPlugins / isLoaded
 // ------------------------------------------------------------------
 
-describe('plugin-loader / getModule', () => {
-  it('returns module for loaded plugin', () => {
+describe('plugin-loader / queries', () => {
+  it('getModule returns module for loaded plugin', () => {
     const { loader } = setup();
 
     const manifest = createTestManifest({ id: '@core/console' });
@@ -433,9 +569,793 @@ describe('plugin-loader / getModule', () => {
     expect(loader.getModule('@core/console')).toBe(module);
   });
 
-  it('returns undefined for unknown plugin', () => {
+  it('getModule returns undefined for unknown plugin', () => {
     const { loader } = setup();
 
     expect(loader.getModule('@unknown/plugin')).toBeUndefined();
+  });
+
+  it('getLoadedPlugin returns loaded plugin', () => {
+    const { loader } = setup();
+
+    const manifest = createTestManifest({ id: '@core/console' });
+    loader.registerCorePlugin(manifest, {});
+
+    const loaded = loader.getLoadedPlugin('@core/console');
+    expect(loaded).toBeDefined();
+    expect(loaded!.manifest.id).toBe('@core/console');
+    expect(loaded!.source).toBe('core');
+  });
+
+  it('getLoadedPlugin returns undefined for unknown plugin', () => {
+    const { loader } = setup();
+
+    expect(loader.getLoadedPlugin('@unknown/plugin')).toBeUndefined();
+  });
+
+  it('getLoadedPlugins returns all loaded plugins', () => {
+    const { loader } = setup();
+
+    loader.registerCorePlugin(createTestManifest({ id: '@core/a' }), {});
+    loader.registerCorePlugin(createTestManifest({ id: '@core/b' }), {});
+
+    const loaded = loader.getLoadedPlugins();
+    expect(loaded).toHaveLength(2);
+    expect(loaded.map((p) => p.manifest.id)).toEqual(['@core/a', '@core/b']);
+  });
+
+  it('isLoaded returns true for loaded plugin', () => {
+    const { loader } = setup();
+
+    loader.registerCorePlugin(createTestManifest({ id: '@core/console' }), {});
+
+    expect(loader.isLoaded('@core/console')).toBe(true);
+    expect(loader.isLoaded('@unknown/plugin')).toBe(false);
+  });
+});
+
+// ------------------------------------------------------------------
+// pluginAppliesToPrinter
+// ------------------------------------------------------------------
+
+describe('plugin-loader / pluginAppliesToPrinter', () => {
+  it('core plugins apply to all printers', () => {
+    const { loader } = setup();
+
+    loader.registerCorePlugin(createTestManifest({ id: '@core/console' }), {});
+
+    expect(loader.pluginAppliesToPrinter('@core/console', 'printer-1')).toBe(true);
+    expect(loader.pluginAppliesToPrinter('@core/console', 'printer-2')).toBe(true);
+  });
+
+  it('remote plugin with empty printerIds applies to all printers', async () => {
+    const manifest = createTestManifest({ id: '@third/graph' });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(loader.pluginAppliesToPrinter('@third/graph', 'printer-1')).toBe(true);
+    expect(loader.pluginAppliesToPrinter('@third/graph', 'printer-2')).toBe(true);
+  });
+
+  it('remote plugin with printerIds applies only to specified printers', async () => {
+    const manifest = createTestManifest({ id: '@third/graph' });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin(
+      'http://plugin.example.com/manifest.json',
+      ['printer-1', 'printer-2'],
+    );
+
+    expect(loader.pluginAppliesToPrinter('@third/graph', 'printer-1')).toBe(true);
+    expect(loader.pluginAppliesToPrinter('@third/graph', 'printer-2')).toBe(true);
+    expect(loader.pluginAppliesToPrinter('@third/graph', 'printer-3')).toBe(false);
+  });
+
+  it('returns false for unknown plugin', () => {
+    const { loader } = setup();
+
+    expect(loader.pluginAppliesToPrinter('@unknown/plugin', 'printer-1')).toBe(false);
+  });
+});
+
+// ------------------------------------------------------------------
+// Sanitize contributions
+// ------------------------------------------------------------------
+
+describe('plugin-loader / sanitize', () => {
+  it('accepts valid overlays', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      overlays: [
+        { id: 'overlay1', element: 'mpu-test-overlay1' },
+        { id: 'overlay2', element: 'mpu-test-overlay2' },
+      ],
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getOverlays()).toHaveLength(2);
+  });
+
+  it('rejects overlays without id', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      overlays: [
+        { id: 'overlay1', element: 'mpu-test-overlay1' },
+        { element: 'mpu-test-overlay2' }, // no id
+      ] as any,
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getOverlays()).toHaveLength(1);
+  });
+
+  it('rejects overlays without element', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      overlays: [
+        { id: 'overlay1', element: 'mpu-test-overlay1' },
+        { id: 'overlay2' }, // no element
+      ] as any,
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getOverlays()).toHaveLength(1);
+  });
+
+  it('accepts valid banners', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      banners: [
+        { id: 'banner1', element: 'mpu-test-banner1' },
+        { id: 'banner2', element: 'mpu-test-banner2' },
+      ],
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getBanners()).toHaveLength(2);
+  });
+
+  it('accepts valid chips', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      chips: [
+        {
+          type: 'temperature',
+          provider: '@test/plugin',
+          titleKey: 'chip.title',
+          element: 'mpu-test-chip',
+          pickerElement: 'mpu-test-picker',
+        },
+      ],
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getChips()).toHaveLength(1);
+  });
+
+  it('rejects chips without required fields', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      chips: [
+        {
+          type: 'temperature',
+          provider: '@test/plugin',
+          titleKey: 'chip.title',
+          element: 'mpu-test-chip',
+          // missing pickerElement
+        } as any,
+      ],
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getChips()).toHaveLength(0);
+  });
+
+  it('accepts rightPanel only from @core/system', async () => {
+    const manifest = createTestManifest({
+      id: '@core/system',
+      rightPanel: { id: 'panel', element: 'mpu-system-panel' },
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getRightPanel()).toBeDefined();
+  });
+
+  it('rejects rightPanel from non-core plugins', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      rightPanel: { id: 'panel', element: 'mpu-third-panel' },
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getRightPanel()).toBeUndefined();
+  });
+
+  it('accepts valid printerPanels', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      printerPanels: [
+        { id: 'panel1', element: 'mpu-test-panel1' },
+        { id: 'panel2', element: 'mpu-test-panel2', titleKey: 'test.panel2' },
+      ],
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getPrinterPanels()).toHaveLength(2);
+    expect(registry.getPrinterPanels()[0]!.contribution.id).toBe('panel1');
+    expect(registry.getPrinterPanels()[1]!.contribution.titleKey).toBe('test.panel2');
+  });
+
+  it('rejects printerPanels without id', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      printerPanels: [
+        { id: 'panel1', element: 'mpu-test-panel1' },
+        { element: 'mpu-test-panel2' }, // no id
+      ] as any,
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getPrinterPanels()).toHaveLength(1);
+  });
+
+  it('rejects printerPanels without element', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      printerPanels: [
+        { id: 'panel1', element: 'mpu-test-panel1' },
+        { id: 'panel2' }, // no element
+      ] as any,
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getPrinterPanels()).toHaveLength(1);
+  });
+});
+
+// ------------------------------------------------------------------
+// hasSurfaces
+// ------------------------------------------------------------------
+
+describe('plugin-loader / hasSurfaces', () => {
+  it('returns true when overlays present', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      overlays: [{ id: 'overlay1', element: 'mpu-test-overlay1' }],
+    });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const loaded = loader.getLoadedPlugin('@test/plugin');
+    expect(loaded).toBeDefined();
+  });
+
+  it('returns true when banners present', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      banners: [{ id: 'banner1', element: 'mpu-test-banner1' }],
+    });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const loaded = loader.getLoadedPlugin('@test/plugin');
+    expect(loaded).toBeDefined();
+  });
+
+  it('returns true when chips present', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      chips: [
+        {
+          type: 'temperature',
+          provider: '@test/plugin',
+          titleKey: 'chip.title',
+          element: 'mpu-test-chip',
+          pickerElement: 'mpu-test-picker',
+        },
+      ],
+    });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const loaded = loader.getLoadedPlugin('@test/plugin');
+    expect(loaded).toBeDefined();
+  });
+
+  it('returns true when printerPanels present', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      printerPanels: [{ id: 'panel1', element: 'mpu-test-panel1' }],
+    });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const loaded = loader.getLoadedPlugin('@test/plugin');
+    expect(loaded).toBeDefined();
+  });
+
+  it('returns true when rightPanel present', async () => {
+    const manifest = createTestManifest({
+      id: '@core/system',
+      rightPanel: { id: 'panel', element: 'mpu-system-panel' },
+    });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const loaded = loader.getLoadedPlugin('@core/system');
+    expect(loaded).toBeDefined();
+  });
+
+  it('returns false when no surfaces', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      pages: [{ id: 'page1', titleKey: 't1', element: 'mpu-test-page' }],
+    });
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const loaded = loader.getLoadedPlugin('@test/plugin');
+    expect(loaded).toBeDefined();
+  });
+});
+
+// ------------------------------------------------------------------
+// normalizeContribs (auto-tag for component/headerComponent)
+// ------------------------------------------------------------------
+
+describe('plugin-loader / normalizeContribs', () => {
+  it('auto-tags page component when element is missing', () => {
+    const { loader, registry } = setup();
+
+    const manifest = createTestManifest({
+      id: '@core/console',
+      pages: [
+        { id: 'console', titleKey: 'console.title', component: 'ConsolePage' },
+      ],
+    });
+
+    const module = { ConsolePage: {} };
+
+    loader.registerCorePlugin(manifest, module);
+
+    const pages = registry.getPages();
+    expect(pages).toHaveLength(1);
+    expect(pages[0]!.contribution.element).toMatch(/^mpu-auto-core-console-page-console$/);
+  });
+
+  it('auto-tags widget component when element is missing', () => {
+    const { loader, registry } = setup();
+
+    const manifest = createTestManifest({
+      id: '@core/widgets',
+      widgets: [
+        {
+          type: 'temperature',
+          provider: '@core/widgets',
+          titleKey: 'w.title',
+          component: 'TempWidget',
+        },
+      ],
+    });
+
+    const module = { TempWidget: {} };
+
+    loader.registerCorePlugin(manifest, module);
+
+    const widgets = registry.getWidgets();
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]!.contribution.element).toMatch(/^mpu-auto-core-widgets-widget-temperature-core-widgets$/);
+  });
+
+  it('auto-tags widget headerComponent when headerElement is missing', () => {
+    const { loader, registry } = setup();
+
+    const manifest = createTestManifest({
+      id: '@core/widgets',
+      widgets: [
+        {
+          type: 'temperature',
+          provider: '@core/widgets',
+          titleKey: 'w.title',
+          component: 'TempWidget',
+          headerComponent: 'TempHeader',
+        },
+      ],
+    });
+
+    const module = { TempWidget: {}, TempHeader: {} };
+
+    loader.registerCorePlugin(manifest, module);
+
+    const widgets = registry.getWidgets();
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]!.contribution.headerElement).toMatch(/^mpu-auto-core-widgets-header-temperature-core-widgets$/);
+  });
+
+  it('does not auto-tag when element already present', () => {
+    const { loader, registry } = setup();
+
+    const manifest = createTestManifest({
+      id: '@core/console',
+      pages: [
+        {
+          id: 'console',
+          titleKey: 'console.title',
+          component: 'ConsolePage',
+          element: 'mpu-custom-element',
+        },
+      ],
+    });
+
+    const module = { ConsolePage: {} };
+
+    loader.registerCorePlugin(manifest, module);
+
+    const pages = registry.getPages();
+    expect(pages[0]!.contribution.element).toBe('mpu-custom-element');
+  });
+
+  it('resolves icon from module.pageIcons', () => {
+    const { loader, registry } = setup();
+
+    const manifest = createTestManifest({
+      id: '@core/console',
+      pages: [
+        { id: 'console', titleKey: 'console.title', component: 'ConsolePage', icon: 'consoleIcon' },
+      ],
+    });
+
+    const module = {
+      ConsolePage: {},
+      pageIcons: {
+        consoleIcon: '<svg>icon</svg>',
+      },
+    };
+
+    loader.registerCorePlugin(manifest, module);
+
+    const pages = registry.getPages();
+    expect(pages[0]!.contribution.iconSvg).toBe('<svg>icon</svg>');
+  });
+});
+
+// ------------------------------------------------------------------
+// Guards registration
+// ------------------------------------------------------------------
+
+describe('plugin-loader / guards', () => {
+  it('registers guards from core plugin', () => {
+    const { loader, guardAgent } = setup();
+
+    const manifest = createTestManifest({
+      id: '@core/calibrations',
+      guards: [
+        {
+          id: 'calib-safety',
+          match: ['printer.gcode.script'],
+          handler: 'calibSafetyHandler',
+        },
+      ],
+    });
+
+    const module = {
+      calibSafetyHandler: vi.fn(async () => ({ action: 'allow' })),
+    };
+
+    loader.registerCorePlugin(manifest, module);
+
+    const registered = guardAgent.getRegisteredGuards();
+    expect(registered).toHaveLength(1);
+    expect(registered[0].pluginId).toBe('@core/calibrations');
+    expect(registered[0].id).toBe('calib-safety');
+  });
+
+  it('registers guards from remote plugin', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      guards: [
+        {
+          id: 'custom-guard',
+          match: ['printer.gcode.script'],
+          handler: 'customHandler',
+        },
+      ],
+    });
+
+    const module = {
+      customHandler: vi.fn(async () => ({ action: 'allow' })),
+    };
+
+    const { loader, guardAgent } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    const registered = guardAgent.getRegisteredGuards();
+    expect(registered).toHaveLength(1);
+    expect(registered[0].pluginId).toBe('@third/plugin');
+  });
+
+  it('unregisters guards when plugin is uninstalled', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      guards: [
+        {
+          id: 'custom-guard',
+          match: ['printer.gcode.script'],
+          handler: 'customHandler',
+        },
+      ],
+    });
+
+    const module = {
+      customHandler: vi.fn(async () => ({ action: 'allow' })),
+    };
+
+    const { loader, guardAgent } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+    expect(guardAgent.getRegisteredGuards()).toHaveLength(1);
+
+    loader.uninstallRemotePlugin('http://plugin.example.com/manifest.json');
+    expect(guardAgent.getRegisteredGuards()).toHaveLength(0);
+  });
+
+  it('unregisters guards when plugin is disabled', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      guards: [
+        {
+          id: 'custom-guard',
+          match: ['printer.gcode.script'],
+          handler: 'customHandler',
+        },
+      ],
+    });
+
+    const module = {
+      customHandler: vi.fn(async () => ({ action: 'allow' })),
+    };
+
+    const { loader, guardAgent } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+    expect(guardAgent.getRegisteredGuards()).toHaveLength(1);
+
+    loader.setPluginEnabled('http://plugin.example.com/manifest.json', false);
+    expect(guardAgent.getRegisteredGuards()).toHaveLength(0);
+  });
+
+  it('re-registers guards when plugin is enabled', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      guards: [
+        {
+          id: 'custom-guard',
+          match: ['printer.gcode.script'],
+          handler: 'customHandler',
+        },
+      ],
+    });
+
+    const module = {
+      customHandler: vi.fn(async () => ({ action: 'allow' })),
+    };
+
+    const { loader, guardAgent } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    loader.setPluginEnabled('http://plugin.example.com/manifest.json', false);
+    expect(guardAgent.getRegisteredGuards()).toHaveLength(0);
+
+    loader.setPluginEnabled('http://plugin.example.com/manifest.json', true);
+    expect(guardAgent.getRegisteredGuards()).toHaveLength(1);
+  });
+});
+
+// ------------------------------------------------------------------
+// Locales registration
+// ------------------------------------------------------------------
+
+describe('plugin-loader / locales', () => {
+  it('registers locales from module', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      locales: ['en', 'ru'],
+    });
+
+    const module = {
+      locales: {
+        en: { plugin: { title: 'My Plugin' } },
+        ru: { plugin: { title: 'Мой плагин' } },
+      },
+    };
+
+    const i18n: I18nSink = {
+      addMessages: vi.fn(),
+    };
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+      i18n,
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(i18n.addMessages).toHaveBeenCalledTimes(2);
+    expect(i18n.addMessages).toHaveBeenCalledWith('en', { plugin: { title: 'My Plugin' } });
+    expect(i18n.addMessages).toHaveBeenCalledWith('ru', { plugin: { title: 'Мой плагин' } });
+  });
+
+  it('does not fail when locales is missing', async () => {
+    const manifest = createTestManifest({ id: '@third/plugin' });
+    const module = {};
+
+    const i18n: I18nSink = {
+      addMessages: vi.fn(),
+    };
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+      i18n,
+    });
+
+    await expect(
+      loader.installRemotePlugin('http://plugin.example.com/manifest.json'),
+    ).resolves.not.toThrow();
+
+    expect(i18n.addMessages).not.toHaveBeenCalled();
+  });
+
+  it('does not fail when i18n is not provided', async () => {
+    const manifest = createTestManifest({
+      id: '@third/plugin',
+      locales: ['en'],
+    });
+
+    const module = {
+      locales: {
+        en: { plugin: { title: 'My Plugin' } },
+      },
+    };
+
+    const { loader } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+      importModule: vi.fn(async () => module),
+    });
+
+    await expect(
+      loader.installRemotePlugin('http://plugin.example.com/manifest.json'),
+    ).resolves.not.toThrow();
+  });
+});
+
+// ------------------------------------------------------------------
+// eagerActivateSurfacePlugins
+// ------------------------------------------------------------------
+
+describe('plugin-loader / eagerActivateSurfacePlugins', () => {
+  it('does not throw when called with no plugins', () => {
+    const { loader } = setup();
+
+    expect(() => {
+      loader.eagerActivateSurfacePlugins();
+    }).not.toThrow();
+  });
+
+  it('does not throw when called with surface plugins', () => {
+    const { loader } = setup();
+
+    loader.registerCorePlugin(
+      createTestManifest({
+        id: '@core/system',
+        overlays: [{ id: 'overlay1', element: 'mpu-system-overlay' }],
+      }),
+      {},
+    );
+
+    expect(() => {
+      loader.eagerActivateSurfacePlugins();
+    }).not.toThrow();
   });
 });

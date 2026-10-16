@@ -6,6 +6,7 @@ import {
   createSettingsStore,
   pluginSettingsStorageKey,
   printerSettingsStorageKey,
+  RIGHT_PANEL_DEFAULT_WIDTH,
   SETTINGS_STORAGE_KEYS,
 } from '../settings-store.svelte.ts';
 
@@ -37,8 +38,12 @@ describe('settings-store / base state', () => {
     expect(store.legacy.detected).toBe(false);
 
     expect(store.ui).toEqual({
+      accent: null,
+      bgImage: null,
       theme: 'light',
       locale: 'en',
+      rightPanelCollapsed: false,
+      rightPanelWidth: RIGHT_PANEL_DEFAULT_WIDTH,
       dir: 'ltr',
       sidebarCollapsed: false,
       sidebarWidth: 280,
