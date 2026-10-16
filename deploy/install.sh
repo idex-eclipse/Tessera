@@ -34,8 +34,13 @@ yesno() { # yesno VAR "question" default(0|1)
 }
 
 # ---------------------------------------------------------------- privileges/home
-SUDO=""; [ "$(id -u)" != 0 ] && { command -v sudo >/dev/null || die "need root or sudo"; SUDO="sudo"; }
-REAL_USER="${SUDO_USER:-$(id -un)}"
+if [ "$(id -u)" -eq 0 ]; then
+    die "Do not run this script directly as root. Run it as a regular user with sudo privileges."
+fi
+command -v sudo >/dev/null || die "sudo is required but not found"
+SUDO="sudo"
+
+REAL_USER="$(id -un)"
 REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"; [ -n "$REAL_HOME" ] || REAL_HOME="$HOME"
 
 INSTALL_DIR="${TESSERA_DIR:-$REAL_HOME/tessera}"
@@ -44,17 +49,15 @@ KLIPPER_DIR="${TESSERA_KLIPPER_DIR:-$REAL_HOME/klipper}"
 
 if [ -t 0 ] && [ "$NO_PROMPT" != 1 ]; then
   ask INSTALL_DIR "Installation directory" "$INSTALL_DIR"
+  ask BRANCH      "Git branch to install"  "$BRANCH"
   ask PORT        "nginx port for UI"      "$PORT"
   ask MOONRAKER   "Moonraker host:port"    "$MOONRAKER"
   ask KLIPPER_CFG_DIR "Klipper config directory" "$KLIPPER_CFG_DIR"
 fi
 
 as_user() { # as_user "cmd" — always run as the printer owner
-  if [ "$(id -u)" = 0 ] && [ "$REAL_USER" != root ]; then
-    su - "$REAL_USER" -c "$1"
-  else
-    bash -c "$1"
-  fi
+  # Since running as root is forbidden, we are always the target user
+  bash -c "$1"
 }
 
 # ---------------------------------------------------------------- dependencies
@@ -94,7 +97,7 @@ fi
 # ---------------------------------------------------------------- clone + build
 if [ -d "$INSTALL_DIR/.git" ]; then
   log "repository already exists — updating to origin/$BRANCH"
-  as_user "cd '$INSTALL_DIR' && git fetch --depth 1 origin '$BRANCH' && git reset --hard origin/'$BRANCH'"
+  as_user "cd '$INSTALL_DIR' && git fetch origin '$BRANCH' && git checkout -B '$BRANCH' origin/'$BRANCH'"
 else
   log "cloning $REPO_URL ($BRANCH) → $INSTALL_DIR"
   as_user "git clone --depth 1 -b '$BRANCH' '$REPO_URL' '$INSTALL_DIR'"
@@ -239,7 +242,8 @@ verbose: True
 CFG
   sed -i "s|@CFG_DIR@|$KLIPPER_CFG_DIR|g; s|@KLIPPER_DIR@|$KLIPPER_DIR|g" /tmp/tessera-shell.cfg
 
-  install -o "$REAL_USER" -g "$(id -gn "$REAL_USER")" -m 644 /tmp/tessera-shell.cfg "$KLIPPER_CFG_DIR/tessera-shell.cfg"
+  # Script is running as target user, no need to chown manually (which could fail without root)
+  install -m 644 /tmp/tessera-shell.cfg "$KLIPPER_CFG_DIR/tessera-shell.cfg"
 
   PCFG="$KLIPPER_CFG_DIR/printer.cfg"
   if [ -f "$KLIPPER_DIR/klippy/extras/gcode_shell_command.py" ]; then
@@ -259,10 +263,16 @@ else
 fi
 
 # ---------------------------------------------------------------- summary
+HOST_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}')
+if [ -z "$HOST_IP" ]; then
+  HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+[ -z "$HOST_IP" ] && HOST_IP="<host-ip>"
+
 cat <<SUMMARY
 
 ╭─ Tessera installed ─────────────────────────────────
-│ UI:         http://<host-ip>:$PORT/
+│ UI:         http://$HOST_IP:$PORT/
 │ dist:       $BUILD_DIR
 │ extensions: $INSTALL_DIR/extensions/
 │ Update:     bash /tmp/tessera-install.sh (or re-download) — idempotent
