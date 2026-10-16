@@ -52,6 +52,7 @@ export interface UiState {
   rightPanelWidth: number;
   bgImage: string | null;
   accent: string | null;
+  fleetOpen?: boolean;
 }
 
 export const BG_IMAGE_MAX_CHARS = 2_500_000;
@@ -95,6 +96,13 @@ export interface LegacySchemaInfo {
 
 export interface SettingsStoreOptions {
   storage?: StorageLike;
+  /**
+   * Bootstrap: добавить дефолтный принтер MyPrinter на текущий origin,
+   * если список принтеров пуст. По умолчанию true только в browser-mode
+   * (storage не инжектирован и window существует). Тесты с инжектированным
+   * storage получают false — чистый пустой storage.
+   */
+  createDefaultPrinter?: boolean;
 }
 
 export const SETTINGS_STORAGE_KEYS = {
@@ -120,7 +128,7 @@ export function pluginSettingsStorageKey(
 }
 
 const DEFAULT_UI_STATE: UiState = {
-  theme: 'light',
+  theme: 'dark',
   locale: 'en',
   dir: 'ltr',
   sidebarCollapsed: false,
@@ -129,6 +137,7 @@ const DEFAULT_UI_STATE: UiState = {
   rightPanelWidth: 320,
   bgImage: null,
   accent: null,
+  fleetOpen: false,
 };
 
 const LEGACY_UNPREFIXED_KEYS = new Set<string>([
@@ -205,19 +214,21 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     persistActivePrinter();
   }
 
-    /**
-   * Zero-config bootstrap: если принтеров нет, добавляем принтер
-   * на текущий origin (где крутится UI). Пользователь может потом
-   * переименовать/сменить URL в Settings → Printers.
-   */
-  if (printers.length === 0) {
+  const shouldBootstrap =
+    options.createDefaultPrinter ??
+    (options.storage === undefined && typeof window !== 'undefined');
+
+  if (printers.length === 0 && shouldBootstrap) {
     const defaultPrinter: PrinterRecord = {
       id: createId(),
       name: 'MyPrinter',
       url: (() => {
+        if (typeof window === 'undefined') {
+          return 'http://localhost:7125';
+        }
         try {
           const u = new URL(window.location.origin);
-          u.port = '7125'; // дефолтный порт Moonraker (не порт UI)
+          u.port = '7125';
           return u.origin;
         } catch {
           return window.location.origin;
@@ -264,7 +275,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
       return {
         ...p,
         name: patch.name !== undefined ? patch.name : p.name,
-        url: patch.url !== undefined ? patch.url : p.url,
+        url: patch.url !== undefined ? normalizeUrl(patch.url) : p.url,
       };
     });
 
@@ -1158,6 +1169,11 @@ function normalizeUiState(value: unknown): UiState {
     ? source.accent.toLowerCase()
     : null;
 
+  const fleetOpen =
+    typeof source.fleetOpen === 'boolean'
+      ? source.fleetOpen
+      : DEFAULT_UI_STATE.fleetOpen;
+
   return {
     theme,
     locale,
@@ -1168,6 +1184,7 @@ function normalizeUiState(value: unknown): UiState {
     rightPanelWidth,
     bgImage: bgImage && bgImage.length <= BG_IMAGE_MAX_CHARS ? bgImage : null,
     accent,
+    fleetOpen,
   };
 }
 

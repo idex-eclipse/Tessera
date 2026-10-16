@@ -190,6 +190,20 @@ export function createUiStore(
     applyDom();
     return ok;
   }
+
+  // ------------------------------------------------------------------
+  // Fleet mode
+  // ------------------------------------------------------------------
+
+  function toggleFleet(open?: boolean): void {
+    const next = open ?? !settings.ui.fleetOpen;
+    settings.patchUi({ fleetOpen: next });
+  }
+
+  function setFleet(open: boolean): void {
+    settings.patchUi({ fleetOpen: open });
+  }
+
   // ------------------------------------------------------------------
   // Public API
   // ------------------------------------------------------------------
@@ -239,6 +253,10 @@ export function createUiStore(
       return settings.ui.accent;
     },
 
+    get fleetOpen(): boolean {
+      return settings.ui.fleetOpen ?? false;
+    },
+
     setTheme,
     toggleTheme,
     onThemeChange, 
@@ -253,6 +271,8 @@ export function createUiStore(
     setRightPanelWidth,
     setBackgroundImage,
     setAccent,
+    toggleFleet,
+    setFleet,
 
     sync,
     applyDom,

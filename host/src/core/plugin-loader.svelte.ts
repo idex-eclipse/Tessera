@@ -116,6 +116,9 @@ function prepareManifest(
     chips: manifest.chips
       ? manifest.chips.map((c) => ({ ...c }))
       : undefined,
+    printerPanels: manifest.printerPanels
+      ? manifest.printerPanels.map((p) => ({ ...p }))
+      : undefined,
     rightPanel: manifest.rightPanel
       ? { ...manifest.rightPanel }
       : undefined,
@@ -177,6 +180,23 @@ function sanitizeSurfaceContributions(manifest: PluginManifest): void {
     });
   } else if (manifest.chips !== undefined) {
     manifest.chips = undefined;
+  }
+
+  if (Array.isArray(manifest.printerPanels)) {
+    manifest.printerPanels = manifest.printerPanels.filter((panel) => {
+      const valid = isValidPrinterPanelContribution(panel);
+
+      if (!valid) {
+        console.warn(
+          `[plugin-loader] Plugin "${manifest.id}" has invalid printerPanel contribution`,
+          panel,
+        );
+      }
+
+      return valid;
+    });
+  } else if (manifest.printerPanels !== undefined) {
+    manifest.printerPanels = undefined;
   }
 
   if (manifest.rightPanel) {
@@ -624,6 +644,23 @@ function isValidChipContribution(
   );
 }
 
+interface PrinterPanelContributionLike {
+  id?: unknown;
+  element?: unknown;
+  titleKey?: unknown;
+}
+
+function isValidPrinterPanelContribution(
+  value: unknown,
+): value is PrinterPanelContributionLike {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as PrinterPanelContributionLike;
+  return (
+    typeof p.id === 'string' && p.id.length > 0 &&
+    typeof p.element === 'string' && p.element.length > 0
+  );
+}
+
 /**
  * Плагин имеет постоянные поверхности (overlays / banners / rightPanel).
  * Такие плагины должны быть активированы eagerly на старте,
@@ -633,7 +670,8 @@ function hasSurfaces(manifest: PluginManifest): boolean {
   return Boolean(
     (manifest.overlays && manifest.overlays.length > 0) ||
       (manifest.banners && manifest.banners.length > 0) ||
-      (manifest.chips && manifest.chips.length > 0) ||   // ← НОВОЕ
+      (manifest.chips && manifest.chips.length > 0) ||
+      (manifest.printerPanels && manifest.printerPanels.length > 0) ||
       manifest.rightPanel,
   );
 }

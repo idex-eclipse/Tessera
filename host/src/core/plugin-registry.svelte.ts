@@ -6,6 +6,7 @@ import type {
   RightPanelContribution,
   WidgetContribution,
   ChipContribution,
+  PrinterPanelContribution,
   QuickChipLayoutItem,
 } from '../../../plugin-sdk/src/types';
 
@@ -70,6 +71,11 @@ export interface RegisteredChip {
   contribution: ChipContribution;
 }
 
+export interface RegisteredPrinterPanel {
+  pluginId: string;
+  contribution: PrinterPanelContribution;
+}
+
 export type PluginRegistry = ReturnType<typeof createPluginRegistry>;
 
 // ------------------------------------------------------------------
@@ -86,6 +92,7 @@ export function createPluginRegistry(settings: SettingsStore) {
   let banners = $state<RegisteredBanner[]>([]);
   let rightPanel = $state<RegisteredRightPanel | null>(null);
   let chips = $state<RegisteredChip[]>([]); 
+  let printerPanels = $state<RegisteredPrinterPanel[]>([]);
 
   // ------------------------------------------------------------------
   // Registration / unregistration
@@ -145,6 +152,15 @@ export function createPluginRegistry(settings: SettingsStore) {
 
       chips = [...chips, ...newChips];
     }
+
+    if (manifest.printerPanels && manifest.printerPanels.length > 0) {
+      const newPanels: RegisteredPrinterPanel[] = manifest.printerPanels.map((contribution) => ({
+        pluginId: manifest.id,
+        contribution,
+      }));
+
+      printerPanels = [...printerPanels, ...newPanels];
+    }
   }
 
   function unregisterPlugin(pluginId: string): void {
@@ -153,6 +169,7 @@ export function createPluginRegistry(settings: SettingsStore) {
     overlays = overlays.filter((overlay) => overlay.pluginId !== pluginId);
     banners = banners.filter((banner) => banner.pluginId !== pluginId);
     chips = chips.filter((chip) => chip.pluginId !== pluginId);
+    printerPanels = printerPanels.filter((panel) => panel.pluginId !== pluginId);
 
     if (rightPanel && rightPanel.pluginId === pluginId) {
       rightPanel = null;
@@ -199,6 +216,10 @@ export function createPluginRegistry(settings: SettingsStore) {
 
   function getChips(): RegisteredChip[] {
     return chips;
+  }
+
+  function getPrinterPanels(): RegisteredPrinterPanel[] {
+    return printerPanels;
   }
 
   function getRightPanel(): RegisteredRightPanel | undefined {
@@ -386,6 +407,7 @@ function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
     getBanners,
     getRightPanel,
     getChips,
+    getPrinterPanels,
 
     // Per-printer: page visibility
     getVisiblePages,

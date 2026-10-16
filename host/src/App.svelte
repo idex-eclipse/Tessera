@@ -17,6 +17,7 @@
 
   import PluginOverlaysLayer from './components/plugin-overlays-layer/PluginOverlaysLayer.svelte';
   import AppRightPanel from './components/app-right-panel/AppRightPanel.svelte';
+  import FleetMode from './components/fleet/FleetMode.svelte';
 
   import OfflineOverlay from './components/offline-overlay/OfflineOverlay.svelte';
   import ConfirmDialog from './components/confirm/ConfirmDialog.svelte';
@@ -97,6 +98,9 @@
   <AddPrinterDialog />
   <PluginOverlaysLayer />
   <AuthOverlay />
+  {#if ui.fleetOpen}
+    <FleetMode {printerManager} {registry} {ui} {i18n} {router}/>
+  {/if}
 </div>
 
 <style>

@@ -101,6 +101,14 @@ export function createPrinterManager(
   >();
 
   /**
+   * Printers list change listeners (add/update/remove/import).
+   * Later used by PluginApi.onPrintersChange.
+   */
+  const printersChangeListeners = new Set<
+    (printers: PrinterInfo[]) => void
+  >();
+
+  /**
    * Attach proxies for printers already present in settings.
    */
   for (const printer of settings.printers) {
@@ -118,6 +126,7 @@ export function createPrinterManager(
 
     attachPrinter(record);
     maybeNotifyActivePrinterChange(previousActivePrinterId);
+    notifyPrintersChange();
 
     return record;
   }
@@ -155,6 +164,8 @@ export function createPrinterManager(
         maybeNotifyActivePrinterChange(null);
       }
     }
+
+    notifyPrintersChange();
   }
 
   function removePrinter(id: string): void {
@@ -164,6 +175,7 @@ export function createPrinterManager(
     settings.removePrinter(id);
 
     maybeNotifyActivePrinterChange(previousActivePrinterId);
+    notifyPrintersChange();
   }
 
   function setActivePrinter(id: string | null): void {
@@ -215,6 +227,7 @@ export function createPrinterManager(
     }
 
     maybeNotifyActivePrinterChange(previousActivePrinterId);
+    notifyPrintersChange();
   }
 
   /**
@@ -267,6 +280,7 @@ export function createPrinterManager(
     }
 
     printerChangeListeners.clear();
+    printersChangeListeners.clear();
   }
 
   // ------------------------------------------------------------------
@@ -306,6 +320,32 @@ export function createPrinterManager(
 
     for (const listener of Array.from(printerChangeListeners)) {
       safeCall(listener, info);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Printers list change subscription
+  // ------------------------------------------------------------------
+
+  function onPrintersChange(
+    callback: (printers: PrinterInfo[]) => void,
+  ): () => void {
+    printersChangeListeners.add(callback);
+
+    return () => {
+      printersChangeListeners.delete(callback);
+    };
+  }
+
+  function notifyPrintersChange(): void {
+    const printers: PrinterInfo[] = settings.printers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      url: p.url,
+    }));
+
+    for (const listener of Array.from(printersChangeListeners)) {
+      safeCall(listener, printers);
     }
   }
 
@@ -510,7 +550,7 @@ export function createPrinterManager(
        * Overlay is shown when active printer is offline.
        * Connecting state is displayed as badge/status, not as hard overlay.
        */
-      let status = this.activeConnection?.status
+      let status = this.activeConnection?.status;
       return status === 'closed' || status === 'connecting';
     },
 
@@ -524,6 +564,7 @@ export function createPrinterManager(
     dispose,
 
     onPrinterChange,
+    onPrintersChange,
   };
 }
 

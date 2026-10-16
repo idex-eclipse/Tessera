@@ -172,6 +172,16 @@ const en: I18nMessages = {
     editHint: 'Click + to add chips, ✕ to remove. Chips act normally outside edit mode.',
     capReached: 'Limit reached: {max} chips max',
   },
+
+  fleet: {
+    title: 'Fleet Overview',
+    close: 'Close',
+    empty: 'No printers configured',
+    activate: 'Activate',
+    active: 'Active',
+    noPanels: 'No panels available',
+    pluginMissing: 'Plugin not loaded',
+  },
 };
 
 export default en;
