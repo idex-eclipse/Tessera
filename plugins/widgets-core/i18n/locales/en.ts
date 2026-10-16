@@ -281,4 +281,11 @@ export const en = {
   chipPickers: {
     empty: 'No chips available to add',
   },
+
+  fleet: {
+    camera: {
+      title: 'Camera',
+      noCameras: 'No enabled webcams on this printer',
+    },
+  },
 };

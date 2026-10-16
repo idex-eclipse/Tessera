@@ -39,6 +39,7 @@
   let visible = $state(true);
   let failed = $state(false);
   let src = $state('');
+  let frameInFlight = false;
 
   $effect(() => {
     const el = wrapEl;
@@ -55,7 +56,10 @@
 
     if (kind === 'adaptive') {
       const fps = Math.max(1, Math.round(visible ? camera.target_fps : camera.target_fps_idle));
+      frameInFlight = false;
       const load = () => {
+        if (frameInFlight) return;
+        frameInFlight = true;
         const base = resolveUrl(camera.snapshot_url);
         src = base + (base.includes('?') ? '&' : '?') + '_cb=' + Date.now();
       };
@@ -107,8 +111,8 @@
       style:transform={transform || undefined}
       {src}
       alt={camera.name}
-      onerror={() => (failed = true)}
-      onload={() => (failed = false)}
+      onerror={() => { failed = true; frameInFlight = false; }}
+      onload={() => { failed = false; frameInFlight = false; }}
     />
   {/if}
 </div>
@@ -118,7 +122,7 @@
     position: relative;
     width: 100%;
     height: 100%;
-    background: #000;
+    background: transparent;
     border-radius: var(--radius-sm);
     overflow: hidden;
     display: flex;

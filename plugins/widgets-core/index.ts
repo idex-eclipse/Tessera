@@ -48,6 +48,8 @@ import CameraWidget from './camera/CameraWidget.svelte';
 import CameraHeader from './camera/CameraHeader.svelte';
 defineMpuElement('mpu-widgets-camera', CameraWidget);
 defineMpuElement('mpu-widgets-camera-header', CameraHeader);
+import FleetCameraPanel from './camera/FleetCameraPanel.svelte';
+defineMpuElement('mpu-core-widgets-fleet-camera', FleetCameraPanel);
 
 import FilamentWidget from './filament-sensors/components/widgets/FilamentWidget.svelte';
 defineMpuElement('mpu-widgets-filament', FilamentWidget);

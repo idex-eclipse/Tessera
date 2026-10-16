@@ -6,7 +6,7 @@ import { macrosChips, macrosWidgets } from './macros/manifest';
 import { toolsChips, toolsWidgets } from './tools/manifest';
 import { limitsWidgets } from './limits/manifest';
 import { outputsChips, outputsWidgets } from './outputs/manifest';
-import { cameraWidgets } from './camera/manifest';
+import { cameraFleet, cameraWidgets } from './camera/manifest';
 import { filamentChips, filamentWidgets } from './filament-sensors/manifest';
 import { jobQueueWidgets } from './job-queue/manifest';
 
@@ -22,6 +22,7 @@ export const widgetsCoreManifest: PluginManifest = {
   chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...toolsChips,
     ...filamentChips], 
   banners: [...statusBanners],
+  printerPanels: [...cameraFleet],
   locales: ['en', 'ru'],
   defaultSettings: {},
 };
