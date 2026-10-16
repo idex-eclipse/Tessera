@@ -2,6 +2,7 @@ import type {
   MoonrakerProxyHandle,
   PluginApi,
   PluginManifest,
+  PrinterInfo,
 } from '../../../plugin-sdk/src/types';
 
 import { getMoonrakerProxy } from './moonraker-proxy';
@@ -67,6 +68,98 @@ function createGuardedHandle(
 }
 
 /**
+ * Мультипринтерный handle (api.moonrakerFor): статически привязан к printerId,
+ * но ProxyInstance резолвит лениво по ТЕКУЩЕМУ url принтера.
+ *
+ * Свойства:
+ * - переживает retry() (пересоздание прокси на том же url): следующий вызов
+ *   подхватит новый instance;
+ * - следует за сменой url в Settings: резолв идёт через список printers;
+ * - принтер удалён: request.reject, subscribe/onNotify/poll = noop,
+ *   readyState = 'closed' — БЕЗ воскрешения прокси для удалённого принтера
+ *   (getMoonrakerProxy создал бы соединение заново, поэтому явный null-check);
+ * - принтер с пустым url трактуется как отсутствующий (live() = null).
+ *
+ * Подписки, снятые до swap прокси, не переживают swap — та же семантика, что
+ * у handle активного принтера: плагины переподписываются на onReady/'open'.
+ *
+ * GuardAgent на фазе 1 однопринтерный (target-scoped гарды — фаза 2):
+ * preflight идёт в общей цепочке. Для read-only fleet-контента это не важно;
+ * действия по не-активным принтерам получат атрибуцию принтера в фазе 2.
+ */
+function createGuardedHandleFor(
+  printerId: string,
+  resolvePrinter: () => { url: string } | null,
+  pluginId: string,
+): MoonrakerProxyHandle {
+  function live(): MoonrakerProxyHandle | null {
+    const printer = resolvePrinter();
+    if (!printer || !printer.url) return null;
+    return getMoonrakerProxy(printer.url).handle;
+  }
+
+  return {
+    request<T = unknown>(method: string, params?: unknown): Promise<T> {
+      const handle = live();
+      if (!handle) {
+        return Promise.reject(
+          new Error(`[plugin-api] printer '${printerId}' is not configured`),
+        );
+      }
+      return guardAgent
+        .runPreflight(pluginId, method, params)
+        .then(() => handle.request<T>(method, params));
+    },
+
+    subscribe(objects, cb, opts) {
+      const handle = live();
+      if (!handle) return () => {};
+      return handle.subscribe(objects, cb, opts);
+    },
+
+    onNotify(event, cb) {
+      const handle = live();
+      if (!handle) return () => {};
+      return handle.onNotify(event, cb);
+    },
+
+    poll(method, params, intervalMs) {
+      const handle = live();
+      if (!handle) return () => {};
+      return handle.poll(method, params, intervalMs);
+    },
+
+    get httpBaseUrl() {
+      return live()?.httpBaseUrl ?? '';
+    },
+
+    get readyState() {
+      return live()?.readyState ?? 'closed';
+    },
+
+    get authToken() {
+      return live()?.authToken ?? null;
+    },
+
+    onReady(cb) {
+      const handle = live();
+      if (!handle) return () => {};
+      return handle.onReady(cb);
+    },
+
+    onConnectionStatusChange(cb) {
+      const handle = live();
+      if (!handle) {
+        // принтер удалён/не настроен: сразу сообщаем 'closed'
+        queueMicrotask(() => cb('closed'));
+        return () => {};
+      }
+      return handle.onConnectionStatusChange(cb);
+    },
+  };
+}
+
+/**
  * Creates a PluginApi instance for a specific plugin.
  * All getters read current state dynamically (printer, theme, locale).
  */
@@ -99,6 +192,14 @@ export function createPluginApi(
 
   const guardedHandle = createGuardedHandle(resolveHandle, pluginId);
 
+  /**
+   * Кэш мультипринтерных хендлов: стабильность объекта между вызовами
+   * (плагины держат handle в module-state). Размер ограничен числом принтеров,
+   * виденных за сессию; хендлы удалённых принтеров инертны (live() = null)
+   * и соединений не держат.
+   */
+  const fleetHandles = new Map<string, MoonrakerProxyHandle>();
+
   const api: PluginApi = {
     get pluginId() {
       return pluginId;
@@ -112,6 +213,14 @@ export function createPluginApi(
       return getPrinterInfo();
     },
 
+    get printers(): PrinterInfo[] {
+      return printerManager.printers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        url: p.url,
+      }));
+    },
+
     moonraker() {
       // прежнее поведение: синхронный throw без активного принтера
       if (!printerManager.activePrinter) {
@@ -120,12 +229,40 @@ export function createPluginApi(
       return guardedHandle;
     },
 
+    moonrakerFor(printerId: string): MoonrakerProxyHandle {
+      const cached = fleetHandles.get(printerId);
+      if (cached) return cached;
+
+      const exists = printerManager.printers.some((p) => p.id === printerId);
+      if (!exists) {
+        throw new Error(
+          `[plugin-api] moonrakerFor: unknown printerId '${printerId}'`,
+        );
+      }
+
+      const handle = createGuardedHandleFor(
+        printerId,
+        () => printerManager.printers.find((p) => p.id === printerId) ?? null,
+        pluginId,
+      );
+      fleetHandles.set(printerId, handle);
+      return handle;
+    },
+
+    setActivePrinter(id: string | null): void {
+      printerManager.setActivePrinter(id);
+    },
+
     onPrinterChange(cb) {
-        return printerManager.onPrinterChange((printer) => {
-            if (printer) {
-            cb(printer);
-            }
-        });
+      return printerManager.onPrinterChange((printer) => {
+        if (printer) {
+          cb(printer);
+        }
+      });
+    },
+
+    onPrintersChange(cb) {
+      return printerManager.onPrintersChange(cb);
     },
 
     onLocaleChange(cb) {

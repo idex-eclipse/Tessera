@@ -132,6 +132,29 @@ export interface BannerContribution {
 }
 
 /**
+ * Printer panel contribution.
+ *
+ * CE-элемент рендерится ПО ОДНОМУ ЭКЗЕМПЛЯРУ НА КАЖДЫЙ настроенный принтер
+ * в fleet-режиме (fullscreen-слой ниже шапки, `?fleet=1`).
+ *
+ * Хост инжектит в CE стандартные свойства:
+ *   mpuApi     — PluginApi
+ *   mpuParams  — { printerId: string, active: '1' | '0' }
+ *
+ * Плагин читает данные своего принтера через api.moonrakerFor(params.printerId).
+ * Видимость секции (mount/unmount) решает хост по режиму fleet.
+ *
+ * Не уникальный слот: несколько плагинов могут декларировать printerPanels —
+ * в каждой карточке принтера монтируется стек вкладов по порядку регистрации
+ * (как banners).
+ */
+export interface PrinterPanelContribution {
+  id: string;
+  element: string;
+  titleKey?: string;
+}
+
+/**
  * Right panel contribution.
  *
  * Unique slot.
@@ -177,6 +200,7 @@ export interface PluginManifest {
   banners?: BannerContribution[];
   rightPanel?: RightPanelContribution;
   chips?: ChipContribution[];
+  printerPanels?: PrinterPanelContribution[];
 
   locales?: string[];
   defaultSettings?: Record<string, unknown>;
@@ -272,7 +296,21 @@ export interface PluginApi {
   readonly manifest: PluginManifest;
   readonly printer: PrinterInfo;
 
+  /** Сахар активного принтера (throw без активного). */
   moonraker(): MoonrakerProxyHandle;
+
+  /** Мультипринтерный доступ: полный guarded handle на любой настроенный принтер.
+   *  Unknown id → throw. Handle привязан к printerId на весь жизненный цикл. */
+  moonrakerFor(printerId: string): MoonrakerProxyHandle;
+
+  /** Read-only список всех настроенных принтеров (без бизнес-данных). */
+  readonly printers: PrinterInfo[];
+
+  /** Переключить активный принтер (null = сбросить). */
+  setActivePrinter(id: string | null): void;
+
+  /** Подписка на изменения списка принтеров. */
+  onPrintersChange(callback: (printers: PrinterInfo[]) => void): () => void;
 
   onPrinterChange(callback: (printer: PrinterInfo) => void): () => void;
   onLocaleChange(callback: (locale: string, dir: LocaleDirection) => void): () => void;
