@@ -39,7 +39,7 @@
 
   interface ResolvedChip {
     item: QuickChipLayoutItem;
-    element: string | null;   // null = ghost (провайдер исчез/выключен/не для принтера)
+    element: string | null;
     pluginId: string | null;
   }
 
@@ -106,7 +106,6 @@
   function handlePick(type: string, provider: string, id: string, label?: string): void {
     if (!printerId) return;
     if (chips.length >= QUICK_CHIPS_MAX) return;
-    // дубль того же предмета не добавляем
     if (chips.some((c) => c.type === type && c.provider === provider && c.id === id)) return;
     ctx.settings.setQuickChips(printerId, [
       ...chips,
