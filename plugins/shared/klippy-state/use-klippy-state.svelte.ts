@@ -30,7 +30,8 @@ interface Attachment {
   unsubs: Array<() => void>;
   consumers: number;
   poll: ReturnType<typeof setInterval> | null;
-  api: PluginApi;
+  /** Ленивый резолв хендла: legacy = api.moonraker(), fleet = api.moonrakerFor(pid). */
+  resolveHandle: () => MoonrakerProxyHandle | null;
 }
 const attachments = new Map<string, Attachment>();
 
@@ -63,7 +64,7 @@ async function doPoll(pid: string, att: Attachment): Promise<void> {
     return;
   }
   
-  const h = safeHandle(att.api);
+  const h = att.resolveHandle();
   if (!h) {
     log('poll: no handle (proxy unavailable)');
     return;
@@ -135,7 +136,10 @@ function setState(pid: string, s: KlippyState): void {
   }
 }
 
-function attach(api: PluginApi, pid: string): Attachment {
+function attach(
+  pid: string,
+  resolveHandle: () => MoonrakerProxyHandle | null,
+): Attachment {
   const ex = attachments.get(pid);
   if (ex) {
     ex.consumers++;
@@ -143,10 +147,10 @@ function attach(api: PluginApi, pid: string): Attachment {
     return ex;
   }
 
-  const att: Attachment = { unsubs: [], consumers: 1, poll: null, api };
+  const att: Attachment = { unsubs: [], consumers: 1, poll: null, resolveHandle };
   log('attach', pid);
 
-  const h = safeHandle(api);
+  const h = resolveHandle();
   if (h) {
     att.unsubs.push(h.poll('printer.info', undefined, 1500));
     // webhooks-подписка (ускоритель)
@@ -236,36 +240,62 @@ function detach(pid: string, att: Attachment): void {
   attachments.delete(pid);
 }
 
-export function useKlippyState(api: PluginApi) {
-  let printerId = $state(api.printer.id);
-  let att = attach(api, printerId);
+/**
+ * Без printerId — прежнее поведение: следует за активным принтером
+ * (onPrinterChange → detach/attach), хендл = api.moonraker().
+ * С printerId — fleet-режим: статическая привязка, хендл = api.moonrakerFor(printerId),
+ * onPrinterChange НЕ слушается. State/attachment шарятся по printerId через
+ * module-реестр (refcount), поэтому fleet-карточка активного принтера и его
+ * виджет/баннер держат ОДНУ подписку.
+ */
+export function useKlippyState(api: PluginApi, printerId?: string) {
+  const fleet = printerId !== undefined;
+  const fixedPid = printerId as string;
 
-  const offPrinter = api.onPrinterChange((p) => {
-    detach(printerId, att);
-    printerId = p.id;
-    att = attach(api, printerId);
-  });
+  let currentPid = $state(fleet ? fixedPid : api.printer.id);
+
+  let att = attach(currentPid, () =>
+    fleet ? safeHandleFor(api, fixedPid) : safeHandle(api),
+  );
+
+  let offPrinter: () => void = () => {};
+
+  if (!fleet) {
+    offPrinter = api.onPrinterChange((p) => {
+      detach(currentPid, att);
+      currentPid = p.id;
+      att = attach(currentPid, () => safeHandle(api));
+    });
+  }
 
   onDestroy(() => {
     offPrinter();
-    detach(printerId, att);
+    detach(currentPid, att);
   });
 
   return {
     get state(): KlippyState {
-      return stateByPrinter[printerId] ?? 'unknown';
+      return stateByPrinter[currentPid] ?? 'unknown';
     },
     get stateMessage(): string {
-      return messageByPrinter[printerId] ?? '';
+      return messageByPrinter[currentPid] ?? '';
     },
     get ready(): boolean {
-      return (stateByPrinter[printerId] ?? 'unknown') === 'ready';
+      return (stateByPrinter[currentPid] ?? 'unknown') === 'ready';
     },
     get error(): boolean {
-      const s = stateByPrinter[printerId] ?? 'unknown';
+      const s = stateByPrinter[currentPid] ?? 'unknown';
       return s === 'error' || s === 'shutdown';
     },
   };
+}
+
+function safeHandleFor(api: PluginApi, printerId: string): MoonrakerProxyHandle | null {
+  try {
+    return api.moonrakerFor(printerId);
+  } catch {
+    return null;
+  }
 }
 
 export type KlippyStateStore = ReturnType<typeof useKlippyState>;
