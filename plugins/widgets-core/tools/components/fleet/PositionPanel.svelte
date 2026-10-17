@@ -55,22 +55,24 @@
   }
 </script>
 
-<div class="fleet-position">
-    <div class="fp-grid">
-      {#each rows as r (r.label)}
-        {@const homed = homedFor(r.label)}
-        <div
-          class="fp-cell"
-          class:unhomed={!homed}
-          title={homed ? undefined : i18n.t('fleet.position.unhomed')}
-        >
-          <span class="fp-value">
-            {r.label} [{(store.th.position[r.idx] ?? 0).toFixed(2)}]
-          </span>
+{#if klippy.state === 'ready'}
+    <div class="fleet-position">
+        <div class="fp-grid">
+        {#each rows as r (r.label)}
+            {@const homed = homedFor(r.label)}
+            <div
+            class="fp-cell"
+            class:unhomed={!homed}
+            title={homed ? undefined : i18n.t('fleet.position.unhomed')}
+            >
+            <span class="fp-value">
+                {r.label} [{(store.th.position[r.idx] ?? 0).toFixed(2)}]
+            </span>
+            </div>
+        {/each}
         </div>
-      {/each}
     </div>
-</div>
+{/if}
 
 <style>
   .fleet-position {
@@ -104,30 +106,11 @@
     border-style: dashed;
   }
 
-  .fp-legend {
-    font-size: var(--font-size-xs);
-    font-family: monospace;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .fp-value {
     font-size: var(--font-size-md);
     font-weight: 700;
     font-family: monospace;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
-  }
-
-  .fp-klippy {
-    padding: var(--space-sm);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--warning) 18%, transparent);
-    color: var(--warning);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-align: center;
   }
 </style>
