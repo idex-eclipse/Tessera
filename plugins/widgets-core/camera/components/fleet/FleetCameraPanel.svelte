@@ -1,11 +1,10 @@
 <script lang="ts">
-  import type { PluginApi } from '../../../plugin-sdk/src/types';
-  import type { WebcamItem } from './use-cameras.svelte.ts';
+  import type { PluginApi } from '../../../../../plugin-sdk/src/types';
+  import { type WebcamItem, useCameras} from '../../use-cameras.svelte.ts';
 
-  import { useWidget, useI18n } from '../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { useCameras } from './use-cameras.svelte.ts';
-  import CameraStream from './CameraStream.svelte';
+  import CameraStream from '../CameraStream.svelte';
 
   let {
     mpuApi,

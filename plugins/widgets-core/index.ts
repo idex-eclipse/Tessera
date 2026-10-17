@@ -44,11 +44,11 @@ import OutputChipPicker from './outputs/components/chips/OutputChipPicker.svelte
 defineMpuElement('mpu-core-widgets-chip-output', OutputChip);
 defineMpuElement('mpu-core-widgets-chip-output-picker', OutputChipPicker);
 
-import CameraWidget from './camera/CameraWidget.svelte';
-import CameraHeader from './camera/CameraHeader.svelte';
+import CameraWidget from './camera/components/widgets/CameraWidget.svelte';
+import CameraHeader from './camera/components/widgets/CameraHeader.svelte';
 defineMpuElement('mpu-widgets-camera', CameraWidget);
 defineMpuElement('mpu-widgets-camera-header', CameraHeader);
-import FleetCameraPanel from './camera/FleetCameraPanel.svelte';
+import FleetCameraPanel from './camera/components/fleet/FleetCameraPanel.svelte';
 defineMpuElement('mpu-core-widgets-fleet-camera', FleetCameraPanel);
 
 import FilamentWidget from './filament-sensors/components/widgets/FilamentWidget.svelte';

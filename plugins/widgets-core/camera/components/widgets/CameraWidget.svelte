@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../plugin-sdk/src/svelte/index';
-  import ConfirmDialog from '../../shared/confirm-dialog.svelte';
+  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
 
-  import CameraStream from './CameraStream.svelte';
-  import CameraDialog from './CameraDialog.svelte';
-  import { useCameras } from './use-cameras.svelte.ts';
+  import CameraStream from '../CameraStream.svelte';
+  import CameraDialog from '../CameraDialog.svelte';
+  import { useCameras } from '../../use-cameras.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();

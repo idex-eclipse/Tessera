@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import { useWidget, useI18n } from '../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../shared/icons/Icon.svelte';
+  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../shared/icons/Icon.svelte';
 
-  import { useCameras } from './use-cameras.svelte.ts';
+  import { useCameras } from '../../use-cameras.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();

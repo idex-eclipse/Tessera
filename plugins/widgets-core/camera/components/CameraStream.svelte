@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
-  import type { WebcamItem } from './use-cameras.svelte.ts';
+  import type { WebcamItem } from '../use-cameras.svelte.ts';
 
   let { camera }: { camera: WebcamItem } = $props();
 
