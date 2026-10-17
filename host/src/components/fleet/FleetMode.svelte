@@ -126,7 +126,7 @@
                     tag={panel.contribution.element}
                     {api}
                     params={paramsFor(printer.id)}
-                    fill={true}
+                    fill={false}
                   />
                 {:else}
                   <div class="fleet-card-missing">
