@@ -214,6 +214,12 @@
     flex: 1;
   }
 
+  @media (max-width: 768px) {
+    .fleet-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .fleet-card {
     grid-column: span 4;
     grid-row: span 5;
