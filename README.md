@@ -1,8 +1,12 @@
 <p align="center">
+  <strong>English</strong> · <a href="./README.ru.md">Русский</a>
+</p>
+
+<p align="center">
   <img src="host/public/logo.svg" width="128" alt="Isometric tesseract" />
 </p>
 
-<h1 align="center">Tessera</h1>
+<h1 align="center" id="top">Tessera</h1>
 
 <p align="center">
   <strong>Modular web UI for Klipper / Moonraker 3D printers.</strong><br/>
@@ -16,6 +20,7 @@
   <img alt="Vite" src="https://img.shields.io/badge/vite-5-646cff.svg" />
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6.svg" />
   <img alt="No backend" src="https://img.shields.io/badge/backend-none-informational.svg" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.2.0--beta-orange.svg" />
 </p>
 
 ---
@@ -24,6 +29,34 @@
 > fully built with AI. Expect rough edges, unconventional choices, and the
 > occasional bug I haven't met yet. Issues and pull requests are genuinely welcome; if
 > something looks strange, there is usually a documented reason a couple of files away.*
+
+---
+
+## Table of Contents
+
+- [Tessera](#top)
+- [Features](#features)
+  - [Dashboard & widgets](#dashboard-widgets)
+  - [Quick-access chip strip](#quick-access-chip-strip)
+  - [Calibration suite](#calibration-suite)
+  - [Files, editor, preview](#files-editor-preview)
+  - [System & notifications](#system-notifications)
+  - [Console](#console)
+  - [Multi-printer & personalization](#multi-printer-personalization)
+- [Requirements](#requirements)
+- [Installation](#installation)
+  - [One-liner (Armbian / Debian)](#installer-one-liner)
+  - [Manual / development](#manual-development)
+  - [First launch](#first-launch)
+- [For developers](#for-developers)
+  - [Architecture in one paragraph](#architecture)
+  - [Plugin model](#plugin-model)
+  - [Guards](#guards)
+  - [Remote plugins & delivery](#remote-plugins-delivery)
+  - [Where settings live](#where-settings-live)
+  - [Project structure](#project-structure)
+- [Licensing](#licensing)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -38,8 +71,10 @@ functional block — temperature graphs, macros, calibration wizards, file table
 is a plugin contribution. Third-party plugins are first-class citizens: they are
 loaded as Custom Elements and can be written in **any framework**.
 
+<a id="features"></a>
 ## Features
 
+<a id="dashboard-widgets"></a>
 ### Dashboard & widgets
 
 A drag-and-drop grid of autonomous widgets, arranged per printer:
@@ -58,6 +93,7 @@ Every widget is data-autonomous: it subscribes to the proxy itself, so two
 widgets never share a hidden channel, and a broken plugin cannot take down the
 rest of the UI.
 
+<a id="quick-access-chip-strip"></a>
 ### Quick-access chip strip
 
 A persistent strip under the banners keeps the most urgent controls one tap away
@@ -80,6 +116,7 @@ explicit *unavailable* state instead of silently decaying.
   <img src="docs/screenshots/Dashboard2.png" alt="Dashboard" width="40%"/>
 </p>
 
+<a id="calibration-suite"></a>
 ### Calibration suite
 
 One page, four tabs, one consistent panel language — every action shows a
@@ -100,6 +137,7 @@ visible here too.
   <img src="docs/screenshots/Calib2.png" alt="Heater section" width="40%"/>
 </p>
 
+<a id="files-editor-preview"></a>
 ### Files, editor, preview
 
 - **Universal file table** across jobs / config / logs: extended G-code metadata (filament, time, thumbnails, printed/queued status), column manager with drag-to-reorder, per-printer sort & columns, context menus
@@ -111,6 +149,7 @@ visible here too.
   <img src="docs/screenshots/3MF.png" alt="3MF upload dialog" width="40%"/>
 </p>
 
+<a id="system-notifications"></a>
 ### System & notifications
 
 - **Right panel** (always available): emergency stop, service restarts, power devices, host shutdown/reboot, upload-and-print, Moonraker accounts
@@ -118,6 +157,7 @@ visible here too.
 - **Machine page** — CPU / memory / network stats, live load charts, MCU inventory and versions, update manager with commit history and rollback
 - **Klipper state banner** — distinct from connection status: firmware errors and startup are shown where they belong
 
+<a id="console"></a>
 ### Console
 
 A view over Moonraker's g-code store with command autocomplete (including
@@ -129,14 +169,17 @@ message filters, and reverse/autoscroll preferences.
   <img src="docs/screenshots/Console.png" alt="Console" width="40%"/>
 </p>
 
+<a id="multi-printer-personalization"></a>
 ### Multi-printer & personalization
 
 - **Printer tabs** with per-printer dashboard layout, chip strip, widget providers, page visibility and plugin settings
+- **Fleet mode** — tap the grid button below the tabs to slide open a drawer showing every printer's camera, print status, tool position, and temperatures in a live card grid. Each card is read-only and talks to its own printer; tap **Activate** to jump to that printer's dashboard. Panels are plugin-contributed (`printerPanels` in the manifest), so third-party plugins can add their own fleet cards.
 - **Offline overlay** — infrastructure-only (never reads business data); you can switch printers without dismissing it
 - **Settings sync** — opt-in per plugin, device-global
 - **Themes** — light & dark, every color a CSS variable; accent customization and background images on the roadmap
 - **i18n** — English & Russian, RTL-ready layout
 
+<a id="requirements"></a>
 ## Requirements
 
 - **Klipper** + **Moonraker** on the printer host (recent versions; Moonraker with file, update and device-power APIs)
@@ -151,8 +194,10 @@ Optional companions:
 | crowsnest / mjpegstreamer / ustreamer | camera widgets |
 | Spoolman (via Moonraker) | filament-spool plugin (separate remote plugin, in development) |
 
+<a id="installation"></a>
 ## Installation
 
+<a id="installer-one-liner"></a>
 ### One-liner (Armbian / Debian)
 
 ```bash
@@ -185,8 +230,10 @@ The installer is **idempotent** — re-running it updates everything in place. I
 
 Uninstall: remove the `sites-enabled/tessera` symlink, the `[include tessera-shell.cfg]`
 line from `printer.cfg`, and `~/tessera`.
+
 </details>
 
+<a id="manual-development"></a>
 ### Manual / development
 
 ```bash
@@ -203,14 +250,17 @@ Serve `host/dist` with any static server and reverse-proxy Moonraker's API and
 WebSocket to the same origin (see `deploy/install.sh` for the reference nginx
 config).
 
+<a id="first-launch"></a>
 ### First launch
 
 1. Open `http://<printer-host>:8080`.
 2. Click **[+]** in the printer tabs and enter the Moonraker URL (`http://127.0.0.1:7125` on the same machine).
 3. Tessera connects and lights up only the widgets, chips and pages your printer actually has — feature detection is per printer.
 
+<a id="for-developers"></a>
 ## For developers
 
+<a id="architecture"></a>
 ### Architecture in one paragraph
 
 The **host** is a deliberately dumb orchestrator: printer tabs, sidebar,
@@ -220,10 +270,11 @@ never reads business data to draw its own chrome. **MoonrakerProxy** pools one
 WebSocket per printer with snapshot caching, subscription de-duplication and
 poll-on-demand. **GuardAgent** wraps every plugin `request()` in a declarative
 pre-flight chain. **Plugins** are autonomous contributions — pages, widgets,
-chips, overlays, banners — that subscribe to the proxy themselves and never talk
-to each other. The **SDK** is a thin hook layer. There is no backend, no shared
-state bus, and no plugin-to-plugin channel, by design.
+chips, overlays, banners, printer panels — that subscribe to the proxy themselves
+and never talk to each other. The **SDK** is a thin hook layer. There is no
+backend, no shared state bus, and no plugin-to-plugin channel, by design.
 
+<a id="plugin-model"></a>
 ### Plugin model
 
 Plugins contribute through a manifest:
@@ -237,6 +288,7 @@ interface PluginManifest {
   overlays?: OverlayContribution[];  // floating windows (visibility = plugin's call)
   banners?: BannerContribution[];    // in-flow blocks above main
   rightPanel?: RightPanelContribution; // unique slot — accepted from @core/system only
+  printerPanels?: PrinterPanelContribution[]; // fleet cards: one instance per printer
   guards?: GuardContribution[];      // pre-flight request interception
   locales?: string[];
   defaultSettings?: Record<string, unknown>;
@@ -252,15 +304,42 @@ React 18 plugin).
 The plugin API gives you:
 
 ```ts
-api.moonraker()        // guarded request(), subscribe(), onNotify(), poll(),
-                       // httpBaseUrl for binary traffic, readyState, auth token
-api.settings           // namespaced get/set/onChange (per printer, or device-global with sync)
-api.i18n               // t(key, params), live locale + dir
-api.theme              // current theme, onThemeChange
-api.guards.resume(...) // continue a frozen request chain
+api.moonraker()             // guarded request(), subscribe(), onNotify(), poll(),
+                            // httpBaseUrl for binary traffic, readyState, auth token
+
+api.moonrakerFor(printerId) // same guarded handle, but bound to a specific printer
+                            // (for fleet panels and multi-printer workflows)
+
+api.settings                // namespaced get/set/onChange for the active printer
+                            // (or device-global when sync is enabled)
+
+api.settingsFor(printerId)  // same PluginSettingsApi, but scoped to a specific printer
+                            // (for fleet panels that persist per-printer prefs)
+
+api.i18n                    // t(key, params), live locale + dir
+api.theme                   // current theme, onThemeChange
+api.guards.resume(...)      // continue a frozen request chain
 api.onPrinterChange / onLocaleChange / onThemeChange
 ```
 
+**Printer panels** (`printerPanels`) are Custom Elements that render once per
+printer while fleet mode is open. The host injects `mpuParams.printerId`; the
+panel reads its data through `api.moonrakerFor(printerId)` and persists
+preferences through `api.settingsFor(printerId)`. Each panel instance is
+isolated — unmounting one card does not affect others, and closing the drawer
+tears down all subscriptions cleanly.
+
+Core `@core/widgets` ships four panels in 0.2.0:
+
+- camera
+- print status
+- tool position
+- temperatures
+
+Third-party plugins can contribute their own fleet panels using the same
+contract.
+
+<a id="guards"></a>
 ### Guards
 
 Guards are declarative matchers on the request **method string** (e.g.
@@ -274,6 +353,7 @@ priorities beyond registration order, and are a **pre-flight check of local
 actions, not a security boundary** — prints started from other clients are
 invisible to them by design.
 
+<a id="remote-plugins-delivery"></a>
 ### Remote plugins & delivery
 
 Four layers, no network auto-updates — **files on disk are the source of truth**
@@ -288,13 +368,16 @@ Remote plugin build rules (vite lib-mode): define `process.env.NODE_ENV`, keep
 runtime dependencies bundled (bare imports don't resolve in browser
 `import()`), and keep `manifest.entry` in sync with the built filename.
 
+<a id="where-settings-live"></a>
 ### Where settings live
 
 Everything is `localStorage` under a versioned prefix (`mpu:v2:*`): printers,
-active printer, installed plugins, UI prefs, per-printer dashboard/page/chip
-layout, and plugin settings (per printer or device-global). Schema changes show
-an export-or-reset dialog — there are no silent migrations.
+active printer, installed plugins, UI prefs (including fleet-mode state),
+per-printer dashboard/page/chip layout, and plugin settings (per printer or
+device-global). Schema changes show an export-or-reset dialog — there are no
+silent migrations.
 
+<a id="project-structure"></a>
 <details>
 <summary><strong>Project structure</strong></summary>
 
@@ -312,7 +395,7 @@ tessera/
 │   │                #   macro-params, header-help, klippy-state, slider, color-picker,
 │   │                #   3MF inspector, uPlot core) — never a data bus
 │   ├── widgets-core/  # temperature, status, macros, tools, limits, outputs,
-│   │                  #   camera, filament, job-queue + their chips
+│   │                  #   camera, filament, job-queue + their chips + fleet panels
 │   ├── calibrations/  # shaper / belts / probe / heaters / mesh + livez chip
 │   ├── system/        # right panel, banner, notifications, machine page, power chip
 │   └── console · jobs · history · config · gcode-preview
@@ -321,12 +404,15 @@ tessera/
 ├── deploy/          # install.sh, reference nginx config
 └── docs/            # architecture, plugin development, proxy, settings
 ```
+
 </details>
 
+<a id="licensing"></a>
 ## Licensing
 
 - **GPL-3.0**. Forks and distributions (appliance images, pre-loaded boxes) must stay open. This matches the Klipper/Moonraker ecosystem.
 
+<a id="acknowledgments"></a>
 ## Acknowledgments
 
 [Klipper](https://www.klipper3d.org/) and [Moonraker](https://github.com/Arksine/moonraker)
@@ -339,4 +425,8 @@ firmware/API ecosystems; [Mainsail](https://mainsail.xyz/) and
 
 <p align="center">
   <em>Tessera — modular UI for modular printers.</em>
+</p>
+
+<p align="center">
+  <strong>English</strong> · <a href="./README.ru.md">Русский</a>
 </p>
