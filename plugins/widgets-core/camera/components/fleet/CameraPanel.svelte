@@ -4,7 +4,7 @@
 
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import CameraStream from '../CameraStream.svelte';
+  import CameraStream from '../../components/CameraStream.svelte';
 
   let {
     mpuApi,
