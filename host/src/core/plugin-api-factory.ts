@@ -3,6 +3,7 @@ import type {
   PluginApi,
   PluginManifest,
   PrinterInfo,
+  PluginSettingsApi
 } from '../../../plugin-sdk/src/types';
 
 import { getMoonrakerProxy } from './moonraker-proxy';
@@ -199,6 +200,8 @@ export function createPluginApi(
    * и соединений не держат.
    */
   const fleetHandles = new Map<string, MoonrakerProxyHandle>();
+    /** Кэш объектов settingsFor: стабильность идентичности на принтер. */
+  const settingsForCache = new Map<string, PluginSettingsApi>();
 
   const api: PluginApi = {
     get pluginId() {
@@ -294,6 +297,38 @@ export function createPluginApi(
           cb('', current);
         });
       },
+    },
+
+    settingsFor(printerId: string): PluginSettingsApi {
+      const cached = settingsForCache.get(printerId);
+      if (cached) return cached;
+
+      const exists = printerManager.printers.some((p) => p.id === printerId);
+      if (!exists) {
+        throw new Error(
+          `[plugin-api] settingsFor: unknown printerId '${printerId}'`,
+        );
+      }
+
+      const s: PluginSettingsApi = {
+        get<T>(key: string): T | undefined {
+          return settings.getPluginSetting<T>(printerId, pluginId, key);
+        },
+
+        set(key: string, value: unknown): void {
+          settings.setPluginSetting(printerId, pluginId, key, value);
+        },
+
+        onChange(cb) {
+          return settings.onPluginSettingsChange(printerId, pluginId, () => {
+            const current = settings.getPluginSettings(printerId, pluginId);
+            cb('', current);
+          });
+        },
+      };
+
+      settingsForCache.set(printerId, s);
+      return s;
     },
 
     i18n: {

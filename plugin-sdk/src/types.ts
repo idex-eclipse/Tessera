@@ -296,27 +296,33 @@ export interface PluginApi {
   readonly manifest: PluginManifest;
   readonly printer: PrinterInfo;
 
-  /** Сахар активного принтера (throw без активного). */
-  moonraker(): MoonrakerProxyHandle;
+  /** MOONRAKER */
 
-  /** Мультипринтерный доступ: полный guarded handle на любой настроенный принтер.
-   *  Unknown id → throw. Handle привязан к printerId на весь жизненный цикл. */
+  /** legacy - for active printer only */
+  moonraker(): MoonrakerProxyHandle;
+  /** multiprinter */
   moonrakerFor(printerId: string): MoonrakerProxyHandle;
 
-  /** Read-only список всех настроенных принтеров (без бизнес-данных). */
+
+  /** Read-only - all printers */
   readonly printers: PrinterInfo[];
 
-  /** Переключить активный принтер (null = сбросить). */
+  /** Changing */
   setActivePrinter(id: string | null): void;
 
-  /** Подписка на изменения списка принтеров. */
+  /** Subscribe on printer list change */
   onPrintersChange(callback: (printers: PrinterInfo[]) => void): () => void;
-
   onPrinterChange(callback: (printer: PrinterInfo) => void): () => void;
   onLocaleChange(callback: (locale: string, dir: LocaleDirection) => void): () => void;
   onThemeChange(callback: (theme: ThemeMode) => void): () => void;
 
+
+  /** SETTINGS */
+  /** legacy - for active printer only */
   settings: PluginSettingsApi;
+  /** multiprinter   */
+  settingsFor(printerId: string): PluginSettingsApi;
+
   i18n: PluginI18nApi;
   guards: {
     resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void;
