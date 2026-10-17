@@ -15,6 +15,8 @@ import StatusBanner from './status/components/banners/StatusBanner.svelte';
 defineMpuElement('mpu-widgets-status', StatusWidget);
 defineMpuElement('mpu-widgets-status-header', StatusHeader);
 defineMpuElement('mpu-widgets-status-banner', StatusBanner);
+import FleetStatusPanel from './status/components/fleet/StatusPanel.svelte';
+defineMpuElement('mpu-core-widgets-fleet-status', FleetStatusPanel);
 
 import MacrosWidget from './macros/components/widgets/MacrosWidget.svelte';
 import MacrosHeader from './macros/components/widgets/MacrosHeader.svelte';
@@ -48,7 +50,7 @@ import CameraWidget from './camera/components/widgets/CameraWidget.svelte';
 import CameraHeader from './camera/components/widgets/CameraHeader.svelte';
 defineMpuElement('mpu-widgets-camera', CameraWidget);
 defineMpuElement('mpu-widgets-camera-header', CameraHeader);
-import FleetCameraPanel from './camera/components/fleet/FleetCameraPanel.svelte';
+import FleetCameraPanel from './camera/components/fleet/CameraPanel.svelte';
 defineMpuElement('mpu-core-widgets-fleet-camera', FleetCameraPanel);
 
 import FilamentWidget from './filament-sensors/components/widgets/FilamentWidget.svelte';

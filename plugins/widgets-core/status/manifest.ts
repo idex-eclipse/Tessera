@@ -1,6 +1,7 @@
 import type {
   BannerContribution,
   WidgetContribution,
+  PrinterPanelContribution
 } from '../../../plugin-sdk/src/types';
 
 export const statusWidgets: WidgetContribution[] = [
@@ -22,3 +23,11 @@ export const statusBanners: BannerContribution[] = [
     scope: 'all',
   },
 ];
+
+export const statusFleet: PrinterPanelContribution[] = [
+  {
+    id: 'fleet-status',
+    element: 'mpu-core-widgets-fleet-status',
+    titleKey: 'widgets.fleetStatus.title',
+  },
+]

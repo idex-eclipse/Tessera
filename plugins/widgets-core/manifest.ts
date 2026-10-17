@@ -1,6 +1,6 @@
 import type { PluginManifest } from '../../plugin-sdk/src/types';
 
-import { statusBanners, statusWidgets } from './status/manifest';
+import { statusBanners, statusFleet, statusWidgets } from './status/manifest';
 import { temperatureWidgets, temperatureChips } from './temperature/manifest';
 import { macrosChips, macrosWidgets } from './macros/manifest';
 import { toolsChips, toolsWidgets } from './tools/manifest';
@@ -22,7 +22,7 @@ export const widgetsCoreManifest: PluginManifest = {
   chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...toolsChips,
     ...filamentChips], 
   banners: [...statusBanners],
-  printerPanels: [...cameraFleet],
+  printerPanels: [...statusFleet, ...cameraFleet],
   locales: ['en', 'ru'],
   defaultSettings: {},
 };

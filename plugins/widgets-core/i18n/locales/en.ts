@@ -287,5 +287,19 @@ export const en = {
       title: 'Camera',
       noCameras: 'No enabled webcams on this printer',
     },
+    status: {
+      title: 'Print Status',
+      idle: 'No active print',
+      notPrinting: 'Idle',
+      completed: 'Completed',
+      progress: 'Progress',
+      remaining: 'Remaining',
+      eta: 'ETA',
+      klippyStartup: 'Klipper starting',
+      klippyShutdown: 'Klipper shutdown',
+      klippyError: 'Klipper error',
+      klippyDisconnected: 'Klipper disconnected',
+      klippyUnknown: 'Klipper state unknown',
+    }
   },
 };

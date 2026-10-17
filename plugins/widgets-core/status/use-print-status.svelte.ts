@@ -62,7 +62,15 @@ export function readEnabledFields(api: PluginApi): StatusFieldId[] {
   return [...DEFAULT_FIELDS];
 }
 
+// ------------------------------------------------------------------
+// Module-state: legacy-поток (активный принтер). Виджет и баннер
+// статуса шарят его, как раньше.
+// ------------------------------------------------------------------
 let model = $state<PrintStatusModel>(empty());
+
+// Fleet-кэш модели per-printer: мгновенная отрисовка карточки из
+// последнего известного состояния, пока subscribe-дельты не догнали.
+const fleetModelCache = new Map<string, PrintStatusModel>();
 
 const KLIPPY_EVENTS = [
   'notify_klippy_shutdown',
@@ -134,15 +142,46 @@ export function fmtClock(d: Date | null): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+// ------------------------------------------------------------------
 // hook
+// ------------------------------------------------------------------
 
-export function usePrintStatus(api: PluginApi) {
+/**
+ * Хук статуса печати.
+ *
+ * Без printerId — прежнее поведение: активный принтер, module-state,
+ * ресет/реинициализация на onPrinterChange.
+ *
+ * С printerId — fleet-режим: instance-local state (N карточек = N
+ * независимых сторов), статическая привязка к принтеру,
+ * model кэшируется per-printer (мгновенная отрисовка при remount).
+ */
+export function usePrintStatus(api: PluginApi, printerId?: string) {
+  const fleet = printerId !== undefined;
+
+  // Fleet: состояние экземпляра.
+  let localModel = $state<PrintStatusModel>(
+    fleet
+      ? (fleetModelCache.get(printerId as string) ?? empty())
+      : empty(),
+  );
+
+  const getModel = (): PrintStatusModel => (fleet ? localModel : model);
+  const setModel = (m: PrintStatusModel): void => {
+    if (fleet) {
+      localModel = m;
+      fleetModelCache.set(printerId as string, m);
+    } else {
+      model = m;
+    }
+  };
+
   let generation = 0;
   const unsubs: Array<() => void> = [];
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
     } catch {
       return null;
     }
@@ -153,8 +192,9 @@ export function usePrintStatus(api: PluginApi) {
     if (!h) return;
     const info = await h.request<any>('server.info').catch(() => null);
     if (gen !== generation) return;
-    model = { ...model, klippyReady: info?.klippy_state === 'ready' };
-    if (model.klippyReady) void loadDiameter(gen);
+    const next = { ...getModel(), klippyReady: info?.klippy_state === 'ready' };
+    setModel(next);
+    if (next.klippyReady) void loadDiameter(gen);
   }
 
   async function loadDiameter(gen: number): Promise<void> {
@@ -165,20 +205,20 @@ export function usePrintStatus(api: PluginApi) {
       .catch(() => null);
     if (gen !== generation) return;
     const d = num(res?.status?.configfile?.settings?.extruder?.filament_diameter);
-    if (d && d > 0) model = { ...model, filamentDiameter: d };
+    if (d && d > 0) setModel({ ...getModel(), filamentDiameter: d });
   }
 
   async function loadMetadata(gen: number): Promise<void> {
     const h = safeHandle();
-    const fn = model.filename;
+    const fn = getModel().filename;
     if (!h || !fn) return;
     const md = await h.request<any>('server.files.metadata', { filename: fn }).catch(() => null);
     if (gen !== generation) return;
-    model = {
-      ...model,
+    setModel({
+      ...getModel(),
       estimatedTime: num(md?.estimated_time),
       filamentTotal: num(md?.filament_total),
-    };
+    });
   }
 
   function applyDelta(d: any): void {
@@ -186,13 +226,14 @@ export function usePrintStatus(api: PluginApi) {
     const vs = d?.virtual_sdcard;
     const mr = d?.motion_report;
 
-    const next = { ...model };
+    const current = getModel();
+    const next = { ...current };
     let filenameChanged = false;
 
     if (ps) {
       if (typeof ps.state === 'string') next.state = ps.state;
       if (typeof ps.message === 'string') next.message = ps.message;
-      if (typeof ps.filename === 'string' && ps.filename !== model.filename) {
+      if (typeof ps.filename === 'string' && ps.filename !== current.filename) {
         next.filename = ps.filename;
         filenameChanged = true;
       }
@@ -216,7 +257,7 @@ export function usePrintStatus(api: PluginApi) {
       if (ev != null) next.liveExtruderVelocity = ev;
     }
 
-    model = next;
+    setModel(next);
     if (filenameChanged) void loadMetadata(generation);
   }
 
@@ -247,7 +288,8 @@ export function usePrintStatus(api: PluginApi) {
   async function init(): Promise<void> {
     const gen = ++generation;
     const h = safeHandle();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
+    if (!fleet && !api.printer.url) return;
 
     unsubs.push(
       h.subscribe(
@@ -280,7 +322,8 @@ export function usePrintStatus(api: PluginApi) {
         if (ev === 'notify_klippy_ready') {
           void reseed(gen);
         } else {
-          model = { ...empty(), filamentDiameter: model.filamentDiameter };
+          const current = getModel();
+          setModel({ ...empty(), filamentDiameter: current.filamentDiameter });
         }
       }));
     }
@@ -291,20 +334,26 @@ export function usePrintStatus(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
-    teardown();
-    model = empty();
-    void init();
-  });
+  if (fleet) {
+    onDestroy(() => {
+      teardown();
+    });
+  } else {
+    const offPrinter = api.onPrinterChange(() => {
+      teardown();
+      model = empty();
+      void init();
+    });
 
-  onDestroy(() => {
-    teardown();
-    offPrinter();
-  });
+    onDestroy(() => {
+      teardown();
+      offPrinter();
+    });
+  }
 
   return {
     get model() {
-      return model;
+      return getModel();
     },
   };
 }

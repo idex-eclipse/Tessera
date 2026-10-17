@@ -280,10 +280,24 @@ cp: {
     empty: 'Нет чипов для добавления',
   },
 
-    fleet: {
+  fleet: {
     camera: {
       title: 'Камера',
       noCameras: 'На этом принтере нет включённых веб-камер',
     },
+    status: {
+      title: 'Статус печати',
+      idle: 'Нет активной печати',
+      notPrinting: 'Ожидание',
+      completed: 'Завершено',
+      progress: 'Прогресс',
+      remaining: 'Осталось',
+      eta: 'Конец',
+      klippyStartup: 'Klipper запускается',
+      klippyShutdown: 'Klipper остановлен',
+      klippyError: 'Ошибка Klipper',
+      klippyDisconnected: 'Klipper отключён',
+      klippyUnknown: 'Состояние Klipper неизвестно',
+    }
   },
 };
