@@ -300,6 +300,11 @@ export const en = {
       klippyError: 'Klipper error',
       klippyDisconnected: 'Klipper disconnected',
       klippyUnknown: 'Klipper state unknown',
-    }
+    },
+    position: {
+      title: 'Tool Position',
+      notReady: 'Klipper not ready',
+      unhomed: 'not homed',
+    },
   },
 };

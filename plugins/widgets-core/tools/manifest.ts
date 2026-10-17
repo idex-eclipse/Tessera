@@ -1,4 +1,4 @@
-import type { WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { PrinterPanelContribution, WidgetContribution } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const toolsWidgets: WidgetContribution[] = [
@@ -23,3 +23,11 @@ export const toolsChips: ChipContribution[] = [
     icon: 'kind-tuning',
   },
 ];
+
+export const toolsFleet: PrinterPanelContribution[] = [
+  {
+    id: 'fleet-position',
+    element: 'mpu-core-widgets-fleet-position',
+    titleKey: 'widgets.fleetPosition.title',
+  },
+]

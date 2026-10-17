@@ -298,6 +298,11 @@ cp: {
       klippyError: 'Ошибка Klipper',
       klippyDisconnected: 'Klipper отключён',
       klippyUnknown: 'Состояние Klipper неизвестно',
-    }
+    },
+    position: {
+      title: 'Положение инструмента',
+      notReady: 'Klipper не готов',
+      unhomed: 'Ось не запаркована',
+    },
   },
 };

@@ -1,13 +1,17 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import type {
+  PluginApi,
+  PluginSettingsApi,
+  MoonrakerProxyHandle,
+} from '../../../plugin-sdk/src/types';
 
 export const DEFAULT_STEPS = [0.1, 1, 10, 25, 50, 100];
 
 export const DC_MODES = ['PRIMARY', 'COPY', 'MIRROR'] as const;
 export type DualCarriageMode = (typeof DC_MODES)[number];
 
-//Spoolman
+// Spoolman
 export interface SpoolFilament {
   id: number;
   name: string;
@@ -29,7 +33,7 @@ export interface SpoolData {
   archived?: boolean;
 }
 
-//Tool
+// Tool
 interface ToolheadMeta {
   ready: boolean;
   tools: string[];
@@ -49,82 +53,94 @@ interface ToolheadMeta {
   hasSpoolman: boolean;
 }
 
-let meta = $state<ToolheadMeta>({
-  ready: false,
-  tools: [],
-  extruders: [],
-  steppers: [],
-  minExtrudeTemp: {},
-  maxZVelocity: 5,
-  hasDualCarriage: false,
-  dualKey: 'carriage_1',
-  directPrimaryAxis: 'x',
-  hasRetraction: false,
-  defaults: {
-    pa: {},
+function emptyMeta(): ToolheadMeta {
+  return {
+    ready: false,
+    tools: [],
+    extruders: [],
+    steppers: [],
+    minExtrudeTemp: {},
+    maxZVelocity: 5,
+    hasDualCarriage: false,
+    dualKey: 'carriage_1',
+    directPrimaryAxis: 'x',
+    hasRetraction: false,
+    defaults: {
+      pa: {},
+      retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
+    },
+    hasSaveVars: false,
+    hasSpoolman: false,
+  };
+}
+
+function emptyTh() {
+  return {
+    position: [0, 0, 0] as number[],
+    homedAxes: '',
+    activeExtruder: 'extruder',
+    speedFactor: 1,
+    extrudeFactor: 1,
+    temps: {} as Record<string, number>,
+    dcModes: {} as Record<string, string>,
+    gcodePosition: [0, 0, 0] as number[],
+    printState: '',
+    pa: {} as Record<string, { advance: number; smooth: number }>,
     retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
-  },
-  hasSaveVars: false,
-  hasSpoolman: false,
-});
+    activeToolSaved: null as string | null,
+    spoolIds: {} as Record<string, number | null>,
+    nativeSpoolId: null as number | null,
+  };
+}
 
-let th = $state({
-  position: [0, 0, 0] as number[],
-  homedAxes: '',
-  activeExtruder: 'extruder',
-  speedFactor: 1,
-  extrudeFactor: 1,
-  temps: {} as Record<string, number>,
-  dcModes: {} as Record<string, string>,
-  gcodePosition: [0, 0, 0] as number[],
-  printState: '',
-  pa: {} as Record<string, { advance: number; smooth: number }>,
-  retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
-  activeToolSaved: null as string | null,
-  spoolIds: {} as Record<string, number | null>,
-  nativeSpoolId: null as number | null,
-});
+function defaultUi() {
+  return {
+    style: 'cross' as 'cross' | 'rows',
+    invert: { x: false, y: false, z: false },
+    steps: [...DEFAULT_STEPS],
+    feedXY: 100,
+    feedZ: 5,
+    directMode: false,
+    directAxis: 'U',
+  };
+}
 
-let forceMove = $state(false);
-
-let ui = $state<{
-  style: 'cross' | 'rows';
-  invert: { x: boolean; y: boolean; z: boolean };
-  steps: number[];
-  feedXY: number;
-  feedZ: number;
-  //experimental direct mode
-  directMode: boolean;
-  directAxis: string;
-}>({
-  style: 'cross',
-  invert: { x: false, y: false, z: false },
-  steps: [...DEFAULT_STEPS],
-  feedXY: 100,
-  feedZ: 5,
-  directMode: false,
-  directAxis: 'U',
-});
-
-let uiLoaded = false;
-
-// Spoolman-cache
-
+// ------------------------------------------------------------------
+// Module-level: общий spoolman-кэш (разделяется legacy и fleet)
+// ------------------------------------------------------------------
 const SPOOL_TTL = 60_000;
 let spoolData = $state<Record<number, SpoolData>>({});
 const spoolTs = new Map<number, number>();
 const spoolInflight = new Map<number, Promise<SpoolData | null>>();
-/** защита от записи ответа, прилетевшего после смены принтера */
+/** защита от записи ответа, прилетевшего после смены активного принтера */
 let spoolOwner = 0;
 
-export function useToolhead(api: PluginApi) {
+// ------------------------------------------------------------------
+// Core factory: изолированное ядро на (api, printerId | null).
+// Legacy-режим (printerId === null) шарится refcount-ом между всеми
+// legacy-потребителями (шапка + тело виджета = один core: forceMove,
+// ui, settings-реактивность общие).
+// Fleet-режим (printerId !== null) — изолированный core, settings через
+// api.settingsFor(printerId).
+// ------------------------------------------------------------------
+function createToolheadCore(api: PluginApi, printerId: string | null) {
+  const fleet = printerId !== null;
+  const settingsApi: PluginSettingsApi = fleet
+    ? api.settingsFor(printerId as string)
+    : api.settings;
+
+  let meta = $state<ToolheadMeta>(emptyMeta());
+  let th = $state(emptyTh());
+  let forceMove = $state(false);
+  let ui = $state(defaultUi());
+
   let generation = 0;
   const unsubs: Array<() => void> = [];
   let unsubMeta: (() => void) | null = null;
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
     } catch {
       return null;
     }
@@ -140,8 +156,7 @@ export function useToolhead(api: PluginApi) {
       .catch((e) => console.error('[tools] gcode failed:', cmd, e));
   }
 
-  // Spoolman fetch spool
-
+  // Spoolman fetch
   async function fetchSpool(id: number): Promise<SpoolData | null> {
     const inflight = spoolInflight.get(id);
     if (inflight) return inflight;
@@ -180,7 +195,6 @@ export function useToolhead(api: PluginApi) {
     return p;
   }
 
-  // Spool ID
   function spoolIdForTool(tool: string): number | null {
     if (!meta.hasSpoolman) return null;
     const fromVars = th.spoolIds[tool];
@@ -189,7 +203,6 @@ export function useToolhead(api: PluginApi) {
     return null;
   }
 
-  // Get spool data
   function getSpool(id: number): SpoolData | null {
     const cached = spoolData[id];
     if (cached) {
@@ -215,19 +228,45 @@ export function useToolhead(api: PluginApi) {
   }
 
   // Meta
-
   async function loadMeta(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h) return;
 
-    const [list, cfgRes, srvInfo] = await Promise.all([
-      h.request<any>('printer.objects.list').catch(() => null),
-      h.request<any>('printer.objects.query', { objects: { configfile: ['settings'] } }).catch(() => null),
-      h.request<any>('server.info').catch(() => null),
-    ]);
+    const list = await h.request<any>('printer.objects.list').catch(() => null);
     if (gen !== generation || !list) return;
 
     const objects: string[] = list.objects ?? [];
+
+    if (fleet) {
+      const subObjects: Record<string, string[]> = {
+        toolhead: ['position', 'homed_axes'],
+        gcode_move: ['gcode_position'],
+      };
+      const hasDC = objects.includes('dual_carriage');
+      if (hasDC) subObjects.dual_carriage = ['carriage_0', 'carriage_1', 'carriages'];
+
+      meta = { ...meta, ready: true, hasDualCarriage: hasDC };
+
+      if (unsubMeta) {
+        unsubMeta();
+        unsubMeta = null;
+      }
+      unsubMeta = h.subscribe(
+        subObjects,
+        (d: any) => {
+          if (gen === generation) applyDelta(d);
+        },
+        { immediate: true },
+      );
+      return;
+    }
+
+    const [cfgRes, srvInfo] = await Promise.all([
+      h.request<any>('printer.objects.query', { objects: { configfile: ['settings'] } }).catch(() => null),
+      h.request<any>('server.info').catch(() => null),
+    ]);
+    if (gen !== generation) return;
+
     const settings = (cfgRes?.status?.configfile?.settings ?? {}) as Record<string, any>;
 
     const hasSpoolman =
@@ -299,8 +338,6 @@ export function useToolhead(api: PluginApi) {
       hasSpoolman,
     };
 
-    //console.debug('[tools] spoolman:', hasSpoolman, 'tools:', tools);
-
     const subObjects: Record<string, string[]> = {
       toolhead: ['position', 'homed_axes', 'extruder'],
       gcode_move: ['speed_factor', 'extrude_factor'],
@@ -343,7 +380,6 @@ export function useToolhead(api: PluginApi) {
       .catch(() => null);
     if (gen === generation && seeded?.status) applyDelta(seeded.status);
 
-    // native spool ID via moonraker
     if (hasSpoolman) {
       h.request<any>('server.spoolman.get_spool_id')
         .then((res) => {
@@ -385,7 +421,6 @@ export function useToolhead(api: PluginApi) {
         next.activeToolSaved = Number.isFinite(n) ? `T${Math.round(n)}` : null;
       }
 
-      // Spools ID per tool
       if (meta.hasSpoolman) {
         const ids: Record<string, number | null> = {};
         for (const tool of meta.tools) {
@@ -443,10 +478,10 @@ export function useToolhead(api: PluginApi) {
     th = next;
   }
 
-  // Settings helpers
+  // Settings helpers (через settingsApi — legacy или fleet namespace)
 
   function invertSign(): number {
-    return api.settings.get<boolean>('tools.invert') === true ? -1 : 1;
+    return settingsApi.get<boolean>('tools.invert') === true ? -1 : 1;
   }
 
   function feedFor(axis: string): number {
@@ -454,7 +489,7 @@ export function useToolhead(api: PluginApi) {
   }
 
   function loadUi(): void {
-    const rawInv = api.settings.get<unknown>('tools.invert');
+    const rawInv = settingsApi.get<unknown>('tools.invert');
     const inv =
       typeof rawInv === 'object' && rawInv !== null
         ? {
@@ -467,39 +502,39 @@ export function useToolhead(api: PluginApi) {
           : { x: false, y: false, z: false };
 
     ui = {
-      style: api.settings.get<'cross' | 'rows'>('tools.style') ?? 'cross',
+      style: settingsApi.get<'cross' | 'rows'>('tools.style') ?? 'cross',
       invert: inv,
-      steps: [...(api.settings.get<number[]>('tools.steps') ?? DEFAULT_STEPS)],
-      feedXY: Number(api.settings.get<number>('tools.feedXY') ?? 100),
-      feedZ: Number(api.settings.get<number>('tools.feedZ') ?? 5),
-      directMode: api.settings.get<boolean>('tools.directMode') === true,
-      directAxis: String(api.settings.get<string>('tools.directAxis') ?? 'U'),
+      steps: [...(settingsApi.get<number[]>('tools.steps') ?? DEFAULT_STEPS)],
+      feedXY: Number(settingsApi.get<number>('tools.feedXY') ?? 100),
+      feedZ: Number(settingsApi.get<number>('tools.feedZ') ?? 5),
+      directMode: settingsApi.get<boolean>('tools.directMode') === true,
+      directAxis: String(settingsApi.get<string>('tools.directAxis') ?? 'U'),
     };
   }
 
   function setFeed(key: 'feedXY' | 'feedZ', v: number): void {
     ui[key] = v;
-    api.settings.set(`tools.${key}`, v);
+    settingsApi.set(`tools.${key}`, v);
   }
 
   function setStyle(s: 'cross' | 'rows'): void {
     ui.style = s;
-    api.settings.set('tools.style', s);
+    settingsApi.set('tools.style', s);
   }
 
   function setInvert(axis: 'x' | 'y' | 'z', v: boolean): void {
     ui.invert = { ...ui.invert, [axis]: v };
-    api.settings.set('tools.invert', ui.invert);
+    settingsApi.set('tools.invert', ui.invert);
   }
 
   function setSteps(arr: number[]): void {
     ui.steps = [...arr];
-    api.settings.set('tools.steps', ui.steps);
+    settingsApi.set('tools.steps', ui.steps);
   }
 
   function setDirectMode(v: boolean): void {
     ui = { ...ui, directMode: v };
-    api.settings.set('tools.directMode', v);
+    settingsApi.set('tools.directMode', v);
   }
 
   function setDirectAxis(axis: string): void {
@@ -507,7 +542,7 @@ export function useToolhead(api: PluginApi) {
     const first = trimmed.charAt(0);
     const a = /^[A-Z]$/.test(first) ? first : (ui.directAxis || 'U');
     ui = { ...ui, directAxis: a };
-    api.settings.set('tools.directAxis', a);
+    settingsApi.set('tools.directAxis', a);
   }
 
   function setPA(patch: { advance?: number; smooth?: number }): void {
@@ -558,8 +593,8 @@ export function useToolhead(api: PluginApi) {
   const setFlow = (pct: number) => script(`M221 S${Math.round(pct)}`);
 
   function extrude(dir: 1 | -1): void {
-    const len = Number(api.settings.get<number>('tools.extrudeLen') ?? 10);
-    const speed = Number(api.settings.get<number>('tools.extrudeSpeed') ?? 5);
+    const len = Number(settingsApi.get<number>('tools.extrudeLen') ?? 10);
+    const speed = Number(settingsApi.get<number>('tools.extrudeSpeed') ?? 5);
     script(`M83\nG1 E${dir * len} F${Math.round(speed * 60)}`);
   }
 
@@ -592,9 +627,6 @@ export function useToolhead(api: PluginApi) {
   function setCarriageMode(carriage: string, mode: DualCarriageMode): void {
     script(`SET_DUAL_CARRIAGE CARRIAGE=${cleanCarriage(carriage)} MODE=${mode}`);
   }
-
-  // DIRECT mode (experimental branch generic_cartesian)
-  // Available = settings from tools.directMode (user check).
 
   function setCarriageDirect(carriage: string, enable: boolean): void {
     const c = cleanCarriage(carriage);
@@ -636,26 +668,32 @@ export function useToolhead(api: PluginApi) {
       unsubMeta = null;
     }
     for (const u of unsubs.splice(0)) u();
-    spoolInflight.clear();
-    spoolTs.clear();
+    if (!fleet) {
+      // только legacy чистит общий spool-кэш при смене активного принтера
+      spoolInflight.clear();
+      spoolTs.clear();
+    }
   }
 
   async function init(): Promise<void> {
-    
+    // settings одинаково читаются и legacy (api.settings активного принтера)
+    // и fleet (api.settingsFor(printerId)) — namespace правильный в обоих случаях
     loadUi();
 
     unsubs.push(
-      api.settings.onChange((k) => {
+      settingsApi.onChange((k) => {
         if (
           k === 'tools.style' || k === 'tools.invert' || k === 'tools.steps' ||
-          k === 'tools.directMode' || k === 'tools.directAxis'
+          k === 'tools.directMode' || k === 'tools.directAxis' ||
+          k === 'tools.extrudeLen' || k === 'tools.extrudeSpeed'
         ) loadUi();
       }),
     );
 
     const gen = ++generation;
     const h = safeHandle();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
+    if (!fleet && !api.printer.url) return;
 
     unsubs.push(
       h.onReady(() => {
@@ -673,52 +711,24 @@ export function useToolhead(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
-    teardown();
-    spoolOwner++;
-    spoolData = {};
-    meta = {
-      ready: false,
-      tools: [],
-      extruders: [],
-      steppers: [],
-      minExtrudeTemp: {},
-      maxZVelocity: 5,
-      hasDualCarriage: false,
-      dualKey: 'carriage_1',
-      directPrimaryAxis: 'x',
-      hasRetraction: false,
-      defaults: {
-        pa: {},
-        retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
-      },
-      hasSaveVars: false,
-      hasSpoolman: false,
-    };
-    th = {
-      position: [0, 0, 0],
-      homedAxes: '',
-      activeExtruder: 'extruder',
-      speedFactor: 1,
-      extrudeFactor: 1,
-      temps: {},
-      dcModes: {},
-      pa: {},
-      retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
-      gcodePosition: [0, 0, 0],
-      printState: '',
-      activeToolSaved: null,
-      spoolIds: {},
-      nativeSpoolId: null,
-    };
-    forceMove = false;
-    void init();
-  });
+  let offPrinter: () => void = () => {};
 
-  onDestroy(() => {
-    teardown();
+  if (!fleet) {
+    offPrinter = api.onPrinterChange(() => {
+      teardown();
+      spoolOwner++;
+      spoolData = {};
+      meta = emptyMeta();
+      th = emptyTh();
+      forceMove = false;
+      void init();
+    });
+  }
+
+  function destroy(): void {
     offPrinter();
-  });
+    teardown();
+  }
 
   return {
     get meta() { return meta; },
@@ -765,17 +775,61 @@ export function useToolhead(api: PluginApi) {
     moveTo,
     setPA,
     setRetraction,
-    // Spoolman
     spoolIdForTool,
     spoolColorForTool,
     getSpool,
     refreshSpool,
+    destroy,
   };
 }
 
-export type ToolheadStore = ReturnType<typeof useToolhead>;
+export type ToolheadStore = ReturnType<typeof createToolheadCore>;
 
-//helpers
+// ------------------------------------------------------------------
+// Legacy: refcounted singleton core. Шапка + тело виджета делят ОДИН
+// core — forceMove/ui/settings-реактивность шарятся (как до per-instance
+// рефактора). Fleet-инстансы изолированы через createToolheadCore(api, pid).
+// ------------------------------------------------------------------
+let legacyCore: ToolheadStore | null = null;
+let legacyConsumers = 0;
+
+function legacyCoreAcquire(api: PluginApi): ToolheadStore {
+  if (!legacyCore) legacyCore = createToolheadCore(api, null);
+  legacyConsumers++;
+  return legacyCore;
+}
+
+function legacyCoreRelease(): void {
+  legacyConsumers--;
+  if (legacyConsumers > 0 || !legacyCore) return;
+  legacyCore.destroy();
+  legacyCore = null;
+}
+
+/**
+ * Хук положения головы / инструментов.
+ *
+ * Без printerId — legacy: shared core активного принтера (refcounted;
+ * шапка+тело виджета и любые другие legacy-потребители делят один core:
+ * forceMove, ui, подписки, settings-реактивность общие).
+ *
+ * С printerId — fleet: изолированный core на принтер, handle через
+ * api.moonrakerFor(printerId), settings через api.settingsFor(printerId).
+ * Используется в fleet-вкладах printerPanels (например fleet-position).
+ */
+export function useToolhead(api: PluginApi, printerId?: string): ToolheadStore {
+  if (printerId === undefined) {
+    const core = legacyCoreAcquire(api);
+    onDestroy(() => legacyCoreRelease());
+    return core;
+  }
+
+  const core = createToolheadCore(api, printerId);
+  onDestroy(() => core.destroy());
+  return core;
+}
+
+// helpers
 
 export function cleanCarriage(name: string): string {
   if (name.startsWith('dual_carriage'))
