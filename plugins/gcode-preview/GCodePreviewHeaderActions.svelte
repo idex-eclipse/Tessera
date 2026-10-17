@@ -6,7 +6,7 @@
 
   import Icon from '../shared/icons/Icon.svelte';
   import { clearPreview } from './viewer/preview-ui-state.svelte';
-  import { useExcludeObjects } from './viewer/use-exclude-objects.svelte';
+  import { useExcludeObjects } from '../shared/exclude-objects/use-exclude-objects.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

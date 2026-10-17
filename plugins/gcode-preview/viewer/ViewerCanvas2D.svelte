@@ -4,7 +4,7 @@
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
   import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
   import Icon from '../../shared/icons/Icon.svelte';
-  import { useExcludeObjects } from './use-exclude-objects.svelte';
+  import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte.ts';
   import ConfirmDialog from '../../shared/confirm-dialog.svelte';
 
   const api = usePluginApi();

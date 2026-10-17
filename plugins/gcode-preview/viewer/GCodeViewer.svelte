@@ -5,7 +5,7 @@
   import ViewerCanvas3D from './ViewerCanvas3D.svelte';
   import type { ParsedGcode } from './parse-gcode';
 
-  import { useExcludeObjects } from './use-exclude-objects.svelte';
+  import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte';
 
   const api = usePluginApi();
   const excludeStore = useExcludeObjects(api);
