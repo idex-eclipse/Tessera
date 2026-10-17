@@ -2,6 +2,7 @@ import type { PluginApi } from '../../plugin-sdk/src/types';
 import { setGuardPrintState, setGuardHomedAxes } from './guards.ts';
 import { detectKinematics, type Kinematics } from './kinematics.ts';
 import { resetLivezState } from './live-z-state.svelte.ts';
+import { onDestroy } from 'svelte';
 
 export type ProbeMode = 'eddy' | 'probe' | 'bltouch' | 'endstop' | 'none';
 
@@ -234,18 +235,29 @@ export function useCalibrations(api: PluginApi) {
 
   let cleanup: (() => void) | null = null;
   $effect(() => {
-    refresh();
+    // Холодный старт (F5): WS ещё не open → request() реджектится.
+    // immediate-refresh только если соединение уже открыто; иначе ждём
+    // onReady — он же покроет реконнекты и догонку после смены принтера.
+    if (moonraker.readyState === 'open') {
+      void refresh();
+    }
+    const offReady = moonraker.onReady(() => {
+      void refresh();
+    });
+
     cleanup = setupSubscriptions();
     return () => {
+      offReady();
       cleanup?.();
       cleanup = null;
     };
   });
 
-  api.onPrinterChange(() => {
+  const offPrinter = api.onPrinterChange(() => {
     state = { ...INITIAL };
-    refresh();
+    void refresh();
   });
+  onDestroy(offPrinter);
 
   return {
     get state() { return state; },
