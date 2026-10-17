@@ -52,15 +52,17 @@
     </button>
   </div>
 
-  <button
-    class="fleet-toggle"
-    class:open={ui.fleetOpen}
-    onclick={() => ui.toggleFleet()}
-    aria-label={i18n.t('fleet.title')}
-    title={i18n.t('fleet.title')}
-  >
-    <Icon name="chevron-down" />
-  </button>
+  {#if !ui.fleetOpen}
+    <button
+      class="fleet-toggle"
+      class:open={ui.fleetOpen}
+      onclick={() => ui.toggleFleet()}
+      aria-label={i18n.t('fleet.title')}
+      title={i18n.t('fleet.title')}
+    >
+      <Icon name="chevron-down" />
+    </button>
+  {/if}
 </div>
 
 <style>

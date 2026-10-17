@@ -8,7 +8,7 @@
   import { getAppContext } from '../../app-context.ts';
   import { createPluginApi } from '../../core/plugin-api-factory.ts';
 
-  import Icon from '../icons/Icon.svelte';
+  import Icon from '../../../../plugins/shared/icons/Icon.svelte';
   import ConnectionStatus from '../connection-status/ConnectionStatus.svelte';
   import PluginElementHost from '../plugin-element-host.svelte';
 
@@ -81,7 +81,7 @@
   <div class="fleet-header">
     <h2 class="fleet-title">{i18n.t('fleet.title')}</h2>
     <button class="fleet-close" onclick={handleClose} aria-label={i18n.t('fleet.close')}>
-      <Icon name="close" />
+      <Icon name="x" />
     </button>
   </div>
 
@@ -96,23 +96,16 @@
         {@const isActive = printer.id === activePrinterId}
 
         <div class="fleet-card" class:active={isActive}>
-          <div class="fleet-card-header">
+          <div 
+            class="fleet-card-header"
+            onclick={() => handleActivate(printer.id)}
+          >
             <div class="fleet-card-info">
               <span class="fleet-card-name">{printer.name}</span>
               {#if connection}
                 <ConnectionStatus status={connection.status} />
               {/if}
-              {#if isActive}
-                <span class="fleet-card-badge">{i18n.t('fleet.active')}</span>
-              {/if}
             </div>
-            <button
-              class="fleet-card-activate"
-              onclick={() => handleActivate(printer.id)}
-              disabled={isActive}
-            >
-              {i18n.t('fleet.activate')}
-            </button>
           </div>
 
           <div class="fleet-card-body">
@@ -171,7 +164,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-sm) var(--space-lg);
+    padding: var(--space-sm) var(--space-md);
+    border-color: var(--border-color);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
   }
@@ -222,7 +216,7 @@
 
   .fleet-card {
     grid-column: span 4;
-    grid-row: span 4;
+    grid-row: span 5;
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
@@ -240,10 +234,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
     background: var(--bg-surface-hover);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+    cursor: pointer;
   }
 
   .fleet-card-info {
@@ -256,45 +251,11 @@
 
   .fleet-card-name {
     font-weight: 600;
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .fleet-card-badge {
-    padding: 2px var(--space-sm);
-    background: var(--accent);
-    color: white;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    flex-shrink: 0;
-  }
-
-  .fleet-card-activate {
-    padding: 4px var(--space-md);
-    border: none;
-    border-radius: var(--radius-md);
-    background: var(--accent);
-    color: white;
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity var(--transition-fast);
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .fleet-card-activate:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .fleet-card-activate:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .fleet-card-body {
