@@ -306,5 +306,10 @@ export const en = {
       notReady: 'Klipper not ready',
       unhomed: 'not homed',
     },
+    temps: {
+      title: 'Temperatures',
+      notReady: 'Klipper not ready',
+      noHeaters: 'No heaters configured',
+    },
   },
 };

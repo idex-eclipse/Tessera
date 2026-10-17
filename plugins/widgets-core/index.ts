@@ -7,6 +7,10 @@ import TemperatureHeader from './temperature/components/widgets/TemperatureHeade
 defineMpuElement('mpu-widgets-temperature-graph', TemperatureGraphWidget);
 defineMpuElement('mpu-widgets-temperature-header', TemperatureHeader);
 
+// Fleet
+import FleetTempsPanel from './temperature/components/fleet/TempPanel.svelte';
+defineMpuElement('mpu-core-widgets-fleet-temps', FleetTempsPanel);
+
 // Quick access chip
 import TemperatureChip from './temperature/components/chips/TemperatureChip.svelte';
 import TemperatureChipPicker from './temperature/components/chips/TemperatureChipPicker.svelte';

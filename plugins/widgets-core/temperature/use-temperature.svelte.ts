@@ -104,7 +104,9 @@ function lastOf(arr: number[]): number | null {
   return v === undefined ? null : v;
 }
 
-export function useTemperatureData(api: PluginApi) {
+export function useTemperatureData(api: PluginApi, printerId?: string) {
+  const fleet = printerId !== undefined;
+
   let sensors = $state<TemperatureSensor[]>([]);
   let klippyState = $state<string>('unknown');
   let connected = $state<boolean>(false);
@@ -118,7 +120,7 @@ export function useTemperatureData(api: PluginApi) {
 
   function safeHandle() {
     try {
-      return api.moonraker();
+      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
     } catch {
       return null;
     }
@@ -145,7 +147,7 @@ export function useTemperatureData(api: PluginApi) {
     klippyState = 'unknown';
     connected = false;
 
-    if (!api.printer.url) return;
+    if (!fleet && !api.printer.url) return;
 
     const h = safeHandle();
     if (!h) return;
@@ -212,9 +214,66 @@ export function useTemperatureData(api: PluginApi) {
       return;
     }
 
+    if (fleet) {
+      await reseedFleet(gen);
+      ensureSubscription(gen, true); // immediate = seed значений
+      return;
+    }
+
     await reseed(gen);
     await refreshLimits(gen);
     ensureSubscription(gen);
+  }
+
+  /**
+   * Fleet-состав: только extruder* и heater_bed (read-only строки, как в
+   * Moongate-карточке). Без temperature_store и config-limits: графика и
+   * min/max в fleet нет, buffers остаются пустыми (тики onDelta дешёвые).
+   */
+  async function reseedFleet(gen: number): Promise<void> {
+    const h = safeHandle();
+    if (!h || gen !== generation) return;
+
+    const list = await h.request<any>('printer.objects.list').catch(() => null);
+    if (gen !== generation || !list) return;
+
+    const names: string[] = (Array.isArray(list.objects) ? list.objects : [])
+      .filter((n: string) => /^extruder\d*$/.test(n) || n === 'heater_bed');
+
+    const next: TemperatureSensor[] = names.map((name, i) => {
+      const prev = sensors.find((s) => s.name === name);
+      if (!buffers.has(name)) {
+        buffers.set(name, {
+          temp: new SeriesBuffer(),
+          target: new SeriesBuffer(),
+          power: new SeriesBuffer(),
+        });
+      }
+      return {
+        name,
+        displayName: displayName(name),
+        kind: classifySensor(name) ?? 'heater',
+        color: PALETTE[i % PALETTE.length] ?? '#9e9e9e',
+        temperature: null,
+        target: null,
+        power: null,
+        rate: null,
+        speed: null,
+        minTemp: prev?.minTemp ?? null,
+        maxTemp: prev?.maxTemp ?? null,
+        chartVisible: prev?.chartVisible ?? true,
+        powerVisible: prev?.powerVisible ?? false,
+      };
+    });
+
+    next.sort(
+      (a, b) =>
+        sensorSortKey(a.name, a.kind) - sensorSortKey(b.name, b.kind) ||
+        a.displayName.localeCompare(b.displayName),
+    );
+
+    sensors = next;
+    tick++;
   }
 
   async function reseed(gen: number): Promise<void> {
@@ -324,7 +383,7 @@ export function useTemperatureData(api: PluginApi) {
     }
   }
 
-  function ensureSubscription(gen: number): void {
+  function ensureSubscription(gen: number, immediate = false): void {
     const h = safeHandle();
     if (!h || gen !== generation) return;
 
@@ -348,7 +407,7 @@ export function useTemperatureData(api: PluginApi) {
       (delta: any) => {
         if (gen === generation) onDelta(delta);
       },
-      { immediate: false },
+      { immediate },
     );
   }
 
@@ -422,10 +481,14 @@ export function useTemperatureData(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
-    teardown();
-    init();
-  });
+  let offPrinter: () => void = () => {};
+
+  if (!fleet) {
+    offPrinter = api.onPrinterChange(() => {
+      teardown();
+      init();
+    });
+  }
 
   onDestroy(() => {
     teardown();

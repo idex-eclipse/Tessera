@@ -304,5 +304,10 @@ cp: {
       notReady: 'Klipper не готов',
       unhomed: 'Ось не запаркована',
     },
+    temps: {
+      title: 'Температура',
+      notReady: 'Klipper не готов',
+      noHeaters: 'Нет нагревателей',
+    },
   },
 };
