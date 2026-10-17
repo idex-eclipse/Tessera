@@ -1,5 +1,5 @@
 <script lang="ts">
-  import '../../shared/input/inputs.css';
+  import '../../../shared/input/inputs.css';
   import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
   import { SERVICES, type WebcamItem } from '../use-cameras.svelte.ts';

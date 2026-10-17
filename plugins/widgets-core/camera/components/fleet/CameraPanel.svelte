@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PluginApi } from '../../../../../plugin-sdk/src/types';
+  import type { PluginApi } from '../../../../../plugin-sdk/src/types.ts';
   import { type WebcamItem, useCameras} from '../../use-cameras.svelte.ts';
 
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
