@@ -19,15 +19,15 @@
 </script>
 
 <div class="hdr">
-  <HeaderHelp title={i18n.t('widgets.status.help.Title')}>
-    <h4>{i18n.t('widgets.status.help.ModesTitle')}</h4>
-    <p>{i18n.t('widgets.status.help.ModesText')}</p>
+  <HeaderHelp title={i18n.t('system.status.help.Title')}>
+    <h4>{i18n.t('system.status.help.ModesTitle')}</h4>
+    <p>{i18n.t('system.status.help.ModesText')}</p>
 
-    <h4>{i18n.t('widgets.status.help.FieldsTitle')}</h4>
-    <p>{i18n.t('widgets.status.help.FieldsText')}</p>
+    <h4>{i18n.t('system.status.help.FieldsTitle')}</h4>
+    <p>{i18n.t('system.status.help.FieldsText')}</p>
 
-    <h4>{i18n.t('widgets.status.help.BannerTitle')}</h4>
-    <p>{i18n.t('widgets.status.help.BannerText')}</p>
+    <h4>{i18n.t('system.status.help.BannerTitle')}</h4>
+    <p>{i18n.t('system.status.help.BannerText')}</p>
   </HeaderHelp>
 
   <StatusSettingsMenu {api} showBannerToggle={true} />

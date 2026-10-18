@@ -63,6 +63,7 @@ const router = createRouter({ settings, printerManager });
 registerCoreLocales(i18n);
 
 //loader.registerCorePlugin(dummyManifest, dummyModule);
+loader.registerCorePlugin(systemManifest, systemModule);
 loader.registerCorePlugin(widgetsCoreManifest, widgetsCoreModule);
 loader.registerCorePlugin(consoleManifest, consoleModule);
 loader.registerCorePlugin(jobsManifest, jobsModule);
@@ -70,8 +71,6 @@ loader.registerCorePlugin(historyManifest, historyModule);
 loader.registerCorePlugin(gcodePreviewManifest, gcodePreviewModule);
 loader.registerCorePlugin(calibrationsManifest, calibrationsModule);
 loader.registerCorePlugin(configManifest, configModule);
-loader.registerCorePlugin(systemManifest, systemModule);
-
 
 function addPluginLocales(locales: Record<string, Record<string, unknown>>): void {
   for (const [locale, messages] of Object.entries(locales)) {
@@ -80,6 +79,7 @@ function addPluginLocales(locales: Record<string, Record<string, unknown>>): voi
 }
 
 //addPluginLocales(dummyLocales);
+addPluginLocales(systemLocales);
 addPluginLocales(widgetsCoreLocales);
 addPluginLocales(consoleLocales);
 addPluginLocales(jobsLocales);
@@ -87,7 +87,6 @@ addPluginLocales(gcodePreviewLocales);
 addPluginLocales(configLocales);
 addPluginLocales(historyLocales);
 addPluginLocales(calibrationsLocales);
-addPluginLocales(systemLocales);
 
 async function startup(): Promise<void> {
   try {

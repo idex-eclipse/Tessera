@@ -19,7 +19,7 @@ export const systemManifest = definePlugin({
     {
       type: 'status',
       provider: '@core/widgets',
-      titleKey: 'widgets.status.title',
+      titleKey: 'system.status.title',
       element: 'mpu-widgets-status',
       headerElement: 'mpu-widgets-status-header',
       defaultSize: { w: 4, h: 2 },
@@ -58,8 +58,8 @@ export const systemManifest = definePlugin({
   printerPanels: [
     {
       id: 'fleet-status',
-      element: 'mpu-core-widgets-fleet-status',
-      titleKey: 'widgets.fleetStatus.title',
+      element: 'mpu-system-fleet-status',
+      titleKey: 'system.fleet.status.title',
     },
   ],
 

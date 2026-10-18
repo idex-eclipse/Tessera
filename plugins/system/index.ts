@@ -24,3 +24,6 @@ import StatusWidget from './components/widgets/StatusWidget.svelte';
 import StatusHeader from './components/widgets/StatusHeader.svelte';
 defineMpuElement('mpu-widgets-status', StatusWidget);
 defineMpuElement('mpu-widgets-status-header', StatusHeader);
+
+import StatusPanel from './components/fleet/StatusPanel.svelte';
+defineMpuElement('mpu-system-fleet-status', StatusPanel);

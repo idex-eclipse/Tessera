@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useKlippyState } from 'plugins/shared/klippy-state/use-klippy-state.svelte';
+  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte';
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
   import KlipperError from './KlipperError.svelte';
   import Status from './Status.svelte';

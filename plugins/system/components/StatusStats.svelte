@@ -26,15 +26,15 @@
   let flow = $derived(computeFlow(m));
 
   const KEY: Record<StatusFieldId, string> = {
-    speed: 'widgets.status.speed',
-    flow: 'widgets.status.flow',
-    filament: 'widgets.status.filament',
-    slicer: 'widgets.status.slicer',
-    elapsed: 'widgets.status.elapsed',
-    total: 'widgets.status.total',
-    layer: 'widgets.status.layer',
-    remaining: 'widgets.status.remaining',
-    eta: 'widgets.status.eta',
+    speed: 'system.status.speed',
+    flow: 'system.status.flow',
+    filament: 'system.status.filament',
+    slicer: 'system.status.slicer',
+    elapsed: 'system.status.elapsed',
+    total: 'system.status.total',
+    layer: 'system.status.layer',
+    remaining: 'system.status.remaining',
+    eta: 'system.status.eta',
   };
 
   function valueOf(id: StatusFieldId): string {

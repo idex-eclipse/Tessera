@@ -111,21 +111,21 @@
   }
 
   const MODES: Array<{ id: ProgressMode; key: string }> = [
-    { id: 'file', key: 'widgets.status.modeFile' },
-    { id: 'time', key: 'widgets.status.modeTime' },
-    { id: 'filament', key: 'widgets.status.modeFilament' },
+    { id: 'file', key: 'system.status.modeFile' },
+    { id: 'time', key: 'system.status.modeTime' },
+    { id: 'filament', key: 'system.status.modeFilament' },
   ];
 
   const FIELD_KEY: Record<StatusFieldId, string> = {
-    speed: 'widgets.status.speed',
-    flow: 'widgets.status.flow',
-    filament: 'widgets.status.filament',
-    slicer: 'widgets.status.slicer',
-    elapsed: 'widgets.status.elapsed',
-    total: 'widgets.status.total',
-    layer: 'widgets.status.layer',
-    remaining: 'widgets.status.remaining',
-    eta: 'widgets.status.eta',
+    speed: 'system.status.speed',
+    flow: 'system.status.flow',
+    filament: 'system.status.filament',
+    slicer: 'system.status.slicer',
+    elapsed: 'system.status.elapsed',
+    total: 'system.status.total',
+    layer: 'system.status.layer',
+    remaining: 'system.status.remaining',
+    eta: 'system.status.eta',
   };
 </script>
 
@@ -133,7 +133,7 @@
   class="hdr-btn"
   class:active={open}
   bind:this={btnEl}
-  title={i18n.t('widgets.status.settings')}
+  title={i18n.t('system.status.settings')}
   onclick={toggleOpen}
 >
   <Icon name="settings" size={15} />
@@ -149,7 +149,7 @@
     style:right="{pos.right}px"
     role="menu"
   >
-    <div class="menu-title">{i18n.t('widgets.status.progressMode')}</div>
+    <div class="menu-title">{i18n.t('system.status.progressMode')}</div>
 
     {#each MODES as m (m.id)}
       <button class="menu-item" class:checked={mode === m.id} onclick={() => setMode(m.id)}>
@@ -167,7 +167,7 @@
       onclick={() => (fieldsOpen = !fieldsOpen)}
     >
       <span class="check"></span>
-      <span class="item-label">{i18n.t('widgets.status.fieldsItem')}</span>
+      <span class="item-label">{i18n.t('system.status.fieldsItem')}</span>
       <span class="chev" class:open={fieldsOpen}>
         <Icon name="chevron-down" size={13} />
       </span>
@@ -185,7 +185,7 @@
       {/each}
       <button class="menu-item indent" onclick={resetFields}>
         <span class="check"><Icon name="refresh" size={12} /></span>
-        {i18n.t('widgets.status.fieldsReset')}
+        {i18n.t('system.status.fieldsReset')}
       </button>
     {/if}
 
@@ -193,7 +193,7 @@
       <div class="menu-sep"></div>
       <button class="menu-item" class:checked={banner} onclick={toggleBanner}>
         <span class="check">{banner ? '✓' : ''}</span>
-        {i18n.t('widgets.status.bannerItem')}
+        {i18n.t('system.status.bannerItem')}
       </button>
     {/if}
   </div>

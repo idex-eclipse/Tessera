@@ -24,12 +24,12 @@
   let progress = $derived(computeProgress(m, mode));
 
   let stateKey = $derived(
-    m.state === 'printing' ? 'widgets.status.printing'
-    : m.state === 'paused' ? 'widgets.status.paused'
-    : m.state === 'complete' ? 'widgets.status.complete'
-    : m.state === 'cancelled' ? 'widgets.status.cancelled'
-    : m.state === 'error' ? 'widgets.status.error'
-    : 'widgets.status.standby',
+    m.state === 'printing' ? 'system.status.printing'
+    : m.state === 'paused' ? 'system.status.paused'
+    : m.state === 'complete' ? 'system.status.complete'
+    : m.state === 'cancelled' ? 'system.status.cancelled'
+    : m.state === 'error' ? 'system.status.error'
+    : 'system.status.standby',
   );
 </script>
 
@@ -56,7 +56,7 @@
 
       <StatusStats {m} {mode} {fields} />
     {:else}
-      <p class="idle">{i18n.t('widgets.status.ready')}</p>
+      <p class="idle">{i18n.t('system.status.ready')}</p>
     {/if}
   </div>
 {/if}
