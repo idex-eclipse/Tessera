@@ -1,15 +1,15 @@
-import type { PluginApi } from '../../plugin-sdk/src/types';
+import { onDestroy } from 'svelte';
+import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
 import { setGuardPrintState, setGuardHomedAxes } from './guards.ts';
 import { detectKinematics, type Kinematics } from './kinematics.ts';
 import { resetLivezState } from './live-z-state.svelte.ts';
-import { onDestroy } from 'svelte';
 
 export type ProbeMode = 'eddy' | 'probe' | 'bltouch' | 'endstop' | 'none';
 
 export interface CalibrationsState {
   kinematics: Kinematics;
   hasInputShaper: boolean;
-  hasProbe: boolean;      // PROBE_CALIBRATE в gcode.help
+  hasProbe: boolean;
   hasPid: boolean;
   hasBedMesh: boolean;
   probeMode: ProbeMode;
@@ -24,7 +24,7 @@ export interface CalibrationsState {
   printState: 'printing' | 'paused' | 'idle' | 'standby';
   homedAxes: string;
   meshProfileName: string;
-  zOffsetLive: number | null;              // gcode_move.homing_origin[2]
+  zOffsetLive: number | null;
   zOffsets: { probe: number | null; bltouch: number | null; endstop: number | null };
   manualProbe: { isActive: boolean; z: number | null };
   loaded: boolean;
@@ -60,7 +60,7 @@ export function useCalibrations(api: PluginApi) {
   let state = $state<CalibrationsState>({ ...INITIAL });
 
   // ------------------------------------------------------------------
-  // feature-detect
+  // feature-detect (legacy, активный принтер)
   // ------------------------------------------------------------------
 
   async function refreshHelp(): Promise<void> {
@@ -115,7 +115,7 @@ export function useCalibrations(api: PluginApi) {
         } else if (lower === 'bltouch') {
           bltouchSection = key;
         } else if (lower === 'probe' || lower.endsWith('_probe')) {
-          probeSection = key;   // probe | load_cell_probe | dockable_probe | …
+          probeSection = key;
         } else if (lower.startsWith('gcode_shell_command ')) {
           shellCommands.push(key.substring('gcode_shell_command '.length).trim());
         }
@@ -150,7 +150,7 @@ export function useCalibrations(api: PluginApi) {
   }
 
   // ------------------------------------------------------------------
-  // подписки
+  // подписки (legacy, активный принтер)
   // ------------------------------------------------------------------
 
   function setupSubscriptions(): () => void {
@@ -166,13 +166,14 @@ export function useCalibrations(api: PluginApi) {
           gcode_move: ['homing_origin'],
         },
         (delta: any) => {
+          const printerId = api.printer.id;
           if (delta.print_stats?.state) {
             state.printState = delta.print_stats.state;
-            setGuardPrintState(delta.print_stats.state);
+            setGuardPrintState(printerId, delta.print_stats.state);
           }
           if (delta.toolhead?.homed_axes !== undefined) {
             state.homedAxes = String(delta.toolhead.homed_axes ?? '');
-            setGuardHomedAxes(state.homedAxes);
+            setGuardHomedAxes(printerId, state.homedAxes);
           }
           if (delta.bed_mesh?.profile_name !== undefined) {
             state.meshProfileName = String(delta.bed_mesh.profile_name ?? '');
@@ -257,7 +258,81 @@ export function useCalibrations(api: PluginApi) {
     state = { ...INITIAL };
     void refresh();
   });
-  onDestroy(offPrinter);
+
+  // ------------------------------------------------------------------
+  // Fleet-aware трекер: подписки на ВСЕ принтеры для per-printer guard-state.
+  // Гарды читают состояние по ctx.targetPrinterId; этот трекер держит state
+  // актуальным для любого принтера, на который может прийти request.
+  // ------------------------------------------------------------------
+  const fleetUnsubs = new Map<string, () => void>();
+
+  function subscribeFleetPrinter(printerId: string): void {
+    if (fleetUnsubs.has(printerId)) return;
+
+    try {
+      const handle = api.moonrakerFor(printerId);
+      const unsub = handle.subscribe(
+        {
+          print_stats: ['state'],
+          toolhead: ['homed_axes'],
+        },
+        (delta: any) => {
+          if (delta.print_stats?.state) {
+            setGuardPrintState(printerId, delta.print_stats.state);
+          }
+          if (delta.toolhead?.homed_axes !== undefined) {
+            setGuardHomedAxes(printerId, String(delta.toolhead.homed_axes ?? ''));
+          }
+        },
+        { immediate: true },
+      );
+      fleetUnsubs.set(printerId, unsub);
+    } catch (e) {
+      // printerId unknown или handle недоступен — пропускаем
+      console.debug('[calibrations] fleet subscribe failed for', printerId, e);
+    }
+  }
+
+  function unsubscribeFleetPrinter(printerId: string): void {
+    const unsub = fleetUnsubs.get(printerId);
+    if (unsub) {
+      unsub();
+      fleetUnsubs.delete(printerId);
+    }
+  }
+
+  function syncFleetSubscriptions(): void {
+    const currentIds = new Set(api.printers.map((p) => p.id));
+    
+    // Добавляем подписки для новых принтеров
+    for (const id of currentIds) {
+      subscribeFleetPrinter(id);
+    }
+    
+    // Убираем подписки для удалённых принтеров
+    for (const id of Array.from(fleetUnsubs.keys())) {
+      if (!currentIds.has(id)) {
+        unsubscribeFleetPrinter(id);
+      }
+    }
+  }
+
+  // Initial sync
+  syncFleetSubscriptions();
+
+  const offPrinters = api.onPrintersChange(() => {
+    syncFleetSubscriptions();
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    // Clean up all fleet subscriptions
+    for (const unsub of fleetUnsubs.values()) {
+      unsub();
+    }
+    fleetUnsubs.clear();
+  });
 
   return {
     get state() { return state; },
