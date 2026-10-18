@@ -1,7 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
-  import { heaters, resetHeatersState } from '../../../heaters-state.svelte.ts';
   import { useHeaterMonitor } from '../../../use-heater.svelte.ts';
   import {
     UPlotChart,
@@ -75,51 +74,42 @@
   $effect(() => {
     const list = store.state.heaters;
     if (list.length === 0) return;
-    if (!list.includes(heaters.heater)) {
-      heaters.heater = list[0]!;
-      heaters.target = defaultTarget(heaters.heater);
+    if (!list.includes(store.heatersState.heater)) {
+      store.heatersState.heater = list[0]!;
+      store.heatersState.target = defaultTarget(store.heatersState.heater);
     }
   });
 
   $effect(() => {
-    monitor.setHeater(heaters.heater);
+    monitor.setHeater(store.heatersState.heater);
   });
 
   let saveOpen = $state(false);
 
-  $effect(() => {
-    const offPrinter = api.onPrinterChange(() => {
-      resetHeatersState();
-    });
-    return () => {
-      offPrinter();
-    };
-  });
-
   function selectHeater(v: string): void {
-    heaters.heater = v;
-    heaters.target = defaultTarget(v);
+    store.heatersState.heater = v;
+    store.heatersState.target = defaultTarget(v);
   }
 
   // --- derived ---
-  let maxTemp = $derived(store.state.heaterMaxTemps[heaters.heater] ?? 300);
-  let targetValid = $derived(heaters.target > 0 && heaters.target <= maxTemp);
+  let maxTemp = $derived(store.state.heaterMaxTemps[store.heatersState.heater] ?? 300);
+  let targetValid = $derived(store.heatersState.target > 0 && store.heatersState.target <= maxTemp);
   let isPrinting = $derived(
     store.state.printState === 'printing' || store.state.printState === 'paused',
   );
 
   let pidScript = $derived(
-    heaters.heater && targetValid ? gcode.pidCalibrate(heaters.heater, heaters.target) : '',
+    store.heatersState.heater && targetValid ? gcode.pidCalibrate(store.heatersState.heater, store.heatersState.target) : '',
   );
 
   async function runPid(): Promise<void> {
-    if (!heaters.heater || !targetValid || heaters.tuning || !pidScript) return;
-    heaters.result = null;
-    heaters.tuning = true;
+    if (!store.heatersState.heater || !targetValid || store.heatersState.tuning || !pidScript) return;
+    store.heatersState.result = null;
+    store.heatersState.tuning = true;
     try {
       await runGcode(api.moonraker(), pidScript);
     } catch (e) {
-      heaters.tuning = false;
+      store.heatersState.tuning = false;
       console.error('[calib-debug] runPid: request rejected', e);
     }
   }
@@ -127,7 +117,7 @@
     saveOpen = false;
     runGcode(api.moonraker(), gcode.saveConfig())
       .then(() => {
-        heaters.result = null;
+        store.heatersState.result = null;
       })
       .catch((e) => console.error('[calibrations] save failed:', e));
   }
@@ -178,7 +168,7 @@
       holdCount = 0;
       return;
     }
-    if (heaters.tuning) {
+    if (store.heatersState.tuning) {
       phase = 'idle';
       return;
     }
@@ -298,9 +288,9 @@
           <span class="label">{i18n.t('calibrations.heaters.heater')}</span>
           <select
             class="select"
-            value={heaters.heater}
+            value={store.heatersState.heater}
             onchange={(e) => selectHeater(e.currentTarget.value)}
-            disabled={heaters.tuning}
+            disabled={store.heatersState.tuning}
           >
             {#each store.state.heaters as h (h)}<option value={h}>{h}</option>{/each}
           </select>
@@ -316,8 +306,8 @@
             min="1"
             max={maxTemp}
             step="1"
-            bind:value={heaters.target}
-            disabled={heaters.tuning}
+            bind:value={store.heatersState.target}
+            disabled={store.heatersState.tuning}
           />
           {#if !targetValid}
             <span class="invalid">
@@ -333,10 +323,10 @@
         <div class="btn-row">
           <button
             class="btn primary"
-            disabled={!targetValid || heaters.tuning || isPrinting}
+            disabled={!targetValid || store.heatersState.tuning || isPrinting}
             onclick={runPid}
           >
-            {#if heaters.tuning}
+            {#if store.heatersState.tuning}
               <Icon name="loader" size={14} /> {i18n.t('calibrations.heaters.tuning')}
             {:else}
               <Icon name="play" size={14} /> {i18n.t('calibrations.heaters.run')}
@@ -349,7 +339,7 @@
             <Icon name="warning" size={14} />
             <span>
               {i18n.t('calibrations.heaters.deviationAlert', {
-                heater: monitor.sensors[0]?.displayName ?? heaters.heater,
+                heater: monitor.sensors[0]?.displayName ?? store.heatersState.heater,
                 dev: deviationDev.toFixed(1),
                 target: (monitor.sensors[0]?.target ?? 0).toFixed(0),
               })}
@@ -359,20 +349,20 @@
       </div>
 
       <div class="results">
-        {#if heaters.result}
+        {#if store.heatersState.result}
           <h4 class="results-title">{i18n.t('calibrations.heaters.results')}</h4>
           <div class="cards">
             <div class="card">
               <span class="card-k">{i18n.t('calibrations.heaters.kp')}</span>
-              <span class="card-v mono">{heaters.result.kp.toFixed(3)}</span>
+              <span class="card-v mono">{store.heatersState.result.kp.toFixed(3)}</span>
             </div>
             <div class="card">
               <span class="card-k">{i18n.t('calibrations.heaters.ki')}</span>
-              <span class="card-v mono">{heaters.result.ki.toFixed(3)}</span>
+              <span class="card-v mono">{store.heatersState.result.ki.toFixed(3)}</span>
             </div>
             <div class="card">
               <span class="card-k">{i18n.t('calibrations.heaters.kd')}</span>
-              <span class="card-v mono">{heaters.result.kd.toFixed(3)}</span>
+              <span class="card-v mono">{store.heatersState.result.kd.toFixed(3)}</span>
             </div>
           </div>
           <div class="btn-row">
@@ -380,7 +370,7 @@
               <Icon name="save" size={14} /> {i18n.t('calibrations.saveConfig')}
             </button>
           </div>
-        {:else if !heaters.tuning}
+        {:else if !store.heatersState.tuning}
           <p class="placeholder muted">
             {i18n.t('calibrations.heaters.run')} → {i18n.t('calibrations.heaters.results')}
           </p>
@@ -543,7 +533,7 @@
   .btn.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
   }
 
   .deviation-alert {

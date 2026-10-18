@@ -4,7 +4,6 @@
   import Icon from '../../../../shared/icons/Icon.svelte';
 
   import { useBedMesh, type BedMeshTools } from '../../../use-bed-mesh.svelte.ts';
-  import { bedMeshUiState } from '../../../bed-mesh-ui-state.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
 
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -66,7 +65,8 @@
     try {
       await runGcode(api.moonraker(), script);
       await store.refresh();
-      if (toolKey === 'screws') bedMeshUiState.screwsOverlayOpen = true;
+      // После SCREWS_TILT_CALCULATE открываем overlay с результатами
+      if (toolKey === 'screws') store.toggleScrewsOverlay();
     } catch (e) {
       console.error('[bed-mesh] gcode failed:', script, e);
     } finally {

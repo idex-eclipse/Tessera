@@ -4,16 +4,13 @@ export interface PidResult {
   kd: number;
 }
 
-export const heaters = $state({
-  heater: '',        // ← переживает переключение вкладок
-  target: 200,       // ← тоже
-  tuning: false,
-  result: null as PidResult | null,
-});
+export interface HeatersState {
+  heater: string;
+  target: number;
+  tuning: boolean;
+  result: PidResult | null;
+}
 
-export function resetHeatersState(): void {
-  heaters.heater = '';
-  heaters.target = 200;
-  heaters.tuning = false;
-  heaters.result = null;
+export function initialHeatersState(): HeatersState {
+  return { heater: '', target: 200, tuning: false, result: null };
 }

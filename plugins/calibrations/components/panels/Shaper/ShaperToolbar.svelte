@@ -1,7 +1,7 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
-  import { shaper, refreshGallery } from '../../../shaper-state.svelte.ts';
+  import { refreshGallery } from '../../../shaper-state.svelte.ts';
   import Icon from '../../../../shared/icons/Icon.svelte';
 
   const api = usePluginApi();
@@ -14,9 +14,9 @@
   };
 
   function readSettings(): void {
-    shaper.cmd.X = api.settings.get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
-    shaper.cmd.Y = api.settings.get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
-    shaper.beltsEnabled = api.settings.get<boolean>('beltsEnabled') ?? false;
+    store.shaperState.cmd.X = api.settings.get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
+    store.shaperState.cmd.Y = api.settings.get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
+    store.shaperState.beltsEnabled = api.settings.get<boolean>('beltsEnabled') ?? false;
   }
 
   $effect(() => {
@@ -30,23 +30,23 @@
   });
 
   function setCmd(v: string): void {
-    shaper.cmd[shaper.axis] = v;
-    api.settings.set(shaper.axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
+    store.shaperState.cmd[store.shaperState.axis] = v;
+    api.settings.set(store.shaperState.axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
   }
 
   function toggleBelts(e: Event): void {
     const on = (e.currentTarget as HTMLInputElement).checked;
-    shaper.beltsEnabled = on;
+    store.shaperState.beltsEnabled = on;
     api.settings.set('beltsEnabled', on);
   }
 </script>
 
 <div class="toolbar">
   <label class="cmd-select">
-    <span class="lbl">{i18n.t('calibrations.shaper.shellCmd')} {shaper.axis}</span>
-    <select class="select" value={shaper.cmd[shaper.axis]} onchange={(e) => setCmd(e.currentTarget.value)}>
-      {#if !store.state.shellCommands.includes(shaper.cmd[shaper.axis])}
-        <option value={shaper.cmd[shaper.axis]}>{shaper.cmd[shaper.axis]}</option>
+    <span class="lbl">{i18n.t('calibrations.shaper.shellCmd')} {store.shaperState.axis}</span>
+    <select class="select" value={store.shaperState.cmd[store.shaperState.axis]} onchange={(e) => setCmd(e.currentTarget.value)}>
+      {#if !store.state.shellCommands.includes(store.shaperState.cmd[store.shaperState.axis])}
+        <option value={store.shaperState.cmd[store.shaperState.axis]}>{store.shaperState.cmd[store.shaperState.axis]}</option>
       {/if}
       {#each store.state.shellCommands as c (c)}
         <option value={c}>{c}</option>
@@ -54,14 +54,14 @@
     </select>
   </label>
 
-  <button class="icon-btn" onclick={() => refreshGallery(api)} title={i18n.t('calibrations.shaper.refreshGallery')}>
+  <button class="icon-btn" onclick={() => void refreshGallery(store.shaperState, api.moonraker())} title={i18n.t('calibrations.shaper.refreshGallery')}>
     <Icon name="refresh" size={14} />
   </button>
 
   <span class="spacer"></span>
 
   <label class="switch" title={i18n.t('calibrations.belts.enableHint')}>
-    <input type="checkbox" checked={shaper.beltsEnabled} onchange={toggleBelts} />
+    <input type="checkbox" checked={store.shaperState.beltsEnabled} onchange={toggleBelts} />
     <span>{i18n.t('calibrations.belts.short')}</span>
   </label>
 </div>

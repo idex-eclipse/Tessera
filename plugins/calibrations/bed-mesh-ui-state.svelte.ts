@@ -1,10 +1,12 @@
 /**
- * Внутреннее UI-состояние @core/bed-mesh.
- * НЕ межплагинный канал: приватный модуль одного плагина,
+ * Внутреннее UI-состояние bed-mesh панели. Приватный модуль одного плагина,
  * связывает ToolsPanel (страница) и ScrewsTiltOverlay (оверлей).
+ * Переехал внутрь ядра use-bed-mesh (per-printer instance).
  */
-class BedMeshUiState {
-  screwsOverlayOpen = $state(false);
+export interface BedMeshUiState {
+  screwsOverlayOpen: boolean;
 }
 
-export const bedMeshUiState = new BedMeshUiState();
+export function initialBedMeshUiState(): BedMeshUiState {
+  return { screwsOverlayOpen: false };
+}

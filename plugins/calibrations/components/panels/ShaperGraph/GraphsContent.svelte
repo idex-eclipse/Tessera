@@ -1,13 +1,15 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { shaper, gallerySorted, loadPreview } from '../../../shaper-state.svelte.ts';
+  import { useCalibrations } from '../../../use-calibrations.svelte.ts';
+  import { gallerySorted, loadPreview } from '../../../shaper-state.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
+  const store = useCalibrations(api);
 
-  let items = $derived(gallerySorted());
+  let items = $derived(gallerySorted(store.shaperState));
   // артефакты последнего прогона ЛЮБОЙ панели (shaper pipe / belts pipe)
-  let newSet = $derived(new Set([...shaper.lastArtifacts, ...shaper.beltArtifacts]));
+  let newSet = $derived(new Set([...store.shaperState.lastArtifacts, ...store.shaperState.beltArtifacts]));
 
   function fmtTime(modified: number): string {
     return new Date(modified * 1000).toLocaleString();
@@ -15,7 +17,7 @@
 </script>
 
 <div class="graphs">
-  {#if !shaper.galleryLoaded}
+  {#if !store.shaperState.galleryLoaded}
     <p class="hint">…</p>
   {:else if items.length === 0}
     <p class="hint">{i18n.t('calibrations.shaper.galleryEmpty')}</p>
@@ -24,9 +26,9 @@
       {#each items as it (it.path)}
         <button
           class="g-item"
-          class:active={shaper.selected === it.path}
+          class:active={store.shaperState.selected === it.path}
           class:artifact={newSet.has(it.path)}
-          onclick={() => loadPreview(api, it.path)}
+          onclick={() => loadPreview(store.shaperState, api.moonraker(), it.path)}
           title={fmtTime(it.modified)}
         >
           <span class="g-name">{it.path.split('/').pop()}</span>
@@ -40,8 +42,8 @@
       {/each}
     </div>
 
-    {#if shaper.previewUrl}
-      <img class="preview" src={shaper.previewUrl} alt={shaper.selected ?? ''} />
+    {#if store.shaperState.previewUrl}
+      <img class="preview" src={store.shaperState.previewUrl} alt={store.shaperState.selected ?? ''} />
     {/if}
   {/if}
 </div>
@@ -67,7 +69,7 @@
     padding: 0 5px; border-radius: 4px; background: var(--bg-surface-active);
     color: var(--accent); font-size: 10px; font-weight: 600;
   }
-  .tag.new { background: var(--accent); color: #fff; }
+  .tag.new { background: var(--accent); color: var(--accent-text); }
 
   .preview {
     max-width: 100%; max-height: 420px; object-fit: contain;

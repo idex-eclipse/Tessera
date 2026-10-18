@@ -3,7 +3,6 @@
   import Icon from '../../../shared/icons/Icon.svelte';
 
   import { useBedMesh } from '../../use-bed-mesh.svelte.ts';
-  import { bedMeshUiState } from '../../bed-mesh-ui-state.svelte.ts';
   import { gcode, runGcode } from '../../commands.ts';
 
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -15,11 +14,11 @@
 
   let busy = $state(false);
 
-  // видимость — решение плагина: флаг UI + наличие результатов
-  let open = $derived(bedMeshUiState.screwsOverlayOpen && store.screws.hasResults && klippy.ready);
+  // видимость — решение плагина: флаг UI (per-printer внутри ядра) + наличие результатов
+  let open = $derived(store.bedMeshUi.screwsOverlayOpen && store.screws.hasResults && klippy.ready);
 
   function close(): void {
-    bedMeshUiState.screwsOverlayOpen = false;
+    store.closeScrewsOverlay();
   }
 
   async function recalc(): Promise<void> {
