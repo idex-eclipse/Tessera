@@ -19,6 +19,7 @@ import type { AppContext } from '../app-context';
  */
 function createGuardedHandle(
   resolveHandle: () => MoonrakerProxyHandle,
+  resolveTargetPrinterId: () => string,
   pluginId: string,
 ): MoonrakerProxyHandle {
   return {
@@ -30,7 +31,7 @@ function createGuardedHandle(
         return Promise.reject(e);
       }
       return guardAgent
-        .runPreflight(pluginId, method, params)
+        .runPreflight(pluginId, resolveTargetPrinterId(), method, params)
         .then(() => handle.request<T>(method, params));
     },
 
@@ -108,7 +109,7 @@ function createGuardedHandleFor(
         );
       }
       return guardAgent
-        .runPreflight(pluginId, method, params)
+        .runPreflight(pluginId, printerId, method, params)
         .then(() => handle.request<T>(method, params));
     },
 
@@ -191,7 +192,11 @@ export function createPluginApi(
     return getMoonrakerProxy(printer.url).handle;
   }
 
-  const guardedHandle = createGuardedHandle(resolveHandle, pluginId);
+  const guardedHandle = createGuardedHandle(
+    resolveHandle,
+    () => printerManager.activePrinterId ?? '',
+    pluginId,
+  );
 
   /**
    * Кэш мультипринтерных хендлов: стабильность объекта между вызовами
