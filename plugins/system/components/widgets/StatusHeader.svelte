@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import { useWidget } from '../../../../plugin-sdk/src/svelte/index';
 
-  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
+  import HeaderHelp from '../../../shared/header-help/HeaderHelp.svelte';
 
   import StatusSettingsMenu from '../StatusSettingsMenu.svelte';
 

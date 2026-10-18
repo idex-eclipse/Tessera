@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
+  import { useI18n } from '../../../plugin-sdk/src/svelte/index';
 
   import {
     computeRemaining,

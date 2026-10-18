@@ -15,6 +15,18 @@ export const systemManifest = definePlugin({
     },
   ],
 
+  widgets: [
+    {
+      type: 'status',
+      provider: '@core/widgets',
+      titleKey: 'widgets.status.title',
+      element: 'mpu-widgets-status',
+      headerElement: 'mpu-widgets-status-header',
+      defaultSize: { w: 4, h: 2 },
+      minSize: { w: 3, h: 2 },
+    },
+  ],
+
   overlays: [
     { id: 'notifications', element: 'mpu-system-notifications' },
   ],
@@ -22,7 +34,7 @@ export const systemManifest = definePlugin({
   banners: [
     {
       id: 'klipper-state',
-      element: 'mpu-klipper-state-banner',
+      element: 'mpu-system-state-banner',
       scope: 'all',
     },
   ],
@@ -42,6 +54,14 @@ export const systemManifest = definePlugin({
     id: 'system-right',
     element: 'mpu-system-right-panel',
   },
+
+  printerPanels: [
+    {
+      id: 'fleet-status',
+      element: 'mpu-core-widgets-fleet-status',
+      titleKey: 'widgets.fleetStatus.title',
+    },
+  ],
 
   locales: ['en', 'ru'],
 });

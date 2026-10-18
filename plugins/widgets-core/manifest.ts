@@ -1,6 +1,5 @@
 import type { PluginManifest } from '../../plugin-sdk/src/types';
 
-import { statusBanners, statusFleet, statusWidgets } from './status/manifest';
 import { temperatureWidgets, temperatureChips, temperatureFleet } from './temperature/manifest';
 import { macrosChips, macrosWidgets } from './macros/manifest';
 import { toolsChips, toolsFleet, toolsWidgets } from './tools/manifest';
@@ -16,13 +15,12 @@ export const widgetsCoreManifest: PluginManifest = {
   version: '1.0.0',
   entry: '/plugins/widgets-core/index.js',
   pages: [],
-  widgets: [...temperatureWidgets, ...statusWidgets, ...macrosWidgets, 
+  widgets: [...temperatureWidgets, ...macrosWidgets, 
     ...toolsWidgets, ...limitsWidgets, ...outputsWidgets, ...cameraWidgets, 
     ...filamentWidgets, ...jobQueueWidgets],
   chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...toolsChips,
     ...filamentChips], 
-  banners: [...statusBanners],
-  printerPanels: [...cameraFleet, ...statusFleet, ...toolsFleet, ...temperatureFleet],
+  printerPanels: [...cameraFleet, ...toolsFleet, ...temperatureFleet],
   locales: ['en', 'ru'],
   defaultSettings: {},
 };

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import type { PluginApi } from '../../../../plugin-sdk/src/types.ts';
-  import Icon from '../../../shared/icons/Icon.svelte';
+  import type { PluginApi } from '../../../plugin-sdk/src/types.ts';
+  import Icon from '../../shared/icons/Icon.svelte';
 
   import {
     FIELD_GROUPS,

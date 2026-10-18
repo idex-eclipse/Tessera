@@ -1,6 +1,6 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
 
 export type ProgressMode = 'file' | 'time' | 'filament';
 export type StatusPlacement = 'widget' | 'banner' | 'both';

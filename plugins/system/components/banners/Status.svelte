@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
-  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../shared/icons/Icon.svelte';
+  import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
+  import HeaderHelp from '../../../shared/header-help/HeaderHelp.svelte';
 
   import StatusSettingsMenu from '../StatusSettingsMenu.svelte';
   import StatusStats from '../StatusStats.svelte';

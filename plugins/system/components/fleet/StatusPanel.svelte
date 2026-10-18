@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { PluginApi } from '../../../../../plugin-sdk/src/types';
+  import type { PluginApi } from '../../../../plugin-sdk/src/types.ts';
 
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
   import {
     usePrintStatus,
@@ -11,7 +11,7 @@
     fmtDuration,
     fmtClock,
   } from '../../use-print-status.svelte.ts';
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
   let {
     mpuApi,

@@ -17,23 +17,6 @@ import TemperatureChipPicker from './temperature/components/chips/TemperatureChi
 defineMpuElement('mpu-core-widgets-chip-temperature', TemperatureChip);
 defineMpuElement('mpu-core-widgets-chip-temperature-picker', TemperatureChipPicker);
 
-
-/** PRINTING STATUS */
-// Widget
-import StatusWidget from './status/components/widgets/StatusWidget.svelte';
-import StatusHeader from './status/components/widgets/StatusHeader.svelte';
-defineMpuElement('mpu-widgets-status', StatusWidget);
-defineMpuElement('mpu-widgets-status-header', StatusHeader);
-
-// Banner
-import StatusBanner from './status/components/banners/StatusBanner.svelte';
-defineMpuElement('mpu-widgets-status-banner', StatusBanner);
-
-// Fleet
-import FleetStatusPanel from './status/components/fleet/StatusPanel.svelte';
-defineMpuElement('mpu-core-widgets-fleet-status', FleetStatusPanel);
-
-
 /** MACRO */
 //Widget
 import MacrosWidget from './macros/components/widgets/MacrosWidget.svelte';
