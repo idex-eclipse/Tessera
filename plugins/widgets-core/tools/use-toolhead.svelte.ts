@@ -6,6 +6,11 @@ import type {
   MoonrakerProxyHandle,
 } from '../../../plugin-sdk/src/types';
 
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
+
 export const DEFAULT_STEPS = [0.1, 1, 10, 25, 50, 100];
 
 export const DC_MODES = ['PRIMARY', 'COPY', 'MIRROR'] as const;
@@ -106,28 +111,34 @@ function defaultUi() {
 }
 
 // ------------------------------------------------------------------
-// Module-level: общий spoolman-кэш (разделяется legacy и fleet)
+// Module-level: общий spoolman-кэш. Данные Spoolman глобальны (не per-printer),
+// поэтому кэш общий и без owner-гейтов; TTL-обновление внутри getSpool.
 // ------------------------------------------------------------------
 const SPOOL_TTL = 60_000;
 let spoolData = $state<Record<number, SpoolData>>({});
 const spoolTs = new Map<number, number>();
 const spoolInflight = new Map<number, Promise<SpoolData | null>>();
-/** защита от записи ответа, прилетевшего после смены активного принтера */
-let spoolOwner = 0;
+
+/**
+ * Per-printer кэш meta: инструменты/экструдеры/каретки/дефолты меняются
+ * только с конфигом или рестартом Klipper — инвалидация по
+ * notify_config_changed / notify_klippy_ready внутри ядра.
+ * Тёплый путь: meta из кэша синхронно + subscribe(immediate) сеет th из
+ * baseline-snapshot прокси за микротаску; drift правит фоновый refresh.
+ */
+interface MetaCacheEntry {
+  meta: ToolheadMeta;
+  ts: number;
+}
+const metaCache = new Map<string, MetaCacheEntry>();
 
 // ------------------------------------------------------------------
-// Core factory: изолированное ядро на (api, printerId | null).
-// Legacy-режим (printerId === null) шарится refcount-ом между всеми
-// legacy-потребителями (шапка + тело виджета = один core: forceMove,
-// ui, settings-реактивность общие).
-// Fleet-режим (printerId !== null) — изолированный core, settings через
-// api.settingsFor(printerId).
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Шапка+тело виджета и fleet-карточка одного принтера делят ОДИН core
+// через keeper: один набор подписок, одно состояние forceMove/ui/settings.
 // ------------------------------------------------------------------
-function createToolheadCore(api: PluginApi, printerId: string | null) {
-  const fleet = printerId !== null;
-  const settingsApi: PluginSettingsApi = fleet
-    ? api.settingsFor(printerId as string)
-    : api.settings;
+function createToolheadCore(api: PluginApi, printerId: string) {
+  const settingsApi: PluginSettingsApi = api.settingsFor(printerId);
 
   let meta = $state<ToolheadMeta>(emptyMeta());
   let th = $state(emptyTh());
@@ -140,7 +151,7 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
@@ -164,7 +175,6 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     const h = safeHandle();
     if (!h) return null;
 
-    const owner = spoolOwner;
     const p = h
       .request<any>('server.spoolman.proxy', {
         use_v2_response: true,
@@ -177,7 +187,7 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
           return null;
         }
         const data = (res?.response ?? null) as SpoolData | null;
-        if (data && owner === spoolOwner) {
+        if (data) {
           spoolData[id] = data;
           spoolTs.set(id, Date.now());
         }
@@ -227,39 +237,73 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     return hex ? `#${hex}` : undefined;
   }
 
-  // Meta
-  async function loadMeta(gen: number): Promise<void> {
+  // ------------------------------------------------------------------
+  // Meta: подписка / полный refresh / тёплый load
+  // ------------------------------------------------------------------
+
+  function subscribeMeta(gen: number, withSeed: boolean): void {
     const h = safeHandle();
-    if (!h) return;
+    if (!h || gen !== generation) return;
+
+    const subObjects: Record<string, string[]> = {
+      toolhead: ['position', 'homed_axes', 'extruder'],
+      gcode_move: ['speed_factor', 'extrude_factor', 'gcode_position'],
+    };
+    if (meta.hasSaveVars) subObjects.save_variables = ['variables'];
+    for (const e of meta.extruders) {
+      subObjects[e] = ['temperature', 'pressure_advance', 'smooth_time'];
+    }
+    if (meta.hasRetraction) {
+      subObjects.firmware_retraction = [
+        'retract_length', 'retract_speed', 'unretract_extra_length', 'unretract_speed',
+      ];
+    }
+    if (meta.hasDualCarriage) {
+      subObjects.dual_carriage = ['carriage_0', 'carriage_1', 'carriages'];
+    }
+    subObjects.print_stats = ['state'];
+
+    if (unsubMeta) {
+      unsubMeta();
+      unsubMeta = null;
+    }
+    unsubMeta = h.subscribe(
+      subObjects,
+      (d: any) => {
+        if (gen === generation) applyDelta(d);
+      },
+      { immediate: true },
+    );
+
+    if (withSeed) {
+      const queryObjects: Record<string, string[] | null> = {
+        toolhead: null,
+        gcode_move: null,
+      };
+      if (meta.hasSaveVars) queryObjects.save_variables = null;
+      for (const e of meta.extruders) queryObjects[e] = null;
+      if (meta.hasRetraction) queryObjects.firmware_retraction = null;
+      if (meta.hasDualCarriage) queryObjects.dual_carriage = null;
+      queryObjects.print_stats = ['state'];
+
+      void h
+        .request<any>('printer.objects.query', { objects: queryObjects })
+        .then((seeded) => {
+          if (gen === generation && seeded?.status) applyDelta(seeded.status);
+        })
+        .catch(() => {});
+    }
+  }
+
+  /** Полный refresh: objects.list → configfile∥server.info → meta → subscribe(+seed). */
+  async function refreshMetaFull(gen: number): Promise<void> {
+    const h = safeHandle();
+    if (!h || gen !== generation) return;
 
     const list = await h.request<any>('printer.objects.list').catch(() => null);
     if (gen !== generation || !list) return;
 
     const objects: string[] = list.objects ?? [];
-
-    if (fleet) {
-      const subObjects: Record<string, string[]> = {
-        toolhead: ['position', 'homed_axes'],
-        gcode_move: ['gcode_position'],
-      };
-      const hasDC = objects.includes('dual_carriage');
-      if (hasDC) subObjects.dual_carriage = ['carriage_0', 'carriage_1', 'carriages'];
-
-      meta = { ...meta, ready: true, hasDualCarriage: hasDC };
-
-      if (unsubMeta) {
-        unsubMeta();
-        unsubMeta = null;
-      }
-      unsubMeta = h.subscribe(
-        subObjects,
-        (d: any) => {
-          if (gen === generation) applyDelta(d);
-        },
-        { immediate: true },
-      );
-      return;
-    }
 
     const [cfgRes, srvInfo] = await Promise.all([
       h.request<any>('printer.objects.query', { objects: { configfile: ['settings'] } }).catch(() => null),
@@ -338,49 +382,11 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
       hasSpoolman,
     };
 
-    const subObjects: Record<string, string[]> = {
-      toolhead: ['position', 'homed_axes', 'extruder'],
-      gcode_move: ['speed_factor', 'extrude_factor'],
-    };
-    if (meta.hasSaveVars) subObjects.save_variables = ['variables'];
-    for (const e of extruders) subObjects[e] = ['temperature', 'pressure_advance', 'smooth_time'];
-    if (objects.includes('firmware_retraction')) {
-      subObjects.firmware_retraction = ['retract_length', 'retract_speed', 'unretract_extra_length', 'unretract_speed'];
-    }
-    if (meta.hasDualCarriage) {
-      subObjects.dual_carriage = ['carriage_0', 'carriage_1', 'carriages'];
-    }
-    if (objects.includes('print_stats')) subObjects.print_stats = ['state'];
+    metaCache.set(printerId, { meta, ts: Date.now() });
+    subscribeMeta(gen, true);
 
-    if (unsubMeta) {
-      unsubMeta();
-      unsubMeta = null;
-    }
-
-    unsubMeta = h.subscribe(
-      subObjects,
-      (d: any) => {
-        if (gen === generation) applyDelta(d);
-      },
-      { immediate: true },
-    );
-
-    const queryObjects: Record<string, string[] | null> = {
-      toolhead: null,
-      gcode_move: null,
-    };
-    if (meta.hasSaveVars) queryObjects.save_variables = null;
-    for (const e of extruders) queryObjects[e] = null;
-    if (objects.includes('firmware_retraction')) queryObjects.firmware_retraction = null;
-    if (meta.hasDualCarriage) queryObjects.dual_carriage = null;
-    if (objects.includes('print_stats')) queryObjects.print_stats = ['state'];
-
-    const seeded = await h
-      .request<any>('printer.objects.query', { objects: queryObjects })
-      .catch(() => null);
-    if (gen === generation && seeded?.status) applyDelta(seeded.status);
-
-    if (hasSpoolman) {
+    // native spool ID via moonraker
+    if (meta.hasSpoolman) {
       h.request<any>('server.spoolman.get_spool_id')
         .then((res) => {
           if (gen !== generation) return;
@@ -389,6 +395,23 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
         })
         .catch(() => { /* [spoolman] не настроен/недоступен */ });
     }
+  }
+
+  /**
+   * Тёплый путь: meta из кэша синхронно + subscribe immediate (seed из
+   * baseline-snapshot) + фоновый drift-refresh. Холодный: полный await.
+   */
+  async function loadMeta(gen: number): Promise<void> {
+    const cached = metaCache.get(printerId);
+
+    if (cached) {
+      meta = cached.meta;
+      subscribeMeta(gen, false);
+      void refreshMetaFull(gen);
+      return;
+    }
+
+    await refreshMetaFull(gen);
   }
 
   function applyDelta(d: any): void {
@@ -421,6 +444,7 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
         next.activeToolSaved = Number.isFinite(n) ? `T${Math.round(n)}` : null;
       }
 
+      // Spools ID per tool
       if (meta.hasSpoolman) {
         const ids: Record<string, number | null> = {};
         for (const tool of meta.tools) {
@@ -478,7 +502,9 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     th = next;
   }
 
-  // Settings helpers (через settingsApi — legacy или fleet namespace)
+  // ------------------------------------------------------------------
+  // Settings helpers (namespace своего принтера через settingsFor)
+  // ------------------------------------------------------------------
 
   function invertSign(): number {
     return settingsApi.get<boolean>('tools.invert') === true ? -1 : 1;
@@ -567,7 +593,9 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     if (parts.length > 0) script(`SET_RETRACTION ${parts.join(' ')}`);
   }
 
+  // ------------------------------------------------------------------
   // Actions
+  // ------------------------------------------------------------------
 
   function jog(axis: 'X' | 'Y' | 'Z', dist: number, useInvert = true): void {
     const inv =
@@ -628,6 +656,7 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     script(`SET_DUAL_CARRIAGE CARRIAGE=${cleanCarriage(carriage)} MODE=${mode}`);
   }
 
+  // DIRECT mode (experimental branch generic_cartesian)
   function setCarriageDirect(carriage: string, enable: boolean): void {
     const c = cleanCarriage(carriage);
     if (enable) {
@@ -659,7 +688,9 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
 
   const homed = (axis: string) => th.homedAxes.includes(axis.toLowerCase());
 
+  // ------------------------------------------------------------------
   // Lifecycle
+  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;
@@ -668,24 +699,16 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
       unsubMeta = null;
     }
     for (const u of unsubs.splice(0)) u();
-    if (!fleet) {
-      // только legacy чистит общий spool-кэш при смене активного принтера
-      spoolInflight.clear();
-      spoolTs.clear();
-    }
   }
 
   async function init(): Promise<void> {
-    // settings одинаково читаются и legacy (api.settings активного принтера)
-    // и fleet (api.settingsFor(printerId)) — namespace правильный в обоих случаях
     loadUi();
 
     unsubs.push(
       settingsApi.onChange((k) => {
         if (
           k === 'tools.style' || k === 'tools.invert' || k === 'tools.steps' ||
-          k === 'tools.directMode' || k === 'tools.directAxis' ||
-          k === 'tools.extrudeLen' || k === 'tools.extrudeSpeed'
+          k === 'tools.directMode' || k === 'tools.directAxis'
         ) loadUi();
       }),
     );
@@ -693,7 +716,6 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     const gen = ++generation;
     const h = safeHandle();
     if (!h) return;
-    if (!fleet && !api.printer.url) return;
 
     unsubs.push(
       h.onReady(() => {
@@ -701,32 +723,30 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
       }),
     );
 
+    // SAVE_CONFIG/рестарт: конфиг мог измениться — кэш meta больше не валиден
     unsubs.push(
       h.onNotify('notify_klippy_ready', () => {
-        if (gen === generation) void loadMeta(gen);
+        if (gen !== generation) return;
+        metaCache.delete(printerId);
+        void loadMeta(gen);
       }),
     );
+
+    // живая правка конфига без рестарта — то же самое
+    unsubs.push(
+      h.onNotify('notify_config_changed', () => {
+        if (gen !== generation) return;
+        metaCache.delete(printerId);
+        void refreshMetaFull(gen);
+      }),
+    );
+
     await loadMeta(gen);
   }
 
   init();
 
-  let offPrinter: () => void = () => {};
-
-  if (!fleet) {
-    offPrinter = api.onPrinterChange(() => {
-      teardown();
-      spoolOwner++;
-      spoolData = {};
-      meta = emptyMeta();
-      th = emptyTh();
-      forceMove = false;
-      void init();
-    });
-  }
-
   function destroy(): void {
-    offPrinter();
     teardown();
   }
 
@@ -775,6 +795,7 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
     moveTo,
     setPA,
     setRetraction,
+    // Spoolman
     spoolIdForTool,
     spoolColorForTool,
     getSpool,
@@ -786,47 +807,57 @@ function createToolheadCore(api: PluginApi, printerId: string | null) {
 export type ToolheadStore = ReturnType<typeof createToolheadCore>;
 
 // ------------------------------------------------------------------
-// Legacy: refcounted singleton core. Шапка + тело виджета делят ОДИН
-// core — forceMove/ui/settings-реактивность шарятся (как до per-instance
-// рефактора). Fleet-инстансы изолированы через createToolheadCore(api, pid).
+// Keeper: ядра живут per-printer, переживают unmount потребителей (keep-alive,
+// LRU cap 4). Шапка+тело виджета и fleet-карточка одного принтера делят ядро.
 // ------------------------------------------------------------------
-let legacyCore: ToolheadStore | null = null;
-let legacyConsumers = 0;
-
-function legacyCoreAcquire(api: PluginApi): ToolheadStore {
-  if (!legacyCore) legacyCore = createToolheadCore(api, null);
-  legacyConsumers++;
-  return legacyCore;
-}
-
-function legacyCoreRelease(): void {
-  legacyConsumers--;
-  if (legacyConsumers > 0 || !legacyCore) return;
-  legacyCore.destroy();
-  legacyCore = null;
-}
+const keeper = createCoreKeeper<ToolheadStore>({
+  create: (pid, api) => createToolheadCore(api, pid),
+  cap: 4,
+});
 
 /**
  * Хук положения головы / инструментов.
  *
- * Без printerId — legacy: shared core активного принтера (refcounted;
- * шапка+тело виджета и любые другие legacy-потребители делят один core:
- * forceMove, ui, подписки, settings-реактивность общие).
- *
- * С printerId — fleet: изолированный core на принтер, handle через
- * api.moonrakerFor(printerId), settings через api.settingsFor(printerId).
- * Используется в fleet-вкладах printerPanels (например fleet-position).
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером
+ * (реактивность через api.printer.id); refcount на текущего принтера, ядра
+ * других принтеров живут в keeper по политике keep-alive.
+ * С printerId — fleet/явная привязка: прямое ядро принтера с удержанием.
  */
 export function useToolhead(api: PluginApi, printerId?: string): ToolheadStore {
-  if (printerId === undefined) {
-    const core = legacyCoreAcquire(api);
-    onDestroy(() => legacyCoreRelease());
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
     return core;
   }
 
-  const core = createToolheadCore(api, printerId);
-  onDestroy(() => core.destroy());
-  return core;
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<ToolheadStore>(() => keeper.get(api.printer.id, api));
 }
 
 // helpers
@@ -842,5 +873,5 @@ export function cleanCarriage(name: string): string {
 function axisOfCarriage(name: string): string {
   const lower = String(name).toLowerCase().trim();
   const m = lower.match(/[_\s]([xyz])$/) ?? lower.match(/^([xyz])$/);
-  return m ? m[1] : 'x';
+  return m ? (m[1] ?? '') : 'x';
 }
