@@ -10,8 +10,16 @@ import {
   type SensorKind,
 } from './data';
 import { SeriesBuffer } from '../../shared/uplot-core/series-buffer';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
-// Module-level prefs
+// ------------------------------------------------------------------
+// Module-level prefs: настройки отображения виджета (колонки графика) —
+// общие для всех принтеров, не привязаны к пер-принтер состоянию.
+// Оставлены без изменений.
+// ------------------------------------------------------------------
 
 export interface TempColumns {
   power: boolean;
@@ -63,7 +71,9 @@ export function useTemperaturePrefs(api: PluginApi) {
   };
 }
 
-// Sensors&Buffers
+// ------------------------------------------------------------------
+// Типы / палитра
+// ------------------------------------------------------------------
 
 export interface TemperatureSensor {
   name: string;
@@ -76,7 +86,7 @@ export interface TemperatureSensor {
   rate: number | null;
   speed: number | null;
   minTemp: number | null;
-  maxTemp: number | null;  
+  maxTemp: number | null;
   chartVisible: boolean;
   powerVisible: boolean;
 }
@@ -104,9 +114,38 @@ function lastOf(arr: number[]): number | null {
   return v === undefined ? null : v;
 }
 
-export function useTemperatureData(api: PluginApi, printerId?: string) {
-  const fleet = printerId !== undefined;
+// ------------------------------------------------------------------
+// Module-level кэши (per-printer, вне ядер — общие для всех инстансов).
+// - reseedCache: ответ temperature_store (~1200с истории) — тяжёлый запрос;
+//   инвалидация по klippy-жизненному циклу и config-changed;
+// - limitsCache: min_temp/max_temp из configfile.settings;
+//   инвалидация та же, TTL длиннее (конфиг меняется редко).
+// ------------------------------------------------------------------
 
+const RESEED_TTL_MS = 5 * 60_000;
+const LIMITS_TTL_MS = 30 * 60_000;
+
+interface ReseedCacheEntry {
+  store: any;
+  ts: number;
+}
+const reseedCache = new Map<string, ReseedCacheEntry>();
+
+interface LimitsMap { [sensor: string]: { min: number | null; max: number | null } }
+interface LimitsCacheEntry { limits: LimitsMap; ts: number }
+const limitsCache = new Map<string, LimitsCacheEntry>();
+
+function invalidatePrinterCaches(printerId: string): void {
+  reseedCache.delete(printerId);
+  limitsCache.delete(printerId);
+}
+
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру. Виджет дашборда
+// и fleet-карточка одного принтера делят ОДИН core: один набор подписок,
+// один набор буферов графиков, один tick.
+// ------------------------------------------------------------------
+function createTemperatureCore(api: PluginApi, printerId: string) {
   let sensors = $state<TemperatureSensor[]>([]);
   let klippyState = $state<string>('unknown');
   let connected = $state<boolean>(false);
@@ -120,13 +159,15 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
 
   function safeHandle() {
     try {
-      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
   }
 
+  // ------------------------------------------------------------------
   // Lifecycle
+  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;
@@ -137,17 +178,12 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     }
 
     for (const u of unsubs.splice(0)) u();
-    buffers.clear();
+    // buffers не чистим: ядро умирает полностью только при prune/evict,
+    // а на klippy-событии делаем reseed, который сам сбросит буферы.
   }
 
   async function init(): Promise<void> {
     const gen = ++generation;
-
-    sensors = [];
-    klippyState = 'unknown';
-    connected = false;
-
-    if (!fleet && !api.printer.url) return;
 
     const h = safeHandle();
     if (!h) return;
@@ -157,7 +193,6 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     unsubs.push(
       h.onConnectionStatusChange((s) => {
         connected = s === 'open';
-
         if (s === 'open' && gen === generation) {
           void refresh(gen);
         }
@@ -173,21 +208,27 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     for (const ev of KLIPPY_EVENTS) {
       unsubs.push(
         h.onNotify(ev, () => {
-          if (gen === generation) void refresh(gen);
+          if (gen !== generation) return;
+          invalidatePrinterCaches(printerId);
+          void refresh(gen);
         }),
       );
     }
 
     unsubs.push(
       h.onNotify('notify_config_changed', () => {
-        if (gen === generation) void refreshLimits(gen);
+        if (gen !== generation) return;
+        invalidatePrinterCaches(printerId);
+        void refresh(gen);
       }),
     );
 
     await refresh(gen);
   }
 
+  // ------------------------------------------------------------------
   // Klipper state + seed + subscribe
+  // ------------------------------------------------------------------
 
   async function refresh(gen: number): Promise<void> {
     const h = safeHandle();
@@ -214,77 +255,33 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
       return;
     }
 
-    if (fleet) {
-      await reseedFleet(gen);
-      ensureSubscription(gen, true); // immediate = seed значений
-      return;
-    }
-
     await reseed(gen);
     await refreshLimits(gen);
     ensureSubscription(gen);
   }
 
   /**
-   * Fleet-состав: только extruder* и heater_bed (read-only строки, как в
-   * Moongate-карточке). Без temperature_store и config-limits: графика и
-   * min/max в fleet нет, buffers остаются пустыми (тики onDelta дешёвые).
+   * Reseed: берём историю из temperature_store (кэш per-printer; при промахе
+   * запрашиваем и кэшируем). Буферы существующих сенсоров переиспользуются
+   * (clear + refill), новые сенсоры получают новые буферы, удалённые остаются
+   * в buffers до следующего prune.
    */
-  async function reseedFleet(gen: number): Promise<void> {
-    const h = safeHandle();
-    if (!h || gen !== generation) return;
-
-    const list = await h.request<any>('printer.objects.list').catch(() => null);
-    if (gen !== generation || !list) return;
-
-    const names: string[] = (Array.isArray(list.objects) ? list.objects : [])
-      .filter((n: string) => /^extruder\d*$/.test(n) || n === 'heater_bed');
-
-    const next: TemperatureSensor[] = names.map((name, i) => {
-      const prev = sensors.find((s) => s.name === name);
-      if (!buffers.has(name)) {
-        buffers.set(name, {
-          temp: new SeriesBuffer(),
-          target: new SeriesBuffer(),
-          power: new SeriesBuffer(),
-        });
-      }
-      return {
-        name,
-        displayName: displayName(name),
-        kind: classifySensor(name) ?? 'heater',
-        color: PALETTE[i % PALETTE.length] ?? '#9e9e9e',
-        temperature: null,
-        target: null,
-        power: null,
-        rate: null,
-        speed: null,
-        minTemp: prev?.minTemp ?? null,
-        maxTemp: prev?.maxTemp ?? null,
-        chartVisible: prev?.chartVisible ?? true,
-        powerVisible: prev?.powerVisible ?? false,
-      };
-    });
-
-    next.sort(
-      (a, b) =>
-        sensorSortKey(a.name, a.kind) - sensorSortKey(b.name, b.kind) ||
-        a.displayName.localeCompare(b.displayName),
-    );
-
-    sensors = next;
-    tick++;
-  }
-
   async function reseed(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h || gen !== generation) return;
 
     let store: any = null;
-    try {
-      store = await h.request('server.temperature_store');
-    } catch {
-      return;
+    const cached = reseedCache.get(printerId);
+    if (cached && Date.now() - cached.ts < RESEED_TTL_MS) {
+      store = cached.store;
+    } else {
+      try {
+        store = await h.request('server.temperature_store');
+        if (gen !== generation || !store || typeof store !== 'object') return;
+        reseedCache.set(printerId, { store, ts: Date.now() });
+      } catch {
+        return;
+      }
     }
 
     if (gen !== generation || !store || typeof store !== 'object') return;
@@ -354,36 +351,58 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     tick++;
   }
 
-  //temperature limits
+  // ------------------------------------------------------------------
+  // Limits
+  // ------------------------------------------------------------------
 
   async function refreshLimits(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h || gen !== generation) return;
 
-    let res: any = null;
-    try {
-      res = await h.request('printer.objects.query', {
-        objects: { configfile: ['settings'] },
-      });
-    } catch {
-      return;
-    }
-    if (gen !== generation) return;
+    let limits: LimitsMap | null = null;
+    const cached = limitsCache.get(printerId);
+    if (cached && Date.now() - cached.ts < LIMITS_TTL_MS) {
+      limits = cached.limits;
+    } else {
+      let res: any = null;
+      try {
+        res = await h.request('printer.objects.query', {
+          objects: { configfile: ['settings'] },
+        });
+      } catch {
+        return;
+      }
+      if (gen !== generation) return;
 
-    const settings = res?.status?.configfile?.settings;
-    if (!settings || typeof settings !== 'object') return;
+      const settings = res?.status?.configfile?.settings;
+      if (!settings || typeof settings !== 'object') return;
+
+      const next: LimitsMap = {};
+      for (const s of sensors) {
+        const sec =
+          (settings as Record<string, any>)[s.name] ??
+          (settings as Record<string, any>)[s.name.toLowerCase()];
+        if (!sec || typeof sec !== 'object') {
+          next[s.name] = { min: null, max: null };
+          continue;
+        }
+        next[s.name] = {
+          min: typeof sec.min_temp === 'number' ? sec.min_temp : null,
+          max: typeof sec.max_temp === 'number' ? sec.max_temp : null,
+        };
+      }
+      limits = next;
+      limitsCache.set(printerId, { limits, ts: Date.now() });
+    }
 
     for (const s of sensors) {
-      const sec =
-        (settings as Record<string, any>)[s.name] ??
-        (settings as Record<string, any>)[s.name.toLowerCase()];
-      if (!sec || typeof sec !== 'object') continue;
-      s.minTemp = typeof sec.min_temp === 'number' ? sec.min_temp : null;
-      s.maxTemp = typeof sec.max_temp === 'number' ? sec.max_temp : null;
+      const lim = limits[s.name];
+      s.minTemp = lim?.min ?? null;
+      s.maxTemp = lim?.max ?? null;
     }
   }
 
-  function ensureSubscription(gen: number, immediate = false): void {
+  function ensureSubscription(gen: number): void {
     const h = safeHandle();
     if (!h || gen !== generation) return;
 
@@ -407,7 +426,7 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
       (delta: any) => {
         if (gen === generation) onDelta(delta);
       },
-      { immediate },
+      { immediate: true }, // baseline-snapshot сеет мгновенно
     );
   }
 
@@ -448,7 +467,9 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     if (pushed) tick++;
   }
 
+  // ------------------------------------------------------------------
   // Actions
+  // ------------------------------------------------------------------
 
   function toggleChart(name: string): void {
     const s = sensors.find((x) => x.name === name);
@@ -477,23 +498,15 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     }
   }
 
+  // ------------------------------------------------------------------
   // Boot
+  // ------------------------------------------------------------------
 
   init();
 
-  let offPrinter: () => void = () => {};
-
-  if (!fleet) {
-    offPrinter = api.onPrinterChange(() => {
-      teardown();
-      init();
-    });
-  }
-
-  onDestroy(() => {
+  function destroy(): void {
     teardown();
-    offPrinter();
-  });
+  }
 
   return {
     get sensors() {
@@ -512,5 +525,63 @@ export function useTemperatureData(api: PluginApi, printerId?: string) {
     toggleChart,
     togglePower,
     setTarget,
+    destroy,
   };
+}
+
+export type TemperatureStore = ReturnType<typeof createTemperatureCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount потребителей
+// (keep-alive, LRU cap 4). Буферы графиков сохраняются между
+// переключениями принтеров — самый заметный UX-выигрыш.
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<TemperatureStore>({
+  create: (pid, api) => createTemperatureCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук данных температур.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet/явная привязка: прямое ядро с
+ * удержанием.
+ */
+export function useTemperatureData(api: PluginApi, printerId?: string): TemperatureStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<TemperatureStore>(() => keeper.get(api.printer.id, api));
 }
