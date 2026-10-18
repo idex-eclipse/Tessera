@@ -49,9 +49,9 @@ export type StatusFieldId =
   | 'layer' | 'remaining' | 'eta';
 
 export const FIELD_GROUPS: Array<{ id: string; titleKey: string; fields: StatusFieldId[] }> = [
-  { id: 'live', titleKey: 'widgets.status.groupLive', fields: ['speed', 'flow', 'filament'] },
-  { id: 'time', titleKey: 'widgets.status.groupTime', fields: ['slicer', 'elapsed', 'total'] },
-  { id: 'forecast', titleKey: 'widgets.status.groupForecast', fields: ['layer', 'remaining', 'eta'] },
+  { id: 'live', titleKey: 'system.status.groupLive', fields: ['speed', 'flow', 'filament'] },
+  { id: 'time', titleKey: 'system.status.groupTime', fields: ['slicer', 'elapsed', 'total'] },
+  { id: 'forecast', titleKey: 'system.status.groupForecast', fields: ['layer', 'remaining', 'eta'] },
 ];
 
 export const DEFAULT_FIELDS: StatusFieldId[] = FIELD_GROUPS.flatMap((g) => g.fields);

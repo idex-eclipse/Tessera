@@ -76,44 +76,44 @@
           <div class="fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
         </div>
         <span class="pct">{progress != null ? `${Math.round(progress * 100)}%` : '—'}</span>
-        <span class="eta">{i18n.t('widgets.status.eta')}: {fmtClock(eta)}</span>
+        <span class="eta">{i18n.t('system.status.eta')}: {fmtClock(eta)}</span>
 
         <span class="sb-actions">
           {#if m.state === 'printing'}
             <button
               class="sb-btn"
               disabled={busy !== ''}
-              title={i18n.t('widgets.status.pause')}
+              title={i18n.t('system.status.pause')}
               onclick={() => act('printer.print.pause')}
             >
               <Icon name="pause" size={13} />
-              {i18n.t('widgets.status.pause')}
+              {i18n.t('system.status.pause')}
             </button>
           {:else}
             <button
               class="sb-btn"
               disabled={busy !== ''}
-              title={i18n.t('widgets.status.resume')}
+              title={i18n.t('system.status.resume')}
               onclick={() => act('printer.print.resume')}
             >
               <Icon name="play" size={13} />
-              {i18n.t('widgets.status.resume')}
+              {i18n.t('system.status.resume')}
             </button>
           {/if}
           <button
             class="sb-btn danger"
             disabled={busy !== ''}
-            title={i18n.t('widgets.status.cancel')}
+            title={i18n.t('system.status.cancel')}
             onclick={() => (confirmCancel = true)}
           >
             <Icon name="stop" size={13} />
-            {i18n.t('widgets.status.cancel')}
+            {i18n.t('system.status.cancel')}
           </button>
         </span>
 
         <button
           class="sb-chev"
-          title={i18n.t('widgets.status.fields')}
+          title={i18n.t('system.status.fields')}
           aria-expanded={fieldsOpen}
           onclick={toggleFields}
         >
@@ -125,15 +125,15 @@
 
       <span class="banner-actions">
         <StatusSettingsMenu {api} showBannerToggle={false} />
-        <HeaderHelp title={i18n.t('widgets.status.help.Title')}>
-          <h4>{i18n.t('widgets.status.help.ModesTitle')}</h4>
-          <p>{i18n.t('widgets.status.help.ModesText')}</p>
+        <HeaderHelp title={i18n.t('system.status.help.Title')}>
+          <h4>{i18n.t('system.status.help.ModesTitle')}</h4>
+          <p>{i18n.t('system.status.help.ModesText')}</p>
 
-          <h4>{i18n.t('widgets.status.help.FieldsTitle')}</h4>
-          <p>{i18n.t('widgets.status.help.FieldsText')}</p>
+          <h4>{i18n.t('system.status.help.FieldsTitle')}</h4>
+          <p>{i18n.t('system.status.help.FieldsText')}</p>
 
-          <h4>{i18n.t('widgets.status.help.BannerTitle')}</h4>
-          <p>{i18n.t('widgets.status.help.BannerText')}</p>
+          <h4>{i18n.t('system.status.help.BannerTitle')}</h4>
+          <p>{i18n.t('system.status.help.BannerText')}</p>
         </HeaderHelp>
       </span>
     </div>
@@ -148,9 +148,9 @@
 
 <ConfirmDialog
   open={confirmCancel}
-  title={i18n.t('widgets.status.cancel')}
-  message={i18n.t('widgets.status.cancelConfirm')}
-  confirmLabel={i18n.t('widgets.status.cancel')}
+  title={i18n.t('system.status.cancel')}
+  message={i18n.t('system.status.cancelConfirm')}
+  confirmLabel={i18n.t('system.status.cancel')}
   danger={true}
   onConfirm={() => {
     confirmCancel = false;
