@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
 export type QueueState = 'ready' | 'loading' | 'starting' | 'paused' | 'unknown';
 
@@ -11,17 +15,22 @@ export interface QueuedJob {
   time_in_queue: number;
 }
 
-let jobs = $state<QueuedJob[]>([]);
-let state = $state<QueueState>('unknown');
-let available = $state<boolean>(true);
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
+// ------------------------------------------------------------------
+function createJobQueueCore(api: PluginApi, printerId: string) {
+  let jobs = $state<QueuedJob[]>([]);
+  let state = $state<QueueState>('unknown');
+  let available = $state<boolean>(true);
 
-export function useJobQueue(api: PluginApi) {
   let generation = 0;
   const unsubs: Array<() => void> = [];
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
@@ -76,9 +85,7 @@ export function useJobQueue(api: PluginApi) {
     }
   }
 
-
   // Actions
-
 
   async function remove(ids: string[]): Promise<void> {
     const s = await req<any>('server.job_queue.delete_job', { job_ids: ids });
@@ -115,11 +122,13 @@ export function useJobQueue(api: PluginApi) {
   async function init(): Promise<void> {
     const gen = ++generation;
     const h = safeHandle();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
 
-    unsubs.push(h.onReady(() => {
-      if (gen === generation) void refresh(gen);
-    }));
+    unsubs.push(
+      h.onReady(() => {
+        if (gen === generation) void refresh(gen);
+      }),
+    );
     unsubs.push(
       h.onNotify('notify_job_queue_changed', (p: any) => {
         if (gen !== generation) return;
@@ -134,27 +143,79 @@ export function useJobQueue(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
+  function destroy(): void {
     teardown();
-    jobs = [];
-    state = 'unknown';
-    available = true;
-    void init();
-  });
-
-  onDestroy(() => {
-    teardown();
-    offPrinter();
-  });
+  }
 
   return {
-    get jobs() { return jobs; },
-    get state() { return state; },
-    get available() { return available; },
+    get jobs() {
+      return jobs;
+    },
+    get state() {
+      return state;
+    },
+    get available() {
+      return available;
+    },
     remove,
     clearAll,
     pause,
     start,
     jump,
+    destroy,
   };
+}
+
+export type JobQueueStore = ReturnType<typeof createJobQueueCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<JobQueueStore>({
+  create: (pid, api) => createJobQueueCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук очереди заданий.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
+ */
+export function useJobQueue(api: PluginApi, printerId?: string): JobQueueStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<JobQueueStore>(() => keeper.get(api.printer.id, api));
 }
