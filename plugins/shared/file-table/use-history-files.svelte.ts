@@ -1,8 +1,12 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi } from '../../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../core-keeper/core-keeper';
 
-import type { GcodeFileEntry } from './use-gcode-files.svelte';
+import type { GcodeFileEntry } from './use-gcode-files.svelte.ts';
 
 interface HistoryListResponse {
   jobs?: Array<Record<string, any>>;
@@ -16,7 +20,11 @@ function numOpt(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-export function useHistoryFiles(api: PluginApi) {
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// История плоская (без path).
+// ------------------------------------------------------------------
+function createHistoryFilesCore(api: PluginApi, printerId: string) {
   let files = $state<GcodeFileEntry[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -25,13 +33,28 @@ export function useHistoryFiles(api: PluginApi) {
 
   const unsubs: Array<() => void> = [];
 
+  function safeHandle(): MoonrakerProxyHandle | null {
+    try {
+      return api.moonrakerFor(printerId);
+    } catch {
+      return null;
+    }
+  }
+
   async function load(): Promise<void> {
     loading = true;
     error = null;
     try {
-      const res = await api
-        .moonraker()
-        .request<HistoryListResponse>('server.history.list', { limit: 0, order: 'desc' });
+      const h = safeHandle();
+      if (!h) {
+        error = 'Printer not available';
+        return;
+      }
+
+      const res = await h.request<HistoryListResponse>('server.history.list', {
+        limit: 0,
+        order: 'desc',
+      });
 
       files = (res.jobs ?? [])
         .filter((j) => typeof j.filename === 'string')
@@ -53,7 +76,6 @@ export function useHistoryFiles(api: PluginApi) {
             nozzle_diameter: meta.nozzle_diameter,
             filament_name: meta.filament_name,
             filament_type: meta.filament_type,
-            // фактический расход из job приоритетнее оценки слайсера
             filament_total: numOpt(j.filament_used) ?? numOpt(meta.filament_total),
             filament_weight_total: meta.filament_weight_total,
             estimated_time: numOpt(meta.estimated_time) ?? numOpt(j.estimate),
@@ -63,13 +85,10 @@ export function useHistoryFiles(api: PluginApi) {
             print_start_time: numOpt(j.start_time) ?? null,
             job_id: typeof j.job_id === 'string' ? j.job_id : null,
             thumbnails: Array.isArray(meta.thumbnails) ? meta.thumbnails : [],
-            // raw = metadata + job: sortValue/cellText читают и слайсер-ключи,
-            // и history-ключи (print_duration, total_duration, status, spool_ids, exists)
             raw: { ...meta, ...j },
           };
         });
 
-      // desc-порядок: первый job файла = его последний статус
       const map: Record<string, string> = {};
       for (const job of res.jobs ?? []) {
         const name = job.filename;
@@ -90,19 +109,15 @@ export function useHistoryFiles(api: PluginApi) {
     return statuses[filename] ?? null;
   }
 
-  // история плоская: навигации нет
-  function navigate(_p: string): void {}
+  function navigate(_p: string): void {
+    // история плоская: навигации нет
+  }
 
   function init(): void {
-    //console.info('[history-files] init for', api.printer.id);
     for (const u of unsubs.splice(0)) u();
 
-    let h;
-    try {
-      h = api.moonraker();
-    } catch {
-      return;
-    }
+    const h = safeHandle();
+    if (!h) return;
 
     unsubs.push(
       h.onNotify('notify_history_changed', () => {
@@ -135,24 +150,83 @@ export function useHistoryFiles(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
-    currentPrint = null;
-    init();
-  });
-
-  onDestroy(() => {
+  function destroy(): void {
     for (const u of unsubs) u();
-    offPrinter();
-  });
+  }
 
   return {
-    get path() { return ''; },
-    get dirs() { return [] as Array<{ dirname: string; modified: number; size: number }>; },
-    get files() { return files; },
-    get loading() { return loading; },
-    get error() { return error; },
+    get path() {
+      return '';
+    },
+    get dirs() {
+      return [] as Array<{ dirname: string; modified: number; size: number }>;
+    },
+    get files() {
+      return files;
+    },
+    get loading() {
+      return loading;
+    },
+    get error() {
+      return error;
+    },
     navigate,
     refresh: load,
     statusOf,
+    destroy,
   };
+}
+
+export type HistoryFilesStore = ReturnType<typeof createHistoryFilesCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<HistoryFilesStore>({
+  create: (pid, api) => createHistoryFilesCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук списка истории печати.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером.
+ * С printerId — fleet: прямое ядро с удержанием.
+ */
+export function useHistoryFiles(
+  api: PluginApi,
+  printerId?: string,
+): HistoryFilesStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  return createDelegateStore<HistoryFilesStore>(() => keeper.get(api.printer.id, api));
 }
