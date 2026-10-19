@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
 export interface OutputItem {
   id: string; // 'fan' / 'fan_generic extruder' / 'output_pin led' / 'heater_fan x'…
@@ -29,18 +33,37 @@ function prettify(name: string): string {
     .join(' ');
 }
 
-// module-level
-let items = $state<OutputItem[]>([]);
-let values = $state<Record<string, number>>({}); // fan*: 0..1; output_pin: raw value
+// ------------------------------------------------------------------
+// Module-level кэш метаданных (items) per-printer.
+// Инвалидация по notify_klippy_ready / notify_config_changed.
+// Долгоживущий — без TTL; перечитывание только при инвалидации.
+// ------------------------------------------------------------------
+interface MetaCacheEntry {
+  items: OutputItem[];
+  ts: number;
+}
+const metaCache = new Map<string, MetaCacheEntry>();
 
-export function useOutputs(api: PluginApi) {
+function invalidateMeta(printerId: string): void {
+  metaCache.delete(printerId);
+}
+
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
+// ------------------------------------------------------------------
+function createOutputsCore(api: PluginApi, printerId: string) {
+  let items = $state<OutputItem[]>([]);
+  let values = $state<Record<string, number>>({});
+
   let generation = 0;
   let unsubMeta: (() => void) | null = null;
   const unsubs: Array<() => void> = [];
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
@@ -73,101 +96,105 @@ export function useOutputs(api: PluginApi) {
   }
 
   // Метаданные: управляемые выходы из конфига + авто-венты из objects.list
-
-
   async function loadMeta(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h) return;
 
-    const [list, cfgRes] = await Promise.all([
-      h.request<any>('printer.objects.list').catch(() => null),
-      h.request<any>('printer.objects.query', { objects: { configfile: ['settings'] } }).catch(() => null),
-    ]);
-    if (gen !== generation || !list) return;
+    // Проверяем кэш
+    const cached = metaCache.get(printerId);
+    if (cached) {
+      items = cached.items;
+    } else {
+      // Cache-miss: два параллельных запроса
+      const [list, cfgRes] = await Promise.all([
+        h.request<any>('printer.objects.list').catch(() => null),
+        h.request<any>('printer.objects.query', { objects: { configfile: ['settings'] } }).catch(() => null),
+      ]);
+      if (gen !== generation || !list) return;
 
-    const objects: string[] = list.objects ?? [];
-    const settings = (cfgRes?.status?.configfile?.settings ?? {}) as Record<string, any>;
+      const objects: string[] = list.objects ?? [];
+      const settings = (cfgRes?.status?.configfile?.settings ?? {}) as Record<string, any>;
 
-    const next: OutputItem[] = [];
+      const next: OutputItem[] = [];
 
-    // --- управляемые: [fan] ---
-    if (objects.includes('fan')) {
-      next.push({
-        id: 'fan',
-        kind: 'fan',
-        name: 'fan',
-        label: 'Fan',
-        min: 0,
-        max: 1,
-        step: 0.01,
-        decimals: 0,
-        readOnly: false,
-      });
-    }
-
-    // --- управляемые: fan_generic / output_pin (из конфига) ---
-    for (const key of Object.keys(settings)) {
-      if (key.startsWith('fan_generic ')) {
-        const name = key.slice('fan_generic '.length);
+      // --- управляемые: [fan] ---
+      if (objects.includes('fan')) {
         next.push({
-          id: key,
-          kind: 'fan_generic',
-          name,
-          label: prettify(name),
+          id: 'fan',
+          kind: 'fan',
+          name: 'fan',
+          label: 'Fan',
           min: 0,
           max: 1,
           step: 0.01,
           decimals: 0,
           readOnly: false,
         });
-      } else if (key.startsWith('output_pin ')) {
-        const cfg = settings[key] ?? {};
-        if (cfg.static === true) continue; // static-пин не управляется SET_PIN
-        const name = key.slice('output_pin '.length);
-        const min = Number(cfg.minimum ?? 0);
-        const max = Number(cfg.maximum ?? 1);
-        const pwm = cfg.pwm !== false;
+      }
+
+      // --- управляемые: fan_generic / output_pin (из конфига) ---
+      for (const key of Object.keys(settings)) {
+        if (key.startsWith('fan_generic ')) {
+          const name = key.slice('fan_generic '.length);
+          next.push({
+            id: key,
+            kind: 'fan_generic',
+            name,
+            label: prettify(name),
+            min: 0,
+            max: 1,
+            step: 0.01,
+            decimals: 0,
+            readOnly: false,
+          });
+        } else if (key.startsWith('output_pin ')) {
+          const cfg = settings[key] ?? {};
+          if (cfg.static === true) continue; // static-пин не управляется SET_PIN
+          const name = key.slice('output_pin '.length);
+          const min = Number(cfg.minimum ?? 0);
+          const max = Number(cfg.maximum ?? 1);
+          const pwm = cfg.pwm !== false;
+          next.push({
+            id: key,
+            kind: 'output_pin',
+            name,
+            label: prettify(name),
+            min,
+            max,
+            step: pwm ? Math.max((max - min) / 100, 0.01) : 1,
+            decimals: pwm ? 2 : 0,
+            readOnly: false,
+          });
+        }
+      }
+
+      // --- авто-вентиляторы: статус-объекты из objects.list ---
+      for (const obj of objects) {
+        const kind = obj.startsWith('heater_fan ')
+          ? ('heater_fan' as const)
+          : obj.startsWith('controller_fan ')
+            ? ('controller_fan' as const)
+            : obj.startsWith('temperature_fan ')
+              ? ('temperature_fan' as const)
+              : null;
+        if (!kind) continue;
+        const name = obj.slice(obj.indexOf(' ') + 1);
         next.push({
-          id: key,
-          kind: 'output_pin',
+          id: obj,
+          kind,
           name,
           label: prettify(name),
-          min,
-          max,
-          step: pwm ? Math.max((max - min) / 100, 0.01) : 1,
-          decimals: pwm ? 2 : 0,
-          readOnly: false,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          decimals: 0,
+          readOnly: true,
         });
       }
-    }
 
-    // --- авто-вентиляторы: статус-объекты из objects.list (есть при Klipper ready).
-    // Скоростью управляет Klipper (по температуре нагревателя/контроллера/сенсора) —
-    // UI только читает ['speed'] и показывает состояние; команд не шлём вовсе.
-    for (const obj of objects) {
-      const kind = obj.startsWith('heater_fan ')
-        ? ('heater_fan' as const)
-        : obj.startsWith('controller_fan ')
-          ? ('controller_fan' as const)
-          : obj.startsWith('temperature_fan ')
-            ? ('temperature_fan' as const)
-            : null;
-      if (!kind) continue;
-      const name = obj.slice(obj.indexOf(' ') + 1);
-      next.push({
-        id: obj,
-        kind,
-        name,
-        label: prettify(name),
-        min: 0,
-        max: 1,
-        step: 0.01,
-        decimals: 0,
-        readOnly: true,
-      });
+      items = next;
+      metaCache.set(printerId, { items: next, ts: Date.now() });
     }
-
-    items = next;
 
     if (unsubMeta) {
       unsubMeta();
@@ -198,7 +225,6 @@ export function useOutputs(api: PluginApi) {
   }
 
   // Actions
-
   function setValue(id: string, raw: number): void {
     const it = items.find((x) => x.id === id);
     if (!it || it.readOnly) return;
@@ -213,7 +239,6 @@ export function useOutputs(api: PluginApi) {
   }
 
   // Lifecycle
-
   function teardown(): void {
     generation++;
     if (unsubMeta) {
@@ -226,7 +251,8 @@ export function useOutputs(api: PluginApi) {
   async function init(): Promise<void> {
     const gen = ++generation;
     const h = safeHandle();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
+
     unsubs.push(
       h.onReady(() => {
         if (gen === generation) void loadMeta(gen);
@@ -234,25 +260,27 @@ export function useOutputs(api: PluginApi) {
     );
     unsubs.push(
       h.onNotify('notify_klippy_ready', () => {
-        if (gen === generation) void loadMeta(gen);
+        if (gen !== generation) return;
+        invalidateMeta(printerId);
+        void loadMeta(gen);
       }),
     );
+    unsubs.push(
+      h.onNotify('notify_config_changed', () => {
+        if (gen !== generation) return;
+        invalidateMeta(printerId);
+        void loadMeta(gen);
+      }),
+    );
+
     await loadMeta(gen);
   }
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
+  function destroy(): void {
     teardown();
-    items = [];
-    values = {};
-    void init();
-  });
-
-  onDestroy(() => {
-    teardown();
-    offPrinter();
-  });
+  }
 
   return {
     get items() {
@@ -262,7 +290,63 @@ export function useOutputs(api: PluginApi) {
       return values;
     },
     setValue,
+    destroy,
   };
 }
 
-export type OutputsStore = ReturnType<typeof useOutputs>;
+export type OutputsStore = ReturnType<typeof createOutputsCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<OutputsStore>({
+  create: (pid, api) => createOutputsCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук выходов (вентиляторы/пины).
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
+ *
+ * Метаданные (items) кэшируются per-printer; инвалидация по
+ * notify_klippy_ready / notify_config_changed (SAVE_CONFIG).
+ */
+export function useOutputs(api: PluginApi, printerId?: string): OutputsStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<OutputsStore>(() => keeper.get(api.printer.id, api));
+}
