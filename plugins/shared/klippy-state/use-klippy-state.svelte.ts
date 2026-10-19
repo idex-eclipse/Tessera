@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
 export type KlippyState =
   | 'ready'
@@ -30,7 +34,6 @@ interface Attachment {
   unsubs: Array<() => void>;
   consumers: number;
   poll: ReturnType<typeof setInterval> | null;
-  /** Ленивый резолв хендла: legacy = api.moonraker(), fleet = api.moonrakerFor(pid). */
   resolveHandle: () => MoonrakerProxyHandle | null;
 }
 const attachments = new Map<string, Attachment>();
@@ -41,14 +44,6 @@ const UNSTABLE: ReadonlySet<KlippyState> = new Set([
   'error',
   'disconnected',
 ]);
-
-function safeHandle(api: PluginApi): MoonrakerProxyHandle | null {
-  try {
-    return api.moonraker();
-  } catch {
-    return null;
-  }
-}
 
 function setMessage(pid: string, m: string): void {
   messageByPrinter = { ...messageByPrinter, [pid]: m };
@@ -153,7 +148,6 @@ function attach(
   const h = resolveHandle();
   if (h) {
     att.unsubs.push(h.poll('printer.info', undefined, 1500));
-    // webhooks-подписка (ускоритель)
     att.unsubs.push(
       h.subscribe(
         { webhooks: ['state', 'state_message'] },
@@ -170,7 +164,6 @@ function attach(
       ),
     );
 
-    // notify (ускоритель)
     att.unsubs.push(
       h.onNotify('notify_klippy_started', () => {
         log('notify started');
@@ -198,7 +191,6 @@ function attach(
       }),
     );
 
-    // conn
     att.unsubs.push(
       h.onConnectionStatusChange((s) => {
         log('conn', pid, s);
@@ -240,62 +232,100 @@ function detach(pid: string, att: Attachment): void {
   attachments.delete(pid);
 }
 
-/**
- * Без printerId — прежнее поведение: следует за активным принтером
- * (onPrinterChange → detach/attach), хендл = api.moonraker().
- * С printerId — fleet-режим: статическая привязка, хендл = api.moonrakerFor(printerId),
- * onPrinterChange НЕ слушается. State/attachment шарятся по printerId через
- * module-реестр (refcount), поэтому fleet-карточка активного принтера и его
- * виджет/баннер держат ОДНУ подписку.
- */
-export function useKlippyState(api: PluginApi, printerId?: string) {
-  const fleet = printerId !== undefined;
-  const fixedPid = printerId as string;
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
+// State остаётся module-level (keyed по printerId) — эквивалент keeper.
+// ------------------------------------------------------------------
+function createKlippyStateCore(api: PluginApi, printerId: string) {
+  let att: Attachment | null = null;
 
-  let currentPid = $state(fleet ? fixedPid : api.printer.id);
-
-  let att = attach(currentPid, () =>
-    fleet ? safeHandleFor(api, fixedPid) : safeHandle(api),
-  );
-
-  let offPrinter: () => void = () => {};
-
-  if (!fleet) {
-    offPrinter = api.onPrinterChange((p) => {
-      detach(currentPid, att);
-      currentPid = p.id;
-      att = attach(currentPid, () => safeHandle(api));
-    });
-  }
-
-  onDestroy(() => {
-    offPrinter();
-    detach(currentPid, att);
+  att = attach(printerId, () => {
+    try {
+      return api.moonrakerFor(printerId);
+    } catch {
+      return null;
+    }
   });
+
+  function destroy(): void {
+    if (att) {
+      detach(printerId, att);
+      att = null;
+    }
+  }
 
   return {
     get state(): KlippyState {
-      return stateByPrinter[currentPid] ?? 'unknown';
+      return stateByPrinter[printerId] ?? 'unknown';
     },
     get stateMessage(): string {
-      return messageByPrinter[currentPid] ?? '';
+      return messageByPrinter[printerId] ?? '';
     },
     get ready(): boolean {
-      return (stateByPrinter[currentPid] ?? 'unknown') === 'ready';
+      return (stateByPrinter[printerId] ?? 'unknown') === 'ready';
     },
     get error(): boolean {
-      const s = stateByPrinter[currentPid] ?? 'unknown';
+      const s = stateByPrinter[printerId] ?? 'unknown';
       return s === 'error' || s === 'shutdown';
     },
+    destroy,
   };
 }
 
-function safeHandleFor(api: PluginApi, printerId: string): MoonrakerProxyHandle | null {
-  try {
-    return api.moonrakerFor(printerId);
-  } catch {
-    return null;
-  }
-}
+export type KlippyStateStore = ReturnType<typeof createKlippyStateCore>;
 
-export type KlippyStateStore = ReturnType<typeof useKlippyState>;
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount потребителей
+// (keep-alive, LRU cap 4). State module-level keyed по printerId.
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<KlippyStateStore>({
+  create: (pid, api) => createKlippyStateCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук состояния Klipper.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet/явная привязка: прямое ядро с
+ * удержанием.
+ */
+export function useKlippyState(api: PluginApi, printerId?: string): KlippyStateStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<KlippyStateStore>(() => keeper.get(api.printer.id, api));
+}
