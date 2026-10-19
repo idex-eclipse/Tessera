@@ -1,3 +1,5 @@
+import 'drag-drop-touch';
+
 import { mount } from 'svelte';
 
 import App from './App.svelte';
