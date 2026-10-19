@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { HostI18n } from '../../core/host-i18n.svelte.ts';
-  import type { PrinterManager } from '../../core/printer-manager.svelte.ts';
+  import type { PrinterManager, PrinterConnectionState } from '../../core/printer-manager.svelte.ts';
 
   let {
     printerManager,
@@ -10,13 +10,30 @@
     i18n: HostI18n;
   } = $props();
 
-  let activeConnection = $derived(printerManager.activeConnection);
+  // Local reactive state (printer-manager теперь event-based, не $state)
+  let activeConnection = $state<PrinterConnectionState | null>(printerManager.activeConnection);
+  let shouldShow = $state(printerManager.shouldShowOfflineOverlay);
+
+  // Подписка на изменения connection state
+  $effect(() => {
+    return printerManager.onConnectionStateChange(() => {
+      activeConnection = printerManager.activeConnection;
+      shouldShow = printerManager.shouldShowOfflineOverlay;
+    });
+  });
+
+  // Также подписываемся на смену активного принтера (он может измениться без изменения connections)
+  $effect(() => {
+    return printerManager.onPrinterChange(() => {
+      activeConnection = printerManager.activeConnection;
+      shouldShow = printerManager.shouldShowOfflineOverlay;
+    });
+  });
 
   let lastSeenText = $derived.by(() => {
     if (!activeConnection?.lastSuccessfulAt) {
       return '—';
     }
-
     return new Date(activeConnection.lastSuccessfulAt).toLocaleTimeString();
   });
 
@@ -25,23 +42,25 @@
   }
 </script>
 
-<div class="overlay">
-  <div class="overlay-content">
-    <div class="overlay-icon">📡</div>
+{#if shouldShow}
+  <div class="overlay">
+    <div class="overlay-content">
+      <div class="overlay-icon">📡</div>
 
-    <h3 class="overlay-title">
-      {i18n.t('printer.statusOffline')}
-    </h3>
+      <h3 class="overlay-title">
+        {i18n.t('printer.statusOffline')}
+      </h3>
 
-    <p class="overlay-detail">
-      {i18n.t('printer.lastSuccessfulConnection')}: {lastSeenText}
-    </p>
+      <p class="overlay-detail">
+        {i18n.t('printer.lastSuccessfulConnection')}: {lastSeenText}
+      </p>
 
-    <button class="retry-btn" onclick={handleRetry}>
-      {i18n.t('printer.retryConnection')}
-    </button>
+      <button class="retry-btn" onclick={handleRetry}>
+        {i18n.t('printer.retryConnection')}
+      </button>
+    </div>
   </div>
-</div>
+{/if}
 
 <style>
   .overlay {
@@ -89,7 +108,7 @@
     border: none;
     border-radius: var(--radius-md);
     background: var(--accent);
-    color: #ffffff;
+    color: var(--accent-text);
     font-size: var(--font-size-md);
     cursor: pointer;
     transition: background var(--transition-fast);
