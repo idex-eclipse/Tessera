@@ -41,9 +41,10 @@ export interface CoreKeeper<Core> {
   drop(printerId: string): void;
   /** Уничтожить idle-ядра принтеров, отсутствующих в реестре. */
   prune(existingPrinterIds: readonly string[]): void;
+  /** Итератор ключей (printerId или составных ключей). */
+  keys(): IterableIterator<string>;
   readonly size: number;
 }
-
 export function createCoreKeeper<Core extends { destroy(): void }>(
   options: CoreKeeperOptions<Core>,
 ): CoreKeeper<Core> {
@@ -127,6 +128,10 @@ export function createCoreKeeper<Core extends { destroy(): void }>(
           if (e && e.refs === 0) destroyEntry(pid);
         }
       }
+    },
+
+    keys() {
+      return entries.keys();
     },
 
     get size() {
