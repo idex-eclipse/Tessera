@@ -5,6 +5,10 @@ import type {
   PluginSettingsApi,
   MoonrakerProxyHandle,
 } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
 export interface WebcamItem {
   name: string;
@@ -55,24 +59,18 @@ function normalize(raw: any): WebcamItem {
 // ------------------------------------------------------------------
 // Module-level: UI-стор страницы управления камерами (диалоги CRUD) —
 // общий для legacy-потребителей; fleet-панели диалоги не открывают.
-// fleetCache — мгновенная отрисовка списка камер при remount (общий).
+// Сбрасываются при смене активного принтера (legacy-ветка хука).
 // ------------------------------------------------------------------
 let dialog = $state<null | { mode: 'add' } | { mode: 'edit'; item: WebcamItem }>(null);
 let toDelete = $state<WebcamItem | null>(null);
-const fleetCache = new Map<string, WebcamItem[]>();
 
 // ------------------------------------------------------------------
-// Core factory: изолированное ядро на (api, printerId | null).
-// Legacy (printerId === null) — refcounted singleton core, виджет камеры
-// и диалоги делят один core.
-// Fleet (printerId !== null) — изолированный core; настройки (camera.active)
-// читаются/пишутся в namespace принтера через api.settingsFor(printerId).
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
 // ------------------------------------------------------------------
-function createCamerasCore(api: PluginApi, printerId: string | null) {
-  const fleet = printerId !== null;
-  const settingsApi: PluginSettingsApi = fleet
-    ? api.settingsFor(printerId as string)
-    : api.settings;
+function createCamerasCore(api: PluginApi, printerId: string) {
+  const settingsApi: PluginSettingsApi = api.settingsFor(printerId);
 
   let cameras = $state<WebcamItem[]>([]);
   let activeName = $state<string | null>(null);
@@ -82,7 +80,7 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
@@ -90,9 +88,7 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
 
   function applyList(raw: any): void {
     const arr = Array.isArray(raw) ? raw : (raw?.webcams ?? []);
-    const list = arr.filter((c: any) => c && c.name).map(normalize);
-    cameras = list;
-    if (fleet) fleetCache.set(printerId as string, list);
+    cameras = arr.filter((c: any) => c && c.name).map(normalize);
   }
 
   async function loadList(gen: number): Promise<void> {
@@ -109,8 +105,7 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
     enabled.find((c) => c.name === activeName) ?? enabled[0] ?? null,
   );
 
-  // setActive одинаково работает для legacy и fleet: настройки пишутся в
-  // namespace своего принтера (legacy = activePrinterId, fleet = printerId).
+  // setActive пишет в namespace своего принтера через settingsFor(printerId)
   function setActive(name: string): void {
     activeName = name;
     settingsApi.set('camera.active', name);
@@ -118,10 +113,14 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
 
   // CRUD — используется только legacy-UI (CameraPage). Fleet-панели не
   // открывают диалоги, поэтому безопасный handle берётся через api.moonraker()
-  // активного принтера в legacy-режиме.
+  // активного принтера (не moonrakerFor(printerId) ядра).
   async function saveCamera(item: WebcamItem, isNew: boolean): Promise<void> {
-    const h = safeHandle();
-    if (!h) return;
+    let h: MoonrakerProxyHandle;
+    try {
+      h = api.moonraker();
+    } catch {
+      return;
+    }
 
     const params: Record<string, unknown> = {
       name: item.name,
@@ -146,8 +145,12 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
   }
 
   async function deleteCamera(item: WebcamItem): Promise<void> {
-    const h = safeHandle();
-    if (!h) return;
+    let h: MoonrakerProxyHandle;
+    try {
+      h = api.moonraker();
+    } catch {
+      return;
+    }
     await h
       .request('server.webcams.delete_item', item.uid ? { uid: item.uid } : { name: item.name })
       .catch((e) => console.error('[camera] delete failed:', e));
@@ -171,14 +174,8 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
   async function init(): Promise<void> {
     const gen = ++generation;
 
-    // И legacy и fleet читают сохранённый выбор из своего namespace
+    // Читаем сохранённый выбор из namespace принтера
     activeName = settingsApi.get<string>('camera.active') ?? null;
-
-    // Fleet: мгновенная отрисовка из кэша (до ответа loadList)
-    if (fleet) {
-      const cached = fleetCache.get(printerId as string);
-      if (cached) cameras = cached;
-    }
 
     unsubs.push(
       settingsApi.onChange((k, v) => {
@@ -188,7 +185,6 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
 
     const h = safeHandle();
     if (!h) return;
-    if (!fleet && !api.printer.url) return;
 
     unsubs.push(h.onReady(() => {
       if (gen === generation) void loadList(gen);
@@ -202,22 +198,7 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
 
   init();
 
-  let offPrinter: () => void = () => {};
-
-  if (!fleet) {
-    offPrinter = api.onPrinterChange(() => {
-      teardown();
-      cameras = [];
-      activeName = null;
-      // Сбрасываем диалоги страницы — они относились к предыдущему принтеру
-      dialog = null;
-      toDelete = null;
-      void init();
-    });
-  }
-
   function destroy(): void {
-    offPrinter();
     teardown();
   }
 
@@ -242,45 +223,60 @@ function createCamerasCore(api: PluginApi, printerId: string | null) {
 export type CamerasStore = ReturnType<typeof createCamerasCore>;
 
 // ------------------------------------------------------------------
-// Legacy: refcounted singleton core. Виджет камеры и диалоги страницы
-// делят один core (список камер/выбор/подписки общие). Fleet-инстансы
-// изолированы через createCamerasCore(api, pid).
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
 // ------------------------------------------------------------------
-let legacyCore: CamerasStore | null = null;
-let legacyConsumers = 0;
-
-function legacyCoreAcquire(api: PluginApi): CamerasStore {
-  if (!legacyCore) legacyCore = createCamerasCore(api, null);
-  legacyConsumers++;
-  return legacyCore;
-}
-
-function legacyCoreRelease(): void {
-  legacyConsumers--;
-  if (legacyConsumers > 0 || !legacyCore) return;
-  legacyCore.destroy();
-  legacyCore = null;
-}
+const keeper = createCoreKeeper<CamerasStore>({
+  create: (pid, api) => createCamerasCore(api, pid),
+  cap: 4,
+});
 
 /**
  * Хук камер.
  *
- * Без printerId — legacy: shared core активного принтера (refcounted;
- * виджет камеры и диалоги страницы делят один core). Выбор камеры
- * персистится в namespace активного принтера.
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
  *
- * С printerId — fleet: изолированный core на принтер, handle через
- * api.moonrakerFor(printerId), выбор камеры персистится в namespace
- * указанного принтера через api.settingsFor(printerId).
+ * Диалоги CRUD (module-level) сбрасываются при смене активного принтера
+ * (legacy-ветка), потому что они привязаны к активному принтеру через
+ * api.moonraker().
  */
 export function useCameras(api: PluginApi, printerId?: string): CamerasStore {
-  if (printerId === undefined) {
-    const core = legacyCoreAcquire(api);
-    onDestroy(() => legacyCoreRelease());
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
     return core;
   }
 
-  const core = createCamerasCore(api, printerId);
-  onDestroy(() => core.destroy());
-  return core;
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+    // Сбрасываем диалоги страницы — они относились к предыдущему принтеру
+    dialog = null;
+    toDelete = null;
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<CamerasStore>(() => keeper.get(api.printer.id, api));
 }
