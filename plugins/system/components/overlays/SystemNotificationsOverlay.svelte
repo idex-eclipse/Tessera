@@ -16,7 +16,6 @@
     const col = document.querySelector('aside.right-panel') as HTMLElement | null;
     if (!col) return;
     const r = col.getBoundingClientRect();
-    // sanity: нулевой rect в момент перемонта игнорируем — держим последнюю валидную коробку
     if (r.width < 1 || r.height < 1) return;
     panelBox = {
       right: Math.round(r.width),
@@ -32,11 +31,9 @@
 
     const col = document.querySelector('aside.right-panel') as HTMLElement | null;
 
-    // ресайз колонки: drag ширины, collapse→rail, transition width (тики каждый кадр)
     const ro = new ResizeObserver(() => measureColumn());
     if (col) ro.observe(col);
 
-    // колонку могли заменить целиком: следим за детьми её родителя
     let mo: MutationObserver | null = null;
     if (col?.parentElement) {
       mo = new MutationObserver(() => measureColumn());
@@ -72,6 +69,15 @@
 
   function sourceLabel(s: NotificationItem['source']): string {
     return i18n.t(`system.notifications.src.${s}`);
+  }
+
+  /** Имя принтера: из реестра; fallback на id (удалённый принтер). */
+  function printerName(id: string): string {
+    return api.printers.find((p) => p.id === id)?.name ?? id;
+  }
+
+  function isPrinterActive(id: string): boolean {
+    return id === api.printer.id;
   }
 
   function fmtTime(t: number): string {
@@ -195,6 +201,9 @@
             <div class="notif-head">
               <span class="sev">{severityLabel(n.severity)}</span>
               <span class="src">{sourceLabel(n.source)}</span>
+              <span class="printer" class:inactive={!isPrinterActive(n.printerId)} title={printerName(n.printerId)}>
+                {printerName(n.printerId)}
+              </span>
               <span class="time">{fmtTime(n.time)}</span>
               <button
                 class="icon-btn"
@@ -215,7 +224,6 @@
 <style>
   .notifications-panel {
     position: fixed;
-    /* right/top/height/width — inline из rect aside.right-panel */
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
@@ -225,7 +233,6 @@
     overflow: hidden;
     animation: np-in 300ms ease-out;
   }
-
 
   @keyframes np-in {
     from {
@@ -441,16 +448,37 @@
   .notif.info .sev { color: var(--accent); }
 
   .notif .src {
-    flex: 1;
-    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* Бейдж принтера: компактный чип с именем. inactive = muted (не-активный принтер). */
+  .notif .printer {
+    padding: 0 6px;
+    border-radius: 3px;
+    background: var(--bg-surface-active);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+    flex-shrink: 0;
+  }
+
+  .notif .printer.inactive {
+    background: var(--bg-surface-hover);
+    color: var(--text-muted);
+  }
+
   .notif .time {
     font-family: monospace;
     flex-shrink: 0;
+    margin-left: auto;
   }
 
   .notif-text {

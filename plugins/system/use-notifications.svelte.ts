@@ -1,13 +1,13 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types.ts';
-import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
 
 export type NotificationSeverity = 'critical' | 'error' | 'info';
 export type NotificationSource = 'gcode' | 'klippy' | 'tmc' | 'guard' | 'plugin';
 
 export interface NotificationItem {
   id: string;
+  printerId: string;
   severity: NotificationSeverity;
   source: NotificationSource;
   text: string;
@@ -22,24 +22,23 @@ const HISTORY_CAP = 200;
 const TOAST_CAP = 5;
 const DEDUP_MS = 100;
 
-// Флаги TMC, которые считаем ошибками (drv_status шлёт только ненулевые)
 const TMC_ERROR_FLAGS = new Set([
   'ot', 'otpw',
   's2ga', 's2gb', 's2vsa', 's2vsb',
   'ola', 'olb',
 ]);
-// Критические — требуют sticky-тоста
 const TMC_CRITICAL_FLAGS = new Set([
   'ot', 's2ga', 's2gb', 's2vsa', 's2vsb',
 ]);
 
-// Паттерны gcode-ответа, требующие sticky + critical
 const KLIPPER_CRITICAL_RE = /shutdown|mcu |thermistor|heater .* not heating|lost communication|tmc .* reports/i;
 
 const MPU_NOTIFY_RE = /^echo:\s*MPU_NOTIFY\s+(critical|error|info)\s+(.+)$/i;
 const MPU_TEXT_MAX = 240;
 
-// Глобальный (для всего приложения) state — модульный стейт, как useSystem
+// ------------------------------------------------------------------
+// Module-level: глобальный центр (агрегатор всех принтеров)
+// ------------------------------------------------------------------
 let items = $state<NotificationItem[]>([]);
 let nextId = 1;
 
@@ -48,32 +47,29 @@ let toastSettings = $state<{ ignoredPatterns: string[]; soundEnabled: boolean }>
   soundEnabled: false,
 });
 
-// Дедуп-кэш: key → timestamp последнего появления
+// Дедуп per (printerId, source, normalized-text)
 const dedup = new Map<string, number>();
 
-// Предыдущие drv_status флаги по каждому TMC-объекту — для edge-детекта
+// TMC drv_status: per (printerId:tmcName) → Set<flags>
 const prevFlags = new Map<string, Set<string>>();
 
 let audioCtx: AudioContext | null = null;
 
+// Per-printer subscriptions (вместо одного generation + unsubs)
+interface PrinterSubs {
+  generation: number;
+  unsubs: Array<() => void>;
+  tmcUnsub: (() => void) | null;
+}
+const subsByPrinter = new Map<string, PrinterSubs>();
+
+// ------------------------------------------------------------------
+// Хук: один агрегатор на всё приложение
+// ------------------------------------------------------------------
 export function useNotifications(api: PluginApi) {
-  let generation = 0;
-  const unsubs: Array<() => void> = [];
-  let tmcUnsub: (() => void) | null = null;
-  const klippy = useKlippyState(api);
-
-  function safeHandle(): MoonrakerProxyHandle | null {
-    try {
-      return api.moonraker();
-    } catch {
-      return null;
-    }
-  }
-
   // ------------------------------------------------------------------
-  // Настройки (api.settings system.notifications.*)
+  // Settings (device-global, sync-aware через api.settings)
   // ------------------------------------------------------------------
-
   function loadSettings(): void {
     const ignored = api.settings.get<string[]>('system.notifications.ignoredPatterns') ?? [];
     const sound = api.settings.get<boolean>('system.notifications.soundEnabled') ?? false;
@@ -93,7 +89,6 @@ export function useNotifications(api: PluginApi) {
   // ------------------------------------------------------------------
   // Вставка + дедуп
   // ------------------------------------------------------------------
-
   function isIgnored(text: string): boolean {
     for (const p of toastSettings.ignoredPatterns) {
       if (!p) continue;
@@ -106,20 +101,23 @@ export function useNotifications(api: PluginApi) {
     return false;
   }
 
-  function dedupKey(n: NotificationItem): string {
-    // Дедуп на (source + нормализованный текст)
-    return `${n.source}|${n.text.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+  function dedupKey(printerId: string, n: NotificationItem): string {
+    return `${printerId}|${n.source}|${n.text.replace(/\s+/g, ' ').trim().toLowerCase()}`;
   }
 
-  function push(n: Omit<NotificationItem, 'id' | 'time' | 'seen' | 'dismissed'>): void {
+  function push(
+    printerId: string,
+    n: Omit<NotificationItem, 'id' | 'time' | 'seen' | 'dismissed' | 'printerId'>,
+  ): void {
     const item: NotificationItem = {
       ...n,
+      printerId,
       id: `n${nextId++}`,
       time: Date.now(),
       seen: false,
       dismissed: false,
     };
-    const key = dedupKey(item);
+    const key = dedupKey(printerId, item);
     const last = dedup.get(key);
     if (last && Date.now() - last < DEDUP_MS) return;
     dedup.set(key, Date.now());
@@ -129,16 +127,12 @@ export function useNotifications(api: PluginApi) {
     if (item.severity === 'critical' && toastSettings.soundEnabled) {
       playBeep();
     }
-    //console.log('[notifications] pushed:', item);
   }
 
   // ------------------------------------------------------------------
-  // Обработчики источников
+  // Обработчики источников (все принимают printerId)
   // ------------------------------------------------------------------
-
-  function onGcodeResponse(params: any): void {
-    // Moonraker шлёт notify_gcode_response как массив строк ["!! ...", "// ..."],
-    // иногда одиночную строку — нормализуем в первую строку
+  function onGcodeResponse(printerId: string, params: any): void {
     let line = '';
     if (typeof params === 'string') {
       line = params;
@@ -149,15 +143,13 @@ export function useNotifications(api: PluginApi) {
     }
     if (typeof line !== 'string' || !line.trim()) return;
 
-    //console.log('[notifications] gcode_response:', line);
-
     const mpu = line.match(MPU_NOTIFY_RE);
     if (mpu) {
       const severity = mpu[1].toLowerCase() as 'critical' | 'error' | 'info';
       let text = mpu[2].trim().replace(/[\r\n]+/g, ' ');
       if (!text || isIgnored(text)) return;
       if (text.length > MPU_TEXT_MAX) text = text.slice(0, MPU_TEXT_MAX - 1) + '…';
-      push({
+      push(printerId, {
         severity,
         source: 'plugin',
         text,
@@ -166,12 +158,11 @@ export function useNotifications(api: PluginApi) {
       return;
     }
 
-    // Klipper error: начинается с '!!'
     if (line.startsWith('!!')) {
       const text = line.slice(2).trim();
       if (!text || isIgnored(text)) return;
       const critical = KLIPPER_CRITICAL_RE.test(text);
-      push({
+      push(printerId, {
         severity: critical ? 'critical' : 'error',
         source: 'gcode',
         text,
@@ -180,11 +171,10 @@ export function useNotifications(api: PluginApi) {
       return;
     }
 
-    // Uknown smth
     if (line.startsWith('// Unknown')) {
       const text = line.slice(2).trim();
       if (!text || isIgnored(text)) return;
-      push({
+      push(printerId, {
         severity: 'error',
         source: 'gcode',
         text,
@@ -194,8 +184,7 @@ export function useNotifications(api: PluginApi) {
     }
   }
 
-  function onKlippyShutdown(params: any): void {
-    //console.log('[notifications] klippy_shutdown params:', params);
+  function onKlippyShutdown(printerId: string, params: any): void {
     let reason = '';
     if (typeof params === 'string') {
       reason = params;
@@ -206,11 +195,10 @@ export function useNotifications(api: PluginApi) {
     }
     const text = reason ? `Klipper shutdown: ${reason}` : 'Klipper shutdown';
     if (isIgnored(text)) return;
-    push({ severity: 'critical', source: 'klippy', text, sticky: true });
+    push(printerId, { severity: 'critical', source: 'klippy', text, sticky: true });
   }
 
-  function applyTmcDelta(delta: any): void {
-    //console.log('[notifications] tmc delta:', delta);
+  function applyTmcDelta(printerId: string, delta: any): void {
     if (!delta || typeof delta !== 'object') return;
     for (const [name, d] of Object.entries(delta)) {
       if (!/^tmc\d+ /.test(name) && !/^tmc\d+$/.test(name)) continue;
@@ -218,21 +206,20 @@ export function useNotifications(api: PluginApi) {
       const drv = rec?.drv_status;
       if (!drv || typeof drv !== 'object') continue;
 
-      const prev = prevFlags.get(name) ?? new Set();
+      const key = `${printerId}:${name}`;
+      const prev = prevFlags.get(key) ?? new Set();
       const cur = new Set<string>();
       for (const f of TMC_ERROR_FLAGS) {
         const v = drv[f];
-        // флаг пришёл = ненулевое значение (число > 0 или true)
         if (v !== undefined && v !== null && v !== 0 && v !== false) cur.add(f);
       }
 
-      // Edge: новые флаги
       for (const f of cur) {
         if (!prev.has(f)) {
           const text = `TMC ${name}: ${f}`;
           if (isIgnored(text)) continue;
           const critical = TMC_CRITICAL_FLAGS.has(f);
-          push({
+          push(printerId, {
             severity: critical ? 'critical' : 'error',
             source: 'tmc',
             text,
@@ -241,54 +228,80 @@ export function useNotifications(api: PluginApi) {
         }
       }
 
-      prevFlags.set(name, cur);
+      prevFlags.set(key, cur);
     }
   }
 
-  // host-core диспатчит mpu:guard-notify (fail-closed таймауты); строковое имя
-  // дублируется намеренно: плагины не импортируют host-модули.
+  // host-core диспатчит mpu:guard-notify (fail-closed таймауты). target-scoped
+  // гарды (Фаза 2) несут targetPrinterId в detail — атрибутация по принтеру.
   function onGuardNotifyEvent(e: Event): void {
     const d = (e as CustomEvent).detail as
-      | { kind: 'decision_timeout' | 'park_timeout' | 'denied'; pluginId: string; guardId: string; method: string, reasonKey?: string }
+      | {
+          kind: 'decision_timeout' | 'park_timeout' | 'denied';
+          pluginId: string;
+          guardId: string;
+          method: string;
+          targetPrinterId?: string;
+          reasonKey?: string;
+        }
       | undefined;
     if (!d) return;
+    const printerId = d.targetPrinterId ?? api.printer.id;
     const text =
       d.kind === 'park_timeout'
         ? api.i18n.t('system.notifications.guardParkTimeout', { method: d.method })
         : d.kind === 'decision_timeout'
           ? api.i18n.t('system.notifications.guardDecisionTimeout', {
-              guard: d.guardId, plugin: d.pluginId, method: d.method,
+              guard: d.guardId,
+              plugin: d.pluginId,
+              method: d.method,
             })
           : d.reasonKey
-            ? api.i18n.t(d.reasonKey)   // reasonKey плагина резолвится: локали слиты в host-i18n
-            : api.i18n.t('system.notifications.guardDenied', { plugin: d.pluginId, method: d.method });
-    push({ severity: 'error', source: 'guard', text, sticky: false });
+            ? api.i18n.t(d.reasonKey)
+            : api.i18n.t('system.notifications.guardDenied', {
+                plugin: d.pluginId,
+                method: d.method,
+              });
+    push(printerId, { severity: 'error', source: 'guard', text, sticky: false });
   }
 
   // ------------------------------------------------------------------
-  // TMC подписка (feature-detect по objects.list)
+  // TMC подписка (feature-detect по objects.list конкретного принтера)
   // ------------------------------------------------------------------
+  async function subscribeTmc(printerId: string, gen: number): Promise<void> {
+    const ps = subsByPrinter.get(printerId);
+    if (!ps || ps.generation !== gen) return;
 
-  async function subscribeTmc(gen: number): Promise<void> {
-    if (tmcUnsub) { tmcUnsub(); tmcUnsub = null; }
-    if (!klippy.ready) return;
+    if (ps.tmcUnsub) {
+      ps.tmcUnsub();
+      ps.tmcUnsub = null;
+    }
 
-    const h = safeHandle();
-    if (!h) return;
+    let h: MoonrakerProxyHandle;
+    try {
+      h = api.moonrakerFor(printerId);
+    } catch {
+      return;
+    }
+    if (h.readyState !== 'open') return;
+
     const list = await h.request<any>('printer.objects.list').catch(() => null);
-    if (gen !== generation || !list) return;
-    const names = (list.objects ?? []).filter((n: string) =>
-      typeof n === 'string' && (/^tmc\d+ /.test(n) || /^tmc\d+$/.test(n)),
+    const current = subsByPrinter.get(printerId);
+    if (!current || current.generation !== gen || !list) return;
+
+    const names = (list.objects ?? []).filter(
+      (n: string) => typeof n === 'string' && (/^tmc\d+ /.test(n) || /^tmc\d+$/.test(n)),
     );
     if (names.length === 0) return;
-    //console.log('[notifications] tmc subscribed:', names);
 
     const objects: Record<string, string[]> = {};
     for (const n of names) objects[n] = ['drv_status', 'temperature'];
 
-    tmcUnsub = h.subscribe(
+    current.tmcUnsub = h.subscribe(
       objects,
-      (d: any) => { if (gen === generation) applyTmcDelta(d); },
+      (d: any) => {
+        if (current.generation === gen) applyTmcDelta(printerId, d);
+      },
       { immediate: true },
     );
   }
@@ -296,7 +309,6 @@ export function useNotifications(api: PluginApi) {
   // ------------------------------------------------------------------
   // Действия
   // ------------------------------------------------------------------
-
   function dismiss(id: string): void {
     items = items.map((n) => (n.id === id ? { ...n, dismissed: true, seen: true } : n));
   }
@@ -312,10 +324,10 @@ export function useNotifications(api: PluginApi) {
   // ------------------------------------------------------------------
   // Звук
   // ------------------------------------------------------------------
-
   function playBeep(): void {
     try {
-      const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+      const Ctx = (window.AudioContext ||
+        (window as any).webkitAudioContext) as typeof AudioContext;
       if (!audioCtx) audioCtx = new Ctx();
       const ctx = audioCtx;
       const osc = ctx.createOscillator();
@@ -336,80 +348,138 @@ export function useNotifications(api: PluginApi) {
   }
 
   // ------------------------------------------------------------------
+  // Per-printer подписки
+  // ------------------------------------------------------------------
+  function attachPrinter(printerId: string): void {
+    detachPrinter(printerId);
+
+    let h: MoonrakerProxyHandle;
+    try {
+      h = api.moonrakerFor(printerId);
+    } catch {
+      return;
+    }
+
+    const ps: PrinterSubs = {
+      generation: 1,
+      unsubs: [],
+      tmcUnsub: null,
+    };
+    subsByPrinter.set(printerId, ps);
+    const gen = ps.generation;
+
+    // Guard events — один listener на всё приложение (окно-событие)
+    // подписывается в init; здесь только per-printer moonraker listeners
+
+    ps.unsubs.push(
+      h.onReady(() => {
+        if (ps.generation === gen) void subscribeTmc(printerId, gen);
+      }),
+    );
+
+    ps.unsubs.push(
+      h.onConnectionStatusChange((s) => {
+        if (s === 'open' && ps.generation === gen) void subscribeTmc(printerId, gen);
+      }),
+    );
+
+    ps.unsubs.push(
+      h.onNotify('notify_klippy_ready', () => {
+        if (ps.generation === gen) void subscribeTmc(printerId, gen);
+      }),
+    );
+
+    ps.unsubs.push(
+      h.onNotify('notify_gcode_response', (line: any) => {
+        if (ps.generation === gen) onGcodeResponse(printerId, line);
+      }),
+    );
+
+    ps.unsubs.push(
+      h.onNotify('notify_klippy_shutdown', (params: any) => {
+        if (ps.generation === gen) onKlippyShutdown(printerId, params);
+      }),
+    );
+
+    void subscribeTmc(printerId, gen);
+  }
+
+  function detachPrinter(printerId: string): void {
+    const ps = subsByPrinter.get(printerId);
+    if (!ps) return;
+    ps.generation++;
+    for (const u of ps.unsubs.splice(0)) u();
+    if (ps.tmcUnsub) {
+      ps.tmcUnsub();
+      ps.tmcUnsub = null;
+    }
+    subsByPrinter.delete(printerId);
+
+    // Cleanup per-printer TMC state (не теряем глобальную историю)
+    for (const key of Array.from(prevFlags.keys())) {
+      if (key.startsWith(`${printerId}:`)) prevFlags.delete(key);
+    }
+  }
+
+  function syncPrinters(): void {
+    const alive = new Set(api.printers.map((p) => p.id));
+
+    for (const pid of Array.from(subsByPrinter.keys())) {
+      if (!alive.has(pid)) detachPrinter(pid);
+    }
+
+    for (const p of api.printers) {
+      if (!subsByPrinter.has(p.id)) attachPrinter(p.id);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Lifecycle
   // ------------------------------------------------------------------
+  loadSettings();
 
-  function teardown(): void {
-    generation++;
-    for (const u of unsubs.splice(0)) u();
-    if (tmcUnsub) { tmcUnsub(); tmcUnsub = null; }
-    prevFlags.clear();
-    // при смене принтера история остаётся — это осознанно (сессия)
-  }
-
-  async function init(): Promise<void> {
-    loadSettings();
-    const gen = ++generation;
-    const h = safeHandle();
-    window.addEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener);
-    unsubs.push(() => window.removeEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener));
-    if (!h || !api.printer.url) return;
-    //console.log('[notifications] init, gen:', gen, 'printer:', api.printer.url);
-
-    unsubs.push(h.onReady(() => {
-      if (gen === generation) void subscribeTmc(gen);
-    }));
-
-    unsubs.push(h.onConnectionStatusChange((s) => {
-      if (s === 'open' && gen === generation) void subscribeTmc(gen);
-    }));
-
-    unsubs.push(h.onNotify('notify_klippy_ready', () => {
-      if (gen === generation) void subscribeTmc(gen);
-    }));
-
-    unsubs.push(h.onNotify('notify_gcode_response', (line: any) => {
-      if (gen === generation) onGcodeResponse(line);
-    }));
-
-    unsubs.push(h.onNotify('notify_klippy_shutdown', (params: any) => {
-      if (gen === generation) onKlippyShutdown(params);
-    }));
-
-    void subscribeTmc(gen);
-  }
-
-  init();
-
-  const offPrinter = api.onPrinterChange(() => {
-    teardown();
-    void init();
-  });
+  const offPrinters = api.onPrintersChange(() => syncPrinters());
 
   const offSettings = api.settings.onChange((k) => {
     if (k.startsWith('system.notifications.')) loadSettings();
   });
 
+  window.addEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener);
+
+  // Initial subscribe for all existing printers
+  syncPrinters();
+
   onDestroy(() => {
-    teardown();
-    offPrinter();
+    offPrinters();
     offSettings();
+    window.removeEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener);
+
+    for (const pid of Array.from(subsByPrinter.keys())) {
+      detachPrinter(pid);
+    }
   });
 
   // ------------------------------------------------------------------
   // Public
   // ------------------------------------------------------------------
-
   let activeToasts = $derived.by(() => {
     const visible = items.filter((n) => !n.dismissed);
     return visible.slice(0, TOAST_CAP);
   });
 
   return {
-    get items() { return items; },
-    get activeToasts() { return activeToasts; },
-    get unseenCount() { return items.filter((n) => !n.seen).length; },
-    get settings() { return toastSettings; },
+    get items() {
+      return items;
+    },
+    get activeToasts() {
+      return activeToasts;
+    },
+    get unseenCount() {
+      return items.filter((n) => !n.seen).length;
+    },
+    get settings() {
+      return toastSettings;
+    },
     dismiss,
     dismissAll,
     markSeen,
