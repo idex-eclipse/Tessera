@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../shared/core-keeper/core-keeper';
 
 export type ProgressMode = 'file' | 'time' | 'filament';
 export type StatusPlacement = 'widget' | 'banner' | 'both';
@@ -62,16 +66,6 @@ export function readEnabledFields(api: PluginApi): StatusFieldId[] {
   return [...DEFAULT_FIELDS];
 }
 
-// ------------------------------------------------------------------
-// Module-state: legacy-поток (активный принтер). Виджет и баннер
-// статуса шарят его, как раньше.
-// ------------------------------------------------------------------
-let model = $state<PrintStatusModel>(empty());
-
-// Fleet-кэш модели per-printer: мгновенная отрисовка карточки из
-// последнего известного состояния, пока subscribe-дельты не догнали.
-const fleetModelCache = new Map<string, PrintStatusModel>();
-
 const KLIPPY_EVENTS = [
   'notify_klippy_shutdown',
   'notify_klippy_ready',
@@ -83,7 +77,9 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-// math (progress/ETA/flowrate)
+// ------------------------------------------------------------------
+// Math (progress/ETA/flowrate) — чистые функции, остаются module-level
+// ------------------------------------------------------------------
 
 export function computeProgress(m: PrintStatusModel, mode: ProgressMode): number | null {
   if (mode === 'time') {
@@ -119,7 +115,6 @@ export function computeEta(m: PrintStatusModel, mode: ProgressMode): Date | null
   return new Date(Date.now() + rem * 1000);
 }
 
-/** Flow */
 export function computeFlow(m: PrintStatusModel): number | null {
   if (m.liveExtruderVelocity == null) return null;
   const r = m.filamentDiameter / 2;
@@ -143,45 +138,19 @@ export function fmtClock(d: Date | null): string {
 }
 
 // ------------------------------------------------------------------
-// hook
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
 // ------------------------------------------------------------------
-
-/**
- * Хук статуса печати.
- *
- * Без printerId — прежнее поведение: активный принтер, module-state,
- * ресет/реинициализация на onPrinterChange.
- *
- * С printerId — fleet-режим: instance-local state (N карточек = N
- * независимых сторов), статическая привязка к принтеру,
- * model кэшируется per-printer (мгновенная отрисовка при remount).
- */
-export function usePrintStatus(api: PluginApi, printerId?: string) {
-  const fleet = printerId !== undefined;
-
-  // Fleet: состояние экземпляра.
-  let localModel = $state<PrintStatusModel>(
-    fleet
-      ? (fleetModelCache.get(printerId as string) ?? empty())
-      : empty(),
-  );
-
-  const getModel = (): PrintStatusModel => (fleet ? localModel : model);
-  const setModel = (m: PrintStatusModel): void => {
-    if (fleet) {
-      localModel = m;
-      fleetModelCache.set(printerId as string, m);
-    } else {
-      model = m;
-    }
-  };
+function createPrintStatusCore(api: PluginApi, printerId: string) {
+  let model = $state<PrintStatusModel>(empty());
 
   let generation = 0;
   const unsubs: Array<() => void> = [];
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
@@ -192,8 +161,8 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
     if (!h) return;
     const info = await h.request<any>('server.info').catch(() => null);
     if (gen !== generation) return;
-    const next = { ...getModel(), klippyReady: info?.klippy_state === 'ready' };
-    setModel(next);
+    const next = { ...model, klippyReady: info?.klippy_state === 'ready' };
+    model = next;
     if (next.klippyReady) void loadDiameter(gen);
   }
 
@@ -205,20 +174,20 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
       .catch(() => null);
     if (gen !== generation) return;
     const d = num(res?.status?.configfile?.settings?.extruder?.filament_diameter);
-    if (d && d > 0) setModel({ ...getModel(), filamentDiameter: d });
+    if (d && d > 0) model = { ...model, filamentDiameter: d };
   }
 
   async function loadMetadata(gen: number): Promise<void> {
     const h = safeHandle();
-    const fn = getModel().filename;
+    const fn = model.filename;
     if (!h || !fn) return;
     const md = await h.request<any>('server.files.metadata', { filename: fn }).catch(() => null);
     if (gen !== generation) return;
-    setModel({
-      ...getModel(),
+    model = {
+      ...model,
       estimatedTime: num(md?.estimated_time),
       filamentTotal: num(md?.filament_total),
-    });
+    };
   }
 
   function applyDelta(d: any): void {
@@ -226,14 +195,13 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
     const vs = d?.virtual_sdcard;
     const mr = d?.motion_report;
 
-    const current = getModel();
-    const next = { ...current };
+    const next = { ...model };
     let filenameChanged = false;
 
     if (ps) {
       if (typeof ps.state === 'string') next.state = ps.state;
       if (typeof ps.message === 'string') next.message = ps.message;
-      if (typeof ps.filename === 'string' && ps.filename !== current.filename) {
+      if (typeof ps.filename === 'string' && ps.filename !== model.filename) {
         next.filename = ps.filename;
         filenameChanged = true;
       }
@@ -257,7 +225,7 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
       if (ev != null) next.liveExtruderVelocity = ev;
     }
 
-    setModel(next);
+    model = next;
     if (filenameChanged) void loadMetadata(generation);
   }
 
@@ -289,7 +257,6 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
     const gen = ++generation;
     const h = safeHandle();
     if (!h) return;
-    if (!fleet && !api.printer.url) return;
 
     unsubs.push(
       h.subscribe(
@@ -322,8 +289,7 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
         if (ev === 'notify_klippy_ready') {
           void reseed(gen);
         } else {
-          const current = getModel();
-          setModel({ ...empty(), filamentDiameter: current.filamentDiameter });
+          model = { ...empty(), filamentDiameter: model.filamentDiameter };
         }
       }));
     }
@@ -334,26 +300,68 @@ export function usePrintStatus(api: PluginApi, printerId?: string) {
 
   init();
 
-  if (fleet) {
-    onDestroy(() => {
-      teardown();
-    });
-  } else {
-    const offPrinter = api.onPrinterChange(() => {
-      teardown();
-      model = empty();
-      void init();
-    });
-
-    onDestroy(() => {
-      teardown();
-      offPrinter();
-    });
+  function destroy(): void {
+    teardown();
   }
 
   return {
     get model() {
-      return getModel();
+      return model;
     },
+    destroy,
   };
+}
+
+export type PrintStatusStore = ReturnType<typeof createPrintStatusCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<PrintStatusStore>({
+  create: (pid, api) => createPrintStatusCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук статуса печати.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
+ */
+export function usePrintStatus(api: PluginApi, printerId?: string): PrintStatusStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<PrintStatusStore>(() => keeper.get(api.printer.id, api));
 }

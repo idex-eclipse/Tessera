@@ -3,13 +3,11 @@
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
   import {
-    shaper,
     resetShaperState,
     refreshGallery,
     takeBaseline,
     diffArtifacts,
     gallerySorted,
-    loadPreview,
     releasePreview,
   } from '../../../shaper-state.svelte.ts';
   import BeltsContent from '../BeltsCompare/BeltsContent.svelte';
@@ -40,25 +38,26 @@
 
   // settings-поля обеих панелей читаются здесь (меню шапок пишут туда же)
   $effect(() => {
+    const handle = api.moonraker();
     const readSettings = () => {
-      shaper.cmd.X = api.settings.get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
-      shaper.cmd.Y = api.settings.get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
-      shaper.kinematics = api.settings.get<'auto' | 'corexy' | 'delta'>('beltsKinematics') ?? 'auto';
-      shaper.beltsCmd = api.settings.get<string>('beltsCmd') ?? DEFAULT_BELTS_CMD;
-      shaper.beltsForceShow = api.settings.get<boolean>('beltsForceShow') ?? false;
+      store.shaperState.cmd.X = api.settings.get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
+      store.shaperState.cmd.Y = api.settings.get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
+      store.shaperState.kinematics = api.settings.get<'auto' | 'corexy' | 'delta'>('beltsKinematics') ?? 'auto';
+      store.shaperState.beltsCmd = api.settings.get<string>('beltsCmd') ?? DEFAULT_BELTS_CMD;
+      store.shaperState.beltsForceShow = api.settings.get<boolean>('beltsForceShow') ?? false;
     };
     readSettings();
     const offSettings = api.settings.onChange(readSettings);
     const offPrinter = api.onPrinterChange(() => {
-      resetShaperState();
+      resetShaperState(store.shaperState);
       readSettings();
-      void refreshGallery(api);
+      void refreshGallery(store.shaperState, handle);
     });
-    void refreshGallery(api);
+    void refreshGallery(store.shaperState, handle);
     return () => {
       offSettings();
       offPrinter();
-      releasePreview();
+      releasePreview(store.shaperState);
     };
   });
 
@@ -87,48 +86,48 @@
     store.state.printState === 'printing' || store.state.printState === 'paused',
   );
   let notHomed = $derived(store.state.homedAxes !== 'xyz');
-  let items = $derived(gallerySorted());
-  let currentCmd = $derived(shaper.cmd[shaper.axis] || DEFAULT_CMD[shaper.axis]);
+  let items = $derived(gallerySorted(store.shaperState));
+  let currentCmd = $derived(store.shaperState.cmd[store.shaperState.axis] || DEFAULT_CMD[store.shaperState.axis]);
 
   let detectedKinematics = $derived(store.state.kinematics);
   let beltsVisible = $derived.by(() => {
-    const k = shaper.kinematics !== 'auto' ? shaper.kinematics : detectedKinematics;
-    return k === 'corexy' || k === 'delta' || shaper.beltsForceShow;
+    const k = store.shaperState.kinematics !== 'auto' ? store.shaperState.kinematics : detectedKinematics;
+    return k === 'corexy' || k === 'delta' || store.shaperState.beltsForceShow;
   });
 
   // --- writers для меню шапок ---
   function setCmd(axis: 'X' | 'Y', v: string): void {
-    shaper.cmd[axis] = v;
+    store.shaperState.cmd[axis] = v;
     api.settings.set(axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
   }
   function setBeltsForceShow(on: boolean): void {
-    shaper.beltsForceShow = on;
+    store.shaperState.beltsForceShow = on;
     api.settings.set('beltsForceShow', on);
   }
   function setKinematics(v: 'auto' | 'corexy' | 'delta'): void {
-    shaper.kinematics = v;
+    store.shaperState.kinematics = v;
     api.settings.set('beltsKinematics', v);
   }
   function setBeltsCmd(v: string): void {
-    shaper.beltsCmd = v;
+    store.shaperState.beltsCmd = v;
     api.settings.set('beltsCmd', v);
   }
 
   // --- композеры строк ---
   function testScript(): string {
     const opts: { freqStart?: number; freqEnd?: number; hzPerSec?: number } = {};
-    const fs = Number(shaper.freqStart);
-    const fe = Number(shaper.freqEnd);
-    const hz = Number(shaper.hzPerSec);
-    if (shaper.freqStart.trim() !== '' && Number.isFinite(fs)) opts.freqStart = fs;
-    if (shaper.freqEnd.trim() !== '' && Number.isFinite(fe)) opts.freqEnd = fe;
-    if (shaper.hzPerSec.trim() !== '' && Number.isFinite(hz)) opts.hzPerSec = hz;
-    return gcode.testResonances(shaper.axis, opts);
+    const fs = Number(store.shaperState.freqStart);
+    const fe = Number(store.shaperState.freqEnd);
+    const hz = Number(store.shaperState.hzPerSec);
+    if (store.shaperState.freqStart.trim() !== '' && Number.isFinite(fs)) opts.freqStart = fs;
+    if (store.shaperState.freqEnd.trim() !== '' && Number.isFinite(fe)) opts.freqEnd = fe;
+    if (store.shaperState.hzPerSec.trim() !== '' && Number.isFinite(hz)) opts.hzPerSec = hz;
+    return gcode.testResonances(store.shaperState.axis, opts);
   }
 
   function calibrateScript(): string {
-    let s = gcode.shaperCalibrate(shaper.axis);
-    const types = shaper.shaperTypes.trim();
+    let s = gcode.shaperCalibrate(store.shaperState.axis);
+    const types = store.shaperState.shaperTypes.trim();
     if (types) s += ` SHAPER_TYPES=${types}`;
     return s;
   }
@@ -141,30 +140,30 @@
   });
 
   function beginRun(key: string): void {
-    shaper.busy = key;
-    shaper.runDone = false;
-    shaper.sessionLog = [];
-    shaper.fitted = [];
-    shaper.recommended = null;
-    shaper.lastArtifacts = [];
+    store.shaperState.busy = key;
+    store.shaperState.runDone = false;
+    store.shaperState.sessionLog = [];
+    store.shaperState.fitted = [];
+    store.shaperState.recommended = null;
+    store.shaperState.lastArtifacts = [];
   }
 
   async function run(): Promise<void> {
-    if (shaper.busy !== '' || isPrinting || notHomed) return;
+    if (store.shaperState.busy !== '' || isPrinting || notHomed) return;
 
     if (selected === 'pipe') {
       beginRun('pipe');
-      takeBaseline();
+      takeBaseline(store.shaperState);
       try {
         await runGcode(api.moonraker(), testScript());
         await runGcode(api.moonraker(), gcode.runShellCommand(currentCmd));
-        await refreshGallery(api);
-        shaper.lastArtifacts = diffArtifacts();
+        await refreshGallery(store.shaperState, api.moonraker());
+        store.shaperState.lastArtifacts = diffArtifacts(store.shaperState);
       } catch (e) {
         console.error('[calibrations] pipeline failed:', e);
       } finally {
-        shaper.busy = '';
-        shaper.runDone = true;
+        store.shaperState.busy = '';
+        store.shaperState.runDone = true;
       }
       return;
     }
@@ -175,42 +174,38 @@
     } catch (e) {
       console.error('[calibrations] run failed:', lines[0], e);
     } finally {
-      shaper.busy = '';
-      shaper.runDone = true;
+      store.shaperState.busy = '';
+      store.shaperState.runDone = true;
     }
   }
 
   async function applyRecommended(): Promise<void> {
-    const rec = shaper.recommended;
-    if (!rec || shaper.busy !== '') return;
-    shaper.busy = 'apply';
+    const rec = store.shaperState.recommended;
+    if (!rec || store.shaperState.busy !== '') return;
+    store.shaperState.busy = 'apply';
     try {
       await runGcode(
         api.moonraker(),
         gcode.setInputShaper({
-          [`SHAPER_TYPE_${shaper.axis}`]: rec.name,
-          [`FREQ_${shaper.axis}`]: rec.freq,
+          [`SHAPER_TYPE_${store.shaperState.axis}`]: rec.name,
+          [`FREQ_${store.shaperState.axis}`]: rec.freq,
         }),
       );
     } catch (e) {
       console.error('[calibrations] SET_INPUT_SHAPER failed:', e);
     } finally {
-      shaper.busy = '';
+      store.shaperState.busy = '';
     }
   }
 
   function confirmSave(): void {
     saveOpen = false;
-    shaper.busy = 'save';
+    store.shaperState.busy = 'save';
     runGcode(api.moonraker(), gcode.saveConfig())
       .catch((e) => console.error('[calibrations] SAVE_CONFIG failed:', e))
       .finally(() => {
-        shaper.busy = '';
+        store.shaperState.busy = '';
       });
-  }
-
-  function fmtTime(modified: number): string {
-    return new Date(modified * 1000).toLocaleString();
   }
 </script>
 
@@ -235,11 +230,11 @@
                 <span class="menu-label">{i18n.t('calibrations.shaper.shellCmd')} X</span>
                 <select
                   class="select"
-                  value={shaper.cmd.X}
+                  value={store.shaperState.cmd.X}
                   onchange={(e) => setCmd('X', e.currentTarget.value)}
                 >
-                  {#if !store.state.shellCommands.includes(shaper.cmd.X)}
-                    <option value={shaper.cmd.X}>{shaper.cmd.X}</option>
+                  {#if !store.state.shellCommands.includes(store.shaperState.cmd.X)}
+                    <option value={store.shaperState.cmd.X}>{store.shaperState.cmd.X}</option>
                   {/if}
                   {#each store.state.shellCommands as c (c)}
                     <option value={c}>{c}</option>
@@ -251,14 +246,14 @@
                 <span class="menu-label">{i18n.t('calibrations.shaper.shellCmd')} Y</span>
                 <select
                   class="select"
-                  value={shaper.cmd.Y}
+                  value={store.shaperState.cmd.Y}
                   onchange={(e) => setCmd('Y', e.currentTarget.value)}
                 >
-                  {#if !store.state.shellCommands.includes(shaper.cmd.Y)}
-                    <option value={shaper.cmd.Y}>{shaper.cmd.Y}</option>
+                  {#if !store.state.shellCommands.includes(store.shaperState.cmd.Y)}
+                    <option value={store.shaperState.cmd.Y}>{store.shaperState.cmd.Y}</option>
                   {/if}
-                  {#each store.state.shellCommands.includes(shaper.cmd.Y) ? [] : [shaper.cmd.Y]}
-                    <option value={shaper.cmd.Y}>{shaper.cmd.Y}</option>
+                  {#each store.state.shellCommands.includes(store.shaperState.cmd.Y) ? [] : [store.shaperState.cmd.Y]}
+                    <option value={store.shaperState.cmd.Y}>{store.shaperState.cmd.Y}</option>
                   {/each}
                   {#each store.state.shellCommands as c (c)}
                     <option value={c}>{c}</option>
@@ -271,7 +266,7 @@
               <label class="menu-item menu-switch">
                 <input
                   type="checkbox"
-                  checked={shaper.beltsForceShow}
+                  checked={store.shaperState.beltsForceShow}
                   onchange={(e) => setBeltsForceShow(e.currentTarget.checked)}
                 />
                 <span>{i18n.t('calibrations.belts.forceShow')}</span>
@@ -291,26 +286,26 @@
       <div class="row controls">
         <label class="field">
           <span class="label">{i18n.t('calibrations.shaper.axis')}</span>
-          <select class="select" bind:value={shaper.axis} disabled={shaper.busy !== ''}>
+          <select class="select" bind:value={store.shaperState.axis} disabled={store.shaperState.busy !== ''}>
             <option value="X">X</option>
             <option value="Y">Y</option>
           </select>
         </label>
         <label class="field">
           <span class="label">{i18n.t('calibrations.shaper.freqStart')}</span>
-          <input class="input" type="number" step="0.1" placeholder="5" bind:value={shaper.freqStart} disabled={shaper.busy !== ''} />
+          <input class="input" type="number" step="0.1" placeholder="5" bind:value={store.shaperState.freqStart} disabled={store.shaperState.busy !== ''} />
         </label>
         <label class="field">
           <span class="label">{i18n.t('calibrations.shaper.freqEnd')}</span>
-          <input class="input" type="number" step="0.1" placeholder="133.3" bind:value={shaper.freqEnd} disabled={shaper.busy !== ''} />
+          <input class="input" type="number" step="0.1" placeholder="133.3" bind:value={store.shaperState.freqEnd} disabled={store.shaperState.busy !== ''} />
         </label>
         <label class="field">
           <span class="label">{i18n.t('calibrations.shaper.hzPerSec')}</span>
-          <input class="input" type="number" step="0.1" placeholder="1" bind:value={shaper.hzPerSec} disabled={shaper.busy !== ''} />
+          <input class="input" type="number" step="0.1" placeholder="1" bind:value={store.shaperState.hzPerSec} disabled={store.shaperState.busy !== ''} />
         </label>
         <label class="field">
           <span class="label">{i18n.t('calibrations.shaper.shaperTypes')}</span>
-          <input class="input" type="text" placeholder="mzv, ei" bind:value={shaper.shaperTypes} disabled={shaper.busy !== ''} />
+          <input class="input" type="text" placeholder="mzv, ei" bind:value={store.shaperState.shaperTypes} disabled={store.shaperState.busy !== ''} />
         </label>
       </div>
 
@@ -320,13 +315,13 @@
 
       <!-- селектор действия -->
       <div class="sel-row">
-        <button class="sel-btn" class:active={selected === 'test'} disabled={shaper.busy !== ''} onclick={() => (selected = 'test')}>
+        <button class="sel-btn" class:active={selected === 'test'} disabled={store.shaperState.busy !== ''} onclick={() => (selected = 'test')}>
           {i18n.t('calibrations.shaper.test')}
         </button>
-        <button class="sel-btn" class:active={selected === 'calib'} disabled={shaper.busy !== ''} onclick={() => (selected = 'calib')}>
+        <button class="sel-btn" class:active={selected === 'calib'} disabled={store.shaperState.busy !== ''} onclick={() => (selected = 'calib')}>
           {i18n.t('calibrations.shaper.calibrate')}
         </button>
-        <button class="sel-btn" class:active={selected === 'pipe'} disabled={shaper.busy !== ''} onclick={() => (selected = 'pipe')}>
+        <button class="sel-btn" class:active={selected === 'pipe'} disabled={store.shaperState.busy !== ''} onclick={() => (selected = 'pipe')}>
           {i18n.t('calibrations.shaper.testAndGraph')}
         </button>
       </div>
@@ -341,8 +336,8 @@
           {/if}
         </code>
         <div class="btn-row">
-          <button class="btn primary" disabled={shaper.busy !== '' || isPrinting || notHomed} onclick={run}>
-            {#if shaper.busy !== ''}
+          <button class="btn primary" disabled={store.shaperState.busy !== '' || isPrinting || notHomed} onclick={run}>
+            {#if store.shaperState.busy !== ''}
               <Icon name="loader" size={14} /> {i18n.t('calibrations.running')}
             {:else}
               <Icon name="play" size={14} /> {i18n.t('calibrations.run')}
@@ -352,22 +347,22 @@
       </div>
 
       <!-- live-чипы -->
-      {#if shaper.fitted.length > 0 || shaper.recommended}
+      {#if store.shaperState.fitted.length > 0 || store.shaperState.recommended}
         <div class="chips">
-          {#each shaper.fitted as f (`${f.name}-${f.freq}`)}
+          {#each store.shaperState.fitted as f (`${f.name}-${f.freq}`)}
             <span class="chip mono">{f.name} {f.freq.toFixed(1)}Hz</span>
           {/each}
-          {#if shaper.recommended}
+          {#if store.shaperState.recommended}
             <span class="chip accent mono">
-              {i18n.t('calibrations.shaper.recommended')}: {shaper.recommended.name} @ {shaper.recommended.freq.toFixed(1)}Hz
+              {i18n.t('calibrations.shaper.recommended')}: {store.shaperState.recommended.name} @ {store.shaperState.recommended.freq.toFixed(1)}Hz
             </span>
           {/if}
         </div>
       {/if}
 
       <!-- итоги прогона -->
-      {#if shaper.runDone}
-        {#if shaper.fitted.length > 0}
+      {#if store.shaperState.runDone}
+        {#if store.shaperState.fitted.length > 0}
           <table class="table">
             <thead>
               <tr>
@@ -378,8 +373,8 @@
               </tr>
             </thead>
             <tbody>
-              {#each shaper.fitted as f (`row-${f.name}-${f.freq}`)}
-                <tr class:rec={shaper.recommended?.name === f.name}>
+              {#each store.shaperState.fitted as f (`row-${f.name}-${f.freq}`)}
+                <tr class:rec={store.shaperState.recommended?.name === f.name}>
                   <td>{f.name}</td>
                   <td class="mono">{f.freq.toFixed(1)}</td>
                   <td class="mono">{f.vib.toFixed(1)}%</td>
@@ -391,25 +386,25 @@
         {/if}
 
         <div class="row btn-row">
-          <button class="btn" disabled={!shaper.recommended || shaper.busy !== ''} onclick={applyRecommended}>
+          <button class="btn" disabled={!store.shaperState.recommended || store.shaperState.busy !== ''} onclick={applyRecommended}>
             {i18n.t('calibrations.shaper.apply')}
           </button>
-          <button class="btn primary" disabled={shaper.busy !== '' || isPrinting} onclick={() => (saveOpen = true)}>
+          <button class="btn primary" disabled={store.shaperState.busy !== '' || isPrinting} onclick={() => (saveOpen = true)}>
             <Icon name="save" size={14} />
             {i18n.t('calibrations.saveConfig')}
           </button>
-          {#if !shaper.recommended}
+          {#if !store.shaperState.recommended}
             <span class="chip warn-chip">{i18n.t('calibrations.shaper.verboseHint')}</span>
           {/if}
         </div>
       {/if}
 
       <!-- session-log -->
-      {#if shaper.sessionLog.length > 0}
+      {#if store.shaperState.sessionLog.length > 0}
         <div class="log">
           <span class="label">{i18n.t('calibrations.shaper.sessionLog')}</span>
           <pre>
-            {#each shaper.sessionLog as line (line)}
+            {#each store.shaperState.sessionLog as line (line)}
               <span class:err={line.startsWith('!!')}>{line}</span>
             {/each}
           </pre>
@@ -439,7 +434,7 @@
                   <span class="menu-label">{i18n.t('calibrations.belts.kinematics')}</span>
                   <select
                     class="select"
-                    value={shaper.kinematics}
+                    value={store.shaperState.kinematics}
                     onchange={(e) => setKinematics(e.currentTarget.value as 'auto' | 'corexy' | 'delta')}
                   >
                     <option value="auto">{i18n.t('calibrations.belts.auto')}</option>
@@ -452,11 +447,11 @@
                   <span class="menu-label">{i18n.t('calibrations.belts.cmd')}</span>
                   <select
                     class="select"
-                    value={shaper.beltsCmd}
+                    value={store.shaperState.beltsCmd}
                     onchange={(e) => setBeltsCmd(e.currentTarget.value)}
                   >
-                    {#if !store.state.shellCommands.includes(shaper.beltsCmd)}
-                      <option value={shaper.beltsCmd}>{shaper.beltsCmd}</option>
+                    {#if !store.state.shellCommands.includes(store.shaperState.beltsCmd)}
+                      <option value={store.shaperState.beltsCmd}>{store.shaperState.beltsCmd}</option>
                     {/if}
                     {#each store.state.shellCommands as c (c)}
                       <option value={c}>{c}</option>
@@ -486,7 +481,7 @@
       <div class="header-actions">
         <button
           class="icon-btn"
-          onclick={() => void refreshGallery(api)}
+          onclick={() => void refreshGallery(store.shaperState, api.moonraker())}
           title={i18n.t('calibrations.shaper.refreshGallery')}
         >
           <Icon name="refresh" size={14} />
@@ -524,8 +519,7 @@
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    display: flex; flex-direction: column;
   }
   .panel-header {
     display: flex; align-items: center; gap: var(--space-sm);
@@ -556,7 +550,6 @@
   .hint { margin: 0; color: var(--text-muted); font-size: var(--font-size-sm); }
   .hint.warn { color: var(--warning); }
 
-  /* селектор действий */
   .sel-row { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
   .sel-btn {
     display: inline-flex; align-items: center; gap: var(--space-xs);
@@ -569,7 +562,6 @@
   .sel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .sel-btn.active { background: var(--bg-surface-active); color: var(--accent); border-color: var(--accent); }
 
-  /* единая панель отправки */
   .send-block { display: flex; flex-direction: column; gap: var(--space-xs); }
   .gcode {
     display: block;
@@ -594,7 +586,7 @@
   }
   .btn:hover:not(:disabled) { background: var(--bg-surface-active); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
   .chips { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
   .chip {

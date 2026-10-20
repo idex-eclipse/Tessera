@@ -19,11 +19,13 @@ import type {
 export interface GuardRequest {
   method: string;
   params: unknown;
+  targetPrinterId: string;
 }
 
 export type GuardHandlerFn = (
   request: GuardRequest,
   token: string,
+  ctx: { targetPrinterId: string },
 ) => GuardDecision | Promise<GuardDecision>;
 
 export type GuardRejectionCode =
@@ -65,6 +67,7 @@ export interface RegisteredGuardView {
 export interface ParkedChainView {
   token: string;
   method: string;
+  targetPrinterId: string;
   initiatorPluginId: string;
   frozenByPluginId: string;
   frozenByGuardId: string;
@@ -77,6 +80,7 @@ export interface GuardNotifyDetail {
   pluginId: string;
   guardId: string;
   method: string;
+  targetPrinterId: string;
   reasonKey?: string;
 }
 
@@ -99,6 +103,7 @@ interface RegisteredGuard extends RegisteredGuardView {
 
 interface ChainContext {
   initiatorPluginId: string;
+  targetPrinterId: string;
   method: string;
   params: unknown;
   identityKey: string;
@@ -217,19 +222,21 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
 
   function runPreflight(
     initiatorPluginId: string,
+    targetPrinterId: string,
     method: string,
     params: unknown,
   ): Promise<void> {
     const chain = buildChain(initiatorPluginId, method);
     if (chain.length === 0) return Promise.resolve();
 
-    const identityKey = identityKeyFor(method, params);
+    const identityKey = identityKeyFor(targetPrinterId, method, params);
     if (parkedByIdentity.has(identityKey)) {
       return Promise.reject(new GuardError({ code: 'already_pending' }));
     }
 
     const ctx: ChainContext = {
       initiatorPluginId,
+      targetPrinterId,
       method,
       params,
       identityKey,
@@ -248,13 +255,14 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
             pluginId: o.rejection.pluginId ?? '',
             guardId: o.rejection.guardId ?? '',
             method,
+            targetPrinterId,
             reasonKey: o.rejection.reasonKey,
           });
         }
         reject(new GuardError(o.rejection));
       };
     });
-    
+
     walk(chain, 0, ctx).then(
       () => ctx.settle({ ok: true }),
       (e) => ctx.settle({ ok: false, rejection: rejectionFrom(e) }),
@@ -302,6 +310,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
           pluginId: guard.pluginId,
           guardId: guard.guardId,
           method: ctx.method,
+          targetPrinterId: ctx.targetPrinterId,
         });
         reject(
           new GuardError({
@@ -314,7 +323,11 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
 
       let out: GuardDecision | Promise<GuardDecision>;
       try {
-        out = guard.handler({ method: ctx.method, params: ctx.params }, token);
+        out = guard.handler(
+          { method: ctx.method, params: ctx.params, targetPrinterId: ctx.targetPrinterId },
+          token,
+          { targetPrinterId: ctx.targetPrinterId },
+        );
       } catch (e) {
         clearTimeout(timer);
         console.error('[guard-agent] handler threw', guard.pluginId, guard.guardId, e);
@@ -369,6 +382,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
           pluginId: guard.pluginId,
           guardId: guard.guardId,
           method: ctx.method,
+          targetPrinterId: ctx.targetPrinterId,
         });
         reject(
           new GuardError({
@@ -450,6 +464,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
     return Array.from(parked.values()).map((p) => ({
       token: p.token,
       method: p.ctx.method,
+      targetPrinterId: p.ctx.targetPrinterId,
       initiatorPluginId: p.ctx.initiatorPluginId,
       frozenByPluginId: p.frozenBy.pluginId,
       frozenByGuardId: p.frozenBy.guardId,
@@ -493,13 +508,13 @@ function matchMatcher(matcher: string, method: string): boolean {
   return new RegExp(`^${escaped}$`).test(method);
 }
 
-function identityKeyFor(method: string, params: unknown): string {
-  if (params === undefined) return `${method}::`;
-  try {
-    return `${method}::${JSON.stringify(canonicalize(params))}`;
-  } catch {
-    return `${method}::${String(params)}`;
-  }
+function identityKeyFor(printerId: string, method: string, params: unknown): string {
+  const tail =
+    params === undefined ? '' : (() => {
+      try { return JSON.stringify(canonicalize(params)); }
+      catch { return String(params); }
+    })();
+  return `${printerId}::${method}::${tail}`;
 }
 
 function canonicalize(value: unknown): unknown {

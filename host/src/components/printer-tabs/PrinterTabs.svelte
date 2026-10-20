@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PrinterManager } from '../../core/printer-manager.svelte.ts';
+  import type { PrinterManager, PrinterConnectionState } from '../../core/printer-manager.svelte.ts';
   import type { Router } from '../../core/router.svelte.ts';
   import type { UiStore } from '../../core/ui-store.svelte.ts';
   import type { HostI18n } from '../../core/host-i18n.svelte.ts';
@@ -24,16 +24,26 @@
   let printers = $derived(printerManager.printers);
   let activePrinterId = $derived(printerManager.activePrinterId);
 
+  let connections = $state<Record<string, PrinterConnectionState>>(
+    printerManager.connections,
+  );
+
+  $effect(() => {
+    return printerManager.onConnectionStateChange((states) => {
+      connections = states;
+    });
+  });
+
   function handleTabClick(printerId: string) {
     router.navigateToPrinter(printerId);
-    ui.setFleet(false)
+    ui.setFleet(false);
   }
 </script>
 
 <div class="tabs-wrapper">
   <div class="tabs">
     {#each printers as printer (printer.id)}
-      {@const connection = printerManager.getConnection(printer.id)}
+      {@const connection = connections[printer.id] ?? null}
 
       <button
         class="tab"
@@ -99,12 +109,12 @@
   }
 
   .tab:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-header-hover-overlay, rgba(255, 255, 255, 0.1));
     color: var(--text-on-header);
   }
 
   .tab.active {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--bg-header-active-overlay, rgba(255, 255, 255, 0.15));
     color: var(--text-on-header);
   }
 

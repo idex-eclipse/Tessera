@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi } from '../../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../core-keeper/core-keeper';
 
 export interface GcodeThumbnail {
   width: number;
@@ -34,18 +38,6 @@ export interface GcodeFileEntry {
   raw: Record<string, any>;
 }
 
-function num(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
-}
-
-function numOpt(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-}
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
 export interface GcodeDirEntry {
   dirname: string;
   modified: number;
@@ -57,7 +49,11 @@ interface DirectoryResponse {
   files?: Array<Record<string, any>>;
 }
 
-export function useGcodeFiles(api: PluginApi) {
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Root = `gcodes` (фиксированный для gcode-таблицы).
+// ------------------------------------------------------------------
+function createGcodeFilesCore(api: PluginApi, printerId: string) {
   let path = $state('');
   let dirs = $state<GcodeDirEntry[]>([]);
   let files = $state<GcodeFileEntry[]>([]);
@@ -68,6 +64,14 @@ export function useGcodeFiles(api: PluginApi) {
 
   const unsubs: Array<() => void> = [];
 
+  function safeHandle(): MoonrakerProxyHandle | null {
+    try {
+      return api.moonrakerFor(printerId);
+    } catch {
+      return null;
+    }
+  }
+
   function dirPath(): string {
     return path ? `gcodes/${path}` : 'gcodes';
   }
@@ -76,12 +80,16 @@ export function useGcodeFiles(api: PluginApi) {
     loading = true;
     error = null;
     try {
-      const res = await api
-        .moonraker()
-        .request<DirectoryResponse>('server.files.get_directory', {
-          path: dirPath(),
-          extended: true,
-        });
+      const h = safeHandle();
+      if (!h) {
+        error = 'Printer not available';
+        return;
+      }
+
+      const res = await h.request<DirectoryResponse>('server.files.get_directory', {
+        path: dirPath(),
+        extended: true,
+      });
 
       dirs = (res.dirs ?? [])
         .map((d) => ({
@@ -113,9 +121,10 @@ export function useGcodeFiles(api: PluginApi) {
           first_layer_extruder_temp: f.first_layer_extruder_temp,
           first_layer_bed_temp: f.first_layer_bed_temp,
           chamber_temp: f.chamber_temp,
-          print_start_time: typeof f.print_start_time === 'number' ? f.print_start_time : null,
+          print_start_time:
+            typeof f.print_start_time === 'number' ? f.print_start_time : null,
           thumbnails: Array.isArray(f.thumbnails) ? f.thumbnails : [],
-          raw: f, // ← весь сырой metadata-объект; из него читаются чипы/цвета/массивы
+          raw: f,
         }))
         .sort((a, b) => b.modified - a.modified);
     } catch (e) {
@@ -127,9 +136,13 @@ export function useGcodeFiles(api: PluginApi) {
 
   async function loadHistory(): Promise<void> {
     try {
-      const res = await api
-        .moonraker()
-        .request<{ jobs?: Array<Record<string, any>> }>('server.history.list', { limit: 200 });
+      const h = safeHandle();
+      if (!h) return;
+
+      const res = await h.request<{ jobs?: Array<Record<string, any>> }>(
+        'server.history.list',
+        { limit: 200 },
+      );
 
       const map: Record<string, string> = {};
       for (const job of res.jobs ?? []) {
@@ -155,15 +168,10 @@ export function useGcodeFiles(api: PluginApi) {
   }
 
   function init(): void {
-    //console.info('[gcode-files] init for', api.printer.id);
     for (const u of unsubs.splice(0)) u();
 
-    let h;
-    try {
-      h = api.moonraker();
-    } catch {
-      return;
-    }
+    const h = safeHandle();
+    if (!h) return;
 
     unsubs.push(
       h.onNotify('notify_filelist_changed', () => {
@@ -203,25 +211,85 @@ export function useGcodeFiles(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
-    path = '';
-    currentPrint = null;
-    init();
-  });
-
-  onDestroy(() => {
+  function destroy(): void {
     for (const u of unsubs) u();
-    offPrinter();
-  });
+  }
 
   return {
-    get path() { return path; },
-    get dirs() { return dirs; },
-    get files() { return files; },
-    get loading() { return loading; },
-    get error() { return error; },
+    get path() {
+      return path;
+    },
+    get dirs() {
+      return dirs;
+    },
+    get files() {
+      return files;
+    },
+    get loading() {
+      return loading;
+    },
+    get error() {
+      return error;
+    },
     navigate,
     refresh: load,
     statusOf,
+    destroy,
   };
+}
+
+export type GcodeFilesStore = ReturnType<typeof createGcodeFilesCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<GcodeFilesStore>({
+  create: (pid, api) => createGcodeFilesCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук списка gcode-файлов.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером.
+ * С printerId — fleet: прямое ядро с удержанием.
+ *
+ * Path сохраняется при переключении принтеров (ядро в keeper).
+ */
+export function useGcodeFiles(
+  api: PluginApi,
+  printerId?: string,
+): GcodeFilesStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  return createDelegateStore<GcodeFilesStore>(() => keeper.get(api.printer.id, api));
 }

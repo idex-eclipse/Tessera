@@ -4,7 +4,6 @@
   import { gcode, runGcode } from '../../../commands.ts';
   import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
-  import { livez, resetLivezState } from '../../../live-z-state.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -14,44 +13,37 @@
   let step = $state(0.01);
   let busy = $state('');
   let saveOpen = $state(false);
-  let pendingSave = $derived(
-    livez.staged !== null &&
-      livez.baseline !== null &&
-      Math.abs(livez.staged - livez.baseline) > 1e-4,
-  );
 
-  $effect(() => {
-    if (store.state.loaded && livez.baseline === null && refOffset != null) {
-      livez.baseline = refOffset;
-    }
-  });
-
-  // Конфигурированный офсет — ТА ЖЕ цепочка источников, что в секции
-  // Probe & Z Offset (offsetRefs): probe → bltouch → endstop, первый не-null.
   let refOffset = $derived.by(() => {
     const z = store.state.zOffsets;
     return z.probe ?? z.bltouch ?? z.endstop;
   });
 
-  // живая подстройка: gcode_move.homing_origin[2]
   let delta = $derived(store.state.zOffsetLive ?? 0);
   let zHomed = $derived(store.state.homedAxes.includes('z'));
   let isPrinting = $derived(
     store.state.printState === 'printing' || store.state.printState === 'paused',
   );
 
+  $effect(() => {
+    if (store.state.loaded && store.livezState.baseline === null && refOffset != null) {
+      store.setLivezBaselineFromRef(refOffset);
+    }
+  });
+
+  let pendingSave = $derived(store.livezState.hasUnsavedApply);
+
   function fmtSigned(v: number): string {
     return `${v < 0 ? '-' : '+'}${Math.abs(v).toFixed(3)}`;
   }
 
-  async function exec(key: string, script: string): Promise<boolean> {
+  async function execSave(key: string, script: string): Promise<boolean> {
     if (busy !== '') return false;
     busy = key;
     try {
       await runGcode(api.moonraker(), script);
       return true;
     } catch (e) {
-      // ошибки и guard-deny несёт центр уведомлений
       console.error('[calibrations] livez failed:', script, e);
       return false;
     } finally {
@@ -60,28 +52,28 @@
   }
 
   function adjust(dir: 1 | -1): void {
-    void exec(`adj${dir}`, gcode.setZAdjust(dir * step, zHomed));
-    pendingSave = false;
+    store.resetLivezApply();
+    void runGcode(api.moonraker(), gcode.setZAdjust(dir * step, zHomed));
   }
-
+  
   async function saveOffset(): Promise<void> {
     const d = delta;
-    if (await exec('apply', gcode.zOffsetApplyProbe())) {
-      livez.staged = (livez.staged ?? livez.baseline ?? (refOffset ?? 0)) + d;
+    if (await execSave('apply', gcode.zOffsetApplyProbe())) {
+      store.applyLivezOffset(d);
     }
-    pendingSave = true;
   }
 
   function confirmSaveConfig(): void {
     saveOpen = false;
-    void exec('save', gcode.saveConfig()).then((ok) => {
-      if (ok) resetLivezState();   // рестарт перечитает baseline по klippy_ready
+    void execSave('save', gcode.saveConfig()).then((ok) => {
+      if (ok) {
+        store.resetLivezState();
+      }
     });
   }
 </script>
 
 <div class="livez">
-  <!-- слева: строки значений, значение рядом с именем -->
   <div class="rows">
     <div class="vrow">
       <span class="vlabel">{i18n.t('calibrations.liveZ.probeOffset')}</span>
@@ -96,7 +88,6 @@
     {/if}
   </div>
 
-  <!-- справа: кластер (шаги + шевроны справа от них), save-кнопки под кластером -->
   <div class="controls">
     <div class="cluster">
       <div class="steps">
@@ -105,10 +96,10 @@
         {/each}
       </div>
       <div class="ud">
-        <button class="cell chev" disabled={busy !== ''} onclick={() => adjust(1)} title="+{step} mm">
+        <button class="cell chev" onclick={() => adjust(1)} title="+{step} mm">
           <Icon name="chevron-up" size={16} />
         </button>
-        <button class="cell chev" disabled={busy !== ''} onclick={() => adjust(-1)} title="−{step} mm">
+        <button class="cell chev" onclick={() => adjust(-1)} title="−{step} mm">
           <Icon name="chevron-down" size={16} />
         </button>
       </div>
@@ -153,7 +144,6 @@
   }
 
   .rows { display: flex; flex-direction: column; gap: var(--space-xs); min-width: 0; }
-  /* значение СРАЗУ за именем, не прижато к правому краю */
   .vrow { display: flex; align-items: baseline; gap: var(--space-sm); }
   .vlabel { color: var(--text-secondary); font-size: var(--font-size-sm); white-space: nowrap; }
   .vvalue { font-size: var(--font-size-md); font-weight: 600; color: var(--text-primary); }
@@ -162,7 +152,6 @@
   .hint { margin: 0; color: var(--warning); font-size: var(--font-size-sm); }
 
   .controls { display: flex; flex-direction: column; gap: var(--space-xs); }
-  /* матрица: шаги 2×2 слева, шевроны колонкой справа от шагов */
   .cluster {
     display: grid;
     grid-template-columns: auto auto;
@@ -184,13 +173,13 @@
     font-family: monospace;
     font-size: var(--font-size-sm);
     cursor: pointer;
+    transition: background var(--transition-fast);
   }
   .cell:hover:not(:disabled) { background: var(--bg-surface-hover); }
   .cell:disabled { opacity: 0.5; cursor: not-allowed; }
   .cell.active { background: var(--bg-surface-active); color: var(--accent); border-color: var(--accent); }
   .chev { display: flex; align-items: center; justify-content: center; flex: 1; }
 
-  /* save-кнопки под кластером, шириной с кластер */
   .saves { display: flex; flex-direction: column; gap: var(--space-xs); }
   .btn {
     display: inline-flex;
@@ -201,14 +190,14 @@
     border: 1px solid var(--accent);
     border-radius: var(--radius-sm);
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
     font-size: var(--font-size-sm);
     cursor: pointer;
     width: 100%;
   }
   .btn:hover:not(:disabled) { background: var(--bg-surface-active); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 
   @media (max-width: 480px) {
     .livez { grid-template-columns: 1fr; }

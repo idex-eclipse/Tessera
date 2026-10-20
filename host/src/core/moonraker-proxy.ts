@@ -120,6 +120,17 @@ const pool = new Map<string, MoonrakerProxy>();
 
 const SNAPSHOT_REQUEST_METHODS = new Set(['server.info', 'printer.info']);
 
+/**
+ * Reserved subscription id for the proxy's own baseline subscription.
+ * The baseline keeps snapshot cache warm even when no plugin is subscribed:
+ * it subscribes to core objects of each printer (extruder*, heater_bed,
+ * toolhead, print_stats, display_status, virtual_sdcard, gcode_move,
+ * webhooks, bed_mesh, motion_report, idle_timeout, heater_generic *).
+ * Discovered via printer.objects.list on socket open / klippy ready /
+ * config change. Must not be removed by unsubscribeById().
+ */
+const BASELINE_SUBSCRIPTION_ID = 0;
+
 const DEFAULT_CACHE_RULES: CacheRule[] = [
   {
     match: 'server.files.list',
@@ -245,6 +256,9 @@ export function createMoonrakerProxy(
   let nextRequestId = 1;
   let nextSubscriptionId = 1;
 
+  let baselineObjects: Record<string, string[]> = {};
+  let baselineInFlight = false;
+
   let reconnectAttempts = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -339,6 +353,10 @@ export function createMoonrakerProxy(
       setReadyState('open');
       emitReady();
       activateSubscriptions();
+
+      // Refresh baseline asynchronously. The first refresh creates the baseline
+      // record; subsequent refreshes (klippy ready / config change) update it.
+      void refreshBaseline();
 
       // немедленный тик всех активных поллов после открытия сокета
       for (const key of Array.from(pollSchedule.keys())) {
@@ -798,12 +816,22 @@ function request<T = unknown>(method: string, params?: unknown): Promise<T> {
       handleStatusUpdate(params);
     }
 
-    /**
+     /**
      * Klipper lifecycle changes make server.info / printer.info snapshots stale.
      */
     if (event.startsWith('notify_klippy_')) {
       requestSnapshotCache.delete('server.info');
       requestSnapshotCache.delete('printer.info');
+    }
+
+    // Re-discover baseline objects when printer config changes or Klipper becomes ready
+    // (new extruders/heaters may have appeared; old objects may have disappeared).
+    if (
+      event === 'notify_klippy_ready' ||
+      event === 'notify_klippy_started' ||
+      event === 'notify_config_changed'
+    ) {
+      void refreshBaseline();
     }
 
     invalidateTtlCachesForEvent(event);
@@ -989,7 +1017,88 @@ function request<T = unknown>(method: string, params?: unknown): Promise<T> {
     };
   }
 
+   /**
+   * Build baseline subscription objects from a list of available printer objects.
+   * Only subscribes to objects that actually exist on this printer.
+   */
+  function buildBaselineObjects(available: string[]): Record<string, string[]> {
+    const objects: Record<string, string[]> = {};
+
+    const add = (name: string, fields: string[]) => {
+      objects[name] = fields;
+    };
+
+    const has = (name: string) => available.includes(name);
+
+    for (const name of available) {
+      if (name === 'extruder' || /^extruder\d+$/.test(name)) {
+        add(name, ['temperature', 'target', 'power']);
+      } else if (name.startsWith('heater_generic ')) {
+        add(name, ['temperature', 'target', 'power']);
+      }
+    }
+
+    if (has('heater_bed')) add('heater_bed', ['temperature', 'target', 'power']);
+    if (has('toolhead')) add('toolhead', ['position', 'homed_axes', 'extruder', 'max_velocity', 'max_accel', 'square_corner_velocity']);
+    if (has('dual_carriage')) add('dual_carriage', ['carriage_0', 'carriage_1', 'carriages']);
+    if (has('print_stats')) add('print_stats', ['state', 'filename', 'print_duration', 'total_duration', 'filament_used', 'info', 'message']);
+    if (has('display_status')) add('display_status', ['progress', 'message']);
+    if (has('virtual_sdcard')) add('virtual_sdcard', ['progress', 'file_position', 'file_path', 'is_active', 'file_size']);
+    if (has('gcode_move')) add('gcode_move', ['speed_factor', 'extrude_factor', 'homing_origin', 'position', 'gcode_position', 'speed', 'extrude_speed']);
+    if (has('webhooks')) add('webhooks', ['state', 'state_message']);
+    if (has('motion_report')) add('motion_report', ['live_velocity', 'live_extruder_velocity']);
+    if (has('idle_timeout')) add('idle_timeout', ['state']);
+    if (has('extruder_stepper')) add('extruder_stepper', ['pressure_advance', 'smooth_time']);
+    if (has('firmware_retraction')) add('firmware_retraction', ['retract_length', 'retract_speed', 'unretract_extra_length', 'unretract_speed']);
+    if (has('save_variables')) add('save_variables', ['variables']);
+
+    return objects;
+  }
+
+  /**
+   * Discover available objects and update the baseline subscription.
+   * Runs on socket open, klippy ready, and config change.
+   * Failures are silent: next trigger will retry.
+   */
+  async function refreshBaseline(): Promise<void> {
+    if (disposed || readyState !== 'open' || !ws || baselineInFlight) return;
+    baselineInFlight = true;
+
+    try {
+      const list = await sendRaw<{ objects: string[] }>('printer.objects.list', undefined)
+        .catch(() => null);
+      if (disposed || readyState !== 'open' || !list || !Array.isArray(list.objects)) return;
+
+      const next = buildBaselineObjects(list.objects);
+
+      // Update baseline record (create if missing, which it is on first open)
+      let record = subscribers.get(BASELINE_SUBSCRIPTION_ID);
+      if (!record) {
+        record = {
+          id: BASELINE_SUBSCRIPTION_ID,
+          objects: next,
+          callback: () => { /* no-op: baseline only warms snapshot */ },
+          immediate: false,
+          needsInitial: false,
+        };
+        subscribers.set(BASELINE_SUBSCRIPTION_ID, record);
+      } else {
+        record.objects = next;
+      }
+      baselineObjects = next;
+
+      // Recompute activeFields and re-send the full subscribe (replace semantics)
+      const newActive = desiredFieldsFromSubscribers(subscribers);
+      activeFields = newActive;
+      sendSubscribe(objectsFromActiveFields(newActive));
+    } finally {
+      baselineInFlight = false;
+    }
+  }
+
   function unsubscribeById(id: number): void {
+    if (id === BASELINE_SUBSCRIPTION_ID) return; // reserved, managed by refreshBaseline
+
     const record = subscribers.get(id);
 
     if (!record) {
@@ -1097,6 +1206,7 @@ function request<T = unknown>(method: string, params?: unknown): Promise<T> {
 
     subscribers.clear();
     activeFields.clear();
+    baselineObjects = {};
 
     statusSnapshot = {};
     requestSnapshotCache.clear();

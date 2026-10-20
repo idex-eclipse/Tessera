@@ -13,7 +13,7 @@
 
   let busy = $state('');
 
-  // видимость — решение плагина по состоянию (M): manual_probe.is_active
+  // видимость — решение плагина по состоянию (M): manual_probe.is_active (per-printer внутри ядра)
   let open = $derived(store.probe.isActive && klippy.ready);
 
   // шаги зондирования: крупные сверху, точные снизу
@@ -183,7 +183,6 @@
     font-size: var(--font-size-md);
   }
 
-  /* было 11px — поднимаем до стандартного мелкого */
   .z-bounds {
     display: flex;
     justify-content: center;
@@ -221,7 +220,6 @@
     cursor: not-allowed;
   }
 
-  /* было 11px — поднимаем до стандартного мелкого */
   .hint {
     margin: 0;
     color: var(--text-muted);
@@ -260,7 +258,7 @@
 
   .btn.primary {
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
   }
 
   .btn.primary:hover:not(:disabled) {
@@ -269,7 +267,7 @@
 
   .btn.danger {
     background: var(--danger);
-    color: #fff;
+    color: var(--accent-text);
   }
 
   .btn.danger:hover:not(:disabled) {

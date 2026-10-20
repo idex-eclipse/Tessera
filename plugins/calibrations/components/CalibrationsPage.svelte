@@ -1,11 +1,7 @@
 <script lang="ts">
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../use-calibrations.svelte.ts';
-  import { subscribeCalibrationsGcodeStore } from '../use-gcode-store.svelte.ts';
-  import { shaper, refreshGallery, releasePreview, resetShaperState } from '../shaper-state.svelte.ts';
-  import { RE_FITTED, RE_RECOMMENDED, RE_PID, RE_HEATER_PARAM, RE_PID_START, 
-    RE_SHAPER_CALIBRATE_START, RE_TARGET_PARAM, RE_TEST_RESONANCES_START, RE_AXIS_PARAM,
-    normalizeConsoleLines } from '../parse.ts';
+  import { normalizeConsoleLines } from '../parse.ts';
   import KlipperNotReady from '../../shared/klippy-state/KlippyNotReady.svelte';
   import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
   import HeaderHelp from '../../shared/header-help/HeaderHelp.svelte';
@@ -20,8 +16,6 @@
   import HeatersHelp from './panels/Heaters/HeatersPanelHelp.svelte';
   import MeshHelp from './panels/Mesh/MeshPanelHelp.svelte';
 
-  import { heaters, resetHeatersState } from '../heaters-state.svelte.ts';
-
   let { params = {} }: { params?: Record<string, string> } = $props();
 
   const api = usePluginApi();
@@ -29,63 +23,47 @@
   const store = useCalibrations(api);
   const klippy = useKlippyState(api);
 
-  type Tab = 'mesh' |'probe' | 'shaper' |  'heaters' ;
+  type Tab = 'mesh' | 'probe' | 'shaper' | 'heaters';
   let tab = $state<Tab>('mesh');
 
   // Seed галереи на уровне страницы: гейт shaper-таба зависит от png.
-  // Инвалидация по filelist-событиям, подписка на консоль и сброс state на смену принтера.
+  // Инвалидация по filelist-событиям. Session-log shaper/belts — live через
+  // notify_gcode_response (для отзывчивости UI); scanner в ядре ловит
+  // fitted/recommended/busy через server.gcode_store поллинг (внешний детект).
   $effect(() => {
-    void refreshGallery(api);
+    void store.refreshShaperGallery();
 
     const offList = api.moonraker().onNotify('notify_filelist_changed', () => {
-      void refreshGallery(api);
+      void store.refreshShaperGallery();
     });
 
-    // Shaper/Belts: session-log и live-чипы Fitted/Recommended во время наших прогонов.
-    // PID и внешний детект активности — в use-gcode-store (поллинг server.gcode_store).
+    // Live session-log для shaper/belts прогонов (наших собственных).
+    // Scanner в ядре делает то же через gcode_store поллинг, но с задержкой 5с;
+    // для UI-отзывчивости держим live-поток здесь.
     const offConsole = api.moonraker().onNotify('notify_gcode_response', (params) => {
-      if (shaper.busy === '') return;
+      const state = store.shaperState;
+      if (state.busy === '') return;
 
       for (const raw of normalizeConsoleLines(params)) {
         const line = raw.trim();
         if (!line) continue;
 
-        if (shaper.busy.startsWith('belts')) {
-          shaper.beltLog = [...shaper.beltLog.slice(-99), line];
+        if (state.busy.startsWith('belts')) {
+          state.beltLog = [...state.beltLog.slice(-99), line];
           continue;
         }
 
-        shaper.sessionLog = [...shaper.sessionLog.slice(-199), line];
-        const f = RE_FITTED.exec(line);
-        if (f) {
-          shaper.fitted = [...shaper.fitted, {
-            name: f[1]!, freq: +f[2]!, vib: +f[3]!, smooth: +f[4]!,
-          }];
-          continue;
-        }
-        const r = RE_RECOMMENDED.exec(line);
-        if (r) shaper.recommended = { name: r[1]!, freq: +r[2]! };
+        state.sessionLog = [...state.sessionLog.slice(-199), line];
       }
-    });
-
-    const offStore = subscribeCalibrationsGcodeStore(api);
-
-    const offPrinter = api.onPrinterChange(() => {
-      resetShaperState();
-      resetHeatersState();
-      void refreshGallery(api);
     });
 
     return () => {
       offList();
       offConsole();
-      offStore();
-      offPrinter();
-      releasePreview();
     };
   });
 
-  let galleryNotEmpty = $derived(Object.keys(shaper.gallery).length > 0);
+  let galleryNotEmpty = $derived(Object.keys(store.shaperState.gallery).length > 0);
   // Гейт: команды ИЛИ уже сгенерированные графики (png в config-руте/shapers)
   let shaperAvailable = $derived(store.state.hasInputShaper || galleryNotEmpty);
   let probeAvailable = $derived(
@@ -147,7 +125,7 @@
       <HeaderHelp title={helpTitle}>
         {#if tab === 'shaper'}
           <ShaperHelp />
-          {#if shaper.beltsEnabled}<BeltsHelp />{/if}
+          {#if store.shaperState.beltsEnabled}<BeltsHelp />{/if}
         {:else if tab === 'probe'}<ProbeHelp />
         {:else if tab === 'heaters'}<HeatersHelp />
         {:else}<MeshHelp />
@@ -158,8 +136,8 @@
     <div class="body">
       {#if tab === 'shaper'}
         <ShaperContent />
-        {#if shaper.previewUrl}
-          <img class="preview" src={shaper.previewUrl} alt={shaper.selected ?? ''} />
+        {#if store.shaperState.previewUrl}
+          <img class="preview" src={store.shaperState.previewUrl} alt={store.shaperState.selected ?? ''} />
         {/if}
       {:else if tab === 'probe'}
         <ProbeContent />

@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
 export type FilamentKind = 'switch' | 'motion' | 'hall';
 
@@ -28,17 +32,22 @@ const EMPTY_STATE: FilamentState = {
   raw: null,
 };
 
-let sensors = $state<FilamentSensor[]>([]);
-let states = $state<Record<string, FilamentState>>({});
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
+// ------------------------------------------------------------------
+function createFilamentCore(api: PluginApi, printerId: string) {
+  let sensors = $state<FilamentSensor[]>([]);
+  let states = $state<Record<string, FilamentState>>({});
 
-export function useFilament(api: PluginApi) {
   let generation = 0;
   let unsubMeta: (() => void) | null = null;
   const unsubs: Array<() => void> = [];
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
@@ -166,7 +175,7 @@ export function useFilament(api: PluginApi) {
   async function init(): Promise<void> {
     const gen = ++generation;
     const h = safeHandle();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
     unsubs.push(
       h.onReady(() => {
         if (gen === generation) void loadMeta(gen);
@@ -182,17 +191,9 @@ export function useFilament(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
+  function destroy(): void {
     teardown();
-    sensors = [];
-    states = {};
-    void init();
-  });
-
-  onDestroy(() => {
-    teardown();
-    offPrinter();
-  });
+  }
 
   return {
     get sensors() {
@@ -204,7 +205,60 @@ export function useFilament(api: PluginApi) {
     setEnabled,
     setFlowComp,
     resetWidth,
+    destroy,
   };
 }
 
-export type FilamentStore = ReturnType<typeof useFilament>;
+export type FilamentStore = ReturnType<typeof createFilamentCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<FilamentStore>({
+  create: (pid, api) => createFilamentCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук датчиков филамента.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
+ */
+export function useFilament(api: PluginApi, printerId?: string): FilamentStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<FilamentStore>(() => keeper.get(api.printer.id, api));
+}

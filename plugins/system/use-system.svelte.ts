@@ -1,8 +1,11 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
-
-import { useKlippyState } from '../../plugins/shared/klippy-state/use-klippy-state.svelte';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../shared/core-keeper/core-keeper';
+import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte';
 
 // ------------------------------------------------------------------
 // Модели
@@ -55,8 +58,8 @@ export interface ProcPoint {
 }
 
 export interface AccessModel {
-  available: boolean;   // эндпоинты access/* отвечают (Moonraker не слишком старый)
-  loginEnabled: boolean; // enforcement активен
+  available: boolean;
+  loginEnabled: boolean;
   users: string[];
 }
 
@@ -65,7 +68,7 @@ export type UpdateItemType = 'git_repo' | 'web' | 'system' | 'unknown';
 export interface CommitInfo {
   sha: string;
   author: string;
-  date: string; // unix seconds
+  date: string;
   subject: string;
   message: string;
   tag: string | null;
@@ -82,7 +85,6 @@ export interface UpdateItemModel {
   warnings: string[];
   anomalies: string[];
 
-  // git_repo
   corrupt: boolean;
   dirty: boolean;
   detached: boolean;
@@ -99,72 +101,69 @@ export interface UpdateItemModel {
   commitsBehindCount: number;
   gitMessages: string[];
 
-  // system
   packageCount: number;
   packageList: string[];
 }
 
-const PROC_CAP = 600; // ~10 минут при 1 Гц
+const PROC_CAP = 600;
 
 // ------------------------------------------------------------------
-// Module-level состояние: общее для баннера, правой панели и страницы
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
 // ------------------------------------------------------------------
+function createSystemCore(api: PluginApi, printerId: string | null) {
+  const fleet = printerId !== null;
 
-let systemInfo = $state<SystemInfoModel>({
-  hostname: '',
-  cpuCount: 0,
-  cpuDesc: '',
-  bits: '',
-  totalMemoryKb: null,
-  osName: '',
-  kernel: '',
-  python: '',
-  moonrakerVersion: '',
-  network: [],
-  sdInfo: null,
-  availableServices: [],
-  serviceState: {},
-});
+  let systemInfo = $state<SystemInfoModel>({
+    hostname: '',
+    cpuCount: 0,
+    cpuDesc: '',
+    bits: '',
+    totalMemoryKb: null,
+    osName: '',
+    kernel: '',
+    python: '',
+    moonrakerVersion: '',
+    network: [],
+    sdInfo: null,
+    availableServices: [],
+    serviceState: {},
+  });
 
-let klipperMeta = $state({
-  hostname: '',
-  softwareVersion: '',
-  logFile: '',
-  configFile: '',
-});
+  let klipperMeta = $state({
+    hostname: '',
+    softwareVersion: '',
+    logFile: '',
+    configFile: '',
+  });
 
-let updates = $state<{ busy: boolean; items: UpdateItemModel[] }>({
-  busy: false,
-  items: [],
-});
-let updateLog = $state<Array<{ app: string; line: string }>>([]);
+  let updates = $state<{ busy: boolean; items: UpdateItemModel[] }>({
+    busy: false,
+    items: [],
+  });
+  let updateLog = $state<Array<{ app: string; line: string }>>([]);
 
-let power = $state<PowerDeviceModel[]>([]);
-let mcus = $state<McuModel[]>([]);
-let proc = $state<ProcPoint[]>([]);
-let access = $state<AccessModel>({ available: false, loginEnabled: false, users: [] });
-let busy = $state('');
+  let power = $state<PowerDeviceModel[]>([]);
+  let mcus = $state<McuModel[]>([]);
+  let proc = $state<ProcPoint[]>([]);
+  let access = $state<AccessModel>({ available: false, loginEnabled: false, users: [] });
+  let busy = $state('');
 
-// ------------------------------------------------------------------
-// Хук
-// ------------------------------------------------------------------
-
-export function useSystem(api: PluginApi) {
   let generation = 0;
-  let klipperLoadSeq = 0;
   const unsubs: Array<() => void> = [];
   let unsubMcu: (() => void) | null = null;
-  const klippy = useKlippyState(api);
+
+  const klippy = useKlippyState(api, printerId ?? undefined);
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
     } catch {
       return null;
     }
   }
 
-  /** REST для access/* (санкционировано task.txt); токен появится в 12.4. */
   async function rest<T>(path: string, init?: RequestInit): Promise<T | null> {
     const h = safeHandle();
     if (!h) return null;
@@ -181,10 +180,6 @@ export function useSystem(api: PluginApi) {
       return null;
     }
   }
-
-  // ------------------------------------------------------------------
-  // apply*
-  // ------------------------------------------------------------------
 
   function applySystemInfo(info: any, serverInfo: any): void {
     if (!info || typeof info !== 'object') return;
@@ -252,6 +247,7 @@ export function useSystem(api: PluginApi) {
       type: String(d?.type ?? ''),
     }));
   }
+
   function applyPowerChanged(params: any): void {
     const list = Array.isArray(params) ? params : [params];
     for (const p of list) {
@@ -259,13 +255,10 @@ export function useSystem(api: PluginApi) {
       const dev = power.find((d) => d.device === p.device);
       if (dev && typeof p.status === 'string') dev.status = p.status;
     }
-    power = [...power]; // триггер реактивности
+    power = [...power];
   }
 
   function applyMcuDelta(delta: any): void {
-    // Klipper не ready — никакие дельты/снапшоты mcu не принимаем:
-    // закрывает окно, когда отписка ещё не доехала, а snapshot прокси
-    // всё ещё содержит поля mcu
     if (!klippy.ready) return;
     if (!delta || typeof delta !== 'object') return;
     const next = [...mcus];
@@ -273,7 +266,6 @@ export function useSystem(api: PluginApi) {
     for (const [name, d] of Object.entries(delta)) {
       if (!/^mcu(\s|$)/.test(name)) continue;
       const rec = d as any;
-      const ls = rec?.last_stats;
       if (!rec || typeof rec !== 'object') continue;
 
       const existing = next.find((m) => m.name === name);
@@ -311,7 +303,6 @@ export function useSystem(api: PluginApi) {
     const p = Array.isArray(params) ? params[0] : params;
     if (!p || typeof p !== 'object') return;
 
-    // moonraker_stats в старых версиях мог быть массивом — берём последний
     const mk = Array.isArray(p.moonraker_stats)
       ? p.moonraker_stats[p.moonraker_stats.length - 1]
       : p.moonraker_stats;
@@ -342,30 +333,6 @@ export function useSystem(api: PluginApi) {
     proc = [...proc.slice(-(PROC_CAP - 1)), point];
   }
 
-    /** Полный сброс пер-принтерных данных: вызывается ТОЛЬКО при смене принтера. */
-  function resetState(): void {
-    systemInfo = {
-      hostname: '',
-      cpuCount: 0,
-      cpuDesc: '',
-      bits: '',
-      totalMemoryKb: null,
-      osName: '',
-      kernel: '',
-      python: '',
-      moonrakerVersion: '',
-      network: [],
-      sdInfo: null,
-      availableServices: [],
-      serviceState: {},
-    };
-    power = [];
-    mcus = [];
-    proc = [];
-    access = { available: false, loginEnabled: false, users: [] };
-    updates = { busy: false, items: [] }; updateLog = [];
-  }
-
   function applyUpdateStatus(res: any): void {
     if (!res || typeof res !== 'object') return;
     const vi = res.version_info ?? res;
@@ -386,9 +353,7 @@ export function useSystem(api: PluginApi) {
 
       const warnings = Array.isArray(r.warnings) ? r.warnings.map(String) : [];
       const anomalies = Array.isArray(r.anomalies) ? r.anomalies.map(String) : [];
-      const gitMessages = Array.isArray(r.git_messages)
-        ? r.git_messages.map(String)
-        : [];
+      const gitMessages = Array.isArray(r.git_messages) ? r.git_messages.map(String) : [];
       const commitsBehind: CommitInfo[] = Array.isArray(r.commits_behind)
         ? r.commits_behind
             .filter((c: any) => c && typeof c === 'object')
@@ -402,9 +367,7 @@ export function useSystem(api: PluginApi) {
             }))
         : [];
 
-      const packageList = Array.isArray(r.package_list)
-        ? r.package_list.map(String)
-        : [];
+      const packageList = Array.isArray(r.package_list) ? r.package_list.map(String) : [];
 
       items.push({
         name,
@@ -416,7 +379,6 @@ export function useSystem(api: PluginApi) {
         isValid: r.is_valid !== false,
         warnings,
         anomalies,
-        // git
         corrupt: Boolean(r.corrupt),
         dirty: Boolean(r.is_dirty),
         detached: Boolean(r.detached),
@@ -431,13 +393,9 @@ export function useSystem(api: PluginApi) {
         remoteUrl: String(r.remote_url ?? ''),
         commitsBehind,
         commitsBehindCount:
-          typeof r.commits_behind_count === 'number'
-            ? r.commits_behind_count
-            : commitsBehind.length,
+          typeof r.commits_behind_count === 'number' ? r.commits_behind_count : commitsBehind.length,
         gitMessages,
-        // system
-        packageCount:
-          typeof r.package_count === 'number' ? r.package_count : packageList.length,
+        packageCount: typeof r.package_count === 'number' ? r.package_count : packageList.length,
         packageList,
       });
     }
@@ -445,12 +403,6 @@ export function useSystem(api: PluginApi) {
     items.sort((a, b) => a.name.localeCompare(b.name));
     updates = { busy: Boolean(res.busy), items };
   }
-
-
-
-  // ------------------------------------------------------------------
-  // loaders
-  // ------------------------------------------------------------------
 
   async function loadSystemInfo(gen: number): Promise<void> {
     const h = safeHandle();
@@ -469,7 +421,7 @@ export function useSystem(api: PluginApi) {
     if (!h) return;
     const info = await h.request<any>('printer.info').catch(() => null);
     if (gen !== generation) return;
-    applyKlipperMeta(info); // state НЕ трогаем — он в useKlippyState
+    applyKlipperMeta(info);
   }
 
   async function loadPower(gen: number): Promise<void> {
@@ -482,13 +434,8 @@ export function useSystem(api: PluginApi) {
       applyPowerDevices(res);
     } catch (e: any) {
       if (gen !== generation) return;
-
-      // "Method not found" = no [power] in moonraker.conf.
-      const isMethodNotFound =
-        typeof e?.message === 'string' && /Method not found/i.test(e.message);
-
+      const isMethodNotFound = typeof e?.message === 'string' && /Method not found/i.test(e.message);
       if (isMethodNotFound) {
-        // Don't show console error
         applyPowerDevices(null);
       } else {
         console.error('[system] power load failed:', e);
@@ -501,39 +448,28 @@ export function useSystem(api: PluginApi) {
     let loginEnabled = false;
     let available = false;
 
-    // 1) /access/info: если вернул объект (не null) — endpoint доступен
     const info = await rest<any>('/access/info');
     if (info && typeof info === 'object') {
       available = true;
       const r = info.result ?? info;
-      loginEnabled = Boolean(
-        r?.login_required ?? r?.authorization?.enabled ?? r?.login_enabled ?? false,
-      );
+      loginEnabled = Boolean(r?.login_required ?? r?.authorization?.enabled ?? r?.login_enabled ?? false);
     } else {
-      // 2) /access/info
       const probe = await rest<any>('/access/user');
       if (probe && typeof probe === 'object') {
         available = true;
-        loginEnabled = false; // trusted: /access/user ответил 200
+        loginEnabled = false;
       }
-      // probe === null и info === null → endpoints нет (очень старый Moonraker)
     }
 
-    // 3) список пользователей
     let users: string[] = [];
     if (available) {
       let arr: any[] | null = null;
-
-      // /access/users/list
       const l1 = await rest<any>('/access/users/list');
       if (l1 && typeof l1 === 'object') {
         const r1 = l1.result ?? l1;
         arr = Array.isArray(r1?.users) ? r1.users : Array.isArray(r1) ? r1 : null;
       }
-
-      users = (arr ?? [])
-        .map((u: any) => String(u?.username ?? ''))
-        .filter(Boolean);
+      users = (arr ?? []).map((u: any) => String(u?.username ?? '')).filter(Boolean);
     }
 
     if (gen !== generation) return;
@@ -597,10 +533,6 @@ export function useSystem(api: PluginApi) {
     ]);
   }
 
-  // ------------------------------------------------------------------
-  // Действия (панель/баннер вызывают их напрямую)
-  // ------------------------------------------------------------------
-
   async function guard(action: string, fn: () => Promise<unknown>): Promise<void> {
     if (busy) return;
     busy = action;
@@ -614,18 +546,14 @@ export function useSystem(api: PluginApi) {
   }
 
   function estop(): void {
-    // без подтверждения и без busy-блокировки: безопасность прежде всего
     const h = safeHandle();
     h?.request('printer.emergency_stop').catch((e) => console.error('[system] estop', e));
   }
 
   const restartKlipper = () => guard('restartKlipper', () => safeHandle()!.request('printer.restart'));
-  const firmwareRestart = () =>
-    guard('firmwareRestart', () => safeHandle()!.request('printer.firmware_restart'));
+  const firmwareRestart = () => guard('firmwareRestart', () => safeHandle()!.request('printer.firmware_restart'));
   const restartMoonraker = () =>
-    guard('restartMoonraker', () =>
-      safeHandle()!.request('machine.services.restart', { service: 'moonraker' }),
-    );
+    guard('restartMoonraker', () => safeHandle()!.request('machine.services.restart', { service: 'moonraker' }));
   const hostShutdown = () => guard('hostShutdown', () => safeHandle()!.request('machine.shutdown'));
   const hostReboot = () => guard('hostReboot', () => safeHandle()!.request('machine.reboot'));
 
@@ -637,14 +565,11 @@ export function useSystem(api: PluginApi) {
 
   const powerSet = (device: string, action: 'on' | 'off' | 'toggle') =>
     guard(`power:${device}`, async () => {
-      await safeHandle()!.request('machine.device_power.post_device', {
-        device,
-        action,
-      });
+      await safeHandle()!.request('machine.device_power.post_device', { device, action });
       await loadPower(generation);
     });
 
-    const addUser = (username: string, password: string) =>
+  const addUser = (username: string, password: string) =>
     guard(`userAdd:${username}`, async () => {
       await rest<any>('/access/user', {
         method: 'POST',
@@ -656,9 +581,7 @@ export function useSystem(api: PluginApi) {
 
   const deleteUser = (username: string) =>
     guard(`userDel:${username}`, async () => {
-      await rest<any>(`/access/user?username=${encodeURIComponent(username)}`, {
-        method: 'DELETE',
-      });
+      await rest<any>(`/access/user?username=${encodeURIComponent(username)}`, { method: 'DELETE' });
       await loadAccess(generation);
     });
 
@@ -671,24 +594,13 @@ export function useSystem(api: PluginApi) {
       });
     });
 
-  const refreshUpdates = () =>
-    guard('updRefresh', () => safeHandle()!.request('machine.update.refresh'));
-
-  const updateItem = (name: string) =>
-    guard(`upd:${name}`, () => safeHandle()!.request(`machine.update.${name}`));
-
+  const refreshUpdates = () => guard('updRefresh', () => safeHandle()!.request('machine.update.refresh'));
+  const updateItem = (name: string) => guard(`upd:${name}`, () => safeHandle()!.request(`machine.update.${name}`));
   const rollbackItem = (name: string) =>
-    guard(`rollback:${name}`, () =>
-      safeHandle()!.request('machine.update.rollback', { name }),
-    );
-
+    guard(`rollback:${name}`, () => safeHandle()!.request('machine.update.rollback', { name }));
   const clearUpdateLog = () => {
     updateLog = [];
   };
-
-  // ------------------------------------------------------------------
-  // Lifecycle
-  // ------------------------------------------------------------------
 
   function teardown(): void {
     generation++;
@@ -703,7 +615,7 @@ export function useSystem(api: PluginApi) {
     const gen = ++generation;
 
     const h = safeHandle();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
 
     unsubs.push(
       h.onNotify('notify_klippy_ready', () => {
@@ -756,10 +668,7 @@ export function useSystem(api: PluginApi) {
         const p = Array.isArray(params) ? params[0] : params;
         const line = String(p?.message ?? '');
         if (!line) return;
-        updateLog = [
-          ...updateLog.slice(-499),
-          { app: String(p?.application ?? ''), line },
-        ];
+        updateLog = [...updateLog.slice(-499), { app: String(p?.application ?? ''), line }];
       }),
     );
 
@@ -768,19 +677,9 @@ export function useSystem(api: PluginApi) {
 
   init();
 
-  const offPrinter = api.onPrinterChange(() => {
+  function destroy(): void {
     teardown();
-    resetState();
-    void init();
-  });
-  onDestroy(() => {
-    teardown();
-    offPrinter();
-  });
-
-  // ------------------------------------------------------------------
-  // Public
-  // ------------------------------------------------------------------
+  }
 
   return {
     get systemInfo() {
@@ -808,13 +707,12 @@ export function useSystem(api: PluginApi) {
     get busy() {
       return busy;
     },
-    get updates(){
+    get updates() {
       return updates;
-    }, 
+    },
     get updateLog() {
       return updateLog;
     },
-
     refresh,
     estop,
     restartKlipper,
@@ -827,11 +725,62 @@ export function useSystem(api: PluginApi) {
     addUser,
     deleteUser,
     changePassword,
-    refreshUpdates, 
-    updateItem, 
+    refreshUpdates,
+    updateItem,
     rollbackItem,
-    clearUpdateLog
+    clearUpdateLog,
+    destroy,
   };
 }
 
-export type SystemStore = ReturnType<typeof useSystem>;
+export type SystemStore = ReturnType<typeof createSystemCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<SystemStore>({
+  create: (pid, api) => createSystemCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук системной информации.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
+ */
+export function useSystem(api: PluginApi, printerId?: string): SystemStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  return createDelegateStore<SystemStore>(() => keeper.get(api.printer.id, api));
+}

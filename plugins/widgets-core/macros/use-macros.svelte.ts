@@ -1,6 +1,10 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle, PluginSettingsApi } from '../../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../../shared/core-keeper/core-keeper';
 
 import { parseMacroParams, type MacroParam } from '../../shared/macro-params';
 
@@ -40,48 +44,87 @@ function createId(): string {
   return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-let liveNames = $state<string[]>([]);
-let help = $state<Record<string, string>>({});
-let paramsByMacro = $state<Record<string, MacroParam[]>>({});
-let cfg = $state<MacrosCfg>(emptyCfg());
+function sanitizeCfg(slice: any): MacrosCfg {
+  if (!slice || typeof slice !== 'object') return emptyCfg();
+  return {
+    groups: Array.isArray(slice.groups) ? slice.groups : [],
+    items: slice.items && typeof slice.items === 'object' ? slice.items : {},
+    ui: {
+      tooltips: slice.ui?.tooltips !== false,
+      ungroupedCollapsed: slice.ui?.ungroupedCollapsed === true,
+    },
+    ungrouped: Array.isArray(slice.ungrouped) ? slice.ungrouped : [],
+  };
+}
+
+// ------------------------------------------------------------------
+// Module-level: UI-state (editMode) + кэш live data per-printer.
+// editMode — глобальный флаг режима редактирования страницы макросов
+// (один на всё приложение, не per-printer).
+// liveCache — кэш состава макросов + параметров; инвалидация по
+// notify_klippy_ready / notify_config_changed.
+// ------------------------------------------------------------------
 let editMode = $state(false);
 
-export function useMacros(api: PluginApi) {
+interface LiveCacheEntry {
+  liveNames: string[];
+  help: Record<string, string>;
+  paramsByMacro: Record<string, MacroParam[]>;
+  ts: number;
+}
+const liveCache = new Map<string, LiveCacheEntry>();
+
+function invalidateLiveCache(printerId: string): void {
+  liveCache.delete(printerId);
+}
+
+// ------------------------------------------------------------------
+// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
+// Legacy-режим (без printerId) = делегат, следующий за активным принтером.
+// Fleet-режим (с printerId) = прямое ядро с удержанием.
+// ------------------------------------------------------------------
+function createMacrosCore(api: PluginApi, printerId: string) {
+  const settingsApi: PluginSettingsApi = api.settingsFor(printerId);
+
+  let liveNames = $state<string[]>([]);
+  let help = $state<Record<string, string>>({});
+  let paramsByMacro = $state<Record<string, MacroParam[]>>({});
+  let cfg = $state<MacrosCfg>(emptyCfg());
+
   let generation = 0;
   const unsubs: Array<() => void> = [];
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return api.moonraker();
+      return api.moonrakerFor(printerId);
     } catch {
       return null;
     }
   }
 
-  // Settings
-  // not sync by printers
-
+  // Settings (per-printer namespace с миграцией из старого device-global)
   function readCfg(): MacrosCfg {
-    const all = api.settings.get<{ byPrinter?: Record<string, MacrosCfg> }>('macros') ?? {};
-    const slice = all.byPrinter?.[api.printer.id];
-    if (!slice || typeof slice !== 'object') return emptyCfg();
-    return {
-      groups: Array.isArray(slice.groups) ? slice.groups : [],
-      items: slice.items && typeof slice.items === 'object' ? slice.items : {},
-      ui: {
-        tooltips: slice.ui?.tooltips !== false,
-        ungroupedCollapsed: slice.ui?.ungroupedCollapsed === true,
-      },
-      ungrouped: Array.isArray(slice.ungrouped) ? slice.ungrouped : [],
-    };
+    // Новый per-printer namespace
+    const newCfg = settingsApi.get<MacrosCfg>('macros');
+    if (newCfg && typeof newCfg === 'object') {
+      return sanitizeCfg(newCfg);
+    }
+
+    // Fallback: старый device-global namespace (миграция)
+    const oldAll = api.settings.get<{ byPrinter?: Record<string, MacrosCfg> }>('macros');
+    const oldSlice = oldAll?.byPrinter?.[printerId];
+    if (oldSlice && typeof oldSlice === 'object') {
+      const sanitized = sanitizeCfg(oldSlice);
+      settingsApi.set('macros', sanitized);
+      return sanitized;
+    }
+
+    return emptyCfg();
   }
 
   function writeCfg(next: MacrosCfg): void {
     cfg = next;
-    const all = api.settings.get<{ byPrinter?: Record<string, MacrosCfg> }>('macros') ?? {};
-    api.settings.set('macros', {
-      byPrinter: { ...(all.byPrinter ?? {}), [api.printer.id]: next },
-    });
+    settingsApi.set('macros', next);
   }
 
   function commit(): void {
@@ -94,12 +137,21 @@ export function useMacros(api: PluginApi) {
     writeCfg(draft);
   }
 
-  // Macr0 + description
-
+  // Macro + description (с кэшированием)
   async function loadLive(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h) return;
 
+    // Проверяем кэш
+    const cached = liveCache.get(printerId);
+    if (cached) {
+      liveNames = cached.liveNames;
+      help = cached.help;
+      paramsByMacro = cached.paramsByMacro;
+      return;
+    }
+
+    // Cache-miss: три параллельных запроса
     const [list, helpRes, cfgRes] = await Promise.all([
       h.request<any>('printer.objects.list').catch(() => null),
       h.request<any>('printer.gcode.help').catch(() => null),
@@ -115,21 +167,30 @@ export function useMacros(api: PluginApi) {
 
     if (names.length === 0) return;
 
-    liveNames = names;
-
-    const map: Record<string, string> = {};
-    const cfg = (cfgRes?.status?.configfile?.config ?? {}) as Record<string, any>;
+    const helpMap: Record<string, string> = {};
+    const cfgData = (cfgRes?.status?.configfile?.config ?? {}) as Record<string, any>;
     const pm: Record<string, MacroParam[]> = {};
     for (const n of names) {
-      const body = cfg[`gcode_macro ${n}`]?.gcode;
+      const body = cfgData[`gcode_macro ${n}`]?.gcode;
       if (typeof body === 'string') {
         const p = parseMacroParams(body);
         if (p.length > 0) pm[n] = p;
       }
     }
-    paramsByMacro = pm;
-    help = map;
 
+    liveNames = names;
+    help = helpMap;
+    paramsByMacro = pm;
+
+    // Кэшируем
+    liveCache.set(printerId, {
+      liveNames: names,
+      help: helpMap,
+      paramsByMacro: pm,
+      ts: Date.now(),
+    });
+
+    // Обновляем cfg (добавляем новые макросы в ungrouped, удаляем несуществующие)
     const knownSet = new Set(liveNames);
     mutate((d) => {
       const groupedSet = new Set<string>();
@@ -148,7 +209,6 @@ export function useMacros(api: PluginApi) {
   }
 
   // Show
-
   function itemOf(name: string): MacroItemCfg {
     return cfg.items[name] ?? {};
   }
@@ -191,11 +251,7 @@ export function useMacros(api: PluginApi) {
     return { container: '', index: cfg.ungrouped.indexOf(name) };
   }
 
-
-  // Live DnD: transient-reorder.
-  // Persist — one time in commit() (drop / dragend).
-
-
+  // Live DnD: transient-reorder
   function placeMacroTransient(name: string, container: string, index: number): void {
     const fromGroup = cfg.groups.find((g) => g.macros.includes(name));
     const toGroup = container ? cfg.groups.find((g) => g.id === container) : null;
@@ -232,7 +288,6 @@ export function useMacros(api: PluginApi) {
   }
 
   // Actions with persist
-
   function run(name: string): void {
     safeHandle()
       ?.request('printer.gcode.script', { script: name })
@@ -344,7 +399,6 @@ export function useMacros(api: PluginApi) {
   }
 
   // Lifecycle
-
   function teardown(): void {
     generation++;
     for (const u of unsubs.splice(0)) u();
@@ -354,7 +408,7 @@ export function useMacros(api: PluginApi) {
     const gen = ++generation;
     const h = safeHandle();
     cfg = readCfg();
-    if (!h || !api.printer.url) return;
+    if (!h) return;
 
     unsubs.push(
       h.onReady(() => {
@@ -363,12 +417,28 @@ export function useMacros(api: PluginApi) {
     );
     unsubs.push(
       h.onNotify('notify_klippy_ready', () => {
-        if (gen === generation) void loadLive(gen);
+        if (gen !== generation) return;
+        invalidateLiveCache(printerId);
+        void loadLive(gen);
       }),
     );
     unsubs.push(
       h.onNotify('notify_config_changed', () => {
-        if (gen === generation) void loadLive(gen);
+        if (gen !== generation) return;
+        invalidateLiveCache(printerId);
+        void loadLive(gen);
+      }),
+    );
+
+    // Settings onChange (per-printer namespace)
+    unsubs.push(
+      settingsApi.onChange((k) => {
+        if (k === 'macros') {
+          const newCfg = settingsApi.get<MacrosCfg>('macros');
+          if (newCfg && typeof newCfg === 'object') {
+            cfg = sanitizeCfg(newCfg);
+          }
+        }
       }),
     );
 
@@ -377,23 +447,9 @@ export function useMacros(api: PluginApi) {
 
   init();
 
-  const offSettings = api.settings.onChange((k) => {
-    if (k === 'macros') cfg = readCfg();
-  });
-
-  const offPrinter = api.onPrinterChange(() => {
+  function destroy(): void {
     teardown();
-    liveNames = [];
-    help = {};
-    editMode = false;
-    void init();
-  });
-
-  onDestroy(() => {
-    teardown();
-    offSettings();
-    offPrinter();
-  });
+  }
 
   return {
     get liveNames() {
@@ -434,7 +490,65 @@ export function useMacros(api: PluginApi) {
     placeMacroTransient,
     moveGroupTransient,
     commit,
+    destroy,
   };
 }
 
-export type MacrosStore = ReturnType<typeof useMacros>;
+export type MacrosStore = ReturnType<typeof createMacrosCore>;
+
+// ------------------------------------------------------------------
+// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
+// ------------------------------------------------------------------
+const keeper = createCoreKeeper<MacrosStore>({
+  create: (pid, api) => createMacrosCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук макросов.
+ *
+ * Без printerId — legacy: делегирующий store, следующий за активным принтером;
+ * refcount на текущего принтера, ядра других принтеров живут в keeper по
+ * политике keep-alive. С printerId — fleet: прямое ядро с удержанием.
+ *
+ * Live data (состав макросов + параметры) кэшируются per-printer;
+ * инвалидация по notify_klippy_ready / notify_config_changed.
+ * Settings персистятся в per-printer namespace (с миграцией из старого
+ * device-global namespace).
+ */
+export function useMacros(api: PluginApi, printerId?: string): MacrosStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  // Делегат: каждое чтение уходит в ядро ТЕКУЩЕГО активного принтера;
+  // сигнал api.printer.id даёт реактивность смены вкладки.
+  return createDelegateStore<MacrosStore>(() => keeper.get(api.printer.id, api));
+}

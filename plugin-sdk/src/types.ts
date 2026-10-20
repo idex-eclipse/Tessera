@@ -166,10 +166,28 @@ export interface RightPanelContribution {
 }
 
 /**
+ * Контекст, в котором принимается решение гарда. Добавлен в фазе 2
+ * мультипринтерных гардов: обработчик видит, на какой принтер направлен
+ * request — это позволяет держать состояние per-printer (например, статус
+ * печати/хоминга) и принимать решение по состоянию ЦЕЛИ, а не активного.
+ */
+export interface GuardContext {
+  /** Принтер-адресат request().
+   *  - для api.moonraker().request() — активный принтер на момент вызова;
+   *  - для api.moonrakerFor(printerId).request() — переданный printerId. */
+  readonly targetPrinterId: string;
+}
+
+/**
  * Guard contribution: preflight-проверка request() по строке метода.
  * match — точная строка метода или глоб с '*'; параметры НЕ матчатся.
  * handler — имя экспорта entry-модуля с сигнатурой
- * (request: { method, params }, token: string) => GuardDecision | Promise<GuardDecision>.
+ * (request, token, ctx) => GuardDecision | Promise<GuardDecision>.
+ *
+ * Третий аргумент ctx аддитивен: обработчики, написанные под старую
+ * сигнатуру (request, token), продолжают работать без изменений — JS
+ * игнорирует лишние аргументы.
+ *
  * Токен передаётся обработчику ДО решения: при freeze плагин сохраняет его
  * и позже вызывает api.guards.resume(token, …).
  */

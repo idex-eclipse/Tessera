@@ -9,6 +9,10 @@ import type { BuiltinHelp } from './gcode-builtins';
  * same on every device) + local-only notes (client errors, klippy events).
  * Live updates: notify_gcode_response / own sends trigger a debounced
  * refetch; a slow poll covers silent commands from other clients.
+ *
+ * Per-printer subscriptions with keep-alive: подписки и poll живут для всех
+ * принтеров, не только активного. При переключении вкладок state мгновенно
+ * доступен (без loading). При удалении принтера — cleanup.
  */
 
 export type ConsoleLineKind = 'sent' | 'response' | 'system';
@@ -35,9 +39,13 @@ let connectedByPrinter = $state<Record<string, boolean>>({});
 let pausedByPrinter = $state<Record<string, boolean>>({});
 
 let noteId = 0;
-let dataUnsubs: Array<() => void> = [];
-let printerUnsub: (() => void) | null = null;
+
+// Per-printer subscriptions (вместо одного dataUnsubs)
+const dataUnsubsByPrinter = new Map<string, Array<() => void>>();
+const pollTimersByPrinter = new Map<string, ReturnType<typeof setInterval>>();
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+let printersUnsub: (() => void) | null = null;
 let settingsUnsub: (() => void) | null = null;
 
 function now(): string {
@@ -49,9 +57,7 @@ function now(): string {
 // ------------------------------------------------------------------
 
 export function getLines(printerId: string): ConsoleLine[] {
-  return [
-    ...(storeLinesByPrinter[printerId] ?? []),
-  ];
+  return [...(storeLinesByPrinter[printerId] ?? [])];
 }
 
 export function isConnected(printerId: string): boolean {
@@ -74,25 +80,48 @@ export async function sendCommand(
 ): Promise<void> {
   pausedByPrinter[printerId] = false;
   try {
-    await api.moonraker().request('printer.gcode.script', { script });
+    await api.moonrakerFor(printerId).request('printer.gcode.script', { script });
     scheduleRefresh(api, printerId);
   } catch (e) {
-
+    // ошибка уже залогирована центром уведомлений
   }
 }
 
+/**
+ * Attaches subscriptions to ALL printers (per-printer keep-alive).
+ * Called once at app startup (host-level), not per-component.
+ */
 export function attach(api: PluginApi): void {
-  if (!printerUnsub) {
-    printerUnsub = api.onPrinterChange(() => {
-      subscribeFor(api);
-    });
-  }
+  if (printersUnsub) return; // already attached
+
+  printersUnsub = api.onPrintersChange((printers) => {
+    const alive = new Set(printers.map((p) => p.id));
+
+    // Unsubscribe removed printers
+    for (const pid of Array.from(dataUnsubsByPrinter.keys())) {
+      if (!alive.has(pid)) {
+        unsubscribePrinter(pid);
+      }
+    }
+
+    // Subscribe new printers
+    for (const p of printers) {
+      if (!dataUnsubsByPrinter.has(p.id)) {
+        subscribeForPrinter(api, p.id);
+      }
+    }
+  });
+
   if (!settingsUnsub) {
     settingsUnsub = api.settings.onChange(() => {
       reloadPrefs(api);
     });
   }
-  subscribeFor(api);
+
+  // Initial subscribe for all existing printers
+  for (const p of api.printers) {
+    subscribeForPrinter(api, p.id);
+  }
 }
 
 // ------------------------------------------------------------------
@@ -117,7 +146,7 @@ function scheduleRefresh(api: PluginApi, printerId: string): void {
 async function refreshFromStore(api: PluginApi, printerId: string): Promise<void> {
   try {
     const res = await api
-      .moonraker()
+      .moonrakerFor(printerId)
       .request<any>('server.gcode_store', { count: STORE_COUNT });
     const entries: GcodeStoreEntry[] = Array.isArray(res) ? res : (res?.gcode_store ?? []);
     storeLinesByPrinter[printerId] = mapEntries(entries);
@@ -156,24 +185,22 @@ function mapEntries(entries: GcodeStoreEntry[]): ConsoleLine[] {
 }
 
 // ------------------------------------------------------------------
-// Subscriptions
+// Subscriptions (per-printer)
 // ------------------------------------------------------------------
 
-function subscribeFor(api: PluginApi): void {
-  for (const u of dataUnsubs.splice(0)) u();
+function subscribeForPrinter(api: PluginApi, printerId: string): void {
+  // Unsubscribe if already subscribed (shouldn't happen, but safety)
+  unsubscribePrinter(printerId);
 
-  const printerId = api.printer.id;
-  const url = api.printer.url;
-
-  if (!url) return;
+  const unsubs: Array<() => void> = [];
 
   ensureHistoryLoaded(api, printerId);
   ensurePrefsLoaded(api, printerId);
-  void refreshHelp(api);
+  void refreshHelp(api, printerId);
 
   let h;
   try {
-    h = api.moonraker();
+    h = api.moonrakerFor(printerId);
   } catch {
     return;
   }
@@ -181,31 +208,31 @@ function subscribeFor(api: PluginApi): void {
   connectedByPrinter[printerId] = h.readyState === 'open';
 
   // Статус соединения — только в бейдж, не в лог.
-  dataUnsubs.push(
+  unsubs.push(
     h.onConnectionStatusChange((s) => {
       connectedByPrinter[printerId] = s === 'open';
     }),
   );
 
-  dataUnsubs.push(
+  unsubs.push(
     h.onReady(() => {
       pausedByPrinter[printerId] = false;
-      void refreshHelp(api);
+      void refreshHelp(api, printerId);
       void refreshFromStore(api, printerId);
     }),
   );
 
   // Любой gcode-ответ (в т.ч. на команды с других клиентов) → рефетч store.
-  dataUnsubs.push(
+  unsubs.push(
     h.onNotify('notify_gcode_response', () => {
       pausedByPrinter[printerId] = false;
       scheduleRefresh(api, printerId);
     }),
   );
 
-  dataUnsubs.push(
+  unsubs.push(
     h.onNotify('notify_config_changed', () => {
-      void refreshHelp(api);
+      void refreshHelp(api, printerId);
     }),
   );
 
@@ -213,10 +240,42 @@ function subscribeFor(api: PluginApi): void {
   const poll = setInterval(() => {
     if (!pausedByPrinter[printerId]) void refreshFromStore(api, printerId);
   }, POLL_MS);
-  dataUnsubs.push(() => clearInterval(poll));
+  pollTimersByPrinter.set(printerId, poll);
+
+  unsubs.push(() => {
+    clearInterval(poll);
+    pollTimersByPrinter.delete(printerId);
+  });
 
   // Первичный seed (если сокет уже открыт; иначе дождёмся onReady).
   void refreshFromStore(api, printerId);
+
+  dataUnsubsByPrinter.set(printerId, unsubs);
+}
+
+function unsubscribePrinter(printerId: string): void {
+  const unsubs = dataUnsubsByPrinter.get(printerId);
+  if (unsubs) {
+    for (const u of unsubs) u();
+    dataUnsubsByPrinter.delete(printerId);
+  }
+
+  const poll = pollTimersByPrinter.get(printerId);
+  if (poll) {
+    clearInterval(poll);
+    pollTimersByPrinter.delete(printerId);
+  }
+
+  const refresh = refreshTimers.get(printerId);
+  if (refresh) {
+    clearTimeout(refresh);
+    refreshTimers.delete(printerId);
+  }
+
+  // Cleanup state (опционально: можно оставить для keep-alive)
+  delete storeLinesByPrinter[printerId];
+  delete connectedByPrinter[printerId];
+  delete pausedByPrinter[printerId];
 }
 
 // ------------------------------------------------------------------
@@ -335,49 +394,48 @@ export function pushHistory(
   const next = arr[arr.length - 1] === script ? arr : [...arr.slice(-49), script];
 
   historyByPrinter[printerId] = next;
-  api.settings.set('history', next);
+  api.settingsFor(printerId).set('history', next);
 }
 
 function ensureHistoryLoaded(api: PluginApi, printerId: string): void {
   if (historyLoaded.has(printerId)) return;
   historyLoaded.add(printerId);
 
-  const stored = api.settings.get<string[]>('history');
+  const stored = api.settingsFor(printerId).get<string[]>('history');
   if (Array.isArray(stored)) {
     historyByPrinter[printerId] = stored.filter((s) => typeof s === 'string');
   }
 }
 
-  function reloadPrefs(api: PluginApi): void {
-    // При смене sync-флага namespace меняется, перечитываем всё заново
-    historyLoaded.clear();
-    prefsLoaded.clear();
+function reloadPrefs(api: PluginApi): void {
+  // При смене sync-флага namespace меняется, перечитываем всё заново
+  historyLoaded.clear();
+  prefsLoaded.clear();
 
-    for (const pid of Object.keys(historyByPrinter)) {
-      const stored = api.settings.get<string[]>('history');
-      if (Array.isArray(stored)) {
-        historyByPrinter[pid] = stored.filter((s) => typeof s === 'string');
-      } else {
-        historyByPrinter[pid] = [];
-      }
-    }
-
-    for (const pid of Object.keys(prefsByPrinter)) {
-      prefsByPrinter[pid] = sanitizePrefs(
-        api.settings.get<Partial<ConsolePrefs>>('consolePrefs'),
-      );
+  for (const pid of Object.keys(historyByPrinter)) {
+    const stored = api.settingsFor(pid).get<string[]>('history');
+    if (Array.isArray(stored)) {
+      historyByPrinter[pid] = stored.filter((s) => typeof s === 'string');
+    } else {
+      historyByPrinter[pid] = [];
     }
   }
 
-export async function refreshHelp(api: PluginApi): Promise<void> {
-  const printerId = api.printer.id;
-  if (!printerId || !api.printer.url) return;
+  for (const pid of Object.keys(prefsByPrinter)) {
+    prefsByPrinter[pid] = sanitizePrefs(
+      api.settingsFor(pid).get<Partial<ConsolePrefs>>('consolePrefs'),
+    );
+  }
+}
+
+export async function refreshHelp(api: PluginApi, printerId: string): Promise<void> {
+  if (!printerId) return;
 
   try {
+    const h = api.moonrakerFor(printerId);
     const [help, cfgRes] = await Promise.all([
-      api.moonraker().request<Record<string, string>>('printer.gcode.help'),
-      api
-        .moonraker()
+      h.request<Record<string, string>>('printer.gcode.help'),
+      h
         .request<any>('printer.objects.query', {
           objects: { configfile: ['config', 'settings'] },
         })
@@ -403,7 +461,6 @@ export async function refreshHelp(api: PluginApi): Promise<void> {
       if (params.length > 0) mp[key] = params;
     }
     macroParamsByPrinter[printerId] = mp;
-    //console.debug('[console] macro params parsed:', Object.keys(mp).length, Object.keys(mp));
   } catch {
     // retry on notify_klippy_ready
   }
@@ -472,7 +529,7 @@ export function setPrefs(
 ): void {
   const next = { ...getPrefs(printerId), ...patch };
   prefsByPrinter[printerId] = next;
-  api.settings.set('consolePrefs', next);
+  api.settingsFor(printerId).set('consolePrefs', next);
 }
 
 function ensurePrefsLoaded(api: PluginApi, printerId: string): void {
@@ -480,7 +537,7 @@ function ensurePrefsLoaded(api: PluginApi, printerId: string): void {
   prefsLoaded.add(printerId);
 
   prefsByPrinter[printerId] = sanitizePrefs(
-    api.settings.get<Partial<ConsolePrefs>>('consolePrefs'),
+    api.settingsFor(printerId).get<Partial<ConsolePrefs>>('consolePrefs'),
   );
 }
 

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../use-calibrations.svelte';
-  import { livez, resetLivezState } from '../../live-z-state.svelte.ts';
   import { gcode, runGcode } from '../../commands.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReady.svelte';
@@ -17,7 +16,6 @@
 
   let editMode = $derived(params.edit === '1');
 
-  // те же шаги и раскладка, что в виджете LiveZ
   const STEPS = [0.05, 0.025, 0.01, 0.005];
   let step = $state(0.01);
   let busy = $state('');
@@ -27,6 +25,7 @@
     const z = store.state.zOffsets;
     return z.probe ?? z.bltouch ?? z.endstop;
   });
+
   let delta = $derived(store.state.zOffsetLive ?? 0);
   let zHomed = $derived(store.state.homedAxes.includes('z'));
   let isPrinting = $derived(
@@ -34,20 +33,14 @@
   );
 
   $effect(() => {
-    if (store.state.loaded && livez.baseline === null && refOffset != null) {
-      livez.baseline = refOffset;
+    if (store.state.loaded && store.livezState.baseline === null && refOffset != null) {
+      store.setLivezBaselineFromRef(refOffset);
     }
   });
 
-  let pendingSave = $derived(
-    livez.staged !== null &&
-      livez.baseline !== null &&
-      Math.abs(livez.staged - livez.baseline) > 1e-4,
-  );
+  let pendingSave = $derived(store.livezState.hasUnsavedApply);
 
   let missing = $derived(klippy.state === 'ready' && refOffset == null);
-  // baby-stepping разрешён и во время печати (это основное применение LiveZ);
-  // disabled только edit/missing/not-ready
   let disabled = $derived(editMode);
 
   let chipEl = $state<HTMLDivElement | null>(null);
@@ -68,7 +61,7 @@
     return `${v < 0 ? '-' : '+'}${Math.abs(v).toFixed(3)}`;
   }
 
-  async function exec(key: string, script: string): Promise<boolean> {
+  async function execSave(key: string, script: string): Promise<boolean> {
     if (busy !== '') return false;
     busy = key;
     try {
@@ -82,23 +75,25 @@
     }
   }
 
+  // adjust сбрасывает hasUnsavedApply (новый adjust делает предыдущий apply устаревшим)
   function adjust(dir: 1 | -1): void {
-    void exec(`adj${dir}`, gcode.setZAdjust(dir * step, zHomed));
-    pendingSave = false;
+    store.resetLivezApply();
+    void runGcode(api.moonraker(), gcode.setZAdjust(dir * step, zHomed));
   }
 
   async function saveOffset(): Promise<void> {
     const d = delta;
-    if (await exec('apply', gcode.zOffsetApplyProbe())) {
-      livez.staged = (livez.staged ?? livez.baseline ?? (refOffset ?? 0)) + d;
+    if (await execSave('apply', gcode.zOffsetApplyProbe())) {
+      store.applyLivezOffset(d);
     }
-    pendingSave = true;
   }
 
   function confirmSaveConfig(): void {
     saveOpen = false;
-    void exec('save', gcode.saveConfig()).then((ok) => {
-      if (ok) resetLivezState();
+    void execSave('save', gcode.saveConfig()).then((ok) => {
+      if (ok) {
+        store.resetLivezState();
+      }
     });
   }
 </script>
@@ -140,10 +135,10 @@
           {/each}
         </div>
         <div class="ud">
-          <button class="cell chev" disabled={busy !== ''} onclick={() => adjust(1)} title="+{step} mm">
+          <button class="cell chev" onclick={() => adjust(1)} title="+{step} mm">
             <Icon name="chevron-up" size={16} />
           </button>
-          <button class="cell chev" disabled={busy !== ''} onclick={() => adjust(-1)} title="−{step} mm">
+          <button class="cell chev" onclick={() => adjust(-1)} title="−{step} mm">
             <Icon name="chevron-down" size={16} />
           </button>
         </div>
@@ -203,9 +198,7 @@
 
   .bottom { display: flex; align-items: center; gap: 6px; }
   .kind { display: flex; line-height: 0; color: var(--text-muted); opacity: 0.55; flex-shrink: 0; }
-  .kind.active {
-    color: var(--accent)
-  }
+  .kind.active { color: var(--accent); }
   .value {
     margin-left: auto; flex-shrink: 0;
     font-family: ui-monospace, monospace; font-size: var(--font-size-lg); font-weight: 700;
@@ -214,7 +207,6 @@
 
   .chip.interactive { cursor: pointer; }
   .chip.interactive:hover { box-shadow: var(--shadow-sm); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
-  .chip.interactive:active { transform: translateY(1px); }
 
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
   .chip-popover {
@@ -227,7 +219,6 @@
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
   .chip-popover.align-right { left: auto; right: 0; }
 
-  /* кластер виджет-паттерна: шаги 2×2 + шевроны колонкой справа */
   .cluster { display: grid; grid-template-columns: auto auto; gap: var(--space-xs); align-items: stretch; }
   .steps { display: grid; grid-template-columns: repeat(2, minmax(56px, auto)); gap: var(--space-xs); }
   .ud { display: flex; flex-direction: column; gap: var(--space-xs); }
@@ -236,6 +227,7 @@
     border: 1px solid var(--border-color); border-radius: var(--radius-sm);
     background: transparent; color: var(--text-secondary);
     font-family: monospace; font-size: var(--font-size-sm); cursor: pointer;
+    transition: background var(--transition-fast);
   }
   .cell:hover:not(:disabled) { background: var(--bg-surface-hover); }
   .cell:disabled { opacity: 0.5; cursor: not-allowed; }

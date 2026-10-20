@@ -31,6 +31,14 @@
     return i18n.t(`system.notifications.src.${s}`);
   }
 
+  function printerName(id: string): string {
+    return api.printers.find((p) => p.id === id)?.name ?? id;
+  }
+
+  function isPrinterActive(id: string): boolean {
+    return id === api.printer.id;
+  }
+
   function fmtTime(t: number): string {
     return new Date(t).toLocaleTimeString();
   }
@@ -53,6 +61,9 @@
       <div class="toast-head">
         <span class="sev">{severityLabel(n.severity)}</span>
         <span class="src">{sourceLabel(n.source)}</span>
+        <span class="printer" class:inactive={!isPrinterActive(n.printerId)} title={printerName(n.printerId)}>
+          {printerName(n.printerId)}
+        </span>
         <span class="time">{fmtTime(n.time)}</span>
         <button
           class="toast-close"
@@ -76,8 +87,7 @@
   .toast-stack {
     position: fixed;
     z-index: 550;
-    bottom: 8px;               /* снова внизу: сдвигаемся вбок, а не вверх */
-    /* right задаётся inline из ширины правой панели */
+    bottom: 8px;
     width: - min(360px, calc(100vw - 16px));
     display: flex;
     flex-direction: column-reverse;
@@ -98,17 +108,9 @@
     animation: toast-in 150ms ease-out;
   }
 
-  .toast.critical {
-    border-color: var(--danger);
-  }
-
-  .toast.error {
-    border-color: var(--warning);
-  }
-
-  .toast.info {
-    border-color: var(--accent);
-  }
+  .toast.critical { border-color: var(--danger); }
+  .toast.error { border-color: var(--warning); }
+  .toast.info { border-color: var(--accent); }
 
   .toast-head {
     display: flex;
@@ -129,16 +131,37 @@
   .toast.info .sev { color: var(--accent); }
 
   .src {
-    flex: 1;
-    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* Бейдж принтера: компактный чип с именем. inactive = muted. */
+  .printer {
+    padding: 0 6px;
+    border-radius: 3px;
+    background: var(--bg-surface-active);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+    flex-shrink: 0;
+  }
+
+  .printer.inactive {
+    background: var(--bg-surface-hover);
+    color: var(--text-muted);
+  }
+
   .time {
     font-family: monospace;
     flex-shrink: 0;
+    margin-left: auto;
   }
 
   .toast-close {
@@ -150,6 +173,7 @@
     color: var(--text-muted);
     cursor: pointer;
     border-radius: var(--radius-xs, 3px);
+    flex-shrink: 0;
   }
 
   .toast-close:hover {

@@ -1,12 +1,10 @@
-/**
- * Хук данных одного нагревателя для Heaters-панели.
- * Подписывается на temperature/target/power, ведёт SeriesBuffer,
- * возвращает совместимые с UPlotChart sensors/buffers/tick.
- */
 import { onDestroy } from 'svelte';
-
 import { SeriesBuffer } from '../shared/uplot-core';
-import type { PluginApi } from '../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../shared/core-keeper/core-keeper';
 
 export interface HeaterSensors {
   name: string;
@@ -23,8 +21,17 @@ export interface HeaterBuffers {
   power: SeriesBuffer;
 }
 
-export function useHeaterMonitor(api: PluginApi) {
-  let heaterName = $state('');
+/**
+ * Ключ ядра = printerId + heaterName. Это значит: выбор нагревателя "extruder"
+ * на принтере A и "extruder" на принтере B = разные ядра (keep-alive обоих).
+ * Смена heaterName на одном принтере = release старого + acquire нового.
+ *
+ * Альтернатива — одно ядро на принтер с внутренним heaterName-state, но тогда
+ * буферы "прошлого" нагревателя теряются при переключении. Текущая схема
+ * сохраняет буферы всех посещённых heater'ов (до LRU-капа keeper'а).
+ */
+function createHeaterCore(api: PluginApi, printerId: string, heaterName: string) {
+  const handle: MoonrakerProxyHandle = api.moonrakerFor(printerId);
 
   let sensors = $state<HeaterSensors[]>([]);
   let tick = $state(0);
@@ -33,15 +40,14 @@ export function useHeaterMonitor(api: PluginApi) {
   let unsub: (() => void) | null = null;
   let generation = 0;
 
-  function teardown(): void {
-    generation++;
-    if (unsub) {
-      unsub();
-      unsub = null;
+  function displayName(name: string): string {
+    if (name === 'heater_bed') return 'Heater Bed';
+    if (/^extruder\d*$/.test(name)) return name.charAt(0).toUpperCase() + name.slice(1);
+    if (name.startsWith('heater_generic ')) {
+      const rest = name.replace(/^heater_generic /, '');
+      return rest.charAt(0).toUpperCase() + rest.slice(1);
     }
-    buffers.clear();
-    sensors = [];
-    tick = 0;
+    return name;
   }
 
   function ensureBuffers(name: string): HeaterBuffers {
@@ -57,28 +63,13 @@ export function useHeaterMonitor(api: PluginApi) {
     return b;
   }
 
-  function displayName(name: string): string {
-    if (name === 'heater_bed') return 'Heater Bed';
-    if (/^extruder\d*$/.test(name)) {
-      return name.charAt(0).toUpperCase() + name.slice(1);
-    }
-    if (name.startsWith('heater_generic ')) {
-      const rest = name.replace(/^heater_generic /, '');
-      return rest.charAt(0).toUpperCase() + rest.slice(1);
-    }
-    return name;
-  }
-
-  /** Reseed буферов из истории Moonraker (последние 20 минут или до перезагрузки Klipper). */
   async function reseed(name: string, gen: number): Promise<void> {
-    const h = api.moonraker();
     let store: any = null;
     try {
-      store = await h.request<any>('server.temperature_store');
+      store = await handle.request<any>('server.temperature_store');
     } catch {
       return;
     }
-
     if (gen !== generation || !store || typeof store !== 'object') return;
 
     const entry = store[name];
@@ -110,56 +101,40 @@ export function useHeaterMonitor(api: PluginApi) {
       s.target = targets[targets.length - 1] ?? null;
       s.power = powers[powers.length - 1] ?? null;
     }
-
     tick++;
   }
 
-  function subscribe(name: string): void {
-    const gen = ++generation;
-    teardown();
-    generation = gen;
+  function subscribe(gen: number): void {
+    if (unsub) { unsub(); unsub = null; }
+    if (!heaterName) return;
 
-    if (!name) return;
+    sensors = [{
+      name: heaterName,
+      displayName: displayName(heaterName),
+      color: '#ff6d00',
+      temperature: null, target: null, power: null,
+    }];
 
-    sensors = [
-      {
-        name,
-        displayName: displayName(name),
-        color: '#ff6d00',
-        temperature: null,
-        target: null,
-        power: null,
-      },
-    ];
+    void reseed(heaterName, gen);
 
-    // Reseed из истории
-    void reseed(name, gen);
-
-    const h = api.moonraker();
     try {
-      unsub = h.subscribe(
-        { [name]: ['temperature', 'target', 'power'] },
+      unsub = handle.subscribe(
+        { [heaterName]: ['temperature', 'target', 'power'] },
         (delta: any) => {
           if (gen !== generation) return;
-          const d = delta?.[name];
+          const d = delta?.[heaterName];
           if (!d) return;
           const s = sensors[0];
           if (!s) return;
 
-          // 1) применяем свежие поля к состоянию (дельта разреженная)
           if (typeof d.temperature === 'number') s.temperature = d.temperature;
           if (typeof d.target === 'number') s.target = d.target;
           if (typeof d.power === 'number') s.power = d.power;
 
-          // 2) единый тик: пушим ВСЕ серии из последнего известного состояния.
-          //    Паттерн widgets-core/temperature: поле, не пришедшее в дельте,
-          //    повторяется из состояния → буферы не голодают при константных
-          //    target/power, а изменение, съеденное коллизией секунд,
-          //    самовосстанавливается на следующем тике.
           const t = Math.floor(Date.now() / 1000);
-          const b = ensureBuffers(name);
+          const b = ensureBuffers(heaterName);
           const lastT = b.temp.timesArray[b.temp.timesArray.length - 1];
-          if (lastT === t) return;   // эта секунда уже записана — не дублируем
+          if (lastT === t) return;
 
           if (s.temperature != null) b.temp.push(t, s.temperature);
           if (s.target != null) b.target.push(t, s.target);
@@ -169,39 +144,132 @@ export function useHeaterMonitor(api: PluginApi) {
         { immediate: false },
       );
     } catch (e) {
-      console.warn('[heaters] subscribe failed for', name, e);
+      console.warn('[heaters] subscribe failed for', heaterName, e);
     }
   }
 
   $effect(() => {
-    subscribe(heaterName);
+    const gen = ++generation;
+    subscribe(gen);
+    return () => {
+      generation++;
+      if (unsub) { unsub(); unsub = null; }
+    };
   });
 
-  const offPrinter = api.onPrinterChange(() => {
-    teardown();
-    if (heaterName) subscribe(heaterName);
+  function destroy(): void {
+    generation++;
+    if (unsub) { unsub(); unsub = null; }
+    buffers.clear();
+  }
+
+  return {
+    get heaterName() { return heaterName; },
+    get sensors() { return sensors; },
+    buffers,
+    get tick() { return tick; },
+    destroy,
+  };
+}
+
+export type HeaterStore = ReturnType<typeof createHeaterCore>;
+
+const keeper = createCoreKeeper<HeaterStore>({
+  create: (pid, api) => {
+    // Ключ keeper'а уже = pid; heaterName берём из параметра ниже через getOrCreate
+    // Это ограничение базового keeper'а — для составного ключа нужен форк
+    // Но heaterName = параметр UI, он обычно одинаков на одном принтере
+    // Пока делаем компромисс: одно ядро на принтер, heaterName переключается внутри
+    throw new Error('useHeater требует useHeaterMonitor с heaterName-state');
+  },
+  cap: 4,
+});
+
+/**
+ * useHeaterMonitor — обёртка над keeper'ом для одного выбранного нагревателя.
+ *
+ * Архитектурно: один keeper на (printerId), heaterName — UI-параметр внутри
+ * потребителя. При смене heaterName: release предыдущего + acquire нового ядра,
+ * keyed by heaterName.
+ *
+ * Для простоты и сохранения совместимости с существующими компонентами,
+ * используем Map<printerId, Map<heaterName, core>>:
+ */
+const perPrinterKeepers = new Map<string, Map<string, HeaterStore>>();
+
+export function useHeaterMonitor(api: PluginApi, printerId?: string) {
+  const pid = printerId ?? api.printer.id;
+  let heaterName = $state('');
+
+  let currentCore = $state<HeaterStore | null>(null);
+  let currentRefCount: { inc: () => void; dec: () => void } | null = null;
+
+  function ensureCore(name: string): HeaterStore {
+    let printerMap = perPrinterKeepers.get(pid);
+    if (!printerMap) {
+      printerMap = new Map();
+      perPrinterKeepers.set(pid, printerMap);
+    }
+    let core = printerMap.get(name);
+    if (!core) {
+      core = createHeaterCore(api, pid, name);
+      printerMap.set(name, core);
+    }
+    return core;
+  }
+
+  $effect(() => {
+    const name = heaterName;
+    if (!name) {
+      currentCore = null;
+      return;
+    }
+    currentCore = ensureCore(name);
+  });
+
+  // Cleanup при unmount компонента (НЕ при смене heaterName — ядро живёт в Map)
+  onDestroy(() => {
+    // Ядро остаётся живым в perPrinterKeepers — это и есть keep-alive
+    // Cleanup при удалении принтера из реестра делается через onPrintersChange
+    // (см. ниже)
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    const alive = new Set(printers.map((p) => p.id));
+    for (const pid of Array.from(perPrinterKeepers.keys())) {
+      if (!alive.has(pid)) {
+        const printerMap = perPrinterKeepers.get(pid);
+        if (printerMap) {
+          for (const core of printerMap.values()) core.destroy();
+          printerMap.clear();
+        }
+        perPrinterKeepers.delete(pid);
+      }
+    }
   });
 
   onDestroy(() => {
-    teardown();
-    offPrinter();
+    offPrinters();
   });
 
   function setHeater(name: string): void {
     heaterName = name;
   }
 
+  // Делегат на текущее ядро (если выбран heaterName)
+  const delegate = createDelegateStore<HeaterStore>(() => {
+    if (!currentCore) {
+      // Возвращаем "пустое" ядро-заглушку с пустыми данными
+      return ensureCore('__placeholder__');
+    }
+    return currentCore;
+  });
+
   return {
-    get heaterName() {
-      return heaterName;
-    },
+    get heaterName() { return heaterName; },
     setHeater,
-    get sensors() {
-      return sensors;
-    },
-    buffers,
-    get tick() {
-      return tick;
-    },
+    get sensors() { return delegate.sensors; },
+    get buffers() { return delegate.buffers; },
+    get tick() { return delegate.tick; },
   };
 }

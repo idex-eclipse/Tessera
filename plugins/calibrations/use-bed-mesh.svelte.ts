@@ -1,15 +1,10 @@
-import type { PluginApi } from '../../plugin-sdk/src/types';
-
-let probe = $state<ManualProbeModel>({
-  isActive: false,
-  zPosition: null,
-  zLower: null,
-  zUpper: null,
-});
-
-// ------------------------------------------------------------------
-// Модели
-// ------------------------------------------------------------------
+import { onDestroy } from 'svelte';
+import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../shared/core-keeper/core-keeper';
+import { initialBedMeshUiState, type BedMeshUiState } from './bed-mesh-ui-state.svelte.ts';
 
 export interface BedMeshProfileInfo {
   name: string;
@@ -67,47 +62,22 @@ export interface BedMeshTools {
   manualProbe: boolean;
 }
 
-// ------------------------------------------------------------------
-// Поля подписок (явные списки — не [])
-// ------------------------------------------------------------------
-
 const BED_MESH_FIELDS = [
-  'profile_name',
-  'mesh_min',
-  'mesh_max',
-  'probed_matrix',
-  'mesh_matrix',
-  'profiles',
+  'profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'mesh_matrix', 'profiles',
 ];
-
-const MANUAL_PROBE_FIELDS = [
-  'is_active',
-  'z_position',
-  'z_position_lower',
-  'z_position_upper',
-];
-
+const MANUAL_PROBE_FIELDS = ['is_active', 'z_position', 'z_position_lower', 'z_position_upper'];
 const SCREWS_FIELDS = ['error', 'max_deviation', 'results'];
-
-// ------------------------------------------------------------------
-// Нормализация дельт
-// ------------------------------------------------------------------
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function normalizeProfiles(
-  raw: Record<string, unknown>,
-): Record<string, BedMeshProfileInfo> {
+function normalizeProfiles(raw: Record<string, unknown>): Record<string, BedMeshProfileInfo> {
   const out: Record<string, BedMeshProfileInfo> = {};
-
   for (const [name, value] of Object.entries(raw ?? {})) {
     if (!value || typeof value !== 'object') continue;
-
     const p = value as { points?: unknown; mesh_params?: Record<string, unknown> };
     const mp = p.mesh_params ?? {};
-
     out[name] = {
       name,
       points: Array.isArray(p.points) ? (p.points as number[][]) : [],
@@ -122,15 +92,12 @@ function normalizeProfiles(
       },
     };
   }
-
   return out;
 }
 
-// ------------------------------------------------------------------
-// Хук
-// ------------------------------------------------------------------
+function createBedMeshCore(api: PluginApi, printerId: string) {
+  const handle: MoonrakerProxyHandle = api.moonrakerFor(printerId);
 
-export function useBedMesh(api: PluginApi) {
   let mesh = $state<BedMeshModel>({
     profileName: '',
     meshMin: null,
@@ -138,6 +105,13 @@ export function useBedMesh(api: PluginApi) {
     probedMatrix: [],
     meshMatrix: [],
     profiles: {},
+  });
+
+  let probe = $state<ManualProbeModel>({
+    isActive: false,
+    zPosition: null,
+    zLower: null,
+    zUpper: null,
   });
 
   let screws = $state<ScrewsTiltModel>({
@@ -149,27 +123,11 @@ export function useBedMesh(api: PluginApi) {
 
   let commands = $state<Record<string, string>>({});
 
-  /** Полный сброс пер-принтерных данных (вызывается в setup перед подписками). */
-  function resetState(): void {
-    mesh = {
-      profileName: '',
-      meshMin: null,
-      meshMax: null,
-      probedMatrix: [],
-      meshMatrix: [],
-      profiles: {},
-    };
-    screws = { error: false, maxDeviation: null, results: [], hasResults: false };
-    commands = {};
-    // module-level probe тоже сбрасываем: оверлеи не должны держать сессию старого принтера
-    probe = { isActive: false, zPosition: null, zLower: null, zUpper: null };
-  }
+  let bedMeshUi = $state<BedMeshUiState>(initialBedMeshUiState());
 
   function applyBedMesh(bm: any): void {
     if (!bm || typeof bm !== 'object') return;
-
     const next: BedMeshModel = { ...mesh };
-
     if (typeof bm.profile_name === 'string') next.profileName = bm.profile_name;
     if (Array.isArray(bm.mesh_min) && bm.mesh_min.length === 2) {
       next.meshMin = [bm.mesh_min[0], bm.mesh_min[1]];
@@ -182,15 +140,12 @@ export function useBedMesh(api: PluginApi) {
     if (bm.profiles && typeof bm.profiles === 'object') {
       next.profiles = normalizeProfiles(bm.profiles);
     }
-
     mesh = next;
   }
 
   function applyManualProbe(mp: any): void {
     if (!mp || typeof mp !== 'object') return;
-
     probe = {
-      // дельта может содержать только z_position — тогда isActive НЕ трогаем
       isActive: typeof mp.is_active === 'boolean' ? mp.is_active : probe.isActive,
       zPosition: num(mp.z_position) ?? probe.zPosition,
       zLower: num(mp.z_position_lower) ?? probe.zLower,
@@ -200,7 +155,6 @@ export function useBedMesh(api: PluginApi) {
 
   function applyScrews(sa: any): void {
     if (!sa || typeof sa !== 'object') return;
-
     const results: ScrewResult[] = [];
     const raw = sa.results;
     if (raw && typeof raw === 'object') {
@@ -215,11 +169,9 @@ export function useBedMesh(api: PluginApi) {
         });
       }
     }
-
     results.sort((a, b) =>
       a.isBase === b.isBase ? a.name.localeCompare(b.name) : a.isBase ? -1 : 1,
     );
-
     screws = {
       error: Boolean(sa.error),
       maxDeviation: typeof sa.max_deviation === 'number' ? sa.max_deviation : null,
@@ -228,14 +180,9 @@ export function useBedMesh(api: PluginApi) {
     };
   }
 
-  /**
-   * Разовый прямой query всех трёх объектов.
-   * Страховка от in-place мутаций (profiles) и медленных дельт;
-   * вызывается после команд с побочным эффектом.
-   */
   async function refresh(): Promise<void> {
     try {
-      const res: any = await api.moonraker().request('printer.objects.query', {
+      const res: any = await handle.request('printer.objects.query', {
         objects: {
           bed_mesh: [...BED_MESH_FIELDS],
           manual_probe: [...MANUAL_PROBE_FIELDS],
@@ -246,95 +193,82 @@ export function useBedMesh(api: PluginApi) {
       applyManualProbe(res?.status?.manual_probe);
       applyScrews(res?.status?.screws_tilt_adjust);
     } catch {
-      // принтер offline — данные придут подпиской после коннекта
+      // offline — данные придут подпиской
     }
   }
 
-  $effect(() => {
-    let unsubs: Array<() => void> = [];
+  function setup(): () => void {
+    const unsubs: Array<() => void> = [];
 
-    function setup(): void {
-      for (const u of unsubs) u();
-      unsubs = [];
+    // Reset state на каждый setup (при реконнекте/пробуждении ядра)
+    mesh = { profileName: '', meshMin: null, meshMax: null, probedMatrix: [], meshMatrix: [], profiles: {} };
+    probe = { isActive: false, zPosition: null, zLower: null, zUpper: null };
+    screws = { error: false, maxDeviation: null, results: [], hasResults: false };
+    commands = {};
 
-      resetState();
-      
-      const handle = api.moonraker();
-
-      unsubs.push(
-        handle.subscribe(
-          { bed_mesh: [...BED_MESH_FIELDS] },
-          (d: any) => applyBedMesh(d?.bed_mesh),
-          { immediate: true },
-        ),
-      );
-
-      unsubs.push(
-        handle.subscribe(
-          { manual_probe: [...MANUAL_PROBE_FIELDS] },
-          (d: any) => applyManualProbe(d?.manual_probe),
-          { immediate: true },
-        ),
-      );
-
-      unsubs.push(
-        handle.subscribe(
-          { screws_tilt_adjust: [...SCREWS_FIELDS] },
-          (d: any) => applyScrews(d?.screws_tilt_adjust),
-          { immediate: true },
-        ),
-      );
-
-      unsubs.push(
-        handle.subscribe(
-          { gcode: ['commands'] },
-          (d: any) => {
-            const c = d?.gcode?.commands;
-            if (c && typeof c === 'object') commands = c as Record<string, string>;
-          },
-          { immediate: true },
-        ),
-      );
-
-      unsubs.push(
-        handle.onNotify('notify_klippy_ready', () => {
-          void refresh();
-        }),
-      );
-
-      // стартовое состояние
-      void refresh();
-
-      void handle
-        .request<any>('printer.objects.query', { objects: { gcode: ['commands'] } })
-        .then((res) => {
-          const c = res?.status?.gcode?.commands;
+    unsubs.push(
+      handle.subscribe(
+        { bed_mesh: [...BED_MESH_FIELDS] },
+        (d: any) => applyBedMesh(d?.bed_mesh),
+        { immediate: true },
+      ),
+    );
+    unsubs.push(
+      handle.subscribe(
+        { manual_probe: [...MANUAL_PROBE_FIELDS] },
+        (d: any) => applyManualProbe(d?.manual_probe),
+        { immediate: true },
+      ),
+    );
+    unsubs.push(
+      handle.subscribe(
+        { screws_tilt_adjust: [...SCREWS_FIELDS] },
+        (d: any) => applyScrews(d?.screws_tilt_adjust),
+        { immediate: true },
+      ),
+    );
+    unsubs.push(
+      handle.subscribe(
+        { gcode: ['commands'] },
+        (d: any) => {
+          const c = d?.gcode?.commands;
           if (c && typeof c === 'object') commands = c as Record<string, string>;
-        })
-        .catch(() => {});
-    }
+        },
+        { immediate: true },
+      ),
+    );
+    unsubs.push(
+      handle.onNotify('notify_klippy_ready', () => {
+        void refresh();
+      }),
+    );
 
-    setup();
+    void refresh();
+    void handle
+      .request<any>('printer.objects.query', { objects: { gcode: ['commands'] } })
+      .then((res) => {
+        const c = res?.status?.gcode?.commands;
+        if (c && typeof c === 'object') commands = c as Record<string, string>;
+      })
+      .catch(() => {});
 
-    const unPrinter = api.onPrinterChange(() => setup());
+    return () => unsubs.forEach((u) => u());
+  }
 
+  let cleanup: (() => void) | null = null;
+
+  $effect(() => {
+    cleanup = setup();
     return () => {
-      unPrinter();
-      for (const u of unsubs) u();
-      unsubs = [];
+      cleanup?.();
+      cleanup = null;
     };
   });
-
-  // ------------------------------------------------------------------
-  // Derived
-  // ------------------------------------------------------------------
 
   let hasMesh = $derived(
     mesh.meshMatrix.length > 0 && (mesh.meshMatrix[0]?.length ?? 0) > 0,
   );
-
   let profileNames = $derived(Object.keys(mesh.profiles).sort());
-
   let tools = $derived<BedMeshTools>({
     calibrate: 'BED_MESH_CALIBRATE' in commands,
     clear: 'BED_MESH_CLEAR' in commands,
@@ -346,30 +280,74 @@ export function useBedMesh(api: PluginApi) {
     manualProbe: 'MANUAL_PROBE' in commands,
   });
 
+  function toggleScrewsOverlay(): void {
+    bedMeshUi.screwsOverlayOpen = !bedMeshUi.screwsOverlayOpen;
+  }
+
+  function closeScrewsOverlay(): void {
+    bedMeshUi.screwsOverlayOpen = false;
+  }
+
+  function destroy(): void {
+    if (cleanup) {
+      cleanup();
+      cleanup = null;
+    }
+  }
+
   return {
-    get mesh() {
-      return mesh;
-    },
-    get probe() {
-      return probe;
-    },
-    get screws() {
-      return screws;
-    },
-    get commands() {
-      return commands;
-    },
-    get hasMesh() {
-      return hasMesh;
-    },
-    get profileNames() {
-      return profileNames;
-    },
-    get tools() {
-      return tools;
-    },
+    get mesh() { return mesh; },
+    get probe() { return probe; },
+    get screws() { return screws; },
+    get commands() { return commands; },
+    get hasMesh() { return hasMesh; },
+    get profileNames() { return profileNames; },
+    get tools() { return tools; },
+    get bedMeshUi() { return bedMeshUi; },
     refresh,
+    toggleScrewsOverlay,
+    closeScrewsOverlay,
+    destroy,
   };
 }
 
-export type BedMeshStore = ReturnType<typeof useBedMesh>;
+export type BedMeshStore = ReturnType<typeof createBedMeshCore>;
+
+const keeper = createCoreKeeper<BedMeshStore>({
+  create: (pid, api) => createBedMeshCore(api, pid),
+  cap: 4,
+});
+
+export function useBedMesh(api: PluginApi, printerId?: string): BedMeshStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  return createDelegateStore<BedMeshStore>(() => keeper.get(api.printer.id, api));
+}

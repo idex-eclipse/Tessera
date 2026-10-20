@@ -1,15 +1,26 @@
-import type { PluginApi } from '../../plugin-sdk/src/types';
+import { onDestroy } from 'svelte';
+import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
 import { setGuardPrintState, setGuardHomedAxes } from './guards.ts';
 import { detectKinematics, type Kinematics } from './kinematics.ts';
-import { resetLivezState } from './live-z-state.svelte.ts';
-import { onDestroy } from 'svelte';
+import { initialHeatersState, type HeatersState } from './heaters-state.svelte.ts';
+import {
+  initialShaperState, resetShaperState, refreshGallery,
+  listPngs, type ShaperState,
+} from './shaper-state.svelte.ts';
+import { initialLiveZState, type LiveZState } from './live-z-state.svelte.ts';
+import { initialBedMeshUiState, type BedMeshUiState } from './bed-mesh-ui-state.svelte.ts';
+import { scanEntries, type GcodeStoreEntry } from './gcode-scanner.ts';
+import {
+  createCoreKeeper,
+  createDelegateStore,
+} from '../shared/core-keeper/core-keeper';
 
 export type ProbeMode = 'eddy' | 'probe' | 'bltouch' | 'endstop' | 'none';
 
 export interface CalibrationsState {
   kinematics: Kinematics;
   hasInputShaper: boolean;
-  hasProbe: boolean;      // PROBE_CALIBRATE в gcode.help
+  hasProbe: boolean;
   hasPid: boolean;
   hasBedMesh: boolean;
   probeMode: ProbeMode;
@@ -24,7 +35,7 @@ export interface CalibrationsState {
   printState: 'printing' | 'paused' | 'idle' | 'standby';
   homedAxes: string;
   meshProfileName: string;
-  zOffsetLive: number | null;              // gcode_move.homing_origin[2]
+  zOffsetLive: number | null;
   zOffsets: { probe: number | null; bltouch: number | null; endstop: number | null };
   manualProbe: { isActive: boolean; z: number | null };
   loaded: boolean;
@@ -54,18 +65,29 @@ const INITIAL: CalibrationsState = {
   loaded: false,
 };
 
-export function useCalibrations(api: PluginApi) {
-  const moonraker = api.moonraker();
+const GCODE_STORE_COUNT = 200;
+const GCODE_STORE_POLL_MS = 5000;
+
+function createCalibrationsCore(api: PluginApi, printerId: string) {
+  const handle: MoonrakerProxyHandle = api.moonrakerFor(printerId);
 
   let state = $state<CalibrationsState>({ ...INITIAL });
+  let heatersState = $state<HeatersState>(initialHeatersState());
+  let shaperState = $state<ShaperState>(initialShaperState());
+  let livezState = $state<LiveZState>(initialLiveZState());
+  let bedMeshUi = $state<BedMeshUiState>(initialBedMeshUiState());
+
+  let generation = 0;
+  const unsubs: Array<() => void> = [];
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   // ------------------------------------------------------------------
-  // feature-detect
+  // Feature-detect
   // ------------------------------------------------------------------
 
   async function refreshHelp(): Promise<void> {
     try {
-      const help = await moonraker.request<Record<string, string>>('printer.gcode.help');
+      const help = await handle.request<Record<string, string>>('printer.gcode.help');
       const cmds = new Set(Object.keys(help).map((c) => c.toUpperCase()));
       state.hasInputShaper = cmds.has('TEST_RESONANCES');
       state.hasProbe = cmds.has('PROBE_CALIBRATE');
@@ -78,14 +100,14 @@ export function useCalibrations(api: PluginApi) {
 
   async function refreshConfig(): Promise<void> {
     try {
-      const resp = await moonraker.request<any>('printer.objects.query', {
+      const resp = await handle.request<any>('printer.objects.query', {
         objects: { configfile: ['settings'] },
       });
       const settings: Record<string, Record<string, any>> =
         resp?.status?.configfile?.settings ?? resp?.configfile?.settings ?? resp?.config ?? {};
 
       state.kinematics = detectKinematics(settings);
-      
+
       const heaters: string[] = [];
       const maxTemps: Record<string, number> = {};
       const eddyChips: string[] = [];
@@ -115,7 +137,7 @@ export function useCalibrations(api: PluginApi) {
         } else if (lower === 'bltouch') {
           bltouchSection = key;
         } else if (lower === 'probe' || lower.endsWith('_probe')) {
-          probeSection = key;   // probe | load_cell_probe | dockable_probe | …
+          probeSection = key;
         } else if (lower.startsWith('gcode_shell_command ')) {
           shellCommands.push(key.substring('gcode_shell_command '.length).trim());
         }
@@ -149,15 +171,41 @@ export function useCalibrations(api: PluginApi) {
     state.loaded = true;
   }
 
+  function resetHeatersState(): void {
+    heatersState.heater = '';
+    heatersState.target = 200;
+    heatersState.tuning = false;
+    heatersState.result = null;
+  }
+
   // ------------------------------------------------------------------
-  // подписки
+  // Gcode-store scanner (встроен в ядро — обновляет heaters/shaper state)
   // ------------------------------------------------------------------
 
-  function setupSubscriptions(): () => void {
-    const unsubs: Array<() => void> = [];
+  async function refreshGcodeStore(gen: number): Promise<void> {
+    if (handle.readyState !== 'open') return;
 
-    unsubs.push(
-      moonraker.subscribe(
+    let entries: GcodeStoreEntry[] = [];
+    try {
+      const res = await handle.request<any>('server.gcode_store', { count: GCODE_STORE_COUNT });
+      entries = Array.isArray(res) ? res : (res?.gcode_store ?? []);
+    } catch {
+      return;
+    }
+    if (gen !== generation) return;
+
+    scanEntries(entries, { heaters: heatersState, shaper: shaperState });
+  }
+
+  // ------------------------------------------------------------------
+  // Subscriptions
+  // ------------------------------------------------------------------
+
+  function setupSubscriptions(gen: number): () => void {
+    const subs: Array<() => void> = [];
+
+    subs.push(
+      handle.subscribe(
         {
           print_stats: ['state'],
           toolhead: ['homed_axes'],
@@ -166,13 +214,14 @@ export function useCalibrations(api: PluginApi) {
           gcode_move: ['homing_origin'],
         },
         (delta: any) => {
+          if (gen !== generation) return;
           if (delta.print_stats?.state) {
             state.printState = delta.print_stats.state;
-            setGuardPrintState(delta.print_stats.state);
+            setGuardPrintState(printerId, delta.print_stats.state);
           }
           if (delta.toolhead?.homed_axes !== undefined) {
             state.homedAxes = String(delta.toolhead.homed_axes ?? '');
-            setGuardHomedAxes(state.homedAxes);
+            setGuardHomedAxes(printerId, state.homedAxes);
           }
           if (delta.bed_mesh?.profile_name !== undefined) {
             state.meshProfileName = String(delta.bed_mesh.profile_name ?? '');
@@ -194,17 +243,63 @@ export function useCalibrations(api: PluginApi) {
       ),
     );
 
-    return () => unsubs.forEach((fn) => fn());
+    // Live temps heaters
+    subs.push(
+      handle.onNotify('notify_klippy_ready', () => {
+        if (gen !== generation) return;
+        resetShaperState(shaperState);
+        heatersState.tuning = false;
+        heatersState.result = null;
+        livezState.baseline = null;
+        livezState.staged = null;
+        void refresh();
+        void refreshGcodeStore(gen);
+      }),
+    );
+
+    subs.push(
+      handle.onNotify('notify_klippy_shutdown', () => {
+        if (gen !== generation) return;
+        heatersState.tuning = false;
+        if (shaperState.external) {
+          shaperState.busy = '';
+          shaperState.external = false;
+        }
+      }),
+    );
+
+    subs.push(
+      handle.onNotify('notify_gcode_response', () => {
+        if (gen !== generation) return;
+        void refreshGcodeStore(gen);
+      }),
+    );
+
+    subs.push(
+      handle.onNotify('notify_config_changed', () => {
+        if (gen !== generation) return;
+        void refresh();
+      }),
+    );
+
+    return () => subs.forEach((u) => u());
   }
 
-  // live-температуры нагревателей (пересоздаём подписку при смене списка)
+  // Live temps subscription (пересоздаётся при смене списка heaters)
+  let heatersSubUnsub: (() => void) | null = null;
+
   $effect(() => {
     const heaters = state.heaters;
+    if (heatersSubUnsub) {
+      heatersSubUnsub();
+      heatersSubUnsub = null;
+    }
     if (heaters.length === 0) return;
+
     const objects: Record<string, string[]> = {};
     for (const name of heaters) objects[name] = ['temperature', 'target'];
 
-    return moonraker.subscribe(
+    heatersSubUnsub = handle.subscribe(
       objects,
       (delta: any) => {
         for (const name of Object.keys(delta)) {
@@ -224,43 +319,168 @@ export function useCalibrations(api: PluginApi) {
     );
   });
 
-  // SAVE_CONFIG перезапускает Klipper: configfile.settings становятся актуальными
-  // только после notify_klippy_ready — перечитываем help+config (база LiveZ и т.д.)
-  $effect(() => {
-    return moonraker.onNotify('notify_klippy_ready', () => {
-      resetLivezState(); 
-      void refresh();
-    });
-  });
+  // ------------------------------------------------------------------
+  // Actions
+  // ------------------------------------------------------------------
+
+  function toggleScrewsOverlay(): void {
+    bedMeshUi.screwsOverlayOpen = !bedMeshUi.screwsOverlayOpen;
+  }
+
+  async function setLivezBaselineFromRef(ref: number | null): Promise<void> {
+    if (livezState.baseline === null && ref != null) {
+      livezState.baseline = ref;
+    }
+  }
+
+  function applyLivezOffset(delta: number): void {
+    livezState.staged = (livezState.staged ?? livezState.baseline ?? 0) + delta;
+    livezState.hasUnsavedApply = true;
+  }
+
+  function resetLivezApply(): void {
+    livezState.hasUnsavedApply = false;
+  }
+
+  function resetLivezState(): void {
+    livezState.baseline = null;
+    livezState.staged = null;
+    livezState.hasUnsavedApply = false;
+  }
+
+  // ------------------------------------------------------------------
+  // Lifecycle
+  // ------------------------------------------------------------------
 
   let cleanup: (() => void) | null = null;
-  $effect(() => {
-    // Холодный старт (F5): WS ещё не open → request() реджектится.
-    // immediate-refresh только если соединение уже открыто; иначе ждём
-    // onReady — он же покроет реконнекты и догонку после смены принтера.
-    if (moonraker.readyState === 'open') {
+
+  async function init(): Promise<() => void> {
+    const gen = ++generation;
+
+    if (handle.readyState === 'open') {
       void refresh();
+      void refreshGcodeStore(gen);
     }
-    const offReady = moonraker.onReady(() => {
-      void refresh();
+
+    const offReady = handle.onReady(() => {
+      if (gen === generation) {
+        void refresh();
+        void refreshGcodeStore(gen);
+      }
     });
 
-    cleanup = setupSubscriptions();
+    cleanup = setupSubscriptions(gen);
+
+    pollTimer = setInterval(() => {
+      if (gen === generation) void refreshGcodeStore(gen);
+    }, GCODE_STORE_POLL_MS);
+
     return () => {
       offReady();
       cleanup?.();
       cleanup = null;
+      if (heatersSubUnsub) {
+        heatersSubUnsub();
+        heatersSubUnsub = null;
+      }
+      if (pollTimer !== null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+  }
+
+  let cleanupInit: (() => void) | null = null;
+
+  $effect(() => {
+    let active = true;
+    init().then((fn) => {
+      if (active) cleanupInit = fn;
+      else fn();
+    });
+    return () => {
+      active = false;
+      if (cleanupInit) {
+        cleanupInit();
+        cleanupInit = null;
+      }
     };
   });
 
-  const offPrinter = api.onPrinterChange(() => {
-    state = { ...INITIAL };
-    void refresh();
-  });
-  onDestroy(offPrinter);
+  function destroy(): void {
+    generation++;
+    if (cleanupInit) {
+      cleanupInit();
+      cleanupInit = null;
+    }
+  }
 
   return {
     get state() { return state; },
+    get heatersState() { return heatersState; },
+    get shaperState() { return shaperState; },
+    get livezState() { return livezState; },
+    get bedMeshUi() { return bedMeshUi; },
     refresh,
+    resetHeatersState,
+    toggleScrewsOverlay,
+    setLivezBaselineFromRef,
+    applyLivezOffset,
+    resetLivezApply,
+    resetLivezState,
+    refreshGcodeStore: () => refreshGcodeStore(generation),
+    refreshShaperGallery: () => refreshGallery(shaperState, handle),
+    loadShaperPreview: (path: string) => {
+      const { loadPreview } = require('./shaper-state.svelte.ts');
+      return loadPreview(shaperState, handle, path);
+    },
+    destroy,
   };
+}
+
+export type CalibrationsStore = ReturnType<typeof createCalibrationsCore>;
+
+const keeper = createCoreKeeper<CalibrationsStore>({
+  create: (pid, api) => createCalibrationsCore(api, pid),
+  cap: 4,
+});
+
+/**
+ * Хук данных calibrations.
+ * Без printerId — legacy делегат на активного принтера; с printerId — прямое
+ * ядро с удержанием (fleet/явная привязка).
+ */
+export function useCalibrations(api: PluginApi, printerId?: string): CalibrationsStore {
+  if (printerId !== undefined) {
+    const core = keeper.acquire(printerId, api);
+    const offPrinters = api.onPrintersChange((printers) => {
+      keeper.prune(printers.map((p) => p.id));
+    });
+    onDestroy(() => {
+      offPrinters();
+      keeper.release(printerId);
+    });
+    return core;
+  }
+
+  let heldPid = api.printer.id;
+  keeper.acquire(heldPid, api);
+
+  const offPrinter = api.onPrinterChange((p) => {
+    keeper.release(heldPid);
+    heldPid = p.id;
+    keeper.acquire(heldPid, api);
+  });
+
+  const offPrinters = api.onPrintersChange((printers) => {
+    keeper.prune(printers.map((p) => p.id));
+  });
+
+  onDestroy(() => {
+    offPrinter();
+    offPrinters();
+    keeper.release(heldPid);
+  });
+
+  return createDelegateStore<CalibrationsStore>(() => keeper.get(api.printer.id, api));
 }

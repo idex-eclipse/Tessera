@@ -3,7 +3,7 @@
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
   import {
-    shaper, refreshGallery, takeBaseline, diffArtifacts, loadPreview,
+    refreshGallery, takeBaseline, diffArtifacts,
   } from '../../../shaper-state.svelte.ts';
   import Icon from '../../../../shared/icons/Icon.svelte';
 
@@ -25,12 +25,12 @@
   let detected = $derived(store.state.kinematics);
 
   let effective = $derived.by<'corexy' | 'delta' | 'none'>(() => {
-    if (shaper.kinematics !== 'auto') return shaper.kinematics;
+    if (store.shaperState.kinematics !== 'auto') return store.shaperState.kinematics;
     return detected === 'corexy' || detected === 'delta' ? detected : 'none';
   });
 
   let axes = $derived(effective === 'none' ? [] : BELT_AXES[effective]);
-  let beltsCmd = $derived(shaper.beltsCmd || DEFAULT_BELTS_CMD);
+  let beltsCmd = $derived(store.shaperState.beltsCmd || DEFAULT_BELTS_CMD);
 
   let isPrinting = $derived(
     store.state.printState === 'printing' || store.state.printState === 'paused',
@@ -44,25 +44,25 @@
   });
 
   async function run(): Promise<void> {
-    if (shaper.busy !== '' || isPrinting || notHomed || effective === 'none') return;
+    if (store.shaperState.busy !== '' || isPrinting || notHomed || effective === 'none') return;
     const withGraph = selected === 'pipe';
-    shaper.busy = withGraph ? 'beltsPipe' : 'belts';
-    shaper.beltLog = [];
-    shaper.beltArtifacts = [];
-    if (withGraph) takeBaseline();
+    store.shaperState.busy = withGraph ? 'beltsPipe' : 'belts';
+    store.shaperState.beltLog = [];
+    store.shaperState.beltArtifacts = [];
+    if (withGraph) takeBaseline(store.shaperState);
     try {
       for (const ax of axes) {
         await runGcode(api.moonraker(), gcode.testResonances(ax, { output: 'raw_data' }));
       }
       if (withGraph) {
         await runGcode(api.moonraker(), gcode.runShellCommand(beltsCmd));
-        await refreshGallery(api);
-        shaper.beltArtifacts = diffArtifacts();
+        await refreshGallery(store.shaperState, api.moonraker());
+        store.shaperState.beltArtifacts = diffArtifacts(store.shaperState);
       }
     } catch (e) {
       console.error('[calibrations] belts run failed:', e);
     } finally {
-      shaper.busy = '';
+      store.shaperState.busy = '';
     }
   }
 </script>
@@ -80,7 +80,7 @@
       <button
         class="sel-btn"
         class:active={selected === 'tests'}
-        disabled={shaper.busy !== ''}
+        disabled={store.shaperState.busy !== ''}
         onclick={() => (selected = 'tests')}
       >
         {i18n.t('calibrations.belts.run')}
@@ -88,7 +88,7 @@
       <button
         class="sel-btn"
         class:active={selected === 'pipe'}
-        disabled={shaper.busy !== ''}
+        disabled={store.shaperState.busy !== ''}
         onclick={() => (selected = 'pipe')}
       >
         {i18n.t('calibrations.belts.runGraph')}
@@ -103,10 +103,10 @@
       <div class="btn-row">
         <button
           class="btn primary"
-          disabled={shaper.busy !== '' || isPrinting || notHomed}
+          disabled={store.shaperState.busy !== '' || isPrinting || notHomed}
           onclick={run}
         >
-          {#if shaper.busy !== ''}
+          {#if store.shaperState.busy !== ''}
             <Icon name="loader" size={14} /> {i18n.t('calibrations.running')}
           {:else}
             <Icon name="play" size={14} /> {i18n.t('calibrations.run')}
@@ -116,8 +116,8 @@
     </div>
   {/if}
 
-  {#if shaper.beltLog.length > 0}
-    <pre class="log">{shaper.beltLog.join('\n')}</pre>
+  {#if store.shaperState.beltLog.length > 0}
+    <pre class="log">{store.shaperState.beltLog.join('\n')}</pre>
   {/if}
 
   {#if notHomed}
@@ -172,7 +172,7 @@
   }
   .btn:hover:not(:disabled) { background: var(--bg-surface-active); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
   .log {
     margin: 0; max-height: 140px; overflow-y: auto; padding: var(--space-sm);

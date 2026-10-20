@@ -4,8 +4,6 @@
   import { gcode, runGcode } from '../../../../commands';
   import type { BedMeshTools, BedMeshStore } from '../../../../use-bed-mesh.svelte.ts';
 
-  import { bedMeshUiState } from '../../../../bed-mesh-ui-state.svelte.ts';
-
   let { store }: { store: BedMeshStore } = $props();
 
   const api = usePluginApi();
@@ -27,7 +25,8 @@
     try {
       await runGcode(api.moonraker(), script);
       await store.refresh();
-      if (toolKey === 'screws') bedMeshUiState.screwsOverlayOpen = true;
+      // После SCREWS_TILT_CALCULATE открываем overlay с результатами
+      if (toolKey === 'screws') store.toggleScrewsOverlay();
     } catch (e) {
       console.error('[bed-mesh] gcode failed:', script, e);
     } finally {
