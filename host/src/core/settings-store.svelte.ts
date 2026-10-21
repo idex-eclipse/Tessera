@@ -53,6 +53,8 @@ export interface UiState {
   bgImage: string | null;
   accent: string | null;
   fleetOpen?: boolean;
+  fleetPanels: FleetPanelLayoutItem[];
+  fleetPanelsCustomized: boolean;
 }
 
 export const BG_IMAGE_MAX_CHARS = 2_500_000;
@@ -65,6 +67,12 @@ export interface DashboardWidgetLayoutItem {
   y: number;
   w: number;
   h: number;
+}
+
+export interface FleetPanelLayoutItem {
+  pluginId: string;
+  contributionId: string;
+  visible: boolean;
 }
 
 export interface PrinterSettingsState {
@@ -138,6 +146,8 @@ const DEFAULT_UI_STATE: UiState = {
   bgImage: null,
   accent: null,
   fleetOpen: false,
+  fleetPanels: [],
+  fleetPanelsCustomized: false,
 };
 
 const LEGACY_UNPREFIXED_KEYS = new Set<string>([
@@ -663,6 +673,22 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   }
 
   // ------------------------------------------------------------------
+  // Fleet panels layout (device-global)
+  // ------------------------------------------------------------------
+
+  function getFleetPanels(): FleetPanelLayoutItem[] {
+    return ui.fleetPanels;
+  }
+
+  function setFleetPanels(layout: FleetPanelLayoutItem[]): void {
+    patchUi({ fleetPanels: layout, fleetPanelsCustomized: true });
+  }
+
+  function resetFleetPanels(): void {
+    patchUi({ fleetPanels: [], fleetPanelsCustomized: false });
+  }
+
+  // ------------------------------------------------------------------
   // Plugin settings
   // ------------------------------------------------------------------
 
@@ -979,6 +1005,10 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     setQuickChips,
     resetQuickChips,
 
+    getFleetPanels,
+    setFleetPanels,
+    resetFleetPanels,
+
     getPluginSettings,
     getPluginSetting,
     setPluginSetting,
@@ -1174,6 +1204,28 @@ function normalizeUiState(value: unknown): UiState {
       ? source.fleetOpen
       : DEFAULT_UI_STATE.fleetOpen;
 
+  const fleetPanels: FleetPanelLayoutItem[] = [];
+  if (Array.isArray(source.fleetPanels)) {
+    for (const item of source.fleetPanels) {
+      if (
+        isRecord(item) &&
+        typeof item.pluginId === 'string' &&
+        typeof item.contributionId === 'string'
+      ) {
+        fleetPanels.push({
+          pluginId: item.pluginId,
+          contributionId: item.contributionId,
+          visible: typeof item.visible === 'boolean' ? item.visible : true,
+        });
+      }
+    }
+  }
+
+  const fleetPanelsCustomized =
+    typeof source.fleetPanelsCustomized === 'boolean'
+      ? source.fleetPanelsCustomized
+      : false;
+
   return {
     theme,
     locale,
@@ -1185,6 +1237,8 @@ function normalizeUiState(value: unknown): UiState {
     bgImage: bgImage && bgImage.length <= BG_IMAGE_MAX_CHARS ? bgImage : null,
     accent,
     fleetOpen,
+    fleetPanels,
+    fleetPanelsCustomized,
   };
 }
 

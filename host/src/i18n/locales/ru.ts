@@ -178,6 +178,12 @@ const ru: I18nMessages = {
     active: 'Активный',
     noPanels: 'Нет доступных панелей',
     pluginMissing: 'Плагин не загружен',
+    editPanels: 'Редактировать карточки',
+    editPanelsTitle: 'Панели карточек Fleet',
+    editPanelsHint: 'Перетащите для сортировки, снимите галочку чтобы скрыть',
+    editPanelsEmpty: 'Нет доступных панелей',
+    panelPluginUnloaded: 'Не загружен',
+    panelHidden: 'Скрыт',
   },
 };
 
