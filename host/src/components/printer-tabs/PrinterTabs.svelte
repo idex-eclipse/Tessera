@@ -132,14 +132,14 @@
 
   .fleet-toggle {
     position: absolute;
-    bottom: -20px;
+    bottom: -27px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 14px;
+    width: 100px;
+    height: 20px;
     border: 2px solid var(--border-color);
     border-top: none;
     border-radius: 0 0 var(--radius-md) var(--radius-md);
@@ -147,7 +147,7 @@
     color: var(--text-on-header-muted);
     cursor: pointer;
     transition: background var(--transition-fast), color var(--transition-fast);
-    z-index: 250;   /* выше .fleet-drawer (200), ниже ConfirmDialog/offline (300+) */
+    z-index: 250;
   }
 
   .fleet-toggle:hover {
@@ -155,7 +155,6 @@
     color: var(--text-on-header);
   }
 
-  /* Открытое состояние: кнопка «пристыкована» к верхней кромке drawer'а */
   .fleet-toggle.open {
     background: var(--bg-base, var(--bg-surface));
     color: var(--text-primary);
