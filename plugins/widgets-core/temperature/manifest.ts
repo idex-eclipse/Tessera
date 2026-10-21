@@ -26,6 +26,6 @@ export const temperatureFleet: PrinterPanelContribution[] = [
   {
     id: 'fleet-temps',
     element: 'mpu-core-widgets-fleet-temps',
-    titleKey: 'widgets.fleetTemps.title',
+    titleKey: 'fleet.temps.title',
   },
 ]

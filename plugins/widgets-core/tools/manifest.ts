@@ -28,6 +28,6 @@ export const toolsFleet: PrinterPanelContribution[] = [
   {
     id: 'fleet-position',
     element: 'mpu-core-widgets-fleet-position',
-    titleKey: 'widgets.fleetPosition.title',
+    titleKey: 'fleet.position.title',
   },
 ]

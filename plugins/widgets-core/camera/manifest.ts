@@ -16,6 +16,6 @@ export const cameraFleet: PrinterPanelContribution[] = [
   {
     id: 'fleet-camera',
     element: 'mpu-core-widgets-fleet-camera',
-    titleKey: 'widgets.fleetCamera.title',
+    titleKey: 'fleet.camera.title',
   },
 ];

@@ -59,7 +59,7 @@ export const systemManifest = definePlugin({
     {
       id: 'fleet-status',
       element: 'mpu-system-fleet-status',
-      titleKey: 'system.fleet.status.title',
+      titleKey: 'fleet.status.title',
     },
   ],
 
