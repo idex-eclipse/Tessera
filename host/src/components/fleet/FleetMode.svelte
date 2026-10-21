@@ -34,6 +34,8 @@
 
   let printers = $derived(printerManager.printers);
   let activePrinterId = $derived(printerManager.activePrinterId);
+
+  // Стабильный список панелей в порядке регистрации (НИКОГДА не меняет порядок)
   let registryPanels = $derived(registry.getPrinterPanels());
 
   let connections = $state<Record<string, PrinterConnectionState>>(
@@ -53,17 +55,12 @@
     return `${panel.pluginId}:${panel.contribution.id}`;
   }
 
-  /**
-   * Merge persisted layout ↔ актуальный registry.
-   * - Сохраняет пользовательский порядок для известных ключей.
-   * - Новые панели (плагин только что загрузился) добавляет в конец видимыми.
-   * - Удаляет из layout ключи, которых больше нет в registry.
-   */
+  // ---------- Layout (device-global, mpu:v2:ui.fleetPanels) ----------
+
   function mergeLayout(): FleetPanelLayoutItem[] {
     const stored = ctx.settings.getFleetPanels();
     const customized = ctx.settings.ui.fleetPanelsCustomized;
 
-    // Без кастомизации — registry порядок, все видимы
     if (!customized || stored.length === 0) {
       return registryPanels.map((p) => ({
         pluginId: p.pluginId,
@@ -75,14 +72,12 @@
     const registryByKey = new Map(registryPanels.map((p) => [keyOf(p), p]));
     const storedKeys = new Set(stored.map((s) => `${s.pluginId}:${s.contributionId}`));
 
-    // Сохранённые, которые ещё существуют в registry — в порядке layout
     const preserved: FleetPanelLayoutItem[] = [];
     for (const item of stored) {
       const k = `${item.pluginId}:${item.contributionId}`;
       if (registryByKey.has(k)) preserved.push(item);
     }
 
-    // Новые (registry - stored) — в конец, видимы
     const added: FleetPanelLayoutItem[] = [];
     for (const p of registryPanels) {
       const k = keyOf(p);
@@ -96,9 +91,7 @@
 
   let layout = $state<FleetPanelLayoutItem[]>(mergeLayout());
 
-  /** Синхронизация layout при изменении registry или ui.fleetPanels */
   $effect(() => {
-    // читаем оба источника — эффект перезапускается при их изменении
     void registryPanels;
     void ctx.settings.ui.fleetPanels;
     void ctx.settings.ui.fleetPanelsCustomized;
@@ -109,28 +102,41 @@
     ctx.settings.setFleetPanels(layout);
   }
 
-  /** Панели для рендера карточек: в порядке layout, только visible. */
-  let visiblePanels = $derived(
-    layout
-      .filter((item) => item.visible)
-      .map((item) =>
-        registryPanels.find(
-          (p) => p.pluginId === item.pluginId && p.contribution.id === item.contributionId,
-        ),
-      )
-      .filter((p): p is NonNullable<typeof p> => p != null),
+  /**
+   * Map для быстрого lookup: key → { orderIndex, visible }.
+   * Используется в шаблоне для CSS order + display:none.
+   * DOM-порядок НЕ меняется — только CSS-свойства.
+   */
+  let layoutMap = $derived.by(() => {
+    const map = new Map<string, { orderIndex: number; visible: boolean }>();
+    layout.forEach((item, index) => {
+      map.set(`${item.pluginId}:${item.contributionId}`, {
+        orderIndex: index,
+        visible: item.visible,
+      });
+    });
+    return map;
+  });
+
+  /** Видимые панели (для счётчика "пусто ли в карточке") */
+  let visibleCount = $derived(
+    layoutMap.size > 0
+      ? layout.filter((item) => item.visible).length
+      : registryPanels.length,
   );
 
-  /** Панели для редактора — все, в порядке layout, с пометкой hidden. */
+  // ---------- Editor ----------
+
   let editorItems = $derived(
-    layout.map((item) => {
+    layout.map((item, index) => {
       const p = registryPanels.find(
         (r) => r.pluginId === item.pluginId && r.contribution.id === item.contributionId,
       );
       const loaded = p ? !!ctx.loader.getLoadedPlugin(p.pluginId) : false;
       const titleKey = p?.contribution.titleKey;
-      const title = titleKey ? i18n.t(titleKey) : (p?.contribution.id ?? '');
+      const title = titleKey ? i18n.t(titleKey) : (p?.contribution.id ?? item.contributionId);
       return {
+        index,
         pluginId: item.pluginId,
         contributionId: item.contributionId,
         title,
@@ -162,11 +168,8 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      if (editorOpen) {
-        editorOpen = false;
-      } else {
-        handleClose();
-      }
+      if (editorOpen) editorOpen = false;
+      else handleClose();
     }
   }
 
@@ -179,7 +182,7 @@
     return p;
   }
 
-  // ---------- Editor (overlay + HTML5 DnD, работает с drag-drop-touch) ----------
+  // ---------- Editor DnD ----------
 
   let editorOpen = $state(false);
   let dragIndex = $state<number | null>(null);
@@ -196,10 +199,9 @@
   }
 
   function toggleVisible(index: number): void {
-    const next = layout.map((item, i) =>
+    layout = layout.map((item, i) =>
       i === index ? { ...item, visible: !item.visible } : item,
     );
-    layout = next;
     persistLayout();
   }
 
@@ -316,23 +318,38 @@
           </div>
 
           <div class="fleet-card-body">
-            {#if visiblePanels.length === 0}
+            {#if visibleCount === 0}
               <p class="fleet-card-empty">{i18n.t('fleet.noPanels')}</p>
             {:else}
-              {#each visiblePanels as panel (keyOf(panel))}
+              <!--
+                КРИТИЧНО: {#each} итерирует registryPanels в СТАБИЛЬНОМ порядке
+                регистрации. Визуальный порядок задаётся через CSS order.
+                DOM-узлы НИКОГДА не перемещаются/удаляются при reorder —
+                Custom Elements не получают disconnectedCallback.
+              -->
+              {#each registryPanels as panel (keyOf(panel))}
+                {@const info = layoutMap.get(keyOf(panel))}
+                {@const order = info ? info.orderIndex : 999}
+                {@const hidden = info ? !info.visible : false}
                 {@const api = apiFor(panel.pluginId)}
-                {#if api}
-                  <PluginElementHost
-                    tag={panel.contribution.element}
-                    {api}
-                    params={paramsFor(printer.id)}
-                    fill={false}
-                  />
-                {:else}
-                  <div class="fleet-card-missing">
-                    {i18n.t('fleet.pluginMissing')} · {panel.pluginId}
-                  </div>
-                {/if}
+                <div
+                  class="fleet-panel-slot"
+                  class:panel-hidden={hidden}
+                  style:order={order}
+                >
+                  {#if api}
+                    <PluginElementHost
+                      tag={panel.contribution.element}
+                      {api}
+                      params={paramsFor(printer.id)}
+                      fill={false}
+                    />
+                  {:else}
+                    <div class="fleet-card-missing">
+                      {i18n.t('fleet.pluginMissing')} · {panel.pluginId}
+                    </div>
+                  {/if}
+                </div>
               {/each}
             {/if}
           </div>
@@ -399,7 +416,7 @@
                     </span>
                   {/if}
                   {#if !item.visible}
-                    <span class="editor-badge hidden">
+                    <span class="editor-badge hidden-badge">
                       {i18n.t('fleet.panelHidden')}
                     </span>
                   {/if}
@@ -583,6 +600,16 @@
     padding: var(--space-sm);
     border: 1px dashed var(--border-color);
     border-radius: var(--radius-sm);
+  }
+
+  /* Панель-слот: flex-shrink 0 предотвращает сжатие;
+     order управляет визуальным порядком без DOM-перемещений */
+  .fleet-panel-slot {
+    flex-shrink: 0;
+    transition: opacity var(--transition-fast);
+  }
+  .fleet-panel-slot.panel-hidden {
+    display: none;
   }
 
   /* ---------- Editor overlay ---------- */
@@ -786,7 +813,7 @@
     background: color-mix(in srgb, var(--warning) 18%, transparent);
     color: var(--warning);
   }
-  .editor-badge.hidden {
+  .editor-badge.hidden-badge {
     background: color-mix(in srgb, var(--text-muted) 18%, transparent);
     color: var(--text-muted);
   }
