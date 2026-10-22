@@ -343,7 +343,7 @@
     overflow: hidden;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover);
+    background: var(--bg-surface-hover-no-override);
   }
 
   .canvas-wrap canvas { position: absolute; inset: 0; touch-action: none; }
