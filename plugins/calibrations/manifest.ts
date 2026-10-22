@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const calibrationsManifest = definePlugin({
   id: '@core/calibrations',
   name: 'Calibrations',
-  version: '1.1.0',
+  version: '1.1.1',
   entry: '/plugins/calibrations/index.js',
 
   pages: [
@@ -70,7 +70,6 @@ export const calibrationsManifest = definePlugin({
     beltsKinematics: 'auto',
     beltsCmd: 'generate_belts_graph',
     beltsForceShow: false,
-    // унаследовано от bed-mesh (namespace сменится — см. §7)
     'view:exaggeration': 10,
     'view:interpolated': true,
     'view:basePlane': true,
