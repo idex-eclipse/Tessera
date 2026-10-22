@@ -139,9 +139,12 @@
     const bedW = spanX * scale;
     const bedH = spanY * scale;
 
-    // Стол прижат к осям: левый и нижний край plot-области
-    const ox = GUTTER_LEFT;
-    const oy = GUTTER_TOP + (plotH - bedH);
+    // Центрирование ВСЕЙ композиции (оси + стол + подписи) в канвасе:
+    // габарит рисунка = gutters + bed, остаток делим пополам по обеим осям.
+    const totalW = GUTTER_LEFT + bedW + GUTTER_RIGHT;
+    const totalH = GUTTER_TOP + bedH + GUTTER_BOTTOM;
+    const ox = (w - totalW) / 2 + GUTTER_LEFT;
+    const oy = (h - totalH) / 2 + GUTTER_TOP;
     const axisY = oy + bedH;
 
     // Требование 3: число клеток из правила минимальной клетки
@@ -160,12 +163,12 @@
     // Y-ось со стрелкой
     ctx.beginPath();
     ctx.moveTo(ox, axisY);
-    ctx.lineTo(ox, GUTTER_TOP - 4);
+    ctx.lineTo(ox, oy - 8);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(ox, GUTTER_TOP - 8);
-    ctx.lineTo(ox - 3.5, GUTTER_TOP - 1);
-    ctx.lineTo(ox + 3.5, GUTTER_TOP - 1);
+    ctx.moveTo(ox, oy - 12);
+    ctx.lineTo(ox - 3.5, oy - 5);
+    ctx.lineTo(ox + 3.5, oy - 5);
     ctx.closePath();
     ctx.fill();
 
@@ -269,7 +272,7 @@
     return Math.max(9, Math.min(13, cellPx * 0.28));
   }
 
-  // ---------------- zoom кликом ----------------
+  // ---------------- zoom: ЛКМ внутрь, ПКМ наружу ----------------
   let zoomable = $derived(
     lastGeom !== null && (lastGeom.nx > 1 || lastGeom.ny > 1) && zoomStack.length < MAX_ZOOM_DEPTH,
   );
@@ -303,6 +306,14 @@
     ];
   }
 
+  /** ПКМ = шаг назад по zoom-стеку; контекстное меню браузера глушим. */
+  function handleContextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    if (zoomStack.length > 0) {
+      zoomStack = zoomStack.slice(0, -1);
+    }
+  }
+
   function zoomOut(): void {
     zoomStack = zoomStack.slice(0, -1);
   }
@@ -320,6 +331,26 @@
       <span class="profile" title={store.mesh.profileName}>
         {store.mesh.profileName || '—'}
       </span>
+      <span class="variance">
+        {i18n.t('bedMesh.map.variance')}: {stats.variance.toFixed(3)}
+      </span>
+    </div>
+
+    <div class="heat-wrap" bind:this={wrapEl}>
+      <canvas
+        bind:this={canvasEl}
+        aria-label={i18n.t('bedMesh.widgetTitle')}
+        title={i18n.t('bedMesh.widget.zoomHint')}
+        onclick={handleCanvasClick}
+        oncontextmenu={handleContextMenu}
+        class:clickable={zoomable}
+      ></canvas>
+    </div>
+
+    <div class="widget-footer">
+      <span class="zoom-level">
+        {i18n.t('bedMesh.widget.zoomLevel')}: {zoomStack.length}
+      </span>
       {#if zoomStack.length > 0}
         <button class="zoom-btn" onclick={zoomOut} title={i18n.t('bedMesh.widget.zoomOut')}>
           ← {i18n.t('bedMesh.widget.zoomOut')}
@@ -328,26 +359,6 @@
           {i18n.t('bedMesh.widget.resetZoom')}
         </button>
       {/if}
-    </div>
-
-    <div class="heat-wrap" bind:this={wrapEl}>
-      <canvas
-        bind:this={canvasEl}
-        aria-label={i18n.t('bedMesh.widgetTitle')}
-        onclick={handleCanvasClick}
-        class:clickable={zoomable}
-      ></canvas>
-    </div>
-
-    <div class="widget-footer">
-      {#if zoomStack.length > 0}
-        <span class="zoom-level">
-          {i18n.t('bedMesh.widget.zoomLevel')}: {zoomStack.length}
-        </span>
-      {/if}
-      <span class="variance">
-        {i18n.t('bedMesh.map.variance')}: {stats.variance.toFixed(3)}
-      </span>
     </div>
   {:else}
     <p class="empty">{i18n.t('bedMesh.widget.noMesh')}</p>
@@ -386,9 +397,9 @@
     padding: 1px var(--space-sm);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover);
+    background: var(--bg-surface-hover-no-override);
     color: var(--text-primary);
-    font-size: var(--font-size-xs, 11px);
+    font-size: var(--font-size-sm);
     cursor: pointer;
     white-space: nowrap;
   }
@@ -427,7 +438,7 @@
 
   .zoom-level {
     font-family: monospace;
-    color: var(--text-muted);
+    color: var(--text-primary);
     white-space: nowrap;
   }
 
