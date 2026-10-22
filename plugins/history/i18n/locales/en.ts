@@ -19,7 +19,7 @@ export const en = {
   },
   stats:{
     title: 'Printer statistics',
-    reset: 'Reset statistics',
+    reset: ' Reset statistics',
     totalJobs: 'Total prints',
     longestPrint: 'Longest print',
     totalTime: 'Total time',
@@ -28,6 +28,9 @@ export const en = {
     avgPrintTime: 'Average print time',
     totalFilament: 'Filament used',
     avgFilament: 'Avg per print',
+    confirmReset: 'Reset stats?',
+    resetConfirmBody: 'This action can not be cancelled',
+    confirm: 'Reset',
   },
   ft:{
     loading: 'Loading…',
