@@ -16,7 +16,7 @@
     parsed,
     layer,
     showTravel = false,
-    colorMode = 'extruder',
+    colorMode = 'type',
     showPrev = false,
     showNext = false,
     showBounds = true,
@@ -207,18 +207,7 @@
     }
   }
 
-  // Источник объектов: exclude-store если доступен, иначе parsed.objects (fallback)
-  let displayObjects = $derived(
-    excludeStore.available && excludeStore.objects.length > 0
-      ? excludeStore.objects
-      : parsed.objects.map((o) => ({
-          name: o.name,
-          polygon: o.polygon,
-          center: centroidOf(o.polygon),
-          excluded: false,
-          current: false,
-        })),
-  );
+  let displayObjects = $derived(excludeStore.objects);
 
   // подтверждение исключения: клик паркует имя, команда уходит только из диалога
   let confirmExclude = $state<string | null>(null);

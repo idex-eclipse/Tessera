@@ -18,7 +18,7 @@
     layer,
     showTravel = false,
     showBounds = true,
-    colorMode = 'extruder',
+    colorMode = 'type',
     progressSeg = null,
   }: {
     parsed: ParsedGcode;
@@ -143,6 +143,7 @@
 
     camera.near = size / 1000;
     camera.far = size * 100;
+    camera.updateProjectionMatrix();
     camera.position.set(cx + size, height + size * 1.2, cz + size);
     controls.target.set(cx, height / 2, cz);
     controls.update();
@@ -449,9 +450,10 @@
         excluded: o.excluded,
         x: (v.x + 1) / 2 * w,
         y: (-v.y + 1) / 2 * h,
-        visible: v.z > 0 && v.z < 1,
+        visible: v.z >= -1 && v.z <= 1,
       });
     }
+
     buttonPositions = out;
   }
 
