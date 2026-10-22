@@ -122,6 +122,10 @@ export const en = {
       directAxis: 'Direct axis',
       directHint: 'Enable only on the experimental generic_cartesian branch.',
       directAxisRow: 'Direct carriage axis',
+      qgl: 'QGL',
+      qglHint: 'Run QUAD_GANTRY_LEVEL',
+      zTilt: 'Z-Tilt',
+      zTiltHint: 'Run Z_TILT_ADJUST',
       tuning: {
         chipSection: 'Tuning',
         groupExtruder: 'Extruder',
