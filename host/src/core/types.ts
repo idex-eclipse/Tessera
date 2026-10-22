@@ -55,6 +55,8 @@ export interface UiState {
   sidebarWidth: number;
   rightPanelCollapsed: boolean;
   rightPanelWidth: number;
+  fleetPanels: FleetPanelLayoutItem[];
+  fleetPanelsCustomized: boolean;
 }
 
 export interface RegisteredOverlay {
@@ -109,6 +111,17 @@ export interface DashboardWidgetLayoutItem {
   y: number;
   w: number;
   h: number;
+}
+
+/**
+ * One fleet panel layout entry (device-global).
+ * Position in array = display order in fleet cards.
+ * visible=false = hidden in all fleet cards.
+ */
+export interface FleetPanelLayoutItem {
+  pluginId: string;
+  contributionId: string;
+  visible: boolean;
 }
 
 /**

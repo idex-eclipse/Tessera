@@ -181,6 +181,12 @@ const en: I18nMessages = {
     active: 'Active',
     noPanels: 'No panels available',
     pluginMissing: 'Plugin not loaded',
+    editPanels: 'Edit panels',
+    editPanelsTitle: 'Fleet card panels',
+    editPanelsHint: 'Drag to reorder, uncheck to hide',
+    editPanelsEmpty: 'No panels available',
+    panelPluginUnloaded: 'Unloaded',
+    panelHidden: 'Hidden',
   },
 };
 

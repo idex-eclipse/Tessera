@@ -207,6 +207,7 @@
 
   .chip.interactive { cursor: pointer; }
   .chip.interactive:hover { box-shadow: var(--shadow-sm); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+  .chip.interactive:active { transform: translateY(1px); }
 
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
   .chip-popover {

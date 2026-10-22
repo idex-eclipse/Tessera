@@ -54,6 +54,10 @@ export const en = {
       noMesh: 'No mesh loaded',
       openPage: 'Open page',
       tools: 'Leveling tools',
+      zoomLevel: "Zoom",
+      zoomOut: "Zoom back",
+      resetZoom: "Reset zoom",
+      zoomHint: 'Left click — zoom in, right click — zoom out',
     },
     save: {
       trigger: 'Save',

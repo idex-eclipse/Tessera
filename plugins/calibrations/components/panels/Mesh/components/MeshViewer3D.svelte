@@ -464,7 +464,7 @@ $effect(() => {
     overflow: hidden;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover);
+    background: var(--bg-surface-hover-no-override);
     width: 100%;
   }
 
