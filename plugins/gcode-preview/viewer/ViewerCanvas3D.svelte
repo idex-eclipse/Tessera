@@ -45,19 +45,29 @@
   }>>([]);
 
   // ---- 4. three.js refs ----
+  // Физическая толщина колбаски: стандартный nozzle 0.4 мм.
+  // Высота слоя определяется автоматически по Z-дельте (через scale Y).
+  const FILAMENT_RADIUS = 0.2; // мм (диаметр 0.4)
+  const RADIAL_SEGMENTS = 6;    // 6 граней = шестиугольник в сечении
+
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
   let camera: THREE.PerspectiveCamera | null = null;
   let controls: OrbitControls | null = null;
+  let ambientLight: THREE.AmbientLight | null = null;
+  let dirLight: THREE.DirectionalLight | null = null;
+  let templateGeom: THREE.CylinderGeometry | null = null;
 
-  let extrudeObj: THREE.LineSegments | null = null;
+  // Экструзия: InstancedMesh (один цилиндр = один сегмент)
+  let extrudeObj: THREE.InstancedMesh | null = null;
+  let progressObj: THREE.InstancedMesh | null = null;
+  // Travel остаётся LineSegments (тонкая линия без объёма)
   let travelObj: THREE.LineSegments | null = null;
-  let extrudeEndByLayer: Uint32Array | null = null;
-  let progressObj: THREE.LineSegments | null = null;
+  // Счётчик инстансов по слоям — для applyLayer через mesh.count
+  let instancesUpToLayer: Uint32Array | null = null;
+  // Префикс-сумма для progressSeg: индекс экструзионного сегмента по индексу move
   let extrudePrefix: Uint32Array | null = null;
 
-  // exclude: Map по имени объекта → mesh fill + line verts + материалы.
-  // Геометрия строится один раз; материалы апдейтятся на каждый тик status.
   let excludeVisuals = new Map<string, {
     fill: THREE.Mesh;
     verts: THREE.LineSegments;
@@ -65,7 +75,6 @@
     lineMat: THREE.LineBasicMaterial;
   }>();
 
-  // подтверждение исключения: клик паркует имя, команда уходит только из диалога
   let confirmExclude = $state<string | null>(null);
 
   function doExclude(): void {
@@ -101,6 +110,24 @@
     controls = new OrbitControls(camera, canvasEl);
     controls.addEventListener('change', render);
 
+    // Освещение для MeshLambertMaterial — читаемый объём колбасок
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambientLight);
+    dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(100, 200, 100);
+    scene.add(dirLight);
+
+    // Общий template-цилиндр: вдоль оси Y, openEnded (без торцов — меньше граней
+    // и нет z-fighting на стыках соседних сегментов).
+    templateGeom = new THREE.CylinderGeometry(
+      FILAMENT_RADIUS,
+      FILAMENT_RADIUS,
+      1,
+      RADIAL_SEGMENTS,
+      1,
+      true, // openEnded
+    );
+
     threeReady = true;
   }
 
@@ -135,12 +162,21 @@
   }
 
   function clearMeshes(): void {
-    for (const obj of [extrudeObj, travelObj]) {
-      if (obj) {
-        obj.geometry.dispose();
-        (obj.material as THREE.Material).dispose();
-        scene?.remove(obj);
-      }
+    if (extrudeObj) {
+      (extrudeObj.material as THREE.Material).dispose();
+      scene?.remove(extrudeObj);
+      extrudeObj = null;
+    }
+    if (progressObj) {
+      (progressObj.material as THREE.Material).dispose();
+      scene?.remove(progressObj);
+      progressObj = null;
+    }
+    if (travelObj) {
+      travelObj.geometry.dispose();
+      (travelObj.material as THREE.Material).dispose();
+      scene?.remove(travelObj);
+      travelObj = null;
     }
     for (const v of excludeVisuals.values()) {
       v.fill.geometry.dispose();
@@ -152,76 +188,129 @@
     }
     excludeVisuals.clear();
 
-    extrudeObj = travelObj = null;
-    extrudeEndByLayer = null;
-    progressObj = null;
+    instancesUpToLayer = null;
     extrudePrefix = null;
   }
 
   function buildMeshes(): void {
-    if (!scene) return;
+    if (!scene || !templateGeom) return;
 
     const n = parsed.moveCount;
     const pos = parsed.positions;
 
-    let extCount = 0;
-    let travCount = 0;
-    for (let i = 0; i < n; i++) {
-      if (parsed.kinds[i] === 1) extCount++;
-      else travCount++;
-    }
+    // 1. Сбор экструзионных сегментов (они уже отсортированы по слоям в parsed)
+    type Seg = {
+      sx: number; sy: number; sz: number;
+      ex: number; ey: number; ez: number;
+      r: number; g: number; b: number;
+    };
+    const segments: Seg[] = [];
+    const layerEndInstance: number[] = [];
 
-    const ePos = new Float32Array(extCount * 6);
-    const eCol = new Uint8Array(extCount * 6);
-    const tPos = new Float32Array(travCount * 6);
-    const eEnd = new Uint32Array(Math.max(1, parsed.layerZ.length));
-
-    let we = 0;
-    let wt = 0;
+    // parsed.positions — плоский массив [x1, y1, z1, x2, y2, z2, ...]
+    // world маппинг: X=px, Y=pz (высота), Z=py (как было в LineSegments-версии)
     let curLayer = 0;
-
     for (let i = 0; i < n; i++) {
       const o = i * 6;
-      if (parsed.kinds[i] === 1) {
-        const wo = we * 6;
-        ePos[wo] = pos[o]!;     ePos[wo + 1] = pos[o + 2]!; ePos[wo + 2] = pos[o + 1]!;
-        ePos[wo + 3] = pos[o + 3]!; ePos[wo + 4] = pos[o + 5]!; ePos[wo + 5] = pos[o + 4]!;
+      if (parsed.kinds[i] !== 1) continue;
 
-        const [r, g, b] = colorMode === 'extruder'
-          ? extruderRgb(parsed.extruders[i] ?? 0)
-          : typeRgb(parsed.segTypes[i] ?? 0);
+      const sx = pos[o]!;
+      const sz = pos[o + 1]!;
+      const sy = pos[o + 2]!;
+      const ex = pos[o + 3]!;
+      const ez = pos[o + 4]!;
+      const ey = pos[o + 5]!;
 
-        eCol[wo] = r;     eCol[wo + 1] = g;     eCol[wo + 2] = b;
-        eCol[wo + 3] = r; eCol[wo + 4] = g;     eCol[wo + 5] = b;
-        we++;
+      const [r, g, b] = colorMode === 'extruder'
+        ? extruderRgb(parsed.extruders[i] ?? 0)
+        : typeRgb(parsed.segTypes[i] ?? 0);
 
-        const l = parsed.layers[i] ?? 0;
-        while (curLayer <= l) {
-          eEnd[curLayer] = we * 2;
-          curLayer++;
-        }
-      } else {
-        const wo = wt * 6;
-        tPos[wo] = pos[o]!;     tPos[wo + 1] = pos[o + 2]!; tPos[wo + 2] = pos[o + 1]!;
-        tPos[wo + 3] = pos[o + 3]!; tPos[wo + 4] = pos[o + 5]!; tPos[wo + 5] = pos[o + 4]!;
-        wt++;
+      segments.push({ sx, sy, sz, ex, ey, ez, r, g, b });
+
+      const l = parsed.layers[i] ?? 0;
+      while (curLayer <= l) {
+        layerEndInstance[curLayer] = segments.length;
+        curLayer++;
       }
     }
-    while (curLayer < eEnd.length) {
-      eEnd[curLayer] = we * 2;
+    while (curLayer < Math.max(1, parsed.layerZ?.length ?? 1)) {
+      layerEndInstance[curLayer] = segments.length;
       curLayer++;
     }
-    extrudeEndByLayer = eEnd;
 
-    const eGeom = new THREE.BufferGeometry();
-    eGeom.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
-    eGeom.setAttribute('color', new THREE.BufferAttribute(eCol, 3, true));
-    extrudeObj = new THREE.LineSegments(
-      eGeom,
-      new THREE.LineBasicMaterial({ vertexColors: true }),
+    const instanceCount = Math.max(1, segments.length);
+
+    // 2. Основной InstancedMesh с Lambert-материалом (читается объём колбаски)
+    const eMat = new THREE.MeshLambertMaterial();
+    const inst = new THREE.InstancedMesh(templateGeom, eMat, instanceCount);
+    inst.frustumCulled = false; // инстансы разбросаны по сцене, cull дорого
+
+    const dummy = new THREE.Object3D();
+    const tmpColor = new THREE.Color();
+    const up = new THREE.Vector3(0, 1, 0);
+    const dir = new THREE.Vector3();
+
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i]!;
+      const dx = s.ex - s.sx;
+      const dy = s.ey - s.sy;
+      const dz = s.ez - s.sz;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      dummy.position.set(
+        (s.sx + s.ex) / 2,
+        (s.sy + s.ey) / 2,
+        (s.sz + s.ez) / 2,
+      );
+
+      if (len > 1e-6) {
+        dir.set(dx / len, dy / len, dz / len);
+        // Degenerate case: направление противоположно up → кватернион 180°
+        if (Math.abs(dir.y + 1) < 1e-6) {
+          dummy.quaternion.set(0, 0, 1, 0);
+        } else {
+          dummy.quaternion.setFromUnitVectors(up, dir);
+        }
+      } else {
+        dummy.quaternion.identity();
+      }
+
+      dummy.scale.set(1, Math.max(len, 1e-6), 1);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix);
+
+      tmpColor.setRGB(s.r / 255, s.g / 255, s.b / 255);
+      inst.setColorAt(i, tmpColor);
+    }
+
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+
+    extrudeObj = inst;
+    instancesUpToLayer = new Uint32Array(layerEndInstance);
+    scene.add(inst);
+
+    // 3. Progress overlay: тот же template, белый полупрозрачный материал,
+    //    те же трансформации (clone array, чтобы не связывать lifecycle).
+    const pMat = new THREE.MeshLambertMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+    });
+    const pInst = new THREE.InstancedMesh(templateGeom, pMat, instanceCount);
+    pInst.instanceMatrix = new THREE.InstancedBufferAttribute(
+      new Float32Array(inst.instanceMatrix.array),
+      16,
     );
-    scene.add(extrudeObj);
+    pInst.instanceMatrix.needsUpdate = true;
+    pInst.renderOrder = 10;
+    pInst.frustumCulled = false;
+    pInst.visible = false;
+    progressObj = pInst;
+    scene.add(pInst);
 
+    // 4. Префикс-сумма экструзионных сегментов по move-индексу (для progressSeg)
     const prefix = new Uint32Array(n + 1);
     let acc = 0;
     for (let i = 0; i < n; i++) {
@@ -231,20 +320,20 @@
     prefix[n] = acc;
     extrudePrefix = prefix;
 
-    const pGeom = new THREE.BufferGeometry();
-    pGeom.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
-    progressObj = new THREE.LineSegments(
-      pGeom,
-      new THREE.LineBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: false,
-      }),
-    );
-    progressObj.renderOrder = 10;
-    progressObj.visible = false;
-    scene.add(progressObj);
+    // 5. Travel — LineSegments (без объёма, тонкая полупрозрачная линия)
+    let travCount = 0;
+    for (let i = 0; i < n; i++) if (parsed.kinds[i] !== 1) travCount++;
+
+    const tPos = new Float32Array(travCount * 6);
+    let wt = 0;
+    for (let i = 0; i < n; i++) {
+      if (parsed.kinds[i] === 1) continue;
+      const o = i * 6;
+      const wo = wt * 6;
+      tPos[wo] = pos[o]!;         tPos[wo + 1] = pos[o + 2]!; tPos[wo + 2] = pos[o + 1]!;
+      tPos[wo + 3] = pos[o + 3]!; tPos[wo + 4] = pos[o + 5]!; tPos[wo + 5] = pos[o + 4]!;
+      wt++;
+    }
 
     const tGeom = new THREE.BufferGeometry();
     tGeom.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
@@ -259,7 +348,6 @@
   function buildExcludeGeometry(): void {
     if (!scene) return;
 
-    // cleanup старого
     for (const v of excludeVisuals.values()) {
       v.fill.geometry.dispose();
       v.verts.geometry.dispose();
@@ -295,7 +383,7 @@
         side: THREE.DoubleSide,
       });
       const fill = new THREE.Mesh(fillGeom, fillMat);
-      fill.rotation.x = Math.PI / 2;    // +π/2: (shapeX, shapeY, 0) → (shapeX, 0, shapeY)
+      fill.rotation.x = Math.PI / 2;
       fill.position.y = height;
       fill.renderOrder = 11;
       scene.add(fill);
@@ -337,9 +425,10 @@
   }
 
   function applyLayer(l: number): void {
-    if (!extrudeObj || !extrudeEndByLayer) return;
-    const idx = Math.min(l, extrudeEndByLayer.length - 1);
-    extrudeObj.geometry.setDrawRange(0, extrudeEndByLayer[idx] ?? 0);
+    if (!extrudeObj || !instancesUpToLayer) return;
+    const idx = Math.min(l, instancesUpToLayer.length - 1);
+    // InstancedMesh.count — это draw range по инстансам; быстрая операция.
+    extrudeObj.count = instancesUpToLayer[idx] ?? 0;
   }
 
   function updateExcludeButtons(): void {
@@ -348,7 +437,7 @@
     const h = wrapSize.h || wrapEl.clientHeight;
     if (!w || !h) { buttonPositions = []; return; }
 
-    camera.updateMatrixWorld();   // проекция по актуальной матрице
+    camera.updateMatrixWorld();
 
     const height = parsed.layerZ[parsed.layerZ.length - 1] ?? 1;
     const midY = height / 2;
@@ -368,7 +457,6 @@
 
   // ---- 7. effects — порядок критичен ----
 
-  // mount: init three + resize; cleanup
   $effect(() => {
     initThree();
     const wrap = wrapEl;
@@ -379,6 +467,11 @@
       threeReady = false;
       ro.disconnect();
       clearMeshes();
+      if (templateGeom) { templateGeom.dispose(); templateGeom = null; }
+      if (ambientLight) scene?.remove(ambientLight);
+      if (dirLight) scene?.remove(dirLight);
+      ambientLight = null;
+      dirLight = null;
       controls?.dispose();
       renderer?.dispose();
       controls = null;
@@ -388,14 +481,12 @@
     };
   });
 
-  // новый файл parsed → перецентрировать камеру
   $effect(() => {
     void parsed;
     fitCamera();
     render();
   });
 
-  // parsed + colorMode → rebuild мешей модели
   $effect(() => {
     void parsed;
     void colorMode;
@@ -405,31 +496,28 @@
     return () => clearMeshes();
   });
 
-  // layer → только drawRange
   $effect(() => {
     applyLayer(layer);
     render();
   });
 
-  // showTravel / showBounds → видимость
   $effect(() => {
     if (travelObj) travelObj.visible = showTravel;
     render();
   });
 
-  // progressSeg → drawRange оверлея
   $effect(() => {
     if (!progressObj || !extrudePrefix) return;
     if (progressSeg == null) {
       progressObj.visible = false;
     } else {
       progressObj.visible = true;
-      progressObj.geometry.setDrawRange(0, (extrudePrefix[progressSeg + 1] ?? 0) * 2);
+      // Число экструзионных сегментов до progressSeg (включительно)
+      progressObj.count = extrudePrefix[progressSeg + 1] ?? 0;
     }
     render();
   });
 
-  // exclude-геометрия: ждёт threeReady + rebuild по parsed/составу объектов
   $effect(() => {
     if (!threeReady) return;
     void parsed;
@@ -441,7 +529,6 @@
     render();
   });
 
-  // exclude-визуалы: быстрый апдейт цветов/opacity на каждый тик status
   $effect(() => {
     void excludeStore.objects;
     updateExcludeVisuals();
@@ -492,7 +579,7 @@
     overflow: hidden;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover);
+    background: var(--bg-surface-hover-no-override);
   }
 
   .canvas-wrap canvas { position: absolute; inset: 0; touch-action: none; }
@@ -518,7 +605,7 @@
 
   .obj-btn:hover:not(:disabled) {
     background: var(--warning);
-    color: #fff;
+    color: var(--accent-text);
   }
 
   .obj-btn:disabled {
