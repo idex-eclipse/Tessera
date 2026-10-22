@@ -88,9 +88,8 @@
   <div class="page-header">
     <span class="page-title">{i18n.t('stats.title')}</span>
     <div class="actions">
-      <button class="btn btn--sm" onclick={() => (resetOpen = true)}>
+      <button class="btn btn--sm" class:active={resetOpen} onclick={() => (resetOpen = true)}>
         <Icon name="delete" />
-        <span>{i18n.t('stats.reset')}</span>
       </button>
     </div>
   </div>
@@ -160,33 +159,58 @@
 />
 
 <style>
+  .stats-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
 
-.stats-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-/* тот же оверрайд, что в FileTable и GCodePreview: шапка внутри карточки */
-.stats-card .page-header { margin-bottom: 0; }
+  .stats-card .page-header { margin-bottom: 0; }
 
-.stats-grid {
-  padding: var(--space-md);
-  display: grid;
-  gap: var(--space-md);
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-}
+  .stats-grid {
+    padding: var(--space-md);
+    display: grid;
+    gap: var(--space-md);
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
   .stat { display: grid; gap: var(--space-xs); }
   .stat-label { font-size: var(--font-size-sm); color: var(--text-muted); }
   .stat-value { font-size: var(--font-size-lg); font-weight: 600; }
+
   .skeleton {
     height: 84px; border-radius: var(--radius-sm);
     background: linear-gradient(90deg, var(--bg-surface-hover) 25%, var(--bg-surface) 50%, var(--bg-surface-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.2s linear infinite;
   }
+
   @keyframes shimmer { to { background-position: -200% 0; } }
   .stats-empty { color: var(--text-muted); font-size: var(--font-size-sm); }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  .btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .btn.active {
+    background: var(--bg-surface-active);
+    color: var(--accent);
+  }
 </style>
