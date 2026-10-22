@@ -54,6 +54,8 @@ interface ToolheadMeta {
     pa: Record<string, { advance: number; smooth: number }>;
     retraction: { length: number; speed: number; extra: number; unspeed: number };
   };
+  hasQgl: boolean;
+  hasZTilt: boolean;
   hasSaveVars: boolean;
   hasSpoolman: boolean;
 }
@@ -74,6 +76,8 @@ function emptyMeta(): ToolheadMeta {
       pa: {},
       retraction: { length: 0, speed: 0, extra: 0, unspeed: 0 },
     },
+    hasQgl: false,
+    hasZTilt: false,
     hasSaveVars: false,
     hasSpoolman: false,
   };
@@ -262,6 +266,7 @@ function createToolheadCore(api: PluginApi, printerId: string) {
       subObjects.dual_carriage = ['carriage_0', 'carriage_1', 'carriages'];
     }
     subObjects.print_stats = ['state'];
+    subObjects.gcode = ['commands'];
 
     if (unsubMeta) {
       unsubMeta();
@@ -285,6 +290,7 @@ function createToolheadCore(api: PluginApi, printerId: string) {
       if (meta.hasRetraction) queryObjects.firmware_retraction = null;
       if (meta.hasDualCarriage) queryObjects.dual_carriage = null;
       queryObjects.print_stats = ['state'];
+      queryObjects.gcode = ['commands'];
 
       void h
         .request<any>('printer.objects.query', { objects: queryObjects })
@@ -378,6 +384,8 @@ function createToolheadCore(api: PluginApi, printerId: string) {
           unspeed: Number(fr?.unretract_speed ?? 10),
         },
       },
+      hasQgl: objects.includes('QUAD_GANTRY_LEVEL'),
+      hasZTilt: objects.includes('Z_TILT_ADJUST'),
       hasSaveVars: objects.includes('save_variables'),
       hasSpoolman,
     };
@@ -499,6 +507,17 @@ function createToolheadCore(api: PluginApi, printerId: string) {
       }
     }
 
+    const gc = d?.gcode;
+    if (gc && gc.commands && typeof gc.commands === 'object') {
+      const cmds = gc.commands as Record<string, string>;
+      const has = (name: string) => name in cmds;
+      meta = {
+        ...meta,
+        hasQgl: has('QUAD_GANTRY_LEVEL'),
+        hasZTilt: has('Z_TILT_ADJUST'),
+      };
+    }
+
     th = next;
   }
 
@@ -613,6 +632,9 @@ function createToolheadCore(api: PluginApi, printerId: string) {
     const axis = stepper.toLowerCase().includes('z') ? 'Z' : 'X';
     script(`FORCE_MOVE STEPPER="${stepper}" DISTANCE=${d} VELOCITY=${feedFor(axis)}`);
   }
+
+  const qgl = () => script('QUAD_GANTRY_LEVEL');
+  const zTiltAdjust = () => script('Z_TILT_ADJUST');
 
   const homeAll = () => script('G28');
   const homeAxes = (axes: string) => script(`G28 ${axes}`);
@@ -767,6 +789,10 @@ function createToolheadCore(api: PluginApi, printerId: string) {
       for (const ch of th.homedAxes) if (ch === axis) n++;
       return n >= 2;
     },
+
+    get hasQgl() { return meta.hasQgl; },
+    get hasZTilt() { return meta.hasZTilt; },
+
     setStyle,
     setInvert,
     setSteps,
@@ -795,6 +821,8 @@ function createToolheadCore(api: PluginApi, printerId: string) {
     moveTo,
     setPA,
     setRetraction,
+    qgl,
+    zTiltAdjust,
     // Spoolman
     spoolIdForTool,
     spoolColorForTool,

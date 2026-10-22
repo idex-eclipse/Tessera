@@ -12,7 +12,7 @@ import { jobQueueWidgets } from './job-queue/manifest';
 export const widgetsCoreManifest: PluginManifest = {
   id: '@core/widgets',
   name: 'Core Widgets',
-  version: '1.0.0',
+  version: '1.0.1',
   entry: '/plugins/widgets-core/index.js',
   pages: [],
   widgets: [...temperatureWidgets, ...macrosWidgets, 

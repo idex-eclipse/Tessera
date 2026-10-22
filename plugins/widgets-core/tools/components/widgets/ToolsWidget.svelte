@@ -312,6 +312,29 @@
               <span class="home-label">Z</span>
             </button>
           </div>
+
+          {#if !store.forceMove && (store.hasQgl || store.hasZTilt)}
+            <div class="home-row calibration">
+              {#if store.hasQgl}
+                <button
+                  class="btn rsq calib"
+                  onclick={() => store.qgl()}
+                  title={i18n.t('widgets.tools.qglHint')}
+                >
+                  {i18n.t('widgets.tools.qgl')}
+                </button>
+              {/if}
+              {#if store.hasZTilt}
+                <button
+                  class="btn rsq calib"
+                  onclick={() => store.zTiltAdjust()}
+                  title={i18n.t('widgets.tools.zTiltHint')}
+                >
+                  {i18n.t('widgets.tools.zTilt')}
+                </button>
+              {/if}
+            </div>
+          {/if}
         </div>
       </div>
 
@@ -411,32 +434,58 @@
           </div>
         {/if}
 
-        <!-- парковки: тот же блок, что в cross-режиме -->
-        <div class="home-col rows-home">
-          <div class="home-row wide">
-            <button class="btn rsq home all" title={i18n.t('widgets.tools.homeAll')} onclick={() => store.homeAll()}>
-              <Icon name="home" size={14} />
-            </button>
-            <button
-              class="btn rsq home all"
-              title="{i18n.t('widgets.tools.home')} XY"
-              onclick={() => store.homeAxes('X Y')}
-            >
-              <Icon name="home" size={12} />
-              <span class="home-label">XY</span>
-            </button>
+        <!-- парковки + калибровка: в rows-режиме калибровка СПРАВА от парковок,
+             колонкой в высоту двух home-рядов (не занимает вертикаль) -->
+        <div class="home-area">
+          <div class="home-col rows-home">
+            <div class="home-row wide">
+              <button class="btn rsq home all" title={i18n.t('widgets.tools.homeAll')} onclick={() => store.homeAll()}>
+                <Icon name="home" size={14} />
+              </button>
+              <button
+                class="btn rsq home all"
+                title="{i18n.t('widgets.tools.home')} XY"
+                onclick={() => store.homeAxes('X Y')}
+              >
+                <Icon name="home" size={12} />
+                <span class="home-label">XY</span>
+              </button>
+            </div>
+            <div class="home-row axes">
+              <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} X" onclick={() => store.homeAxes('X')}>
+                <span class="home-label">X</span>
+              </button>
+              <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Y" onclick={() => store.homeAxes('Y')}>
+                <span class="home-label">Y</span>
+              </button>
+              <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Z" onclick={() => store.homeAxes('Z')}>
+                <span class="home-label">Z</span>
+              </button>
+            </div>
           </div>
-          <div class="home-row axes">
-            <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} X" onclick={() => store.homeAxes('X')}>
-              <span class="home-label">X</span>
-            </button>
-            <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Y" onclick={() => store.homeAxes('Y')}>
-              <span class="home-label">Y</span>
-            </button>
-            <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Z" onclick={() => store.homeAxes('Z')}>
-              <span class="home-label">Z</span>
-            </button>
-          </div>
+
+          {#if !store.forceMove && (store.hasQgl || store.hasZTilt)}
+            <div class="calib-col">
+              {#if store.hasQgl}
+                <button
+                  class="btn rsq calib"
+                  onclick={() => store.qgl()}
+                  title={i18n.t('widgets.tools.qglHint')}
+                >
+                  QGL
+                </button>
+              {/if}
+              {#if store.hasZTilt}
+                <button
+                  class="btn rsq calib"
+                  onclick={() => store.zTiltAdjust()}
+                  title={i18n.t('widgets.tools.zTiltHint')}
+                >
+                  Z-TILT
+                </button>
+              {/if}
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
@@ -725,6 +774,10 @@
     height: 100%;
   }
 
+  .mpu-field {
+    min-width: 100px;
+  }
+
   .axis-row {
     display: flex;
     align-items: center;
@@ -928,6 +981,20 @@
     padding: var(--space-sm);
   }
 
+  .btn.rsq.calib {
+    flex: 1 1 0;
+    min-width: 0;
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    color: var(--accent);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    margin-top: 0;
+  }
+  .btn.rsq.calib:hover {
+    background: var(--bg-surface-active);
+    border-color: var(--accent);
+  }
+
   .home-label {
     font-size: var(--font-size-sm);
     font-weight: 700;
@@ -941,6 +1008,34 @@
 
   .rows-home {
     align-self: center;
+  }
+
+    /* rows-режим: колонка калибровки справа от парковок */
+  .home-area {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    align-self: center;
+  }
+
+  .calib-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  /* компактные кнопки колонки: высота как у home-ряда (44px),
+     ширина по контенту; сброс margin-top от .btn.rsq и flex от cross-правила */
+  .calib-col .btn.rsq.calib {
+    flex: none;
+    width: auto;
+    min-width: 44px;
+    height: 44px;
+    margin-top: 0;
+    padding: 0 var(--space-xs);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    letter-spacing: 0.02em;
   }
 
   .axis-row {

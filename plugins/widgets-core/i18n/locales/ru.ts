@@ -119,6 +119,10 @@ cp: {
       directAxis: 'Ось DIRECT',
       directHint: 'Включайте только на экспериментальной ветке generic_cartesian.',
       directAxisRow: 'Ось direct-каретки',
+      qgl: 'QGL',
+      qglHint: 'Запустить QUAD_GANTRY_LEVEL',
+      zTilt: 'Z-Tilt',
+      zTiltHint: 'Запустить Z_TILT_ADJUST',
       tuning: {
         chipSection: 'Настройка',
         groupExtruder: 'Экструдер',
