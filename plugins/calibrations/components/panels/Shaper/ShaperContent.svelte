@@ -32,6 +32,9 @@
   let saveOpen = $state(false);
   let shaperMenuOpen = $state(false);
   let beltsMenuOpen = $state(false);
+  
+  // ref для автопрокрутки session-log
+  let sessionLogEl = $state<HTMLPreElement | null>(null);
 
   type SelAction = 'test' | 'calib' | 'pipe';
   let selected = $state<SelAction>('test');
@@ -80,6 +83,13 @@
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('keydown', onKey);
     };
+  });
+
+  $effect(() => {
+    void store.shaperState.sessionLog.length;
+    if (sessionLogEl) {
+      sessionLogEl.scrollTop = sessionLogEl.scrollHeight;
+    }
   });
 
   let isPrinting = $derived(
@@ -403,7 +413,7 @@
       {#if store.shaperState.sessionLog.length > 0}
         <div class="log">
           <span class="label">{i18n.t('calibrations.shaper.sessionLog')}</span>
-          <pre>
+          <pre bind:this={sessionLogEl}>
             {#each store.shaperState.sessionLog as line (line)}
               <span class:err={line.startsWith('!!')}>{line}</span>
             {/each}
