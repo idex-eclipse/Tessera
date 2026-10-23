@@ -122,15 +122,6 @@
           </button>
         {/each}
       </div>
-      <HeaderHelp title={helpTitle}>
-        {#if tab === 'shaper'}
-          <ShaperHelp />
-          {#if store.shaperState.beltsEnabled}<BeltsHelp />{/if}
-        {:else if tab === 'probe'}<ProbeHelp />
-        {:else if tab === 'heaters'}<HeatersHelp />
-        {:else}<MeshHelp />
-        {/if}
-      </HeaderHelp>
     </div>
 
     <div class="body">
