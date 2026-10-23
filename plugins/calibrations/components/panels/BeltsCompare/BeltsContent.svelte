@@ -13,6 +13,9 @@
 
   const DEFAULT_BELTS_CMD = 'generate_belts_graph';
 
+  // ref для автопрокрутки belt-log
+  let beltLogEl = $state<HTMLPreElement | null>(null);
+
   // Оси по документации Klipper «Testing custom axes»
   const BELT_AXES: Record<'corexy' | 'delta', string[]> = {
     corexy: ['1,1', '1,-1'],
@@ -41,6 +44,13 @@
   let lines = $derived.by<string[]>(() => {
     const tests = axes.map((ax) => gcode.testResonances(ax, { output: 'raw_data' }));
     return selected === 'pipe' ? [...tests, gcode.waitComplete, gcode.pauseForData, gcode.runShellCommand(beltsCmd)] : tests;
+  });
+
+  $effect(() => {
+    void store.shaperState.beltLog.length;
+    if (beltLogEl) {
+      beltLogEl.scrollTop = beltLogEl.scrollHeight;
+    }
   });
 
   async function run(): Promise<void> {
@@ -117,7 +127,7 @@
   {/if}
 
   {#if store.shaperState.beltLog.length > 0}
-    <pre class="log">{store.shaperState.beltLog.join('\n')}</pre>
+    <pre class="log" bind:this={beltLogEl}>{store.shaperState.beltLog.join('\n')}</pre>
   {/if}
 
   {#if notHomed}
