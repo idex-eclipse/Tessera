@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PluginApi, PluginManifest } from '../../../../plugin-sdk/src/types';
 import { createHostHotkeys } from '../host-hotkeys';
+import type { Route } from '../router.svelte.ts';
 import { createHotkeyManager } from '../hotkey-manager.svelte.ts';
 import { analyzeHotkeys, eventMatches, formatCombo, parseCombo } from '../hotkeys';
 import { createPluginRegistry } from '../plugin-registry.svelte.ts';
@@ -30,6 +31,9 @@ function setup(
     active?: string | null;
     plugins?: PluginManifest[];
     modules?: Record<string, Record<string, unknown>>;
+    /** id видимых страниц плагинов активного принтера (порядок сайдбара) */
+    pages?: string[];
+    route?: Route;
   } = {},
 ) {
   const printers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
@@ -37,8 +41,14 @@ function setup(
     printers,
     activePrinterId: opts.active === undefined ? 'a' : opts.active,
   };
-  const router = { navigateToPrinter: vi.fn() };
-  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn() };
+  const router = {
+    navigateToPrinter: vi.fn(),
+    navigateToDashboard: vi.fn(),
+    navigateToPluginPage: vi.fn(),
+  };
+  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn() };
+  const nav: { route: Route } = { route: opts.route ?? { kind: 'dashboard', printerId: 'a', query: {} } };
+  const fakePages = (opts.pages ?? []).map((id) => ({ pluginId: 'x', contribution: { id } }));
   const registry = createPluginRegistry(createSettingsStore({ storage: new MemoryStorage() }));
   for (const m of opts.plugins ?? []) registry.registerPlugin(m);
   const warn = vi.fn();
@@ -52,10 +62,12 @@ function setup(
       router,
       printerManager: printerManager as never,
       ui,
+      registry: { getVisiblePages: () => fakePages as never },
+      getRoute: () => nav.route,
     }),
     warn,
   });
-  return { manager, router, ui, warn, printerManager };
+  return { manager, router, ui, warn, printerManager, nav };
 }
 
 describe('host navigation hotkeys', () => {
@@ -176,5 +188,86 @@ describe('modifier support', () => {
     });
     expect(analyzeHotkeys([e('Mod+K', '1'), e('Ctrl+K', '2')], false).conflicts).toHaveLength(1);
     expect(analyzeHotkeys([e('Mod+K', '1'), e('Ctrl+K', '2')], true).conflicts).toHaveLength(0);
+  });
+});
+
+describe('right panel and page navigation hotkeys', () => {
+  const ctrl = (code: string) => ev({ code, key: code, ctrlKey: true });
+  const down = () => ctrl('ArrowDown');
+  const up = () => ctrl('ArrowUp');
+  const pageRoute = (pageId: string): Route => ({ kind: 'plugin-page', printerId: 'a', pageId, query: {} });
+
+  it('R toggles the right panel; Shift+R and typing in a field do not', () => {
+    const { manager, ui } = setup();
+    expect(manager.handleKeydown(ev({ code: 'KeyR', key: 'r' }))).toBe(true);
+    expect(ui.toggleRightPanel).toHaveBeenCalledTimes(1);
+
+    expect(manager.handleKeydown(ev({ code: 'KeyR', key: 'R', shiftKey: true }))).toBe(false);
+    const target = { tagName: 'INPUT' } as unknown as EventTarget;
+    expect(manager.handleKeydown(ev({ code: 'KeyR', key: 'r', target }))).toBe(false);
+    expect(ui.toggleRightPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ctrl+Down goes Dashboard -> pages in sidebar order -> back to Dashboard', () => {
+    const { manager, router, nav } = setup({ pages: ['jobs', 'config'] });
+
+    nav.route = { kind: 'dashboard', printerId: 'a', query: {} };
+    manager.handleKeydown(down());
+    expect(router.navigateToPluginPage).toHaveBeenLastCalledWith('a', 'jobs');
+
+    nav.route = pageRoute('jobs');
+    manager.handleKeydown(down());
+    expect(router.navigateToPluginPage).toHaveBeenLastCalledWith('a', 'config');
+
+    nav.route = pageRoute('config');
+    manager.handleKeydown(down());
+    expect(router.navigateToDashboard).toHaveBeenLastCalledWith('a');
+  });
+
+  it('Ctrl+Up goes backwards and wraps from the Dashboard to the last page', () => {
+    const { manager, router, nav } = setup({ pages: ['jobs', 'config'] });
+
+    nav.route = pageRoute('config');
+    manager.handleKeydown(up());
+    expect(router.navigateToPluginPage).toHaveBeenLastCalledWith('a', 'jobs');
+
+    nav.route = pageRoute('jobs');
+    manager.handleKeydown(up());
+    expect(router.navigateToDashboard).toHaveBeenLastCalledWith('a');
+
+    nav.route = { kind: 'dashboard', printerId: 'a', query: {} };
+    manager.handleKeydown(up());
+    expect(router.navigateToPluginPage).toHaveBeenLastCalledWith('a', 'config');
+  });
+
+  it('from Settings (or a hidden page) Down opens the Dashboard and Up the last page', () => {
+    const { manager, router, nav } = setup({ pages: ['jobs', 'config'] });
+
+    nav.route = { kind: 'settings', section: null };
+    manager.handleKeydown(down());
+    expect(router.navigateToDashboard).toHaveBeenLastCalledWith('a');
+
+    nav.route = pageRoute('ghost');
+    manager.handleKeydown(up());
+    expect(router.navigateToPluginPage).toHaveBeenLastCalledWith('a', 'config');
+  });
+
+  it('with no pages the ring is just the Dashboard; closes fleet; no-op without an active printer', () => {
+    const only = setup();
+    only.manager.handleKeydown(down());
+    expect(only.router.navigateToDashboard).toHaveBeenCalledWith('a');
+    expect(only.ui.setFleet).toHaveBeenCalledWith(false);
+
+    const none = setup({ active: null, pages: ['jobs'] });
+    none.manager.handleKeydown(down());
+    expect(none.router.navigateToDashboard).not.toHaveBeenCalled();
+    expect(none.router.navigateToPluginPage).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+Up/Down do not fire inside text inputs (they move the caret there)', () => {
+    const { manager, router } = setup({ pages: ['jobs'] });
+    const target = { tagName: 'TEXTAREA' } as unknown as EventTarget;
+    expect(manager.handleKeydown(ev({ code: 'ArrowDown', key: 'ArrowDown', ctrlKey: true, target }))).toBe(false);
+    expect(router.navigateToPluginPage).not.toHaveBeenCalled();
   });
 });

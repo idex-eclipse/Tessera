@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PluginApi, PluginManifest } from '../../../../plugin-sdk/src/types';
 import { createHostHotkeys } from '../host-hotkeys';
+import { fakeHostHotkeyDeps } from './helpers/host-hotkey-deps';
 import { createHotkeyManager } from '../hotkey-manager.svelte.ts';
 import { comboFromEvent, displayCombo, formatCombo, parseCombo } from '../hotkeys';
 import { createPluginRegistry } from '../plugin-registry.svelte.ts';
@@ -40,7 +41,7 @@ function setup(manifests: PluginManifest[] = [plugin()], fn = vi.fn()) {
   const registry = createPluginRegistry(settings);
   for (const m of manifests) registry.registerPlugin(m);
 
-  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn() };
+  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn() };
   const manager = createHotkeyManager({
     registry,
     getRoute: () => ({ kind: 'dashboard', printerId: 'a', query: {} }),
@@ -48,11 +49,7 @@ function setup(manifests: PluginManifest[] = [plugin()], fn = vi.fn()) {
     getApi: (id) => ({ pluginId: id }) as unknown as PluginApi,
     appliesToActivePrinter: () => true,
     getOverrides: () => settings.ui.hotkeyOverrides,
-    hostHotkeys: createHostHotkeys({
-      router: { navigateToPrinter: vi.fn() },
-      printerManager: { printers: [], activePrinterId: null } as never,
-      ui,
-    }),
+    hostHotkeys: createHostHotkeys({ ...fakeHostHotkeyDeps(), ui }),
     warn: vi.fn(),
   });
   return { settings, manager, ui, fn, storage };
