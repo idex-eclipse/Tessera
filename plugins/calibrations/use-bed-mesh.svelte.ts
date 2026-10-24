@@ -255,15 +255,9 @@ function createBedMeshCore(api: PluginApi, printerId: string) {
     return () => unsubs.forEach((u) => u());
   }
 
-  let cleanup: (() => void) | null = null;
-
-  $effect(() => {
-    cleanup = setup();
-    return () => {
-      cleanup?.();
-      cleanup = null;
-    };
-  });
+  // Запуск сразу при создании ядра (не в $effect: ядро keep-alive и живёт дольше
+  // компонента-создателя, а эффект привязан к жизненному циклу этого компонента).
+  let cleanup: (() => void) | null = setup();
 
   let hasMesh = $derived(
     mesh.meshMatrix.length > 0 && (mesh.meshMatrix[0]?.length ?? 0) > 0,

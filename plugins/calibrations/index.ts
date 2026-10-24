@@ -3,14 +3,19 @@ import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 import CalibrationsPage from './components/CalibrationsPage.svelte';
 import CalibrationsWidget from './components/widgets/CalibrationsWidget.svelte';
 import BedMeshWidget from './components/widgets/BedMesh/BedMeshWidget.svelte';
-import BedMeshWidgetHeader from './components/widgets//BedMesh/BedMeshWidgetHeader.svelte';
+import BedMeshWidgetHeader from './components/widgets/BedMesh/BedMeshWidgetHeader.svelte';
 import TestZOverlay from './components/overlays/TestZOverlay.svelte';
 import ScrewsTiltOverlay from './components/overlays/ScrewsTiltOverlay.svelte';
 import slidersIcon from './icons/sliders.svg?raw';
 import LiveZChip from './components/chips/LiveZChip.svelte';
 import LiveZChipPicker from './components/chips/LiveZChipPicker.svelte';
 
-export { guardCalibScript } from './guards.ts';
+export { guardCalibScript, guardCalibPrintStart } from './guards.ts';
+export {
+  hotkeyTabMesh, hotkeyTabProbe, hotkeyTabHeaters, hotkeyTabShaper,
+  hotkeyTestzUp, hotkeyTestzDown, hotkeyTestzUpFine, hotkeyTestzDownFine,
+  hotkeyProbeAccept, hotkeyProbeAbort,
+} from './hotkeys.ts';
 
 export const pageIcons: Record<string, string> = {
   sliders: slidersIcon,

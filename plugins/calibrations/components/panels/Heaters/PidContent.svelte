@@ -108,7 +108,7 @@
           <Icon name="save" size={14} /> {i18n.t('calibrations.saveConfig')}
         </button>
       {:else if !store.heatersState.tuning}
-        <p class="placeholder muted">{i18n.t('calibrations.heaters.run')} → {i18n.t('calibrations.heaters.results')}</p>
+        <p class="placeholder muted">{i18n.t('calibrations.heaters.run')} <span class="dir-arrow" aria-hidden="true">→</span> {i18n.t('calibrations.heaters.results')}</p>
       {/if}
     </div>
   </div>
@@ -167,4 +167,7 @@
   .placeholder { color: var(--text-muted); font-size: var(--font-size-sm); margin: 0; }
   .placeholder.muted { font-style: italic; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Стрелка-указатель зеркалится в RTL */
+  .dir-arrow { display: inline-block; }
+  :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }
 </style>

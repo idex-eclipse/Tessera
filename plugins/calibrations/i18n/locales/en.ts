@@ -110,6 +110,7 @@ export const en = {
       title: 'Heaters',
       heater: 'Heater',
       target: 'Target °C',
+      targetSeries: 'target',
       run: 'Run PID',
       tuning: 'Autotune in progress…',
       results: 'PID results',
@@ -171,10 +172,24 @@ export const en = {
         'Bed mesh editing lives on the dedicated Bed Mesh page. This panel shows the active profile and provides deep-links.',
     },
 
+    hotkeys: {
+      tabMesh: 'Calibrations: Bed Mesh tab',
+      tabProbe: 'Calibrations: Probe & Z Offset tab',
+      tabHeaters: 'Calibrations: Heaters tab',
+      tabShaper: 'Calibrations: Input Shaper tab',
+      testzUp: 'Manual probe: raise Z by 0.1 mm',
+      testzDown: 'Manual probe: lower Z by 0.1 mm',
+      testzUpFine: 'Manual probe: raise Z by 0.01 mm',
+      testzDownFine: 'Manual probe: lower Z by 0.01 mm',
+      probeAccept: 'Manual probe: accept position',
+      probeAbort: 'Manual probe: abort',
+    },
+
     guard: {
       save_during_print: 'Cannot save config while printing',
       start_during_print: 'Cannot start calibration while printing',
-      needs_homing: 'Axes must be homed before shaper calibration',
+      needs_homing: 'Axes must be homed before running this calibration',
+      probe_active: 'Cannot start a print while manual probing is active',
       alreadyPending: 'Identical request is already running',
     },
   },

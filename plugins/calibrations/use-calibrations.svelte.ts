@@ -1,14 +1,12 @@
 import { onDestroy } from 'svelte';
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
-import { setGuardPrintState, setGuardHomedAxes } from './guards.ts';
 import { detectKinematics, type Kinematics } from './kinematics.ts';
 import { initialHeatersState, type HeatersState } from './heaters-state.svelte.ts';
 import {
   initialShaperState, resetShaperState, refreshGallery,
-  listPngs, type ShaperState,
+  listPngs, loadPreview, type ShaperState,
 } from './shaper-state.svelte.ts';
 import { initialLiveZState, type LiveZState } from './live-z-state.svelte.ts';
-import { initialBedMeshUiState, type BedMeshUiState } from './bed-mesh-ui-state.svelte.ts';
 import { scanEntries, type GcodeStoreEntry } from './gcode-scanner.ts';
 import {
   createCoreKeeper,
@@ -67,6 +65,7 @@ const INITIAL: CalibrationsState = {
 
 const GCODE_STORE_COUNT = 200;
 const GCODE_STORE_POLL_MS = 5000;
+const GCODE_STORE_THROTTLE_MS = 500;
 
 function createCalibrationsCore(api: PluginApi, printerId: string) {
   const handle: MoonrakerProxyHandle = api.moonrakerFor(printerId);
@@ -75,7 +74,6 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
   let heatersState = $state<HeatersState>(initialHeatersState());
   let shaperState = $state<ShaperState>(initialShaperState());
   let livezState = $state<LiveZState>(initialLiveZState());
-  let bedMeshUi = $state<BedMeshUiState>(initialBedMeshUiState());
 
   let generation = 0;
   const unsubs: Array<() => void> = [];
@@ -144,6 +142,7 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
       }
 
       state.heaters = heaters;
+      resubscribeHeaters();
       state.heaterMaxTemps = maxTemps;
       state.eddyChips = eddyChips;
       state.shellCommands = shellCommands;
@@ -182,6 +181,18 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
   // Gcode-store scanner (встроен в ядро — обновляет heaters/shaper state)
   // ------------------------------------------------------------------
 
+  // notify_gcode_response приходит на каждую строку вывода Klipper (во время печати
+  // — постоянно). Коалесцируем обновления: не чаще одного запроса за интервал.
+  let gcodeStoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleGcodeStoreRefresh(gen: number): void {
+    if (gcodeStoreTimer !== null) return;
+    gcodeStoreTimer = setTimeout(() => {
+      gcodeStoreTimer = null;
+      if (gen === generation) void refreshGcodeStore(gen);
+    }, GCODE_STORE_THROTTLE_MS);
+  }
+
   async function refreshGcodeStore(gen: number): Promise<void> {
     if (handle.readyState !== 'open') return;
 
@@ -217,11 +228,9 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
           if (gen !== generation) return;
           if (delta.print_stats?.state) {
             state.printState = delta.print_stats.state;
-            setGuardPrintState(printerId, delta.print_stats.state);
           }
           if (delta.toolhead?.homed_axes !== undefined) {
             state.homedAxes = String(delta.toolhead.homed_axes ?? '');
-            setGuardHomedAxes(printerId, state.homedAxes);
           }
           if (delta.bed_mesh?.profile_name !== undefined) {
             state.meshProfileName = String(delta.bed_mesh.profile_name ?? '');
@@ -271,7 +280,7 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
     subs.push(
       handle.onNotify('notify_gcode_response', () => {
         if (gen !== generation) return;
-        void refreshGcodeStore(gen);
+        scheduleGcodeStoreRefresh(gen);
       }),
     );
 
@@ -285,15 +294,22 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
     return () => subs.forEach((u) => u());
   }
 
-  // Live temps subscription (пересоздаётся при смене списка heaters)
+  // Live temps subscription. Пересоздаётся при смене списка heaters.
+  // Намеренно НЕ $effect: ядро живёт дольше компонента, который его создал,
+  // а эффект привязан к жизненному циклу этого компонента.
   let heatersSubUnsub: (() => void) | null = null;
+  let heatersSubKey = '';
 
-  $effect(() => {
+  function resubscribeHeaters(): void {
     const heaters = state.heaters;
+    const key = heaters.join('\u0000');
+    if (key === heatersSubKey && heatersSubUnsub) return;
+
     if (heatersSubUnsub) {
       heatersSubUnsub();
       heatersSubUnsub = null;
     }
+    heatersSubKey = key;
     if (heaters.length === 0) return;
 
     const objects: Record<string, string[]> = {};
@@ -317,17 +333,13 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
       },
       { immediate: true },
     );
-  });
+  }
 
   // ------------------------------------------------------------------
   // Actions
   // ------------------------------------------------------------------
 
-  function toggleScrewsOverlay(): void {
-    bedMeshUi.screwsOverlayOpen = !bedMeshUi.screwsOverlayOpen;
-  }
-
-  async function setLivezBaselineFromRef(ref: number | null): Promise<void> {
+  function setLivezBaselineFromRef(ref: number | null): void {
     if (livezState.baseline === null && ref != null) {
       livezState.baseline = ref;
     }
@@ -354,7 +366,7 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
 
   let cleanup: (() => void) | null = null;
 
-  async function init(): Promise<() => void> {
+  function init(): () => void {
     const gen = ++generation;
 
     if (handle.readyState === 'open') {
@@ -387,25 +399,15 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
         clearInterval(pollTimer);
         pollTimer = null;
       }
+      if (gcodeStoreTimer !== null) {
+        clearTimeout(gcodeStoreTimer);
+        gcodeStoreTimer = null;
+      }
     };
   }
 
-  let cleanupInit: (() => void) | null = null;
-
-  $effect(() => {
-    let active = true;
-    init().then((fn) => {
-      if (active) cleanupInit = fn;
-      else fn();
-    });
-    return () => {
-      active = false;
-      if (cleanupInit) {
-        cleanupInit();
-        cleanupInit = null;
-      }
-    };
-  });
+  // Запуск сразу при создании ядра (не в $effect: ядро keep-alive, см. выше).
+  let cleanupInit: (() => void) | null = init();
 
   function destroy(): void {
     generation++;
@@ -420,20 +422,15 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
     get heatersState() { return heatersState; },
     get shaperState() { return shaperState; },
     get livezState() { return livezState; },
-    get bedMeshUi() { return bedMeshUi; },
     refresh,
     resetHeatersState,
-    toggleScrewsOverlay,
     setLivezBaselineFromRef,
     applyLivezOffset,
     resetLivezApply,
     resetLivezState,
     refreshGcodeStore: () => refreshGcodeStore(generation),
     refreshShaperGallery: () => refreshGallery(shaperState, handle),
-    loadShaperPreview: (path: string) => {
-      const { loadPreview } = require('./shaper-state.svelte.ts');
-      return loadPreview(shaperState, handle, path);
-    },
+    loadShaperPreview: (path: string) => loadPreview(shaperState, handle, path),
     destroy,
   };
 }

@@ -103,7 +103,7 @@ export function sectorCounts(
 export function tickStep(scalePxPerMm: number, spanMm: number): number {
   const candidates = [50, 20, 10, 5, 2, 1].filter((s) => spanMm / s >= 2);
   const list = candidates.length > 0 ? candidates : [50];
-  return list.find((s) => s * scalePxPerMm >= 30) ?? list[0];
+  return list.find((s) => s * scalePxPerMm >= 30) ?? list[0] ?? 50;
 }
 
 /** Формат значения в клетке: знак + без хвостовых нулей (-0.2, +0.3, 0). */

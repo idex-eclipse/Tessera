@@ -5,6 +5,7 @@
   import KlipperNotReady from '../../shared/klippy-state/KlippyNotReady.svelte';
   import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
   import HeaderHelp from '../../shared/header-help/HeaderHelp.svelte';
+  import { pageUi } from '../page-ui-state.svelte.ts';
 
   import ShaperContent from './panels/Shaper/ShaperContent.svelte';
   import ProbeContent from './panels/Probe/ProbeContent.svelte';
@@ -94,6 +95,15 @@
     if (!tabs.some((t) => t.id === tab)) tab = tabs[0]?.id ?? 'shaper';
   });
 
+  // Запрос вкладки от hotkeys (Alt+1…4). Недоступная вкладка игнорируется.
+  $effect(() => {
+    void pageUi.seq;
+    const requested = pageUi.requestedTab;
+    if (!requested) return;
+    pageUi.requestedTab = null;
+    if (tabs.some((t) => t.id === requested)) tab = requested;
+  });
+
   let helpTitle = $derived.by(() => {
     if (tab === 'probe') return i18n.t('calibrations.section.probe');
     if (tab === 'heaters') return i18n.t('calibrations.section.heaters');
@@ -181,7 +191,6 @@
     gap: var(--space-md);
     min-height: 0;
   }
-  .sep { border-top: 1px dashed var(--border-color); }
   .preview {
     max-width: 100%;
     max-height: 420px;

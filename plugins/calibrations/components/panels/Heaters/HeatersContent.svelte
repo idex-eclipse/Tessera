@@ -131,7 +131,7 @@
       {
         id: `${s.name}:target`,
         kind: 'target',
-        label: `${s.displayName} →`,
+        label: `${s.displayName} (${i18n.t('calibrations.heaters.targetSeries')})`,
         color: s.color,
         dash: [6, 4],
         scale: 't',
@@ -372,7 +372,7 @@
           </div>
         {:else if !store.heatersState.tuning}
           <p class="placeholder muted">
-            {i18n.t('calibrations.heaters.run')} → {i18n.t('calibrations.heaters.results')}
+            {i18n.t('calibrations.heaters.run')} <span class="dir-arrow" aria-hidden="true">→</span> {i18n.t('calibrations.heaters.results')}
           </p>
         {/if}
       </div>
@@ -494,6 +494,7 @@
 
   .gcode {
     display: block;
+    direction: ltr; text-align: start;
     padding: var(--space-xs) var(--space-sm);
     background: var(--bg-surface-hover-no-override);
     border: 1px dashed var(--border-color);
@@ -622,7 +623,7 @@
   .menu {
     position: absolute;
     top: calc(100% + 4px);
-    right: 0;
+    inset-inline-end: 0;
     z-index: 10;
     min-width: 220px;
     padding: var(--space-sm);
@@ -655,4 +656,7 @@
       transform: rotate(360deg);
     }
   }
+  /* Стрелка-указатель зеркалится в RTL */
+  .dir-arrow { display: inline-block; }
+  :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }
 </style>

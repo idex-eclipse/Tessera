@@ -3,7 +3,12 @@ import { mount, unmount, type Component } from 'svelte';
 import MpuBridge from './MpuBridge.svelte';
 import type { MpuParams, PluginApi } from '../types';
 
-export function defineMpuElement(tag: string, Comp: Component<{ params?: MpuParams }>): void {
+/**
+ * Регистрирует Custom Element поверх Svelte-компонента. Компонент может объявлять
+ * проп `params` (MpuParams) или не иметь пропсов вовсе — поэтому тип пропсов
+ * обобщённый, а не фиксированный.
+ */
+export function defineMpuElement<P extends Record<string, any>>(tag: string, Comp: Component<P>): void {
   // Вне браузера (node/SSR, тесты) регистрировать нечего.
   if (typeof customElements === 'undefined' || customElements.get(tag)) return;
 
@@ -24,7 +29,7 @@ export function defineMpuElement(tag: string, Comp: Component<{ params?: MpuPara
       this.#ctx = mount(MpuBridge, {
         target: this,
         props: {
-          Component: Comp,
+          Component: Comp as Component<any>,
           get api() { return self.#api as PluginApi; },
           get params() { return self.#params; },
         },

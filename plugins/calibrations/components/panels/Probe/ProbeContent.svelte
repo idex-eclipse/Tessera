@@ -312,6 +312,7 @@
   .send-block { display: flex; flex-direction: column; gap: var(--space-xs); }
   .gcode {
     display: block;
+    direction: ltr; text-align: start;
     padding: var(--space-xs) var(--space-sm);
     background: var(--bg-surface-hover-no-override);
     border: 1px dashed var(--border-color);
@@ -352,7 +353,7 @@
 
   .log { display: flex; flex-direction: column; gap: var(--space-xs); }
   .log pre {
-    margin: 0; max-height: 140px; overflow-y: auto; padding: var(--space-sm);
+    margin: 0; direction: ltr; text-align: start; max-height: 140px; overflow-y: auto; padding: var(--space-sm);
     background: var(--bg-surface-hover-no-override); border: 1px solid var(--border-color);
     border-radius: var(--radius-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
