@@ -121,20 +121,34 @@ export function computeFlow(m: PrintStatusModel): number | null {
   return m.liveExtruderVelocity * Math.PI * r * r;
 }
 
-export function fmtDuration(sec: number | null): string {
+export interface DurationUnits {
+  h: string;
+  m: string;
+  s: string;
+}
+
+const DEFAULT_UNITS: DurationUnits = { h: 'h', m: 'm', s: 's' };
+
+/** Единицы времени из i18n плагина (раньше были зашиты латиницей). */
+export function durationUnits(t: (key: string) => string): DurationUnits {
+  return { h: t('system.units.h'), m: t('system.units.m'), s: t('system.units.s') };
+}
+
+export function fmtDuration(sec: number | null, u: DurationUnits = DEFAULT_UNITS): string {
   if (sec == null || !Number.isFinite(sec)) return '—';
   const s = Math.max(0, Math.round(sec));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const ss = s % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${ss}s`;
-  return `${ss}s`;
+  if (h > 0) return `${h}${u.h} ${m}${u.m}`;
+  if (m > 0) return `${m}${u.m} ${ss}${u.s}`;
+  return `${ss}${u.s}`;
 }
 
-export function fmtClock(d: Date | null): string {
+/** locale — язык интерфейса (api.i18n.locale), а не язык браузера. */
+export function fmtClock(d: Date | null, locale?: string): string {
   if (!d) return '—';
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 // ------------------------------------------------------------------
@@ -204,6 +218,11 @@ function createPrintStatusCore(api: PluginApi, printerId: string) {
       if (typeof ps.filename === 'string' && ps.filename !== model.filename) {
         next.filename = ps.filename;
         filenameChanged = true;
+        // метаданные прежнего файла (оценка времени, расход) к новому не относятся;
+        // при пустом имени (печать завершена) loadMetadata ничего не загрузит —
+        // без сброса остались бы устаревшие значения
+        next.estimatedTime = null;
+        next.filamentTotal = null;
       }
       const pd = num(ps.print_duration);
       if (pd != null) next.printDuration = pd;

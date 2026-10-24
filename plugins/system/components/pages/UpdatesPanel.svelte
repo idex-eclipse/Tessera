@@ -33,7 +33,7 @@
     const keys = new Set(store.updates.items.map((i) => i.name));
     const next: Record<string, boolean> = {};
     for (const k of Object.keys(expanded)) {
-      if (keys.has(k)) next[k] = expanded[k];
+      if (keys.has(k)) next[k] = expanded[k] === true;
     }
     if (Object.keys(next).length !== Object.keys(expanded).length) {
       expanded = next;
@@ -105,7 +105,7 @@
                 {:else}
                   {item.version}
                   {#if item.remoteVersion && item.remoteVersion !== item.version}
-                    → {item.remoteVersion}
+                    <span class="dir-arrow" aria-hidden="true">→</span> {item.remoteVersion}
                   {/if}
                   {#if item.branch}· {item.branch}{/if}
                   {#if item.owner}· {item.owner}{/if}
@@ -546,7 +546,7 @@
     color: var(--text-muted);
     white-space: nowrap;
     width: 1%;
-    padding-right: var(--space-md);
+    padding-inline-end: var(--space-md);
   }
 
   .kv .v {
@@ -581,7 +581,7 @@
 
   .list {
     margin: 0;
-    padding-left: var(--space-md);
+    padding-inline-start: var(--space-md);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
@@ -702,4 +702,11 @@
       transform: rotate(360deg);
     }
   }
+
+  /* свёрнутый шеврон «указывает в сторону содержимого»: в RTL — влево */
+  :global([dir='rtl']) .chev:not(.open) { transform: rotate(90deg); }
+
+  /* Стрелка-указатель зеркалится в RTL */
+  .dir-arrow { display: inline-block; }
+  :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }
 </style>

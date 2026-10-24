@@ -1,6 +1,18 @@
 export const en = {
   system: {
     pageTitle: 'Machine',
+    hotkeys: {
+      toggleNotifications: 'Show / hide the notification center',
+      openMachine: 'Open the Machine page',
+      refresh: 'Machine: refresh data',
+    },
+    units: { h: 'h', m: 'm', s: 's' },
+    errors: {
+      actionFailed: 'Action failed ({action}): {detail}',
+    },
+    guard: {
+      print_in_progress: 'This action is blocked while a print is running or paused',
+    },
     confirm: 'Confirm',
     rightPanel: {
       title: 'Machine Control',
@@ -74,6 +86,9 @@ export const en = {
     // Notifications
     notifications: {
       title: 'Notifications',
+      klipperShutdown: 'Klipper shutdown',
+      klipperShutdownReason: 'Klipper shutdown: {reason}',
+      tmcFlag: 'TMC {name}: {flag}',
       empty: 'No notifications',
       dismiss: 'Dismiss',
       dismissAll: 'Dismiss all',

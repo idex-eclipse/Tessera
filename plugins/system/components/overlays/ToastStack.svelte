@@ -40,7 +40,7 @@
   }
 
   function fmtTime(t: number): string {
-    return new Date(t).toLocaleTimeString();
+    return new Date(t).toLocaleTimeString(i18n.locale);
   }
 
   function onToastClick(n: NotificationItem): void {
@@ -52,7 +52,7 @@
 <div
   class="toast-stack"
   bind:this={stackEl}
-  style:right="{rightOffset}px"
+  style:inset-inline-end="{rightOffset}px"
   aria-live="polite"
   aria-relevant="additions"
 >
@@ -161,7 +161,7 @@
   .time {
     font-family: monospace;
     flex-shrink: 0;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .toast-close {

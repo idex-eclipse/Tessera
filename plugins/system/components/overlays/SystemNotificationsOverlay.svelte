@@ -3,6 +3,7 @@
   import Icon from '../../../shared/icons/Icon.svelte';
   import { useNotifications, type NotificationItem, type NotificationSeverity } from '../../use-notifications.svelte.ts';
   import { systemUiState } from '../../system-ui-state.svelte.ts';
+  import { ensurePrintTracker } from '../../print-tracker.ts';
 
   let panelBox = $state({ right: 0, top: 0, height: 0 });
   let vw = $state(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -41,16 +42,29 @@
     }
 
     window.addEventListener('resize', measureColumn);
+
+    function onKey(e: KeyboardEvent): void {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (settingsOpen) settingsOpen = false;
+      else close();
+    }
+    window.addEventListener('keydown', onKey);
+
     return () => {
       ro.disconnect();
       mo?.disconnect();
       window.removeEventListener('resize', measureColumn);
+      window.removeEventListener('keydown', onKey);
     };
   });
 
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = useNotifications(api);
+
+  // Оверлей смонтирован всегда (постоянная поверхность): он запускает трекер состояния
+  // печати всех принтеров для гарда system-print-safety (идемпотентно).
+  ensurePrintTracker(api);
 
   let open = $derived(systemUiState.notificationsOpen);
 
@@ -81,7 +95,7 @@
   }
 
   function fmtTime(t: number): string {
-    return new Date(t).toLocaleString();
+    return new Date(t).toLocaleString(i18n.locale);
   }
 
   function close(): void {
@@ -113,7 +127,7 @@
 {#if open && panelBox.right > 0}
   <div
     class="notifications-panel"
-    style:right="{panelBox.right}px"
+    style:inset-inline-end="{panelBox.right}px"
     style:top="{panelBox.top}px"
     style:height="{panelBox.height}px"
     style:width="{panelWidth}px"
@@ -227,8 +241,8 @@
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
-    border-left: 1px solid var(--border-color);
-    box-shadow: -8px 0 16px -8px rgba(0, 0, 0, 0.35);
+    border-inline-start: 1px solid var(--border-color);
+    box-shadow: var(--np-shadow-x, -8px) 0 16px -8px rgba(0, 0, 0, 0.35);
     z-index: 450;
     overflow: hidden;
     animation: np-in 300ms ease-out;
@@ -241,6 +255,20 @@
     to {
       clip-path: inset(-32px -32px -32px -32px);
     }
+  }
+
+  /* RTL: панель растёт от левого края (правая колонка в RTL слева) */
+  @keyframes np-in-rtl {
+    from {
+      clip-path: inset(-32px 100% -32px 0);
+    }
+    to {
+      clip-path: inset(-32px -32px -32px -32px);
+    }
+  }
+  :global([dir='rtl']) .notifications-panel {
+    --np-shadow-x: 8px;
+    animation-name: np-in-rtl;
   }
 
   .panel-header {
@@ -422,7 +450,7 @@
   }
 
   .notif.unseen {
-    border-left: 3px solid var(--accent);
+    border-inline-start: 3px solid var(--accent);
   }
 
   .notif.critical { border-color: var(--danger); }
@@ -478,7 +506,7 @@
   .notif .time {
     font-family: monospace;
     flex-shrink: 0;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .notif-text {

@@ -64,9 +64,9 @@ interface PrinterSubs {
 const subsByPrinter = new Map<string, PrinterSubs>();
 
 // ------------------------------------------------------------------
-// Хук: один агрегатор на всё приложение
+// Агрегатор: ОДИН на приложение, живёт, пока есть хотя бы один потребитель
 // ------------------------------------------------------------------
-export function useNotifications(api: PluginApi) {
+function createAggregator(api: PluginApi) {
   // ------------------------------------------------------------------
   // Settings (device-global, sync-aware через api.settings)
   // ------------------------------------------------------------------
@@ -89,6 +89,8 @@ export function useNotifications(api: PluginApi) {
   // ------------------------------------------------------------------
   // Вставка + дедуп
   // ------------------------------------------------------------------
+  const DEDUP_PRUNE_AT = 500;
+  const DEDUP_KEEP_MS = 60_000;
   function isIgnored(text: string): boolean {
     for (const p of toastSettings.ignoredPatterns) {
       if (!p) continue;
@@ -122,6 +124,12 @@ export function useNotifications(api: PluginApi) {
     if (last && Date.now() - last < DEDUP_MS) return;
     dedup.set(key, Date.now());
 
+    // карта дедупа не должна расти бесконечно (уникальные тексты накапливались вечно)
+    if (dedup.size > DEDUP_PRUNE_AT) {
+      const cutoff = Date.now() - DEDUP_KEEP_MS;
+      for (const [k, t] of dedup) if (t < cutoff) dedup.delete(k);
+    }
+
     items = [item, ...items.slice(0, HISTORY_CAP - 1)];
 
     if (item.severity === 'critical' && toastSettings.soundEnabled) {
@@ -145,8 +153,8 @@ export function useNotifications(api: PluginApi) {
 
     const mpu = line.match(MPU_NOTIFY_RE);
     if (mpu) {
-      const severity = mpu[1].toLowerCase() as 'critical' | 'error' | 'info';
-      let text = mpu[2].trim().replace(/[\r\n]+/g, ' ');
+      const severity = mpu[1]!.toLowerCase() as 'critical' | 'error' | 'info';
+      let text = mpu[2]!.trim().replace(/[\r\n]+/g, ' ');
       if (!text || isIgnored(text)) return;
       if (text.length > MPU_TEXT_MAX) text = text.slice(0, MPU_TEXT_MAX - 1) + '…';
       push(printerId, {
@@ -193,7 +201,9 @@ export function useNotifications(api: PluginApi) {
     } else if (params && typeof params === 'object') {
       reason = String(params.reason ?? params.message ?? '');
     }
-    const text = reason ? `Klipper shutdown: ${reason}` : 'Klipper shutdown';
+    const text = reason
+      ? api.i18n.t('system.notifications.klipperShutdownReason', { reason })
+      : api.i18n.t('system.notifications.klipperShutdown');
     if (isIgnored(text)) return;
     push(printerId, { severity: 'critical', source: 'klippy', text, sticky: true });
   }
@@ -216,7 +226,7 @@ export function useNotifications(api: PluginApi) {
 
       for (const f of cur) {
         if (!prev.has(f)) {
-          const text = `TMC ${name}: ${f}`;
+          const text = api.i18n.t('system.notifications.tmcFlag', { name, flag: f });
           if (isIgnored(text)) continue;
           const critical = TMC_CRITICAL_FLAGS.has(f);
           push(printerId, {
@@ -436,28 +446,40 @@ export function useNotifications(api: PluginApi) {
   // ------------------------------------------------------------------
   // Lifecycle
   // ------------------------------------------------------------------
-  loadSettings();
+  // api.settings.onChange привязан к принтеру, активному в момент подписки, и вызывает
+  // колбэк с ключом '' (а не именем ключа) — поэтому фильтр по префиксу здесь не
+  // работал, и настройки не перечитывались; перечитываем всё и переподписываемся
+  // при смене принтера.
+  const offs: Array<() => void> = [];
+  let offSettings: (() => void) | null = null;
 
-  const offPrinters = api.onPrintersChange(() => syncPrinters());
+  function start(): void {
+    loadSettings();
 
-  const offSettings = api.settings.onChange((k) => {
-    if (k.startsWith('system.notifications.')) loadSettings();
-  });
+    offs.push(api.onPrintersChange(() => syncPrinters()));
 
-  window.addEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener);
+    offSettings = api.settings.onChange(() => loadSettings());
+    offs.push(
+      api.onPrinterChange(() => {
+        offSettings?.();
+        offSettings = api.settings.onChange(() => loadSettings());
+        loadSettings();
+      }),
+    );
+    offs.push(() => offSettings?.());
 
-  // Initial subscribe for all existing printers
-  syncPrinters();
+    window.addEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener);
+    offs.push(() => window.removeEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener));
 
-  onDestroy(() => {
-    offPrinters();
-    offSettings();
-    window.removeEventListener('mpu:guard-notify', onGuardNotifyEvent as EventListener);
+    // Initial subscribe for all existing printers
+    syncPrinters();
+  }
 
-    for (const pid of Array.from(subsByPrinter.keys())) {
-      detachPrinter(pid);
-    }
-  });
+  function stop(): void {
+    for (const off of offs.splice(0)) off();
+    offSettings = null;
+    for (const pid of Array.from(subsByPrinter.keys())) detachPrinter(pid);
+  }
 
   // ------------------------------------------------------------------
   // Public
@@ -467,7 +489,7 @@ export function useNotifications(api: PluginApi) {
     return visible.slice(0, TOAST_CAP);
   });
 
-  return {
+  const store = {
     get items() {
       return items;
     },
@@ -486,6 +508,40 @@ export function useNotifications(api: PluginApi) {
     setIgnoredPatterns,
     setSoundEnabled,
   };
+
+  return { store, start, stop, push };
+}
+
+let aggregator: ReturnType<typeof createAggregator> | null = null;
+let consumers = 0;
+
+/**
+ * Хук уведомлений. Потребителей несколько (оверлей, стек тостов, правая панель), а
+ * подписки на принтеры — одни: агрегатор стартует с первым потребителем и
+ * останавливается с последним. Раньше onDestroy ЛЮБОГО потребителя (например,
+ * правой панели при её перемонтировании) снимал подписки у всех остальных.
+ */
+export function useNotifications(api: PluginApi) {
+  aggregator ??= createAggregator(api);
+  if (consumers++ === 0) aggregator.start();
+
+  onDestroy(() => {
+    if (--consumers === 0) aggregator?.stop();
+  });
+
+  return aggregator.store;
+}
+
+/**
+ * Локальное уведомление от самого плагина (например, ошибка действия в правой
+ * панели). Работает, пока смонтирован хотя бы один потребитель (оверлей
+ * уведомлений смонтирован всегда).
+ */
+export function notifyLocal(
+  printerId: string,
+  n: Omit<NotificationItem, 'id' | 'time' | 'seen' | 'dismissed' | 'printerId'>,
+): void {
+  aggregator?.push(printerId, n);
 }
 
 export type NotificationsStore = ReturnType<typeof useNotifications>;

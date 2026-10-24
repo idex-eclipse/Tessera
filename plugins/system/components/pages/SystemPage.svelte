@@ -6,6 +6,7 @@
   import StoragePanel from './StoragePanel.svelte';
   import UpdatesPanel from './UpdatesPanel.svelte';
   import { useSystem } from '../../use-system.svelte.ts';
+  import { systemUiState } from '../../system-ui-state.svelte.ts';
   
   import type { McuModel } from '../../use-system.svelte.ts';
 
@@ -20,6 +21,15 @@
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = useSystem(api);
+
+  // hotkey Alt+R: обновить данные страницы
+  let lastRefreshSeq = systemUiState.refreshSeq;
+  $effect(() => {
+    const seq = systemUiState.refreshSeq;
+    if (seq === lastRefreshSeq) return;
+    lastRefreshSeq = seq;
+    void store.refresh();
+  });
 
   function fmtMemGb(kb: number | null): string {
     if (kb == null) return '—';
