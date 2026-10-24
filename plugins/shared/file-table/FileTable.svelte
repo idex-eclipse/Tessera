@@ -77,7 +77,8 @@ let {
     error?: string | null;
     navigate(p: string): void;
     refresh(): void | Promise<void>;
-    statusOf?(filename: string): string | null;
+    /** row — строка таблицы: история хранит статус на каждое задание, а не на имя файла. */
+    statusOf?(filename: string, row?: any): string | null;
   }
   const source = (mode === 'gcode' ? gcode : mode === 'history' ? history : simple) as TableSource;
 
@@ -171,7 +172,7 @@ let {
     }
     switch (key) {
       case 'name': return String(f.filename).toLowerCase();
-      case 'status': return source.statusOf?.(f.filename) ?? '';
+      case 'status': return source.statusOf?.(f.filename, f) ?? '';
       case 'size': return f.size;
       case 'modified': return f.modified;
       case 'thumbnail': return (f.thumbnails?.length ?? 0);
@@ -435,7 +436,15 @@ let {
   }
   function statusClass(s: string | null): string {
     if (!s) return 'st-none';
-    return `st-${s.toLowerCase()}`;
+    return `st-${s.toLowerCase().replace(/[^a-z0-9_]/g, '-')}`;
+  }
+
+  /** Локализованный статус; неизвестный (нет ключа ft.status.*) показываем как есть. */
+  function statusLabel(s: string | null): string {
+    if (!s) return '—';
+    const key = `ft.status.${s.toLowerCase()}`;
+    const label = i18n.t(key);
+    return label === key ? s : label;
   }
   function hideBrokenImage(e: Event): void { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }
 
@@ -560,8 +569,8 @@ let {
                         {:else}—{/if}
                       </td>
                   {:else if col.key === 'status'}
-                    {@const st = source.statusOf?.(f.name) ?? null}
-                    <td><span class="st {statusClass(st)}">{st ?? '—'}</span></td>
+                    {@const st = source.statusOf?.(f.name, f) ?? null}
+                    <td><span class="st {statusClass(st)}">{statusLabel(st)}</span></td>
                   {:else if col.key === 'filament_name' || col.key === 'filament_type'}
                     {@const arr = asStrings((f.raw ?? f)[col.key])}
                     <td>{#if arr.length}<span class="chips">{#each arr as v, i (`${col.key}-${i}-${v}`)}<span class="chip">{v}</span>{/each}</span>{:else}—{/if}</td>
@@ -802,6 +811,35 @@ let {
         border-radius:var(--radius-sm);
         border:1px solid var(--border-color);
         background:var(--bg-surface-hover-no-override);
+    }
+
+    /* статус задания / файла */
+    .st {
+        display:inline-block;
+        padding:1px 8px;
+        border-radius:999px;
+        border:1px solid var(--border-color);
+        background:var(--bg-surface-hover-no-override);
+        color:var(--text-secondary);
+        font-size:var(--font-size-sm);
+        white-space:nowrap;
+    }
+    .st-none { border-color:transparent; background:transparent; color:var(--text-muted); }
+    .st-completed,.st-complete {
+        color:var(--success);
+        border-color:color-mix(in srgb, var(--success) 45%, var(--border-color));
+    }
+    .st-printing,.st-in_progress {
+        color:var(--accent);
+        border-color:color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    }
+    .st-paused,.st-cancelled,.st-interrupted {
+        color:var(--warning);
+        border-color:color-mix(in srgb, var(--warning) 45%, var(--border-color));
+    }
+    .st-error,.st-klippy_shutdown,.st-klippy_disconnect,.st-server_exit {
+        color:var(--danger);
+        border-color:color-mix(in srgb, var(--danger) 45%, var(--border-color));
     }
 
     .sort-arrow {

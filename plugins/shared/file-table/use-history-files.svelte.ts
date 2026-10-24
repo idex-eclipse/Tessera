@@ -32,6 +32,8 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
   let currentPrint = $state<{ filename: string; state: string } | null>(null);
 
   const unsubs: Array<() => void> = [];
+  // Ответ устаревшего запроса не должен перезаписать свежий (notify + refresh подряд).
+  let loadSeq = 0;
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
@@ -42,6 +44,7 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
   }
 
   async function load(): Promise<void> {
+    const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
@@ -55,6 +58,7 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
         limit: 0,
         order: 'desc',
       });
+      if (seq !== loadSeq) return;
 
       files = (res.jobs ?? [])
         .filter((j) => typeof j.filename === 'string')
@@ -98,13 +102,21 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
       }
       statuses = map;
     } catch (e) {
+      if (seq !== loadSeq) return;
       error = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
-  function statusOf(filename: string): string | null {
+  /**
+   * В истории строка = задание, и статус у каждого задания свой. Поиск по имени файла
+   * (как в таблице gcodes) показывал бы у всех прогонов одного файла статус самого
+   * свежего. Строка не передана (сортировка по имени) — фолбэк на статус по имени.
+   */
+  function statusOf(filename: string, row?: { raw?: Record<string, unknown> }): string | null {
+    const own = row?.raw?.status;
+    if (typeof own === 'string' && own) return own;
     if (currentPrint && currentPrint.filename === filename) return currentPrint.state;
     return statuses[filename] ?? null;
   }

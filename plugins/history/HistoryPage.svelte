@@ -3,6 +3,7 @@
 
   import FileTable from '../shared/file-table/FileTable.svelte';
 
+  import { HISTORY_SCOPE } from './hotkeys.ts';
   import StatsPanel from './HistoryStats.svelte';
 
   const api = usePluginApi();
@@ -14,7 +15,7 @@
 
   <FileTable
     root="history"
-    scope="page:history"
+    scope={HISTORY_SCOPE}
     mode="history"
     title={i18n.t('history.title')}
     menuEnabled={false}

@@ -1,25 +1,20 @@
 export const en = {
   history: {
     title: 'History',
-    list: 'Print history',
-    loadAll: 'Load all',
-    deleteAll: 'Delete all',
-    colFile: 'File',
-    colStatus: 'Status',
-    colStart: 'Start',
-    colTotal: 'Total',
-    colPrint: 'Print',
-    colFilament: 'Filament',
-    confirmReset: 'Reset printer statistics?',
-    confirmDeleteAll: 'Delete entire print history?',
-    empty: 'No print history',
-    resetConfirmBody: 'Are you sure? This action can not be cancelled.',
-    confirm: 'Yes',
-    statsError: 'Unable to load printer statisctics',
+    unit: { h: 'h', m: 'm', s: 's', meter: 'm', km: 'km' },
+    hotkeys: {
+      find: 'History: search',
+      refresh: 'History: refresh table and statistics',
+    },
+    guard: {
+      owner_only: 'Print history and statistics can only be erased from the History page',
+    },
   },
-  stats:{
+  stats: {
     title: 'Printer statistics',
-    reset: ' Reset statistics',
+    reset: 'Reset statistics',
+    resetFailed: 'Failed to reset statistics',
+    statsError: 'Unable to load printer statistics',
     totalJobs: 'Total prints',
     longestPrint: 'Longest print',
     totalTime: 'Total time',
@@ -32,9 +27,27 @@ export const en = {
     resetConfirmBody: 'This action can not be cancelled',
     confirm: 'Reset',
   },
-  ft:{
+  ft: {
     loading: 'Loading…',
     error: 'Failed to load data',
     retry: 'Retry',
-  }
+    empty: 'No print history',
+    search: 'Search…',
+    refresh: 'Refresh',
+    columns: 'Columns',
+    status: {
+      completed: 'Completed',
+      complete: 'Completed',
+      cancelled: 'Cancelled',
+      error: 'Error',
+      in_progress: 'In progress',
+      printing: 'Printing',
+      paused: 'Paused',
+      standby: 'Standby',
+      interrupted: 'Interrupted',
+      klippy_shutdown: 'Klipper shutdown',
+      klippy_disconnect: 'Klipper disconnected',
+      server_exit: 'Server exit',
+    },
+  },
 };
