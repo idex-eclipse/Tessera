@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PluginApi } from '../../../plugin-sdk/src/types';
 import { createHostHotkeys } from '../../../host/src/core/host-hotkeys';
 import { analyzeHotkeys } from '../../../host/src/core/hotkeys';
+import { fakeHostHotkeyDeps } from '../../../host/src/core/__tests__/helpers/host-hotkey-deps';
 import { configManifest } from '../../config/manifest';
 import { createFileOps } from '../../shared/file-table/file-ops';
 import { getSearchFocusTick } from '../../shared/file-table/file-table-state.svelte';
@@ -148,9 +149,7 @@ describe('manifest', () => {
     const asEntries = (m: typeof jobsManifest) =>
       (m.hotkeys ?? []).map((contribution) => ({ pluginId: m.id, contribution: { ...contribution } }));
     const host = createHostHotkeys({
-      router: { navigateToPrinter: vi.fn() },
-      printerManager: { printers: [], activePrinterId: null } as never,
-      ui: { toggleFleet: vi.fn(), setFleet: vi.fn() },
+      ...fakeHostHotkeyDeps(),
     }).map((h) => ({
       pluginId: '@host',
       contribution: { id: h.id, keys: h.keys, scope: 'global' as const, handler: h.id },
