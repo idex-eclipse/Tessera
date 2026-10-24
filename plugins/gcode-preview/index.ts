@@ -10,6 +10,23 @@ export const pageIcons: Record<string, string> = {
   cube: cubeIcon,
 };
 
+export {
+  hotkeyOpenPreview,
+  hotkeyLayerUp,
+  hotkeyLayerDown,
+  hotkeyLayerUp10,
+  hotkeyLayerDown10,
+  hotkeyLayerFirst,
+  hotkeyLayerLast,
+  hotkeyToggleTravel,
+  hotkeyToggleBounds,
+  hotkeyToggleMode,
+  hotkeyToggleFollow,
+  hotkeyToggleColor,
+  hotkeyClearPreview,
+  hotkeyReloadPreview,
+} from './hotkeys.ts';
+
 defineMpuElement('mpu-gcode-preview-page', GCodePreviewPage);
 defineMpuElement('mpu-gcode-preview-widget', GCodePreviewWidget);
 defineMpuElement('mpu-gcode-preview-header', GcodePreviewHeaderActions);

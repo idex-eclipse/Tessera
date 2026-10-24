@@ -3,6 +3,7 @@
 
   import { segmentAtOffset } from './viewer/parse-gcode';
   import { ensureParsed, getEntry } from './viewer/gcode-store.svelte';
+  import { pageHash } from '../shared/page-nav';
   import { usePrintProgress } from './viewer/use-print-progress.svelte';
   import GCodeViewer from './viewer/GCodeViewer.svelte';
 
@@ -16,18 +17,7 @@
   const i18n = api.i18n;
   const progress = usePrintProgress(api);
   let cleared = $derived(isCleared(api, 'widget'));
-  let printFile = $state('');
-
-  $effect(() => {
-    return api.moonraker().subscribe(
-      { print_stats: ['filename'] },
-      (d: any) => {
-        const fn = d?.print_stats?.filename;
-        if (typeof fn === 'string') printFile = fn;
-      },
-      { immediate: true },
-    );
-  });
+  let printFile = $derived(progress.filename);
 
   $effect(() => {
     if (params.preview) unclear(api, 'widget');
@@ -45,7 +35,7 @@
     ensureParsed(api, path);
   });
 
-  let entry = $derived(getEntry(path));
+  let entry = $derived(getEntry(api, path));
 
   let relViewed = $derived(path.startsWith('gcodes/') ? path.slice(7) : path);
 
@@ -56,7 +46,7 @@
   );
 
   let pageHref = $derived(
-    `#/p/${api.printer.id}/gcode-preview${path ? `?file=${encodeURIComponent(path)}` : ''}`,
+    `${pageHash(api.printer.id, 'gcode-preview')}${path ? `?file=${encodeURIComponent(path)}` : ''}`,
   );
 </script>
 
@@ -70,7 +60,7 @@
   {:else}
     <GCodeViewer parsed={entry.parsed} progressSeg={progressSeg} allow3d={false} />
     <div class="widget-footer">
-      <span class="file-name">{path.split('/').pop() ?? ''}</span>
+      <bdi class="file-name">{path.split('/').pop() ?? ''}</bdi>
       <a class="open-page" href={pageHref}>{i18n.t('gcodePreview.openPage')}</a>
     </div>
   {/if}
@@ -81,7 +71,7 @@
   .empty { color: var(--text-muted); text-align: center; padding: var(--space-md); }
   .error { color: var(--danger); }
   .widget-footer { display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0; }
-  .file-name { color: var(--text-muted); font-family: monospace; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .file-name { direction: ltr; unicode-bidi: isolate; color: var(--text-muted); font-family: monospace; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .open-page { color: var(--accent); font-size: var(--font-size-sm); text-decoration: none; white-space: nowrap; }
   .open-page:hover { text-decoration: underline; }
 </style>

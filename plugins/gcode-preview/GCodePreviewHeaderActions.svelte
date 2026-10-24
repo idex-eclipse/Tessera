@@ -16,7 +16,7 @@
   let listOpen = $state(false);
   let btnEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
-  let pos = $state({ top: -9999, right: -9999 });
+  let pos = $state({ top: -9999, left: -9999 });
 
   function place(): void {
     const r = btnEl?.getBoundingClientRect();
@@ -29,13 +29,15 @@
     if (mh <= spaceBelow) top = r.bottom + 4;
     else if (mh <= r.top - 4) top = r.top - 4 - mh;
     else top = Math.max(8, window.innerHeight - mh - 8);
-    const rightPreferred = Math.max(8, window.innerWidth - r.right);
-    const right = Math.min(rightPreferred, Math.max(8, window.innerWidth - mw - 8));
-    pos = { top, right };
+    // край меню выравнивается по краю кнопки «со стороны конца» (в RTL — по левому)
+    const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+    const preferred = rtl ? r.left : r.right - mw;
+    const left = Math.max(8, Math.min(preferred, window.innerWidth - mw - 8));
+    pos = { top, left };
   }
 
   function toggleList(): void {
-    if (!listOpen) pos = { top: -9999, right: -9999 };
+    if (!listOpen) pos = { top: -9999, left: -9999 };
     listOpen = !listOpen;
   }
 
@@ -47,7 +49,7 @@
     document.addEventListener('scroll', re, true);
     return () => {
       window.removeEventListener('resize', re);
-      document.removeEventListener('scroll', re);
+      document.removeEventListener('scroll', re, true);
     };
   });
 
@@ -66,6 +68,7 @@
   <button
     class="icon-btn"
     title={i18n.t('gcodePreview.clear')}
+    aria-label={i18n.t('gcodePreview.clear')}
     onclick={() => clearPreview(api, 'widget')}
   >
     <Icon name="x" />
@@ -77,6 +80,8 @@
       class:active={listOpen}
       bind:this={btnEl}
       title={i18n.t('gcodePreview.objects')}
+      aria-label={i18n.t('gcodePreview.objects')}
+      aria-expanded={listOpen}
       onclick={toggleList}
     >
       <Icon name="list" size={16} />
@@ -104,7 +109,7 @@
     class="obj-menu"
     bind:this={menuEl}
     style:top="{pos.top}px"
-    style:right="{pos.right}px"
+    style:left="{pos.left}px"
     role="menu"
   >
     <div class="obj-menu-title">{i18n.t('gcodePreview.objects')}</div>
@@ -123,7 +128,7 @@
           if (klippy.ready && !o.excluded) void excludeStore.exclude(o.name);
         }}
       >
-        <span class="obj-name">{o.name}</span>
+        <bdi class="obj-name">{o.name}</bdi>
         {#if o.current}<span class="obj-badge current">{i18n.t('gcodePreview.current')}</span>{/if}
         {#if o.excluded}<span class="obj-badge excluded">{i18n.t('gcodePreview.excluded')}</span>{/if}
       </button>
