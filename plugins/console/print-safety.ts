@@ -7,7 +7,7 @@
  */
 
 /** Команды, обрывающие печать (перезапуск Klipper / прошивки). */
-const PRINT_BREAKING = new Set(['RESTART', 'FIRMWARE_RESTART']);
+const PRINT_BREAKING = new Set(['RESTART', 'FIRMWARE_RESTART', 'SAVE_CONFIG']);
 
 /** Первые слова непустых не-комментарных строк скрипта, в верхнем регистре. */
 export function scriptCommands(script: string): string[] {
