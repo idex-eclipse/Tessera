@@ -4,6 +4,7 @@ let searchMap = $state<Record<string, string>>({});
 let tickMap = $state<Record<string, number>>({});
 let pathMap = $state<Record<string, string>>({});
 let noticeMap = $state<Record<string, string | null>>({});
+let focusMap = $state<Record<string, number>>({});
 
 // реактивность: bump при любом onChange настроек плагина (в т.ч. смена sync-namespace)
 let rev = $state(0);
@@ -13,13 +14,19 @@ function wire(api: PluginApi): void {
   if (wired.has(api)) return;
   wired.add(api);
 
-  // любое изменение настроек плагина (в т.ч. смена namespace) → перечитать
-  api.settings.onChange(() => {
+  // api.settings.onChange привязан к принтеру, активному в момент подписки, поэтому
+  // при смене принтера переподписываемся — иначе изменения настроек второго принтера
+  // не доходили бы до таблицы (пока не сменится принтер ещё раз).
+  let offSettings = api.settings.onChange(() => {
     rev++;
   });
 
-  // смена принтера → перечитать (GLOBAL тот же, но per-printer разные)
+  // смена принтера → переподписка и перечитать (GLOBAL тот же, но per-printer разные)
   api.onPrinterChange(() => {
+    offSettings();
+    offSettings = api.settings.onChange(() => {
+      rev++;
+    });
     rev++;
   });
 }
@@ -48,6 +55,14 @@ export function getCurrentPath(api: PluginApi, scope: string): string {
 }
 export function setCurrentPath(api: PluginApi, scope: string, p: string): void {
   pathMap[key(api, scope)] = p;
+}
+/** Запрос фокуса на поле поиска таблицы (hotkey Ctrl+F вместо браузерного поиска). */
+export function requestSearchFocus(api: PluginApi, scope: string): void {
+  const k = key(api, scope);
+  focusMap[k] = (focusMap[k] ?? 0) + 1;
+}
+export function getSearchFocusTick(api: PluginApi, scope: string): number {
+  return focusMap[key(api, scope)] ?? 0;
 }
 export function getNotice(api: PluginApi, scope: string): string | null {
   return noticeMap[key(api, scope)] ?? null;

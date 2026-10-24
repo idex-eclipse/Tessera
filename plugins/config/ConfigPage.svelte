@@ -4,13 +4,13 @@
   import type { ContextMenuItem } from '../shared/context-menu.svelte';
   import type { FileRef } from '../shared/file-table/file-ops';
   import { fileCap } from '../shared/file-table/file-capabilities';
+  import { CONFIG_TABS, pageUi, setActivePane, setTab, type ConfigTab } from './page-ui-state.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
 
-  const TABS = ['logs', 'docs', 'config_examples'] as const;
-  type Tab = (typeof TABS)[number];
-  let tab = $state<Tab>('logs');
+  // Вкладка правой таблицы и «активная панель» живут в module-state: ими управляют hotkeys.
+  let tab = $derived(pageUi.tab);
 
     function configMenu(ref: FileRef, isDir: boolean): ContextMenuItem[] {
     if (isDir) {
@@ -50,24 +50,37 @@
 </script>
 
 <div class="config-page">
-  <FileTable root="config" scope="page:config" mode="simple" showAdd
-    title={i18n.t('config.title')} menuItems={configMenu} />
+  <!-- активная панель нужна hotkey Ctrl+F: он фокусирует поиск той таблицы, где работает пользователь -->
+  <div class="pane" onpointerdown={() => setActivePane('left')} onfocusin={() => setActivePane('left')}>
+    <FileTable root="config" scope="page:config" mode="simple" showAdd
+      title={i18n.t('config.title')} menuItems={configMenu} />
+  </div>
 
-  {#key tab}
-    <FileTable root={tab} scope="page:{tab}" mode="simple"
-      title={i18n.t('config.otherTitle')} menuItems={plainMenu}>
-      {#snippet headerExtra()}
-        <div class="tabs">
-          {#each TABS as t (t)}
-            <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t.toUpperCase()}</button>
-          {/each}
-        </div>
-      {/snippet}
-    </FileTable>
-  {/key}
+  <div class="pane" onpointerdown={() => setActivePane('right')} onfocusin={() => setActivePane('right')}>
+    {#key tab}
+      <FileTable root={tab} scope="page:{tab}" mode="simple"
+        title={i18n.t('config.otherTitle')} menuItems={plainMenu}>
+        {#snippet headerExtra()}
+          <div class="tabs" role="tablist">
+            {#each CONFIG_TABS as t (t)}
+              <button
+                class="tab"
+                class:active={tab === t}
+                role="tab"
+                aria-selected={tab === t}
+                onclick={() => setTab(t as ConfigTab)}
+              >{i18n.t(`config.tab.${t}`)}</button>
+            {/each}
+          </div>
+        {/snippet}
+      </FileTable>
+    {/key}
+  </div>
 </div>
 
 <style>
+  .pane { min-width: 0; min-height: 0; height: 100%; }
+
   .config-page {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -95,6 +108,7 @@
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     letter-spacing: 0.04em;
+    text-transform: uppercase;
     cursor: pointer;
   }
   .tab:hover { color: var(--text-primary); }

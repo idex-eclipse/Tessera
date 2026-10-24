@@ -9,7 +9,7 @@
   import { COLUMNS, PAGE_DEFAULTS, WIDGET_DEFAULTS } from './columns';
   import {
     ensureColumnsLoaded, getCurrentPath, getSearch, getVisibleColumns,
-    requestRefresh, setNotice, setSearch, setVisibleColumns,
+    getSearchFocusTick, requestRefresh, setNotice, setSearch, setVisibleColumns,
   } from './file-table-state.svelte';
 
   let {
@@ -40,6 +40,24 @@
   let createDirOpen = $state(false);
 
   let search = $derived(getSearch(api, scope));
+
+  /** Текст ошибки: отказ гарда → перевод reasonKey, иначе message. */
+  function errText(e: unknown): string {
+    const reasonKey = (e as { rejection?: { reasonKey?: string } } | null)?.rejection?.reasonKey;
+    if (reasonKey) return i18n.t(reasonKey);
+    return e instanceof Error ? e.message : String(e);
+  }
+
+  // Внешний запрос фокуса на поиск (hotkey Ctrl+F плагина вместо поиска браузера)
+  let searchEl = $state<HTMLInputElement | null>(null);
+  let lastFocusTick = getSearchFocusTick(api, scope);
+  $effect(() => {
+    const tick = getSearchFocusTick(api, scope);
+    if (tick === lastFocusTick) return;
+    lastFocusTick = tick;
+    searchEl?.focus();
+    searchEl?.select();
+  });
 
   ensureColumnsLoaded(api, scope);
   $effect(() => {
@@ -95,7 +113,7 @@
       }
       setNotice(api, scope, null);
     } catch (err) {
-      setNotice(api, scope, err instanceof Error ? err.message : String(err));
+      setNotice(api, scope, errText(err));
     }
   }
 
@@ -113,7 +131,7 @@
       }
       setNotice(api, scope, null);
     } catch (err) {
-      setNotice(api, scope, err instanceof Error ? err.message : String(err));
+      setNotice(api, scope, errText(err));
     }
   }
 
@@ -121,7 +139,7 @@
     try {
       await ops.createFile(root, getCurrentPath(api, scope), name);
       setNotice(api, scope, null);
-    } catch (e) { setNotice(api, scope, String(e)); }
+    } catch (e) { setNotice(api, scope, errText(e)); }
   }
 
   async function handleCreateDir(name: string): Promise<void> {
@@ -129,7 +147,7 @@
       const base = getCurrentPath(api, scope);
       await ops.createDirectory(root, base ? `${base}/${name}` : name);
       setNotice(api, scope, null);
-    } catch (e) { setNotice(api, scope, String(e)); }
+    } catch (e) { setNotice(api, scope, errText(e)); }
   }
 </script>
 
@@ -139,6 +157,8 @@
   <input
     class="ha-search"
     placeholder={i18n.t('ft.search')}
+    dir="auto"
+    bind:this={searchEl}
     value={search}
     oninput={(e) => setSearch(api, scope, e.currentTarget.value)}
   />
@@ -192,7 +212,7 @@
   .ha-search:focus { outline: none; border-color: var(--border-focus); }
   .icon-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; flex-shrink: 0; }
   .icon-btn:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-  .dropdown { position: absolute; right: 0; top: calc(100% + 4px); z-index: 60; min-width: 230px; max-height: 340px; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: var(--space-xs); display: flex; flex-direction: column; }
+  .dropdown { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 60; min-width: 230px; max-height: 340px; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: var(--space-xs); display: flex; flex-direction: column; }
   .dropdown-item { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-sm); color: var(--text-primary); }
   .dropdown-item:hover { background: var(--bg-surface-hover); }
 </style>

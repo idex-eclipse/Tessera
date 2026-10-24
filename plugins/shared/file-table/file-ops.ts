@@ -25,8 +25,29 @@ function encodeSegments(p: string): string {
 export function createFileOps(api: PluginApi) {
   const handle = () => api.moonraker();
 
+  /** Bearer-токен для fetch (если Moonraker требует авторизацию). */
+  function authHeaders(): Record<string, string> {
+    const token = handle().authToken;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /**
+   * URL для ресурсов, где заголовок задать нельзя (скачивание по ссылке, <img>):
+   * токен уходит query-параметром access_token. Без токена URL не меняется.
+   */
+  function withToken(url: string): string {
+    const token = handle().authToken;
+    if (!token) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
+  }
+
   function fileUrl(ref: FileRef): string {
     return `${handle().httpBaseUrl}/server/files/${encodeSegments(fullPath(ref))}`;
+  }
+
+  /** URL для просмотра (картинки в просмотрщике). */
+  function viewUrl(ref: FileRef): string {
+    return withToken(fileUrl(ref));
   }
 
   async function startPrint(ref: FileRef): Promise<void> {
@@ -52,7 +73,7 @@ export function createFileOps(api: PluginApi) {
 
   function download(ref: FileRef): void {
     const a = document.createElement('a');
-    a.href = fileUrl(ref);
+    a.href = withToken(fileUrl(ref));
     a.download = baseOf(ref.path);
     a.rel = 'noopener';
     a.click();
@@ -85,7 +106,7 @@ export function createFileOps(api: PluginApi) {
 
   async function readText(ref: FileRef): Promise<string> {
     const url = `${fileUrl(ref)}?t=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { cache: 'no-store', headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   }
@@ -99,6 +120,7 @@ export function createFileOps(api: PluginApi) {
     form.append('root', ref.root);
     const res = await fetch(`${handle().httpBaseUrl}/server/files/upload`, {
       method: 'POST',
+      headers: authHeaders(),
       body: form,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -118,6 +140,7 @@ export function createFileOps(api: PluginApi) {
 
     const res = await fetch(`${handle().httpBaseUrl}/server/files/upload`, {
       method: 'POST',
+      headers: authHeaders(),
       body: form,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -136,13 +159,14 @@ export function createFileOps(api: PluginApi) {
 
     const res = await fetch(`${handle().httpBaseUrl}/server/files/upload`, {
       method: 'POST',
+      headers: authHeaders(),
       body: form,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
   return {
-    fileUrl, startPrint, refreshMetadata, createZip, download,
+    fileUrl, viewUrl, startPrint, refreshMetadata, createZip, download,
     rename, copy, remove, readText, saveText,
     upload, createDirectory, createFile
   };

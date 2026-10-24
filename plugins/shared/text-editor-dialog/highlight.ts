@@ -225,7 +225,12 @@ function saveInner(rest: string): string {
 
 // ---------------- entry ----------------
 
-export function highlightKlipper(text: string): string {
+/**
+ * Подсветка по строкам: i-й элемент — html i-й строки (без завершающего "\n").
+ * Редактор рендерит строки отдельными узлами, поэтому при наборе обновляется
+ * DOM только изменившихся строк, а не всего слоя.
+ */
+export function highlightKlipperLines(text: string): string[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
   let mode: 'config' | 'gcode' | 'save' = 'config';
@@ -264,7 +269,29 @@ export function highlightKlipper(text: string): string {
       }
     }
   }
-  return out.join('\n');
+  return out;
+}
+
+export function highlightKlipper(text: string): string {
+  return highlightKlipperLines(text).join('\n');
+}
+
+export function highlightPlainLines(text: string): string[] {
+  return text.split('\n').map(esc);
+}
+
+/**
+ * Строки для рендера слоя подсветки: каждая, кроме последней, заканчивается "\n".
+ * Если текст кончается переводом строки (или пуст), последняя строка — zero-width
+ * space: textarea и гаттер считают эту пустую строку, а `pre` (white-space: pre)
+ * без символа её не рендерит, и слой оказывался короче на строку (подсветка
+ * съезжала относительно текста и нумерации в конце файла).
+ */
+export function toRenderLines(hlLines: string[], text: string): string[] {
+  const last = hlLines.length - 1;
+  const out = hlLines.map((h, i) => (i < last ? h + '\n' : h));
+  if (last >= 0 && text.slice(text.lastIndexOf('\n') + 1) === '') out[last] = '\u200b';
+  return out;
 }
 
 export function highlightPlain(text: string): string {

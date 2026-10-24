@@ -21,7 +21,21 @@ export const en = {
     renameTitle: 'Rename file',
     deleteTitle: 'Delete',
     deleteMessage: 'Delete "{name}"?',
-    open: 'Open',   // ru: 'Открыть'
+    open: 'Open',
+    tab: {
+      logs: 'Logs',
+      docs: 'Docs',
+      config_examples: 'Config samples',
+    },
+    hotkeys: {
+      find: 'Config files: search files',
+      tabLogs: 'Config files: Logs tab',
+      tabDocs: 'Config files: Docs tab',
+      tabExamples: 'Config files: Config samples tab',
+    },
+    guard: {
+      critical_file: 'printer.cfg and moonraker.conf cannot be deleted, renamed or overwritten this way',
+    },
   },
   ft: {
     name: 'Name', 
@@ -43,6 +57,9 @@ export const en = {
     save: 'Save', 
     close: 'Close', 
     loading: 'Loading…',
+    error: 'Failed to load files',
+    retry: 'Retry',
+    readonly: 'read-only',
     saveRestart: 'Save & Restart',
     saveRestartMk: 'Save & Restart Moonraker',
     imgZoomIn: 'Zoom in',

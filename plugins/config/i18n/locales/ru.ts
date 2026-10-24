@@ -22,6 +22,20 @@ export const ru = {
     deleteTitle: 'Удалить',
     deleteMessage: 'Удалить "{name}"?',
     open: 'Открыть',
+    tab: {
+      logs: 'Логи',
+      docs: 'Документы',
+      config_examples: 'Примеры конфигов',
+    },
+    hotkeys: {
+      find: 'Файлы конфигурации: поиск файлов',
+      tabLogs: 'Файлы конфигурации: вкладка «Логи»',
+      tabDocs: 'Файлы конфигурации: вкладка «Документы»',
+      tabExamples: 'Файлы конфигурации: вкладка «Примеры конфигов»',
+    },
+    guard: {
+      critical_file: 'printer.cfg и moonraker.conf нельзя удалить, переименовать или перезаписать таким способом',
+    },
   },
   ft: {
     name: 'Имя', 
@@ -43,6 +57,9 @@ export const ru = {
     save: 'Сохранить', 
     close: 'Закрыть', 
     loading: 'Загрузка…',
+    error: 'Не удалось загрузить файлы',
+    retry: 'Повторить',
+    readonly: 'только чтение',
     saveRestart: 'Сохранить и перезапустить',
     saveRestartMk: 'Сохранить и перезапустить Moonraker',
     imgZoomIn: 'Приблизить',

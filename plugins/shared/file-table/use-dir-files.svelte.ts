@@ -30,6 +30,9 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
   let error = $state<string | null>(null);
 
   const unsubs: Array<() => void> = [];
+  // Защита от гонки: ответ устаревшего запроса не должен перезаписать свежий
+  // (быстрая навигация по каталогам, refresh во время загрузки).
+  let loadSeq = 0;
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
@@ -44,6 +47,7 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
   }
 
   async function load(): Promise<void> {
+    const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
@@ -57,6 +61,7 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
         dirs?: Array<Record<string, any>>;
         files?: Array<Record<string, any>>;
       }>('server.files.get_directory', { path: fullPath() });
+      if (seq !== loadSeq) return;
 
       dirs = (res.dirs ?? [])
         .map((d) => ({
@@ -74,11 +79,12 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
         }))
         .filter((f) => f.filename !== '');
     } catch (e) {
+      if (seq !== loadSeq) return;
       error = e instanceof Error ? e.message : String(e);
       dirs = [];
       files = [];
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -197,5 +203,7 @@ export function useDirFiles(
     keeper.release(heldKey);
   });
 
-  return createDelegateStore<DirFilesStore>(() => keeper.get(heldKey, api));
+  // Ключ берём из api.printer.id (реактивный геттер), а не из heldKey: иначе чтения
+  // store в шаблонах не пересчитаются при смене принтера и покажут чужой список.
+  return createDelegateStore<DirFilesStore>(() => keeper.get(`${api.printer.id}:${root}`, api));
 }
