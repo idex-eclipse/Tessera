@@ -72,6 +72,10 @@ const en: I18nMessages = {
       guards: 'Guards',
       parkedChains: 'Running guards',
       noParked: 'No running guards',
+      hotkeys: 'Hotkeys',
+      noHotkeys: 'No hotkeys registered',
+      hotkeyDisabled: 'disabled: conflict',
+      hotkeyScope: { global: 'global', dashboard: 'dashboard', plugin: 'plugin page' },
     },
 
     theme: 'Theme',

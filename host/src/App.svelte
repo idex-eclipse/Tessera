@@ -8,7 +8,12 @@
   import type { UiStore } from './core/ui-store.svelte.ts';
   import AuthOverlay from './components/auth-overlay/AuthOverlay.svelte';
 
+  import { onMount } from 'svelte';
+
+  import type { AppContext } from './app-context.ts';
   import { provideAppContext } from './app-context.ts';
+  import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
+  import { getPluginApi } from './core/plugin-api-cache.ts';
 
   import AppHeader from './components/layout/AppHeader.svelte';
   import AppSidebar from './components/layout/AppSidebar.svelte';
@@ -46,7 +51,20 @@
     router: Router;
   } = $props();
 
-  provideAppContext({ settings, printerManager, registry, ui, i18n, loader, router });
+  const hotkeys = createHotkeyManager({
+    registry,
+    getRoute: () => router.route,
+    getModule: (pluginId) => loader.getModule(pluginId),
+    getApi: (pluginId) => getPluginApi(ctx, pluginId),
+    appliesToActivePrinter: (pluginId) =>
+      loader.pluginAppliesToPrinter(pluginId, printerManager.activePrinterId ?? ''),
+    isFleetOpen: () => ui.fleetOpen,
+  });
+
+  const ctx: AppContext = { settings, printerManager, registry, ui, i18n, loader, router, hotkeys };
+  provideAppContext(ctx);
+
+  onMount(() => hotkeys.start());
 
   let route = $derived(router.route);
   let sidebarCollapsed = $derived(ui.sidebarCollapsed);

@@ -7,6 +7,7 @@ import {
   type Registered,
   type RegisteredBanner,
   type RegisteredChip,
+  type RegisteredHotkey,
   type RegisteredOverlay,
   type RegisteredPage,
   type RegisteredPrinterPanel,
@@ -49,6 +50,7 @@ import { findFreeSpot } from './layout-utils.ts';
 export type {
   RegisteredBanner,
   RegisteredChip,
+  RegisteredHotkey,
   RegisteredOverlay,
   RegisteredPage,
   RegisteredPrinterPanel,
@@ -76,6 +78,7 @@ export function createPluginRegistry(settings: SettingsStore) {
     banners: [],
     chips: [],
     printerPanels: [],
+    hotkeys: [],
   });
 
   let surfaces = $state<SurfaceStore>(emptyStore());
@@ -166,6 +169,10 @@ export function createPluginRegistry(settings: SettingsStore) {
 
   function getPrinterPanels(): RegisteredPrinterPanel[] {
     return surfaces.printerPanels;
+  }
+
+  function getHotkeys(): RegisteredHotkey[] {
+    return surfaces.hotkeys;
   }
 
   function getRightPanel(): RegisteredRightPanel | undefined {
@@ -354,6 +361,7 @@ function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
     getRightPanel,
     getChips,
     getPrinterPanels,
+    getHotkeys,
 
     // Per-printer: page visibility
     getVisiblePages,

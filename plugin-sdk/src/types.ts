@@ -181,6 +181,39 @@ export interface PrinterPanelContribution extends SurfaceContribution {
 export interface RightPanelContribution extends SurfaceContribution {}
 
 /**
+ * Область действия горячей клавиши.
+ * - global    — везде, на любых поверхностях (дашборд, страницы, Settings);
+ * - dashboard — только на дашборде;
+ * - plugin    — только на странице плагина-владельца.
+ */
+export type HotkeyScope = 'global' | 'dashboard' | 'plugin';
+
+/**
+ * Hotkey contributed by a plugin.
+ *
+ * keys — комбинация вида "Ctrl+Shift+K", "Alt+1", "Shift+/", "F5", "Escape".
+ * Буквы, цифры и знаки препинания сопоставляются по физической клавише
+ * (не зависят от раскладки).
+ * handler — имя экспорта entry-модуля с сигнатурой
+ * (api: PluginApi, event: KeyboardEvent) => void | Promise<void>.
+ *
+ * Конфликты (одинаковая комбинация):
+ * - global конфликтует с любым другим вкладом;
+ * - dashboard + dashboard — конфликт;
+ * - dashboard + plugin — допустимо;
+ * - plugin + plugin — допустимо у РАЗНЫХ плагинов, у одного плагина — конфликт.
+ * Конфликтующие вклады отключаются ВСЕ, хост пишет предупреждение.
+ */
+export interface HotkeyContribution {
+  id: string;
+  keys: string;
+  scope: HotkeyScope;
+  handler: string;
+  /** i18n-ключ описания (для About/Debug). */
+  titleKey?: string;
+}
+
+/**
  * Контекст, в котором принимается решение гарда. Добавлен в фазе 2
  * мультипринтерных гардов: обработчик видит, на какой принтер направлен
  * request — это позволяет держать состояние per-printer (например, статус
@@ -237,6 +270,8 @@ export interface PluginManifest {
 
   locales?: string[];
   defaultSettings?: Record<string, unknown>;
+
+  hotkeys?: HotkeyContribution[];
 
   guards?: GuardContribution[];
 }

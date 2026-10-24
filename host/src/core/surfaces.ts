@@ -1,6 +1,8 @@
+import { HOTKEY_SCOPES, parseCombo } from './hotkeys';
 import type {
   BannerContribution,
   ChipContribution,
+  HotkeyContribution,
   OverlayContribution,
   PageContribution,
   PluginManifest,
@@ -35,6 +37,7 @@ export interface SurfaceContributionMap {
   banners: BannerContribution;
   chips: ChipContribution;
   printerPanels: PrinterPanelContribution;
+  hotkeys: HotkeyContribution;
 }
 
 /** Уникальные поверхности: ключ = поле манифеста. */
@@ -55,6 +58,7 @@ export type RegisteredOverlay = Registered<'overlays'>;
 export type RegisteredBanner = Registered<'banners'>;
 export type RegisteredChip = Registered<'chips'>;
 export type RegisteredPrinterPanel = Registered<'printerPanels'>;
+export type RegisteredHotkey = Registered<'hotkeys'>;
 export type RegisteredRightPanel = RegisteredSingleton<'rightPanel'>;
 
 /** Порядок = порядок регистрации/санитайза. */
@@ -65,6 +69,7 @@ export const SURFACE_KINDS = [
   'banners',
   'chips',
   'printerPanels',
+  'hotkeys',
 ] as const satisfies readonly SurfaceKind[];
 
 export const SINGLETON_SURFACES = ['rightPanel'] as const satisfies readonly SingletonSurfaceKind[];
@@ -97,6 +102,16 @@ function hasStrings(value: unknown, keys: readonly string[]): boolean {
 
 const ID_AND_ELEMENT = ['id', 'element'] as const;
 
+function isValidHotkey(value: unknown): boolean {
+  if (!hasStrings(value, ['id', 'keys', 'handler'])) return false;
+  const h = value as { scope?: unknown; keys: string };
+  return (
+    typeof h.scope === 'string' &&
+    (HOTKEY_SCOPES as readonly string[]).includes(h.scope) &&
+    parseCombo(h.keys) !== null
+  );
+}
+
 export const SURFACE_SPECS: Record<SurfaceKind, SurfaceSpec> = {
   pages: { label: 'page', persistent: false },
   widgets: { label: 'widget', persistent: false },
@@ -118,6 +133,11 @@ export const SURFACE_SPECS: Record<SurfaceKind, SurfaceSpec> = {
   printerPanels: {
     label: 'printerPanel',
     validate: (v) => hasStrings(v, ID_AND_ELEMENT),
+    persistent: true,
+  },
+  hotkeys: {
+    label: 'hotkey',
+    validate: isValidHotkey,
     persistent: true,
   },
 };

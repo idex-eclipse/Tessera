@@ -69,6 +69,10 @@ const ru: I18nMessages = {
       guards: 'Охраняемые маршруты',
       parkedChains: 'Выполняемые проверки',
       noParked: 'Нет выполняемых проверок',
+      hotkeys: 'Горячие клавиши',
+      noHotkeys: 'Горячие клавиши не зарегистрированы',
+      hotkeyDisabled: 'Отключена: конфликт',
+      hotkeyScope: { global: 'Везде', dashboard: 'Панель управления', plugin: 'Страница плагина' },
     },
 
     theme: 'Тема',
