@@ -151,14 +151,14 @@
 
           <div class="row-actions">
             {#if recording}
-              <button class="btn btn-secondary" onclick={stopRecording}>
+              <button class="btn btn-secondary" class:disable={recording} onclick={stopRecording}>
                 {i18n.t('common.cancel')}
               </button>
             {:else}
               <button class="btn btn-secondary" onclick={() => startRecording(item)}>
                 {i18n.t('settings.hotkeys.change')}
               </button>
-              <button class="btn btn-secondary" onclick={() => toggleDisabled(item)}>
+              <button class="btn btn-primary" onclick={() => toggleDisabled(item)}>
                 {item.userDisabled ? i18n.t('settings.enable') : i18n.t('settings.disable')}
               </button>
               <button
@@ -183,6 +183,23 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-md);
+  }
+  .btn {
+    padding: var(--space-sm) var(--space-lg);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: var(--bg-surface-hover-no-override); color: var(--text-primary); }
+  .btn-primary { background: var(--accent); color: var(--accent-text, #fff); }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover, var(--accent)); }
+  .btn-secondary:hover:not(:disabled) { background: var(--bg-surface-active); }
+  .row-actions .btn {
+    padding: var(--space-xs) var(--space-md);
+    font-size: var(--font-size-sm);
   }
   .hint, .empty { color: var(--text-muted); font-size: var(--font-size-sm); margin: 0; }
   .group { display: flex; flex-direction: column; gap: var(--space-xs); }
