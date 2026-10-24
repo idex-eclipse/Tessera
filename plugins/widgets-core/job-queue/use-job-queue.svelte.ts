@@ -141,7 +141,7 @@ function createJobQueueCore(api: PluginApi, printerId: string) {
     await refresh(gen);
   }
 
-  init();
+  void init();
 
   function destroy(): void {
     teardown();

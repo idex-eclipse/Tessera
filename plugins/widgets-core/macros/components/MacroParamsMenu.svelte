@@ -2,6 +2,7 @@
   import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
   import type { MacroParam } from '../../../shared/macro-params';
+  import { isRtl } from '../../../shared/popover-align';
 
   let {
     name,
@@ -12,7 +13,7 @@
   }: {
     name: string;
     params: MacroParam[];
-    anchor: { left: number; top: number; bottom: number };
+    anchor: { left: number; right: number; top: number; bottom: number };
     onRun: (values: Record<string, string>) => void;
     onClose: () => void;
   } = $props();
@@ -29,7 +30,8 @@
     if (!el) return;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
-    const x = Math.max(8, Math.min(anchor.left, window.innerWidth - w - 8));
+    const preferred = isRtl() ? anchor.right - w : anchor.left;
+    const x = Math.max(8, Math.min(preferred, window.innerWidth - w - 8));
     let y = anchor.bottom + 4;
     if (y + h > window.innerHeight - 8) {
       y = anchor.top - h - 4;

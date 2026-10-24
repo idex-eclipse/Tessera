@@ -5,6 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
+  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -49,16 +50,6 @@
 
   let missing = $derived(klippy.state === 'ready' && item === null);
 
-  let printState = $state<string>('idle');
-  $effect(() => {
-    return api.moonraker().subscribe(
-      { print_stats: ['state'] },
-      (delta: any) => {
-        const s = delta?.print_stats?.state;
-        if (typeof s === 'string') printState = s;
-      },
-    );
-  });
   let disabled = $derived(editMode || missing || item === null);
 
   // --- поповер ---
@@ -70,11 +61,18 @@
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 180, alignRight: rect.left + 240 > window.innerWidth };
+      placement = { above: rect.top > 180, alignRight: shouldAlignToEnd(rect, 240, window.innerWidth, isRtl()) };
     }
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    if (!popoverOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popoverOpen = false; };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   function sendRaw(raw: number): void {
     if (!item) return;
@@ -144,7 +142,7 @@
     onclick={openPopover}
     role="button"
     tabindex={disabled ? -1 : 0}
-    onkeydown={(e) => { if (e.key === 'Enter' && !disabled) openPopover(); }}
+    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
     title={readOnly ? i18n.t('widgets.outputs.autoNote') : undefined}
   >
     {#if klippy.state !== 'ready'}
@@ -230,7 +228,8 @@
     height: 100%;
     min-width: 104px;
     max-width: 220px;
-    padding: 4px 10px 6px 12px;
+    padding-block: 4px 6px;
+    padding-inline: 12px 10px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--bg-surface);
@@ -240,7 +239,7 @@
 
   .stripe {
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: 0;
     bottom: 0;
     width: 3px;
@@ -283,7 +282,7 @@
     gap: 6px;
   }
   .state-text {
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
     font-family: ui-monospace, monospace;
     font-size: var(--font-size-lg);
@@ -311,8 +310,7 @@
 
   .bar {
     position: absolute;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     bottom: 0;
     height: 2px;
     background: transparent;
@@ -359,7 +357,7 @@
   .chip-popover {
     position: absolute;
     bottom: calc(100% + 6px);
-    left: 0;
+    inset-inline-start: 0;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -378,8 +376,8 @@
   }
 
   .chip-popover.align-right {
-    left: auto;
-    right: 0;
+    inset-inline-start: auto;
+    inset-inline-end: 0;
   }
 
   .pop-title {

@@ -238,6 +238,7 @@ export const en = {
       jump: 'Jump to front',
       remove: 'Remove',
       inQueue: 'Time in queue',
+      unit: { m: 'm', s: 's' },
     },
   },
   chipPickers: {

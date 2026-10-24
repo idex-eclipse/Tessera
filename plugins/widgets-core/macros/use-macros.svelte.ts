@@ -7,6 +7,7 @@ import {
 } from '../../shared/core-keeper/core-keeper';
 
 import { parseMacroParams, type MacroParam } from '../../shared/macro-params';
+import { mapMacroHelp } from './macro-help';
 
 export interface MacroItemCfg {
   alias?: string;
@@ -137,6 +138,14 @@ function createMacrosCore(api: PluginApi, printerId: string) {
     writeCfg(draft);
   }
 
+  /** Как mutate, но пишет в настройки только если что-то изменилось (сверка с живым составом). */
+  function mutateIfChanged(fn: (draft: MacrosCfg) => void): void {
+    const before = JSON.stringify(cfg);
+    const draft = JSON.parse(before) as MacrosCfg;
+    fn(draft);
+    if (JSON.stringify(draft) !== before) writeCfg(draft);
+  }
+
   // Macro + description (с кэшированием)
   async function loadLive(gen: number): Promise<void> {
     const h = safeHandle();
@@ -167,7 +176,7 @@ function createMacrosCore(api: PluginApi, printerId: string) {
 
     if (names.length === 0) return;
 
-    const helpMap: Record<string, string> = {};
+    const helpMap = mapMacroHelp(names, helpRes);
     const cfgData = (cfgRes?.status?.configfile?.config ?? {}) as Record<string, any>;
     const pm: Record<string, MacroParam[]> = {};
     for (const n of names) {
@@ -192,7 +201,7 @@ function createMacrosCore(api: PluginApi, printerId: string) {
 
     // Обновляем cfg (добавляем новые макросы в ungrouped, удаляем несуществующие)
     const knownSet = new Set(liveNames);
-    mutate((d) => {
+    mutateIfChanged((d) => {
       const groupedSet = new Set<string>();
       for (const g of d.groups) for (const n of g.macros) groupedSet.add(n);
       const presentSet = new Set(d.ungrouped);
@@ -283,6 +292,7 @@ function createMacrosCore(api: PluginApi, printerId: string) {
     let idx = Math.max(0, Math.min(index, cfg.groups.length));
     if (cur === idx || cur + 1 === idx) return;
     const [g] = cfg.groups.splice(cur, 1);
+    if (!g) return;
     if (cur < idx) idx--;
     cfg.groups.splice(idx, 0, g);
   }
@@ -445,7 +455,7 @@ function createMacrosCore(api: PluginApi, printerId: string) {
     await loadLive(gen);
   }
 
-  init();
+  void init();
 
   function destroy(): void {
     teardown();

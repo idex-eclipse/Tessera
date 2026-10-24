@@ -8,6 +8,7 @@
   import { useMacros } from '../../use-macros.svelte.ts';
   import MacroParamsMenu from '../MacroParamsMenu.svelte';
   import { buildMacroScript } from '../../../../shared/macro-params.ts';
+  import { isRtl } from '../../../../shared/popover-align';
 
   const api = useWidget();
   const i18n = useI18n();
@@ -79,7 +80,9 @@
     const pos = store.containerOf(name);
     if (pos.index < 0) return;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const after = e.clientX > r.left + r.width / 2;
+    // в RTL кнопки идут справа налево: «после» — левая половина
+    const mid = r.left + r.width / 2;
+    const after = isRtl() ? e.clientX < mid : e.clientX > mid;
     store.placeMacroTransient(dragPayload, pos.container, pos.index + (after ? 1 : 0));
   }
 
@@ -126,7 +129,7 @@
   }
 
   // ---------------- popover с flip ----------------
-  let pop = $state<{ name: string; ax: number; aTop: number; aBottom: number } | null>(null);
+  let pop = $state<{ name: string; ax: number; ar: number; aTop: number; aBottom: number } | null>(null);
   let popEl = $state<HTMLDivElement | null>(null);
   let popPos = $state({ x: -9999, y: -9999 });
   let popItem = $derived(pop ? store.itemOf(pop.name) : null);
@@ -134,14 +137,16 @@
   function openPop(e: MouseEvent, name: string): void {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     popPos = { x: -9999, y: -9999 };
-    pop = { name, ax: r.left, aTop: r.top, aBottom: r.bottom };
+    pop = { name, ax: r.left, ar: r.right, aTop: r.top, aBottom: r.bottom };
   }
 
   $effect(() => {
     if (!pop || !popEl) return;
     const w = popEl.offsetWidth;
     const h = popEl.offsetHeight;
-    const x = Math.max(8, Math.min(pop.ax, window.innerWidth - w - 8));
+    // выравнивание по «начальному» краю кнопки (в RTL — по правому)
+    const preferred = isRtl() ? pop.ar - w : pop.ax;
+    const x = Math.max(8, Math.min(preferred, window.innerWidth - w - 8));
     let y = pop.aBottom + 6;
     if (y + h > window.innerHeight - 8) {
       y = pop.aTop - h - 6;
@@ -157,14 +162,14 @@
   // ---------------- меню параметров (шеврон split-кнопки) ----------------
   let paramsMenu = $state<{
     name: string;
-    anchor: { left: number; top: number; bottom: number };
+    anchor: { left: number; right: number; top: number; bottom: number };
   } | null>(null);
 
   function openParams(e: MouseEvent, name: string): void {
     e.stopPropagation();
     hideTip();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    paramsMenu = { name, anchor: { left: r.left, top: r.top, bottom: r.bottom } };
+    paramsMenu = { name, anchor: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } };
   }
 
   function runWithParams(vals: Record<string, string>): void {
@@ -197,7 +202,7 @@
       onmouseenter={(e) => showTip(e, name)}
       onmouseleave={hideTip}
     >
-      {item.alias || name}
+      <bdi>{item.alias || name}</bdi>
     </button>
     {#if split}
       <button
@@ -248,7 +253,7 @@
               <span class="chev" class:open={!g.collapsed}>
                 <Icon name="chevron-down" size={14} />
               </span>
-              <span class="grp-name">{g.name}</span>
+              <bdi class="grp-name">{g.name}</bdi>
               <span class="grp-count">{g.macros.length}</span>
             </button>
           </header>
@@ -314,10 +319,10 @@
 {/if}
 
 {#if tip}
-  <div class="tip" style:left="{tip.x}px" style:top="{tip.y}px">
+  <div class="tip" style:left="{Math.max(8, Math.min(tip.x, window.innerWidth - 288))}px" style:top="{tip.y}px">
     <div class="tip-name">{store.itemOf(tip.name).alias || tip.name}</div>
     {#if store.help[tip.name]}
-      <div class="tip-desc">{store.help[tip.name]}</div>
+      <div class="tip-desc" dir="auto">{store.help[tip.name]}</div>
     {/if}
   </div>
 {/if}
@@ -540,6 +545,11 @@
     transition: transform var(--transition-fast);
   }
 
+  /* свёрнутая группа: шеврон смотрит в сторону чтения (в RTL — влево) */
+  :global([dir='rtl']) .chev:not(.open) {
+    transform: rotate(90deg);
+  }
+
   .chev.open {
     transform: rotate(0deg);
   }
@@ -618,7 +628,8 @@
     width: 22px;
     border: 1px solid var(--border-color);
     border-inline-start: none;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    border-start-end-radius: var(--radius-sm);
+    border-end-end-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
     cursor: pointer;

@@ -10,6 +10,7 @@
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
   import { useToolhead, DEFAULT_STEPS } from '../../use-toolhead.svelte.ts';
+  import { isRtl } from '../../../../shared/popover-align';
 
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
 
@@ -33,7 +34,8 @@
     const w = 160;
     const extra = store.ui.directMode && carriage === store.dualCarriageName() ? 1 : 0;
     const h = 34 + (store.modesFor(carriage).length + extra) * 30;
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    const preferred = isRtl() ? r.right - w : r.left;
+    const left = Math.max(8, Math.min(preferred, window.innerWidth - w - 8));
     let top = r.bottom + 4;
     if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
     modeMenu = { carriage, pos: { top, left } };
@@ -224,7 +226,7 @@
               </button>
             {/each}
 
-            <span class="fm-name" title={st}>{st}</span>
+            <bdi class="fm-name" title={st}>{st}</bdi>
 
             {#each fmSteps as s (s)}
               <button class="btn rsq" onclick={() => store.forceMoveStepper(st, s)}>
@@ -779,6 +781,7 @@
   }
 
   .axis-row {
+    direction: ltr; /* −шаги слева, +шаги справа: оси не зеркалятся в RTL */
     display: flex;
     align-items: center;
     gap: 2px;
@@ -850,6 +853,7 @@
 
   /* -------- единый grid: XY + Z -------- */
   .cross {
+    direction: ltr; /* X− слева, X+ справа независимо от языка интерфейса */
     display: grid;
     gap: var(--space-xs);
     grid-template-columns: repeat(4, 44px);
@@ -1039,6 +1043,7 @@
   }
 
   .axis-row {
+    direction: ltr;
     display: flex;
     align-items: center;
     align-self: center;

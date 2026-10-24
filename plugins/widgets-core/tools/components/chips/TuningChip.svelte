@@ -5,6 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
+  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
 
   type Subject = 'pressure_advance' | 'retraction' | 'flow' | 'speed';
 
@@ -158,7 +159,7 @@
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 220, alignRight: rect.left + 260 > window.innerWidth };
+      placement = { above: rect.top > 220, alignRight: shouldAlignToEnd(rect, 260, window.innerWidth, isRtl()) };
     }
     popoverOpen = true;
     if (subject === 'pressure_advance') {
@@ -236,6 +237,13 @@
   let disabled = $derived(editMode || missing || !subject);
 
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    if (!popoverOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popoverOpen = false; };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 </script>
 
 <div class="chip-root">
@@ -247,7 +255,7 @@
     onclick={openPopover}
     role="button"
     tabindex={disabled ? -1 : 0}
-    onkeydown={(e) => { if (e.key === 'Enter' && !disabled) openPopover(); }}
+    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
   >
     {#if klippy.state !== 'ready'}
       <KlippyNotReadyChip />
@@ -396,7 +404,8 @@
     height: 100%;
     min-width: 104px;
     max-width: 220px;
-    padding: 4px 10px 6px 12px;
+    padding-block: 4px 6px;
+    padding-inline: 12px 10px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--bg-surface);
@@ -405,7 +414,7 @@
   }
   .stripe {
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: 0;
     bottom: 0;
     width: 3px;
@@ -463,7 +472,7 @@
   }
 
   .value {
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
     font-family: ui-monospace, monospace;
     font-size: var(--font-size-lg);
@@ -494,7 +503,7 @@
   .chip-popover {
     position: absolute;
     bottom: calc(100% + 6px);
-    left: 0;
+    inset-inline-start: 0;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -514,8 +523,8 @@
   }
 
   .chip-popover.align-right {
-    left: auto;
-    right: 0;
+    inset-inline-start: auto;
+    inset-inline-end: 0;
   }
 
   .pop-title {
@@ -540,6 +549,7 @@
   }
 
   .field-input {
+    direction: ltr; /* числа и G-code — слева направо */
     padding: var(--space-xs) var(--space-sm);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -555,6 +565,7 @@
   }
 
   .preview {
+    direction: ltr;
     display: block;
     padding: var(--space-xs);
     background: var(--bg-surface-hover-no-override);
