@@ -208,7 +208,13 @@ The handler receives the target in its **third argument** `ctx.targetPrinterId`
 the printer: a freeze on printer A does not block the same request on B.
 
 If a guard keeps state (is a print running, is homing done), keep it **per
-printer**: `Map<printerId, State>`, subscribing to all printers through
+printer** and **do not tie it to the lifecycle of a page or a hook core**: a data
+core is created lazily for a consumer and may not exist for the printer the request
+targets — the guard would see default values and decide wrongly. A reliable
+approach is a module-level tracker started by an always-mounted surface of the
+plugin (for example, an overlay), with the guard handler fetching the data from
+Moonraker once when it is missing. See `plugins/calibrations/printer-tracker.ts`
+for a reference. Keep the state like this: `Map<printerId, State>`, subscribing to all printers through
 `moonrakerFor` and syncing with `onPrintersChange`. A guard that reads only the
 active printer's state will decide based on the wrong printer when called for a
 non-active one (fleet).

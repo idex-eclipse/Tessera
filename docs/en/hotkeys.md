@@ -172,6 +172,10 @@ provides the hint to the user.
 ## Recommendations
 
 - Prefer `scope: 'plugin'` — it is the least conflict-prone option.
+- Declare an overlay's actions (it is visible on any page) as `scope: 'global'` and
+  make the handler a safe no-op while the overlay is not open. Remember that the host
+  calls `preventDefault()` before the handler, so use combinations with a modifier
+  (`Alt+…`) for such keys so that ordinary input is not intercepted.
 - Use `Mod+…` for cross-platform actions.
 - Do not take system and browser combinations (`Ctrl+T/W/N/R/L/Tab`, `F5`, `F12`,
   `Alt+←`): the browser may intercept the event before the page.
