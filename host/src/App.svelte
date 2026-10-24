@@ -13,6 +13,7 @@
   import type { AppContext } from './app-context.ts';
   import { provideAppContext } from './app-context.ts';
   import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
+  import { createHostHotkeys } from './core/host-hotkeys.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
 
   import AppHeader from './components/layout/AppHeader.svelte';
@@ -59,6 +60,7 @@
     appliesToActivePrinter: (pluginId) =>
       loader.pluginAppliesToPrinter(pluginId, printerManager.activePrinterId ?? ''),
     isFleetOpen: () => ui.fleetOpen,
+    hostHotkeys: createHostHotkeys({ router, printerManager, ui }),
   });
 
   const ctx: AppContext = { settings, printerManager, registry, ui, i18n, loader, router, hotkeys };

@@ -74,6 +74,12 @@ const en: I18nMessages = {
       noParked: 'No running guards',
       hotkeys: 'Hotkeys',
       noHotkeys: 'No hotkeys registered',
+      hostHotkeys: {
+        toggleFleet: 'Toggle fleet mode',
+        printerN: 'Switch to printer by number',
+        printerNext: 'Next printer',
+        printerPrev: 'Previous printer',
+      },
       hotkeyDisabled: 'disabled: conflict',
       hotkeyScope: { global: 'global', dashboard: 'dashboard', plugin: 'plugin page' },
     },

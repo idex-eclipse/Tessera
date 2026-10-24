@@ -71,6 +71,12 @@ const ru: I18nMessages = {
       noParked: 'Нет выполняемых проверок',
       hotkeys: 'Горячие клавиши',
       noHotkeys: 'Горячие клавиши не зарегистрированы',
+      hostHotkeys: {
+        toggleFleet: 'Режим флита (вкл/выкл)',
+        printerN: 'Переключиться на принтер по номеру',
+        printerNext: 'Следующий принтер',
+        printerPrev: 'Предыдущий принтер',
+      },
       hotkeyDisabled: 'Отключена: конфликт',
       hotkeyScope: { global: 'Везде', dashboard: 'Панель управления', plugin: 'Страница плагина' },
     },

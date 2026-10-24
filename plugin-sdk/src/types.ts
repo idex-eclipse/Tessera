@@ -203,6 +203,9 @@ export type HotkeyScope = 'global' | 'dashboard' | 'plugin';
  * - dashboard + plugin — допустимо;
  * - plugin + plugin — допустимо у РАЗНЫХ плагинов, у одного плагина — конфликт.
  * Конфликтующие вклады отключаются ВСЕ, хост пишет предупреждение.
+ *
+ * Модификаторы: Ctrl, Alt (Option), Shift, Meta (Cmd/Win) и платформенный Mod
+ * (= Cmd на macOS, Ctrl на остальных). Совпадение по модификаторам точное.
  */
 export interface HotkeyContribution {
   id: string;
@@ -211,6 +214,12 @@ export interface HotkeyContribution {
   handler: string;
   /** i18n-ключ описания (для About/Debug). */
   titleKey?: string;
+  /**
+   * Срабатывать ли, когда фокус в поле ввода/редакторе.
+   * По умолчанию — только для комбинаций с Ctrl/Alt/Meta. Поставьте false для
+   * комбинаций, которые в полях ввода имеют своё значение (Ctrl+стрелки и т.п.).
+   */
+  allowInInputs?: boolean;
 }
 
 /**

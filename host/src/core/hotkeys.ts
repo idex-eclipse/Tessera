@@ -21,6 +21,12 @@ export const HOTKEY_SCOPES: readonly HotkeyScope[] = ['global', 'dashboard', 'pl
 
 type ModifierName = 'ctrl' | 'alt' | 'shift' | 'meta';
 
+/** macOS/iOS: Mod → Meta (Cmd), иначе Mod → Ctrl. */
+export function detectMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
+}
+
 const MODIFIER_ALIASES: Record<string, ModifierName> = {
   ctrl: 'ctrl',
   control: 'ctrl',
@@ -80,7 +86,7 @@ function normalizeKeyToken(token: string): string {
 }
 
 /** Разбор "Ctrl+Shift+K"; null — запись некорректна (нет основной клавиши, дубль, мусор). */
-export function parseCombo(spec: unknown): Combo | null {
+export function parseCombo(spec: unknown, mac: boolean = detectMacPlatform()): Combo | null {
   if (typeof spec !== 'string') return null;
   let rest = spec.trim();
   if (!rest) return null;
@@ -100,7 +106,8 @@ export function parseCombo(spec: unknown): Combo | null {
 
   for (const part of parts) {
     if (!part) return null;
-    const mod = MODIFIER_ALIASES[part.toLowerCase()];
+    const lowered = part.toLowerCase();
+    const mod = lowered === 'mod' ? (mac ? 'meta' : 'ctrl') : MODIFIER_ALIASES[lowered];
     if (mod) {
       if (combo[mod]) return null;
       combo[mod] = true;
@@ -216,12 +223,15 @@ interface Parsed extends HotkeyEntry {
  * Строит биндинги и находит конфликты. Отключаются ВСЕ стороны конфликта,
  * включая участника, который конфликтует лишь с одним из нескольких.
  */
-export function analyzeHotkeys(entries: readonly HotkeyEntry[]): HotkeyAnalysis {
+export function analyzeHotkeys(
+  entries: readonly HotkeyEntry[],
+  mac: boolean = detectMacPlatform(),
+): HotkeyAnalysis {
   const invalid: HotkeyEntry[] = [];
   const parsed: Parsed[] = [];
 
   for (const entry of entries) {
-    const combo = parseCombo(entry.contribution.keys);
+    const combo = parseCombo(entry.contribution.keys, mac);
     if (!combo) {
       invalid.push(entry);
       continue;
