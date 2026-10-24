@@ -795,7 +795,7 @@
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     width: 100%;
     transition: background var(--transition-fast), color var(--transition-fast);
     white-space: nowrap;
@@ -1297,4 +1297,7 @@
     margin: 0;
   }
 
+
+  /* свёрнутый шеврон «указывает в сторону содержимого»: в RTL — влево */
+  :global([dir='rtl']) .chev:not(.open) { transform: rotate(90deg); }
 </style>

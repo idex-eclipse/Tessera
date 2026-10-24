@@ -9,6 +9,7 @@
     computeRemaining,
     computeEta,
     fmtDuration,
+    durationUnits,
     fmtClock,
   } from '../../use-print-status.svelte.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -104,11 +105,11 @@
             </div>
             <div class="fs-metric">
                 <span class="fs-label">{i18n.t('fleet.status.remaining')}</span>
-                <span class="fs-value mono">{fmtDuration(remaining)}</span>
+                <span class="fs-value mono">{fmtDuration(remaining, durationUnits(i18n.t))}</span>
             </div>
             <div class="fs-metric">
                 <span class="fs-label">{i18n.t('fleet.status.eta')}</span>
-                <span class="fs-value mono">{fmtClock(eta)}</span>
+                <span class="fs-value mono">{fmtClock(eta, i18n.locale)}</span>
             </div>
             </div>
         {:else if m.state === 'complete'}

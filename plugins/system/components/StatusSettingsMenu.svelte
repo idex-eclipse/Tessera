@@ -19,7 +19,8 @@
 
   let open = $state(false);
   let fieldsOpen = $state(false);
-  let pos = $state({ top: -9999, right: -9999 });
+  // inline — отступ от КОНЦА строки (right в LTR, left в RTL): меню выравнивается по кнопке
+  let pos = $state({ top: -9999, inline: -9999 });
   let btnEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
 
@@ -61,15 +62,16 @@
     else if (mh <= r.top - 4) top = r.top - 4 - mh;
     else top = Math.max(8, window.innerHeight - mh - 8);
 
-    const rightPreferred = Math.max(8, window.innerWidth - r.right);
-    const right = Math.min(rightPreferred, Math.max(8, window.innerWidth - mw - 8));
+    const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+    const preferred = rtl ? Math.max(8, r.left) : Math.max(8, window.innerWidth - r.right);
+    const inline = Math.min(preferred, Math.max(8, window.innerWidth - mw - 8));
 
-    pos = { top, right };
+    pos = { top, inline };
   }
 
   function toggleOpen(): void {
     if (!open) {
-      pos = { top: -9999, right: -9999 };
+      pos = { top: -9999, inline: -9999 };
       fieldsOpen = false;
     }
     open = !open;
@@ -146,7 +148,7 @@
     class="menu"
     bind:this={menuEl}
     style:top="{pos.top}px"
-    style:right="{pos.right}px"
+    style:inset-inline-end="{pos.inline}px"
     role="menu"
   >
     <div class="menu-title">{i18n.t('system.status.progressMode')}</div>
@@ -314,4 +316,7 @@
     margin: var(--space-xs) 0;
     background: var(--border-color);
   }
+
+  /* свёрнутый шеврон «указывает в сторону содержимого»: в RTL — влево */
+  :global([dir='rtl']) .chev:not(.open) { transform: rotate(90deg); }
 </style>

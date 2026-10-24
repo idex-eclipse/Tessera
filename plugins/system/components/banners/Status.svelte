@@ -76,7 +76,7 @@
           <div class="fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
         </div>
         <span class="pct">{progress != null ? `${Math.round(progress * 100)}%` : '—'}</span>
-        <span class="eta">{i18n.t('system.status.eta')}: {fmtClock(eta)}</span>
+        <span class="eta">{i18n.t('system.status.eta')}: {fmtClock(eta, i18n.locale)}</span>
 
         <span class="sb-actions">
           {#if m.state === 'printing'}
@@ -307,4 +307,7 @@
     flex-shrink: 0;
     margin-inline-start: auto;
   }
+
+  /* свёрнутый шеврон «указывает в сторону содержимого»: в RTL — влево */
+  :global([dir='rtl']) .chev:not(.open) { transform: rotate(90deg); }
 </style>

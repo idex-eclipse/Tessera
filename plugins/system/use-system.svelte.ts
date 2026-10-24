@@ -6,6 +6,7 @@ import {
   createDelegateStore,
 } from '../shared/core-keeper/core-keeper';
 import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte';
+import { notifyLocal } from './use-notifications.svelte.ts';
 
 // ------------------------------------------------------------------
 // Модели
@@ -107,6 +108,19 @@ export interface UpdateItemModel {
 
 const PROC_CAP = 600;
 
+/**
+ * Встроенные цели обновления с отдельными методами Moonraker
+ * (machine.update.klipper / .moonraker / .system). Всё остальное — «клиент»
+ * (веб-интерфейсы и т.п.): метод machine.update.client с параметром name.
+ */
+const BUILTIN_UPDATE_TARGETS = new Set(['klipper', 'moonraker', 'system']);
+
+export function updateRequestFor(name: string): { method: string; params?: { name: string } } {
+  return BUILTIN_UPDATE_TARGETS.has(name)
+    ? { method: `machine.update.${name}` }
+    : { method: 'machine.update.client', params: { name } };
+}
+
 // ------------------------------------------------------------------
 // Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
 // Legacy-режим (без printerId) = делегат, следующий за активным принтером.
@@ -179,6 +193,44 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * REST для мутаций: любой не-2xx и сетевой сбой — исключение (с текстом ошибки
+   * Moonraker, если он есть). Раньше результат игнорировался, и неудачное создание /
+   * удаление пользователя или смена пароля выглядели как успех.
+   */
+  async function restStrict(path: string, init?: RequestInit): Promise<void> {
+    const h = safeHandle();
+    if (!h) throw new Error('Printer not available');
+
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
+    const tok = (h as { authToken?: string }).authToken;
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+
+    const res = await fetch(h.httpBaseUrl + path, { ...init, headers });
+    if (res.ok) return;
+
+    let detail = '';
+    try {
+      const body = (await res.json()) as { error?: { message?: string } };
+      detail = body?.error?.message ?? '';
+    } catch {
+      /* тела нет */
+    }
+    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`);
+  }
+
+  /** Ошибка действия → центр уведомлений (отказ гарда уже показан событием guard-notify). */
+  function reportActionError(action: string, e: unknown): void {
+    if ((e as { rejection?: unknown } | null)?.rejection) return;
+    const detail = e instanceof Error ? e.message : String(e);
+    notifyLocal(printerId ?? api.printer.id, {
+      severity: 'error',
+      source: 'plugin',
+      text: api.i18n.t('system.errors.actionFailed', { action, detail }),
+      sticky: false,
+    });
   }
 
   function applySystemInfo(info: any, serverInfo: any): void {
@@ -540,6 +592,7 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
       await fn();
     } catch (e) {
       console.error('[system] action failed:', action, e);
+      reportActionError(action, e);
     } finally {
       busy = '';
     }
@@ -547,7 +600,10 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
 
   function estop(): void {
     const h = safeHandle();
-    h?.request('printer.emergency_stop').catch((e) => console.error('[system] estop', e));
+    h?.request('printer.emergency_stop').catch((e) => {
+      console.error('[system] estop', e);
+      reportActionError('estop', e);
+    });
   }
 
   const restartKlipper = () => guard('restartKlipper', () => safeHandle()!.request('printer.restart'));
@@ -571,7 +627,7 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
 
   const addUser = (username: string, password: string) =>
     guard(`userAdd:${username}`, async () => {
-      await rest<any>('/access/user', {
+      await restStrict('/access/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -581,21 +637,26 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
 
   const deleteUser = (username: string) =>
     guard(`userDel:${username}`, async () => {
-      await rest<any>(`/access/user?username=${encodeURIComponent(username)}`, { method: 'DELETE' });
+      await restStrict(`/access/user?username=${encodeURIComponent(username)}`, { method: 'DELETE' });
       await loadAccess(generation);
     });
 
   const changePassword = (password: string, newPassword: string) =>
     guard('userPwd', async () => {
-      await rest<any>('/access/user/password', {
+      // Moonraker ждёт поле new_password (snake_case); с newPassword запрос отклонялся
+      await restStrict('/access/user/password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, newPassword }),
+        body: JSON.stringify({ password, new_password: newPassword }),
       });
     });
 
   const refreshUpdates = () => guard('updRefresh', () => safeHandle()!.request('machine.update.refresh'));
-  const updateItem = (name: string) => guard(`upd:${name}`, () => safeHandle()!.request(`machine.update.${name}`));
+  const updateItem = (name: string) =>
+    guard(`upd:${name}`, () => {
+      const { method, params } = updateRequestFor(name);
+      return safeHandle()!.request(method, params);
+    });
   const rollbackItem = (name: string) =>
     guard(`rollback:${name}`, () => safeHandle()!.request('machine.update.rollback', { name }));
   const clearUpdateLog = () => {

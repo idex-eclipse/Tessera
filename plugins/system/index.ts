@@ -13,6 +13,9 @@ export const pageIcons: Record<string, string> = {
   server: serverIcon,
 };
 
+export { guardSystemPrintSafety } from './guards.ts';
+export { hotkeyToggleNotifications, hotkeyOpenMachine, hotkeyRefreshMachine } from './hotkeys.ts';
+
 defineMpuElement('mpu-system-page', SystemPage);
 defineMpuElement('mpu-system-right-panel', SystemRightPanel);
 defineMpuElement('mpu-system-state-banner', StateBanner);

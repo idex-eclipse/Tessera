@@ -1,6 +1,19 @@
 export const ru = {
   system: {
+    hotkeys: {
+      toggleNotifications: 'Показать / скрыть центр уведомлений',
+      openMachine: 'Открыть страницу «Система»',
+      refresh: 'Система: обновить данные',
+    },
+    units: { h: 'ч', m: 'м', s: 'с' },
+    errors: {
+      actionFailed: 'Действие не выполнено ({action}): {detail}',
+    },
+    guard: {
+      print_in_progress: 'Это действие заблокировано, пока идёт печать или она на паузе',
+    },
     pageTitle: 'Система',
+    confirm: 'Подтвердить',
 
     rightPanel: {
       title: 'Управление машиной',
@@ -68,6 +81,9 @@ export const ru = {
 
     notifications: {
       title: 'Уведомления',
+      klipperShutdown: 'Остановка Klipper',
+      klipperShutdownReason: 'Остановка Klipper: {reason}',
+      tmcFlag: 'TMC {name}: {flag}',
       empty: 'Нет уведомлений',
       dismiss: 'Закрыть',
       dismissAll: 'Закрыть все',

@@ -63,5 +63,47 @@ export const systemManifest = definePlugin({
     },
   ],
 
+  guards: [
+    {
+      id: 'system-print-safety',
+      match: [
+        'printer.restart',
+        'printer.firmware_restart',
+        'machine.reboot',
+        'machine.shutdown',
+        'machine.update.*',
+        'machine.services.restart',
+        'machine.services.stop',
+      ],
+      handler: 'guardSystemPrintSafety',
+    },
+  ],
+
+  hotkeys: [
+    // N: открыть / закрыть центр уведомлений (в полях ввода не срабатывает)
+    {
+      id: 'toggle-notifications',
+      scope: 'global',
+      keys: 'N',
+      handler: 'hotkeyToggleNotifications',
+      titleKey: 'system.hotkeys.toggleNotifications',
+    },
+    // Alt+M: страница «Система» откуда угодно; Alt+R — обновить её данные
+    {
+      id: 'open-machine',
+      scope: 'global',
+      keys: 'Alt+M',
+      handler: 'hotkeyOpenMachine',
+      titleKey: 'system.hotkeys.openMachine',
+    },
+    {
+      id: 'refresh-machine',
+      scope: 'plugin',
+      keys: 'Alt+R',
+      handler: 'hotkeyRefreshMachine',
+      titleKey: 'system.hotkeys.refresh',
+    },
+  ],
+
   locales: ['en', 'ru'],
 });

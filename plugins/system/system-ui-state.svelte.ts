@@ -4,6 +4,8 @@
  */
 class SystemUiState {
   notificationsOpen = $state(false);
+  /** Alt+R (hotkey) просит страницу «Система» перечитать данные. */
+  refreshSeq = $state(0);
 }
 
 export const systemUiState = new SystemUiState();

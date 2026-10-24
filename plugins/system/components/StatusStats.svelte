@@ -6,6 +6,7 @@
     computeEta,
     computeFlow,
     fmtDuration,
+    durationUnits,
     fmtClock,
     FIELD_GROUPS,
     type PrintStatusModel,
@@ -20,6 +21,7 @@
   } = $props();
 
   const i18n = useI18n();
+  const units = () => durationUnits(i18n.t);
 
   let remaining = $derived(computeRemaining(m, mode));
   let eta = $derived(computeEta(m, mode));
@@ -42,14 +44,14 @@
       case 'speed': return m.liveVelocity != null ? `${m.liveVelocity.toFixed(1)} mm/s` : '—';
       case 'flow': return flow != null ? `${flow.toFixed(1)} mm³/s` : '—';
       case 'filament': return m.filamentUsed != null ? `${(m.filamentUsed / 1000).toFixed(1)} m` : '—';
-      case 'slicer': return fmtDuration(m.estimatedTime);
-      case 'elapsed': return fmtDuration(m.printDuration);
-      case 'total': return fmtDuration(m.totalDuration);
+      case 'slicer': return fmtDuration(m.estimatedTime, units());
+      case 'elapsed': return fmtDuration(m.printDuration, units());
+      case 'total': return fmtDuration(m.totalDuration, units());
       case 'layer':
         return m.currentLayer != null && m.totalLayer != null
           ? `${m.currentLayer} / ${m.totalLayer}` : '—';
-      case 'remaining': return fmtDuration(remaining);
-      case 'eta': return fmtClock(eta);
+      case 'remaining': return fmtDuration(remaining, units());
+      case 'eta': return fmtClock(eta, i18n.locale);
     }
   }
 </script>

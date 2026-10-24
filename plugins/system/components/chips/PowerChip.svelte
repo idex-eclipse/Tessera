@@ -37,7 +37,7 @@
     onclick={toggle}
     role="button"
     tabindex={disabled ? -1 : 0}
-    onkeydown={(e) => { if (e.key === 'Enter' && !disabled) toggle(); }}
+    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); toggle(); } }}
     title={missing ? i18n.t('system.power.unavailableHint') : isOn ? i18n.t('system.power.on') : i18n.t('system.power.off')}
   >
     <span class="stripe"></span>
@@ -76,7 +76,7 @@
 
   .stripe {
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: 0;
     bottom: 0;
     width: 3px;
