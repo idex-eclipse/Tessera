@@ -3,13 +3,18 @@
 
   import { useBedMesh } from '../../use-bed-mesh.svelte.ts';
   import { gcode, runGcode } from '../../commands.ts';
+  import { ensurePrinterTracker } from '../../printer-tracker.ts';
 
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = useBedMesh(api);
-  const klippy = useKlippyState(api); 
+  const klippy = useKlippyState(api);
+
+  // Оверлей смонтирован всегда (постоянная поверхность), поэтому именно он запускает
+  // трекер состояния всех принтеров для гардов и hotkeys плагина (идемпотентно).
+  ensurePrinterTracker(api);
 
   let busy = $state('');
 

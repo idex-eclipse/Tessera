@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const calibrationsManifest = definePlugin({
   id: '@core/calibrations',
   name: 'Calibrations',
-  version: '1.1.2',
+  version: '1.2.0',
   entry: '/plugins/calibrations/index.js',
 
   pages: [
@@ -59,6 +59,27 @@ export const calibrationsManifest = definePlugin({
       match: ['printer.gcode.script'],
       handler: 'guardCalibScript',
     },
+    {
+      id: 'calib-print-start',
+      match: ['printer.print.start'],
+      handler: 'guardCalibPrintStart',
+    },
+  ],
+
+  hotkeys: [
+    // страница калибровок: вкладки
+    { id: 'tab-mesh', scope: 'plugin', keys: 'Alt+1', handler: 'hotkeyTabMesh', titleKey: 'calibrations.hotkeys.tabMesh' },
+    { id: 'tab-probe', scope: 'plugin', keys: 'Alt+2', handler: 'hotkeyTabProbe', titleKey: 'calibrations.hotkeys.tabProbe' },
+    { id: 'tab-heaters', scope: 'plugin', keys: 'Alt+3', handler: 'hotkeyTabHeaters', titleKey: 'calibrations.hotkeys.tabHeaters' },
+    { id: 'tab-shaper', scope: 'plugin', keys: 'Alt+4', handler: 'hotkeyTabShaper', titleKey: 'calibrations.hotkeys.tabShaper' },
+
+    // ручное зондирование (оверлей TEST_Z виден на любой странице → global)
+    { id: 'testz-up', scope: 'global', keys: 'Alt+ArrowUp', handler: 'hotkeyTestzUp', titleKey: 'calibrations.hotkeys.testzUp' },
+    { id: 'testz-down', scope: 'global', keys: 'Alt+ArrowDown', handler: 'hotkeyTestzDown', titleKey: 'calibrations.hotkeys.testzDown' },
+    { id: 'testz-up-fine', scope: 'global', keys: 'Alt+Shift+ArrowUp', handler: 'hotkeyTestzUpFine', titleKey: 'calibrations.hotkeys.testzUpFine' },
+    { id: 'testz-down-fine', scope: 'global', keys: 'Alt+Shift+ArrowDown', handler: 'hotkeyTestzDownFine', titleKey: 'calibrations.hotkeys.testzDownFine' },
+    { id: 'probe-accept', scope: 'global', keys: 'Alt+Enter', handler: 'hotkeyProbeAccept', titleKey: 'calibrations.hotkeys.probeAccept' },
+    { id: 'probe-abort', scope: 'global', keys: 'Alt+Backspace', handler: 'hotkeyProbeAbort', titleKey: 'calibrations.hotkeys.probeAbort' },
   ],
 
   locales: ['en', 'ru'],

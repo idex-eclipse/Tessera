@@ -353,7 +353,7 @@
       </span>
       {#if zoomStack.length > 0}
         <button class="zoom-btn" onclick={zoomOut} title={i18n.t('bedMesh.widget.zoomOut')}>
-          ← {i18n.t('bedMesh.widget.zoomOut')}
+          <span class="dir-arrow" aria-hidden="true">←</span> {i18n.t('bedMesh.widget.zoomOut')}
         </button>
         <button class="zoom-btn" onclick={resetZoom} title={i18n.t('bedMesh.widget.resetZoom')}>
           {i18n.t('bedMesh.widget.resetZoom')}
@@ -446,7 +446,7 @@
     font-family: monospace;
     color: var(--text-muted);
     white-space: nowrap;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .empty {
@@ -455,4 +455,7 @@
     padding: var(--space-md);
     font-size: var(--font-size-sm);
   }
+  /* Стрелка-указатель зеркалится в RTL */
+  .dir-arrow { display: inline-block; }
+  :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }
 </style>

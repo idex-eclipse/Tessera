@@ -1,4 +1,6 @@
-import type { GuardDecision, GuardContext } from '../../plugin-sdk/src/types';
+import type { GuardContext, GuardDecision } from '../../plugin-sdk/src/types';
+
+import { getTracked, resolvePrinterState } from './printer-tracker.ts';
 
 interface GuardRequest {
   method: string;
@@ -6,74 +8,91 @@ interface GuardRequest {
   targetPrinterId: string;
 }
 
-/** Per-printer зеркало print_stats.state / toolhead.homed_axes.
- *  Кормится из use-calibrations.svelte.ts; гард читает синхронно по targetPrinterId. */
-interface PrinterGuardState {
-  printState: 'printing' | 'paused' | 'idle' | 'standby';
-  homedAxes: string;
-}
-
-const guardStates = new Map<string, PrinterGuardState>();
-
-function getState(printerId: string): PrinterGuardState {
-  let state = guardStates.get(printerId);
-  if (!state) {
-    state = { printState: 'idle', homedAxes: '' };
-    guardStates.set(printerId, state);
-  }
-  return state;
-}
-
-export function setGuardPrintState(printerId: string, s: PrinterGuardState['printState']): void {
-  getState(printerId).printState = s;
-}
-
-export function setGuardHomedAxes(printerId: string, a: string): void {
-  getState(printerId).homedAxes = a;
-}
-
-const START_TOKENS = [
+/**
+ * Команды, запуск которых во время печати запрещён (калибровки двигают голову
+ * и греют, RUN_SHELL_COMMAND запускает внешние процессы).
+ */
+const START_TOKENS = new Set([
   'SHAPER_CALIBRATE', 'TEST_RESONANCES', 'PID_CALIBRATE',
   'PROBE_CALIBRATE', 'Z_ENDSTOP_CALIBRATE',
   'PROBE_EDDY_CURRENT_CALIBRATE', 'MANUAL_PROBE', 'RUN_SHELL_COMMAND',
   'BED_MESH_CALIBRATE', 'Z_TILT_ADJUST', 'QUAD_GANTRY_LEVEL', 'SCREWS_TILT_CALCULATE',
-];
-const HOMED_TOKENS = [
+]);
+
+/** Команды, требующие исходных (xyz) осей. */
+const HOMED_TOKENS = new Set([
   'TEST_RESONANCES', 'SHAPER_CALIBRATE',
   'BED_MESH_CALIBRATE', 'Z_TILT_ADJUST', 'QUAD_GANTRY_LEVEL', 'SCREWS_TILT_CALCULATE',
-];
-const SAVE_TOKENS = ['SAVE_CONFIG', 'RESTART', 'FIRMWARE_RESTART'];
+]);
+
+/** Сохранение/перезапуск Klipper во время печати обрывает печать. */
+const SAVE_TOKENS = new Set(['SAVE_CONFIG', 'RESTART', 'FIRMWARE_RESTART']);
+
+const WATCHED = new Set([...START_TOKENS, ...HOMED_TOKENS, ...SAVE_TOKENS]);
 
 /**
- * Manifest handler: запросы НЕ мутируются; freeze в v1 не используется.
- * Читает состояние ЦЕЛЕВОГО принтера из ctx.targetPrinterId (фаза 2 мультипринтерных гардов).
- * Если printerId пуст (legacy-вызов без ctx), fallback на 'idle'/'' — safe default.
+ * Первые слова всех G-code строк скрипта (верхний регистр).
+ * Скрипт может быть многострочным ("G28\nBED_MESH_CALIBRATE"): проверять только
+ * первую строку недостаточно. Пустые строки и комментарии (; и #) пропускаются.
  */
-export const guardCalibScript = (
+export function scriptCommands(script: string): string[] {
+  const out: string[] = [];
+  for (const raw of script.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith(';') || line.startsWith('#')) continue;
+    out.push(line.split(/\s+/)[0]!.toUpperCase());
+  }
+  return out;
+}
+
+/**
+ * Guard `calib-safety` (printer.gcode.script). Запросы НЕ мутируются; freeze не
+ * используется. Решение принимается по состоянию ЦЕЛЕВОГО принтера
+ * (ctx.targetPrinterId): его даёт трекер, а при отсутствии данных — разовый
+ * запрос к Moonraker. Если состояние узнать нельзя (оффлайн), запрос
+ * пропускается: Klipper всё равно отклонит команду сам.
+ */
+export const guardCalibScript = async (
+  request: GuardRequest,
+  _token: string,
+  ctx: GuardContext,
+): Promise<GuardDecision> => {
+  if (request.method !== 'printer.gcode.script') return { action: 'allow' };
+
+  const params = request.params as { script?: string } | undefined;
+  const commands = scriptCommands(String(params?.script ?? '')).filter((c) => WATCHED.has(c));
+  if (commands.length === 0) return { action: 'allow' };
+
+  const state = await resolvePrinterState(ctx.targetPrinterId);
+  if (!state) return { action: 'allow' };
+
+  const isPrinting = state.printState === 'printing' || state.printState === 'paused';
+
+  if (isPrinting && commands.some((c) => SAVE_TOKENS.has(c))) {
+    return { action: 'deny', reasonKey: 'calibrations.guard.save_during_print' };
+  }
+  if (isPrinting && commands.some((c) => START_TOKENS.has(c))) {
+    return { action: 'deny', reasonKey: 'calibrations.guard.start_during_print' };
+  }
+  if (commands.some((c) => HOMED_TOKENS.has(c)) && state.homedAxes !== 'xyz') {
+    return { action: 'deny', reasonKey: 'calibrations.guard.needs_homing' };
+  }
+  return { action: 'allow' };
+};
+
+/**
+ * Guard `calib-print-start` (printer.print.start): нельзя стартовать печать,
+ * пока идёт ручное зондирование (manual_probe активен) — оно занимает
+ * движение и ждёт ACCEPT/ABORT.
+ */
+export const guardCalibPrintStart = (
   request: GuardRequest,
   _token: string,
   ctx: GuardContext,
 ): GuardDecision => {
-  if (request.method !== 'printer.gcode.script') return { action: 'allow' };
-
-  const params = request.params as { script?: string } | undefined;
-  const script = (params?.script ?? '').trim();
-  if (!script) return { action: 'allow' };
-
-  const firstToken = script.split(/\s+/)[0]!.toUpperCase();
-  
-  // Target-scoped: читаем состояние ЦЕЛЕВОГО принтера
-  const state = getState(ctx.targetPrinterId);
-  const isPrinting = state.printState === 'printing' || state.printState === 'paused';
-
-  if (SAVE_TOKENS.includes(firstToken) && isPrinting) {
-    return { action: 'deny', reasonKey: 'calibrations.guard.save_during_print' };
-  }
-  if (START_TOKENS.includes(firstToken) && isPrinting) {
-    return { action: 'deny', reasonKey: 'calibrations.guard.start_during_print' };
-  }
-  if (HOMED_TOKENS.includes(firstToken) && state.homedAxes !== 'xyz') {
-    return { action: 'deny', reasonKey: 'calibrations.guard.needs_homing' };
+  if (request.method !== 'printer.print.start') return { action: 'allow' };
+  if (getTracked(ctx.targetPrinterId)?.manualProbeActive) {
+    return { action: 'deny', reasonKey: 'calibrations.guard.probe_active' };
   }
   return { action: 'allow' };
 };

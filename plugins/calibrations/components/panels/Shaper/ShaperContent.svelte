@@ -575,6 +575,7 @@
   .send-block { display: flex; flex-direction: column; gap: var(--space-xs); }
   .gcode {
     display: block;
+    direction: ltr; text-align: start;
     padding: var(--space-xs) var(--space-sm);
     background: var(--bg-surface-hover-no-override);
     border: 1px dashed var(--border-color);
@@ -609,7 +610,7 @@
 
   .table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
   .table th, .table td {
-    padding: var(--space-xs) var(--space-sm); text-align: left;
+    padding: var(--space-xs) var(--space-sm); text-align: start;
     border-bottom: 1px solid var(--border-color);
   }
   .table th { color: var(--text-muted); font-weight: 500; font-size: var(--font-size-sm); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -617,7 +618,7 @@
 
   .log { display: flex; flex-direction: column; gap: var(--space-xs); }
   .log pre {
-    margin: 0; max-height: 160px; overflow-y: auto; padding: var(--space-sm);
+    margin: 0; direction: ltr; text-align: start; max-height: 160px; overflow-y: auto; padding: var(--space-sm);
     background: var(--bg-surface-hover); border: 1px solid var(--border-color);
     border-radius: var(--radius-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: var(--font-size-sm); color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
@@ -633,7 +634,7 @@
 
   .menu-wrap { position: relative; }
   .menu {
-    position: absolute; top: calc(100% + 4px); right: 0; z-index: 10;
+    position: absolute; top: calc(100% + 4px); inset-inline-end: 0; z-index: 10;
     min-width: 260px; padding: var(--space-xs);
     background: var(--bg-surface); border: 1px solid var(--border-color);
     border-radius: var(--radius-md);

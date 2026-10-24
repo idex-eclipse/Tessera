@@ -1,10 +1,7 @@
 import { onDestroy } from 'svelte';
 import { SeriesBuffer } from '../shared/uplot-core';
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
-import {
-  createCoreKeeper,
-  createDelegateStore,
-} from '../shared/core-keeper/core-keeper';
+import { createDelegateStore } from '../shared/core-keeper/core-keeper';
 
 export interface HeaterSensors {
   name: string;
@@ -30,6 +27,16 @@ export interface HeaterBuffers {
  * буферы "прошлого" нагревателя теряются при переключении. Текущая схема
  * сохраняет буферы всех посещённых heater'ов (до LRU-капа keeper'а).
  */
+/** Цвет серии = CSS-переменная темы (canvas не понимает var(), резолвим локально). */
+function themeColor(variable: string, fallback: string): string {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
+    return v || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function createHeaterCore(api: PluginApi, printerId: string, heaterName: string) {
   const handle: MoonrakerProxyHandle = api.moonrakerFor(printerId);
 
@@ -111,7 +118,7 @@ function createHeaterCore(api: PluginApi, printerId: string, heaterName: string)
     sensors = [{
       name: heaterName,
       displayName: displayName(heaterName),
-      color: '#ff6d00',
+      color: themeColor('--heat', 'orange'),
       temperature: null, target: null, power: null,
     }];
 
@@ -148,18 +155,21 @@ function createHeaterCore(api: PluginApi, printerId: string, heaterName: string)
     }
   }
 
-  $effect(() => {
-    const gen = ++generation;
-    subscribe(gen);
-    return () => {
-      generation++;
-      if (unsub) { unsub(); unsub = null; }
-    };
+  // Подписка стартует сразу при создании ядра. Намеренно НЕ $effect: ядро живёт в
+  // Map (keep-alive) дольше эффекта, внутри которого его создали, и после
+  // пересоздания эффекта осталось бы мёртвым.
+  subscribe(++generation);
+
+  // Цвет --heat зависит от темы: обновляем у живого ядра.
+  const offTheme = api.onThemeChange(() => {
+    const s = sensors[0];
+    if (s) s.color = themeColor('--heat', 'orange');
   });
 
   function destroy(): void {
     generation++;
     if (unsub) { unsub(); unsub = null; }
+    offTheme();
     buffers.clear();
   }
 
@@ -174,17 +184,6 @@ function createHeaterCore(api: PluginApi, printerId: string, heaterName: string)
 
 export type HeaterStore = ReturnType<typeof createHeaterCore>;
 
-const keeper = createCoreKeeper<HeaterStore>({
-  create: (pid, api) => {
-    // Ключ keeper'а уже = pid; heaterName берём из параметра ниже через getOrCreate
-    // Это ограничение базового keeper'а — для составного ключа нужен форк
-    // Но heaterName = параметр UI, он обычно одинаков на одном принтере
-    // Пока делаем компромисс: одно ядро на принтер, heaterName переключается внутри
-    throw new Error('useHeater требует useHeaterMonitor с heaterName-state');
-  },
-  cap: 4,
-});
-
 /**
  * useHeaterMonitor — обёртка над keeper'ом для одного выбранного нагревателя.
  *
@@ -196,6 +195,18 @@ const keeper = createCoreKeeper<HeaterStore>({
  * используем Map<printerId, Map<heaterName, core>>:
  */
 const perPrinterKeepers = new Map<string, Map<string, HeaterStore>>();
+
+/** Максимум keep-alive ядер нагревателей на принтер (вытесняются самые старые). */
+const MAX_HEATER_CORES_PER_PRINTER = 3;
+
+function evictOldCores(printerMap: Map<string, HeaterStore>, keep: string): void {
+  while (printerMap.size > MAX_HEATER_CORES_PER_PRINTER) {
+    const victim = [...printerMap.keys()].find((k) => k !== keep && k !== '');
+    if (victim === undefined) return;
+    printerMap.get(victim)?.destroy();
+    printerMap.delete(victim);
+  }
+}
 
 export function useHeaterMonitor(api: PluginApi, printerId?: string) {
   const pid = printerId ?? api.printer.id;
@@ -214,6 +225,7 @@ export function useHeaterMonitor(api: PluginApi, printerId?: string) {
     if (!core) {
       core = createHeaterCore(api, pid, name);
       printerMap.set(name, core);
+      evictOldCores(printerMap, name);
     }
     return core;
   }
@@ -259,8 +271,8 @@ export function useHeaterMonitor(api: PluginApi, printerId?: string) {
   // Делегат на текущее ядро (если выбран heaterName)
   const delegate = createDelegateStore<HeaterStore>(() => {
     if (!currentCore) {
-      // Возвращаем "пустое" ядро-заглушку с пустыми данными
-      return ensureCore('__placeholder__');
+      // Пустое ядро-заглушка (имя '' — без подписки и данных)
+      return ensureCore('');
     }
     return currentCore;
   });

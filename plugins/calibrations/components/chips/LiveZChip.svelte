@@ -51,7 +51,10 @@
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 260, alignRight: rect.left + 240 > window.innerWidth };
+      // Поповер растёт от начала строки: вправо в LTR, влево в RTL — проверяем нужный край.
+      const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+      const overflows = rtl ? rect.right - 240 < 0 : rect.left + 240 > window.innerWidth;
+      placement = { above: rect.top > 260, alignRight: overflows };
     }
     popoverOpen = true;
   }
@@ -106,7 +109,7 @@
     onclick={openPopover}
     role="button"
     tabindex={disabled ? -1 : 0}
-    onkeydown={(e) => { if (e.key === 'Enter' && !disabled) openPopover(); }}
+    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
   >
     {#if klippy.state !== 'ready'}
       <KlippyNotReadyChip />
@@ -184,12 +187,12 @@
   .chip {
     position: relative; display: flex; height: 100%;
     min-width: 104px; max-width: 220px;
-    padding: 4px 10px 6px 12px;
+    padding-block: 4px 6px; padding-inline: 12px 10px;
     border: 1px solid var(--border-color); border-radius: var(--radius-md);
     background: var(--bg-surface); overflow: hidden;
     transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
-  .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+  .stripe { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
 
   .body { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; min-width: 0; flex: 1; }
   .top { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-weight: 600; }
@@ -200,7 +203,7 @@
   .kind { display: flex; line-height: 0; color: var(--text-muted); opacity: 0.55; flex-shrink: 0; }
   .kind.active { color: var(--accent); }
   .value {
-    margin-left: auto; flex-shrink: 0;
+    margin-inline-start: auto; flex-shrink: 0;
     font-family: ui-monospace, monospace; font-size: var(--font-size-lg); font-weight: 700;
     color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1;
   }
@@ -211,14 +214,15 @@
 
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
   .chip-popover {
-    position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1001;
+    position: absolute; bottom: calc(100% + 6px); inset-inline-start: 0; z-index: 1001;
     background: var(--bg-surface); border: 1px solid var(--border-color);
     border-radius: var(--radius-md); box-shadow: var(--shadow-md);
     padding: var(--space-sm);
     display: flex; flex-direction: column; gap: var(--space-xs);
   }
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  .chip-popover.align-right { left: auto; right: 0; }
+  /* alignRight = «прижать к концу строки»: в RTL это левый край */
+  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .cluster { display: grid; grid-template-columns: auto auto; gap: var(--space-xs); align-items: stretch; }
   .steps { display: grid; grid-template-columns: repeat(2, minmax(56px, auto)); gap: var(--space-xs); }
