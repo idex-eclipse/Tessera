@@ -56,6 +56,13 @@ let {
   const i18n = api.i18n;
   const ops = createFileOps(api);
 
+  /** Текст ошибки для пользователя: отказ гарда → перевод reasonKey, иначе message. */
+  function errText(e: unknown): string {
+    const reasonKey = (e as { rejection?: { reasonKey?: string } } | null)?.rejection?.reasonKey;
+    if (reasonKey) return i18n.t(reasonKey);
+    return e instanceof Error ? e.message : String(e);
+  }
+
   const gcode = mode === 'gcode' ? useGcodeFiles(api) : null;
   const simple = mode === 'simple' ? useDirFiles(api, root) : null;
   const history = mode === 'history' ? useHistoryFiles(api) : null;
@@ -268,6 +275,13 @@ let {
   let viewerSrc = $state('');
   let viewerSeq = $state(0);
 
+  /** Обрыв соединения при рестарте — норма; отказ гарда или ошибка Moonraker — показываем. */
+  function reportRestartError(e: unknown): void {
+    if ((e as { rejection?: unknown } | null)?.rejection || (e as { name?: string } | null)?.name === 'MoonrakerRequestError') {
+      setNotice(api, scope, errText(e));
+    }
+  }
+
   async function saveAndRestart(text: string): Promise<void> {
     if (!editorRef) return;
     try {
@@ -280,15 +294,15 @@ let {
         await api
             .moonraker()
             .request('machine.services.restart', { service: 'moonraker' })
-            .catch(() => {}); // коннект упадёт сам — это ожидаемо
+            .catch(reportRestartError); // обрыв коннекта при рестарте — ожидаем
         } else {
         await api
             .moonraker()
             .request('printer.firmware_restart', {})
-            .catch(() => {});
+            .catch(reportRestartError);
         }
     } catch (e) {
-        setNotice(api, scope, e instanceof Error ? e.message : String(e));
+        setNotice(api, scope, errText(e));
     }
   }
 
@@ -348,7 +362,7 @@ let {
         editorContent = raw.replace(/\r\n?/g, '\n'); // CRLF/CR → LF до попадания в редактор
     } catch (e) {
         editorOpen = false;
-        setNotice(api, scope, e instanceof Error ? e.message : String(e));
+        setNotice(api, scope, errText(e));
     } finally {
         editorLoading = false;
     }
@@ -356,9 +370,8 @@ let {
 
   function openViewer(ref: FileRef): void {
     // Moonraker отдаёт бинарщину прямым HTTP: GET /server/files/<root>/<path>
-    // сегменты пути — encodeURI каждый, чтобы пробелы/кириллица работали
-    const encodedPath = ref.path.split('/').map(encodeURIComponent).join('/');
-    viewerSrc = `${api.moonraker().httpBaseUrl}/server/files/${ref.root}/${encodedPath}`;
+    // (сегменты кодируются, токен авторизации — в query: <img> заголовки не шлёт)
+    viewerSrc = ops.viewUrl(ref);
     viewerRef = ref;
     viewerSeq++;
     viewerOpen = true;
@@ -376,7 +389,7 @@ let {
       else if (id === 'delete') { deleteRef = ref; deleteOpen = true; }
       else await onAction?.(id, ref);
     } catch (e) {
-      setNotice(api, scope, e instanceof Error ? e.message : String(e));
+      setNotice(api, scope, errText(e));
     }
   }
 
@@ -432,7 +445,7 @@ let {
         await ops.saveText(editorRef, t);
         editorContent = t; // синхронизация больше не откатит к старой версии
       } catch (e) {
-        setNotice(api, scope, e instanceof Error ? e.message : String(e));
+        setNotice(api, scope, errText(e));
       }
     }
 </script>
@@ -457,7 +470,7 @@ let {
         <button class="crumb" onclick={() => crumbNav('')}>/</button>
           {#each crumbs as seg, i (`${seg}-${i}`)}
           <button class="crumb" onclick={() => crumbNav(crumbs.slice(0, i + 1).join('/'))}>
-              {seg}{i < crumbs.length - 1 ? '/' : ''}
+              <bdi>{seg}</bdi>{i < crumbs.length - 1 ? '/' : ''}
           </button>
           {/each}
       </nav>
@@ -516,7 +529,7 @@ let {
 
           {#each sortedDirs as d (d.name)}
             <tr class="row-dir" onclick={(e) => onRowLeft(e, d.name, true)} oncontextmenu={(e) => onRowRight(e, d.name, true)}>
-              <td class="td-name"><span class="cell"><span class="file-ico dir"><Icon name="folder" size={15} /></span>{d.name}</span></td>
+              <td class="td-name"><span class="cell"><span class="file-ico dir"><Icon name="folder" size={15} /></span><bdi>{d.name}</bdi></span></td>
               {#if mode === 'simple'}
                 <td>{formatDate(d.modified)}</td>
                 <td>{formatSize(d.size)}</td>
@@ -532,13 +545,13 @@ let {
             {@const fname = f.name ?? f.filename}
             <tr class="row-file" onclick={(e) => onRowLeft(e, fname, false)} oncontextmenu={(e) => onRowRight(e, fname, false)}>
               {#if mode === 'simple'}
-                <td class="td-name"><span class="cell"><span class="file-ico"><Icon name="file" size={15} /></span>{fname}</span></td>
+                <td class="td-name"><span class="cell"><span class="file-ico"><Icon name="file" size={15} /></span><bdi>{fname}</bdi></span></td>
                 <td>{formatDate(f.modified)}</td>
                 <td>{formatSize(f.size)}</td>
               {:else}
                 {#each cols as col (col.key)}
                   {#if col.key === 'name'}
-                    <td class="td-name"><span class="cell"><span class="file-ico"><Icon name="file" size={15} /></span>{f.name}</span></td>
+                    <td class="td-name"><span class="cell"><span class="file-ico"><Icon name="file" size={15} /></span><bdi>{f.name}</bdi></span></td>
                   {:else if col.key === 'thumbnail'}
                     {@const url = thumbnailUrl(f)}
                       <td class="td-thumb">
@@ -588,7 +601,7 @@ let {
     title={i18n.t('ft.renameTitle')} 
     initial={renameRef?.path.split('/').pop() ?? ''} 
     confirmLabel={i18n.t('ft.rename')} 
-    onSubmit={(v)=>{ if(renameRef) ops.rename(renameRef,v).catch(()=>{}); }} 
+    onSubmit={(v)=>{ if(renameRef) ops.rename(renameRef,v).catch((e) => setNotice(api, scope, errText(e))); }} 
     onClose={() => (renameOpen = false)} 
   />
   <ConfirmDialog 
@@ -597,7 +610,7 @@ let {
     message={i18n.t('ft.deleteMessage', { name: deleteRef?.path.split('/').pop() ?? '' })} 
     confirmLabel={i18n.t('ft.delete')} 
     danger 
-    onConfirm={()=>{ if(deleteRef) ops.remove(deleteRef).catch(()=>{}); }} 
+    onConfirm={()=>{ if(deleteRef) ops.remove(deleteRef).catch((e) => setNotice(api, scope, errText(e))); }} 
     onClose={() => (deleteOpen = false)} 
   />
   {#key `${editorRef?.path ?? ''}#${editorSeq}`}
@@ -620,7 +633,7 @@ let {
       open={viewerOpen}
       title={viewerRef?.path.split('/').pop() ?? ''}
       src={viewerSrc}
-      onDownload={viewerRef ? () => ops.download(viewerRef) : null}
+      onDownload={viewerRef ? () => { if (viewerRef) ops.download(viewerRef); } : null}
       onClose={() => (viewerOpen = false)}
     />
   {/key}
@@ -649,7 +662,9 @@ let {
         border-bottom:1px solid var(--border-color);
         flex-shrink:0;
     }
+    /* Путь — LTR-фрагмент даже в RTL-интерфейсе (слэши не должны «переворачиваться») */
     .crumbs { 
+        direction:ltr;
         display:flex;
         align-items:center;
         gap:var(--space-xs);
@@ -687,7 +702,7 @@ let {
         position:sticky;
         top:0;
         background:var(--bg-surface);
-        text-align:left;
+        text-align:start;
     }
     .th-btn {
         display: flex;
@@ -702,7 +717,7 @@ let {
         font-size: var(--font-size-sm);
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        text-align: left;
+        text-align: start;
         min-width: 0;
     }
 
@@ -794,7 +809,7 @@ let {
         align-items: center;
         visibility: hidden;
         flex-shrink: 0;
-        margin-left: auto;
+        margin-inline-start: auto;
     }
     .sort-arrow.visible { visibility: visible; }
 

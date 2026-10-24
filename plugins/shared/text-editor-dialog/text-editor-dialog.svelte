@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
   import { useKlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
+  import { editorUi } from './editor-state.svelte.ts';
 
   import Icon from '../icons/Icon.svelte';
-  import { highlightKlipper, highlightPlain } from './highlight';
+  import { highlightKlipperLines, highlightPlainLines, toRenderLines } from './highlight';
+  import { caretLineCol } from './caret';
 
   import {
     collectAllWords,
@@ -65,8 +68,36 @@
     "'": "'",
   };
 
-  let jinjaVars = $derived(collectJinjaVars(text));
-  let allWords = $derived(collectAllWords(text));
+  // Слова файла, jinja-переменные и оглавление нужны подсказкам и навигации и могут
+  // отставать на доли секунды — пересчитываем их по снимку текста с задержкой после
+  // последнего нажатия, а не на каждый символ (сбор и сортировка слов — O(размер файла)).
+  const SNAPSHOT_DEBOUNCE_MS = 250;
+  let snapshot = $state('');
+  let snapshotInitialized = false; // обычная переменная: эффект не должен зависеть от snapshot
+  let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $effect(() => {
+    const t = text;
+    if (!snapshotInitialized) {
+      snapshotInitialized = true;
+      snapshot = t; // первая загрузка — без задержки
+      return;
+    }
+    if (snapshotTimer) clearTimeout(snapshotTimer);
+    snapshotTimer = setTimeout(() => {
+      snapshotTimer = null;
+      snapshot = t;
+    }, SNAPSHOT_DEBOUNCE_MS);
+    return () => {
+      if (snapshotTimer) {
+        clearTimeout(snapshotTimer);
+        snapshotTimer = null;
+      }
+    };
+  });
+
+  let jinjaVars = $derived(collectJinjaVars(snapshot));
+  let allWords = $derived(collectAllWords(snapshot));
   let gcodeCommands = $state<string[]>([]);
 
   // список gcode-команд берём у Moonraker на каждое открытие редактора
@@ -97,19 +128,17 @@
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let replaceInputEl = $state<HTMLInputElement | null>(null);
 
-  // единственный источник: html всегда = f(text)
-  let html = $derived.by(() => {
-    const h = lang === 'klipper' ? highlightKlipper(text) : highlightPlain(text);
-    // Синхронизация scrollHeight на EOF: textarea и гаттер считают пустую
-    // «финальную» строку после завершающего "\n", а pre (white-space: pre)
-    // её не рендерит. Из-за этого code-view был на строку короче и в конце
-    // файла его scrollTop останавливался на строку раньше — подсветка
-    // съезжала относительно текста и нумерации (баг «+1 строка скролла»).
-    // Zero-width space после последнего line-break восстанавливает строку.
-    if (h === '') return '\u200b';
-    if (!text.endsWith('\n')) return h;
-    return (h.endsWith('\n') ? h : h + '\n') + '\u200b';
-  });
+  // Textarea прозрачный, текст виден ТОЛЬКО через слой подсветки, поэтому слой обязан
+  // обновляться синхронно с вводом. Один {@html} целиком — намеренно: браузер вставляет
+  // готовый HTML нативно и быстрее, чем Svelte обслуживает по блоку на каждую из
+  // строк ({#each} + {@html} на строку заметно тормозил набор).
+  // + zero-width space на пустой последней строке (см. toRenderLines в highlight.ts).
+  let html = $derived(
+    toRenderLines(
+      lang === 'klipper' ? highlightKlipperLines(text) : highlightPlainLines(text),
+      text,
+    ).join(''),
+  );
 
   $effect(() => {
       void content;
@@ -143,6 +172,22 @@
     );
   });
 
+  // Пока редактор открыт, hotkeys плагинов (переключение вкладок и т.п.) должны молчать:
+  // он модальный и перекрывает страницу.
+  $effect(() => {
+    if (!open) return;
+    // untrack: `++` читает и пишет одно состояние; без untrack эффект зависел бы от
+    // собственной записи и перезапускался бы бесконечно
+    untrack(() => {
+      editorUi.openCount++;
+    });
+    return () => {
+      untrack(() => {
+        editorUi.openCount--;
+      });
+    };
+  });
+
     // Глобальный обработчик хоткеев редактора. Работает независимо от фокуса
   // внутри редактора и использует e.code, чтобы ловить хоткеи на любой раскладке.
   $effect(() => {
@@ -164,11 +209,11 @@
         openSearch(true);
         return;
       }
-      // Ctrl+S — сохранение (только при редактировании и наличии dirty)
+      // Ctrl+S — сохранение (только при редактировании и наличии изменений)
       if (!readonly && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) {
-        if (dirty) return;
+        // Всегда гасим диалог «сохранить страницу» браузера; пишем только при изменениях
         e.preventDefault();
-        save();
+        if (dirty && !savePending) save();
         return;
       }
     }
@@ -181,7 +226,13 @@
   // Нумерация строк
   // ------------------------------------------------------------------
 
-  let lineCount = $derived(text.split('\n').length);
+  // Без split: на каждое нажатие не создаём массив строк всего файла
+  function countLines(s: string): number {
+    let n = 1;
+    for (let i = s.indexOf('\n'); i !== -1; i = s.indexOf('\n', i + 1)) n++;
+    return n;
+  }
+  let lineCount = $derived(countLines(text));
 
   let gutterText = $derived.by(() => {
     let s = '';
@@ -198,6 +249,10 @@
 
   let tocOpen = $state(true);
 
+  // направление интерфейса для локализованных элементов внутри LTR-области кода
+  let uiDir = $state<'ltr' | 'rtl'>(document.documentElement.getAttribute('dir') === 'rtl' ? 'rtl' : 'ltr');
+  $effect(() => api.onLocaleChange((_l, dir) => { uiDir = dir; }));
+
   interface TocItem {
     name: string;
     line: number;
@@ -209,7 +264,7 @@
     const items: TocItem[] = [];
     const re = /^\s*\[([^\]]+)\]/;
     let line = 0;
-    for (const l of text.split('\n')) {
+    for (const l of snapshot.split('\n')) {
       const m = re.exec(l);
       if (m) items.push({ name: (m[1] ?? '').trim(), line });
       line++;
@@ -346,12 +401,40 @@
   function onInput(e: Event): void {
     text = (e.currentTarget as HTMLTextAreaElement).value;
     dirty = true;
-    updateSuggestions();
+    scheduleSuggestions();
   }
 
   function onCursorMove(): void {
-    updateSuggestions();
+    scheduleSuggestions();
   }
+
+  const NAV_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+
+  /** keyup: пересчёт подсказок только для навигации; набор символов уже учтён в oninput. */
+  function onKeyUp(e: KeyboardEvent): void {
+    if (!NAV_KEYS.has(e.key)) return;
+    // стрелки вверх/вниз при открытом списке выбирают пункт — список не трогаем
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && suggestions.length > 0) return;
+    onCursorMove();
+  }
+
+  // Пересчёт подсказок (разбор контекста — O(позиция курсора)) вынесен из пути ввода:
+  // нажатие сначала прячет устаревший список, пересчёт идёт после короткой паузы.
+  const SUGGEST_DELAY_MS = 60;
+  let suggestTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleSuggestions(): void {
+    if (suggestions.length > 0) closeSuggestions();
+    if (suggestTimer) clearTimeout(suggestTimer);
+    suggestTimer = setTimeout(() => {
+      suggestTimer = null;
+      updateSuggestions();
+    }, SUGGEST_DELAY_MS);
+  }
+
+  $effect(() => () => {
+    if (suggestTimer) clearTimeout(suggestTimer);
+  });
 
   function save(): void {
       savePending = true;
@@ -528,39 +611,80 @@
     }
     suggestions = items;
     selectedIdx = Math.min(selectedIdx, items.length - 1);
-    acPos = computePopupPos(inputEl, cursor);
+    acPos = computePopupPos(inputEl, cursor, items.length);
   }
 
-  /** Позиционируем dropdown у каретки. */
+  // ---------------- позиция подсказок ----------------
+  //
+  // Шрифт редактора моноширинный, textarea — `white-space: pre` (без переносов), поэтому
+  // координаты каретки считаются арифметикой: колонка × ширина символа, строка × высота
+  // строки. Раньше позицию мерили скрытым зеркальным div с `pre-wrap`: длинные строки
+  // там переносились, чего в textarea нет, и подсказка уезжала вниз тем сильнее, чем
+  // больше таких строк выше курсора (особенно заметно после прокрутки вниз). Зеркало
+  // ещё и принудительно считало layout на каждое нажатие.
+
+  interface CaretMetrics {
+    charW: number;
+    lineH: number;
+    padL: number;
+    padT: number;
+    tab: number;
+  }
+  let caretMetrics: CaretMetrics | null = null;
+  let measureCanvas: HTMLCanvasElement | null = null;
+
+  function readCaretMetrics(ta: HTMLTextAreaElement): CaretMetrics {
+    if (caretMetrics) return caretMetrics;
+    const cs = getComputedStyle(ta);
+    measureCanvas ??= document.createElement('canvas');
+    const ctx = measureCanvas.getContext('2d');
+    let charW = 0;
+    if (ctx) {
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      charW = ctx.measureText('M'.repeat(64)).width / 64;
+    }
+    const fontPx = parseFloat(cs.fontSize) || 14;
+    caretMetrics = {
+      charW: charW || fontPx * 0.6,
+      lineH: parseFloat(cs.lineHeight) || fontPx * 1.5,
+      padL: parseFloat(cs.paddingLeft) || 0,
+      padT: parseFloat(cs.paddingTop) || 0,
+      tab: parseInt(cs.tabSize, 10) || 4,
+    };
+    return caretMetrics;
+  }
+
+  // метрики зависят от шрифта/масштаба: сбрасываем при ресайзе и повторном открытии
+  $effect(() => {
+    if (!open) return;
+    caretMetrics = null;
+    const reset = () => {
+      caretMetrics = null;
+    };
+    window.addEventListener('resize', reset);
+    return () => window.removeEventListener('resize', reset);
+  });
+
+  /** Позиционируем dropdown (position: fixed) под кареткой, с разворотом вверх у нижнего края. */
   function computePopupPos(
     ta: HTMLTextAreaElement,
     cursor: number,
+    itemCount: number,
   ): { top: number; left: number } {
-    // создаём offscreen mirror для точного измерения позиции каретки
-    const mirror = document.createElement('div');
-    const cs = getComputedStyle(ta);
-    const copy = [
-      'fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight',
-      'paddingTop', 'paddingLeft', 'paddingRight', 'paddingBottom',
-      'borderTopWidth', 'borderLeftWidth', 'whiteSpace', 'wordWrap', 'tabSize',
-    ] as const;
-    for (const k of copy) mirror.style[k as any] = cs[k as any];
-    mirror.style.position = 'absolute';
-    mirror.style.visibility = 'hidden';
-    mirror.style.whiteSpace = 'pre-wrap';
-    mirror.style.width = cs.width;
-    mirror.textContent = text.slice(0, cursor);
+    const m = readCaretMetrics(ta);
 
-    const marker = document.createElement('span');
-    marker.textContent = '|';
-    mirror.appendChild(marker);
+    // строка каретки и визуальная колонка (табуляция выравнивает по tab-size)
+    const { line, col } = caretLineCol(text, cursor, m.tab);
 
-    document.body.appendChild(mirror);
     const rect = ta.getBoundingClientRect();
-    const mrect = marker.getBoundingClientRect();
-    const left = rect.left + (mrect.left - mirror.getBoundingClientRect().left) - ta.scrollLeft;
-    const top = rect.top + (mrect.top - mirror.getBoundingClientRect().top) - ta.scrollTop + parseFloat(cs.lineHeight);
-    document.body.removeChild(mirror);
+    let left = rect.left + m.padL + col * m.charW - ta.scrollLeft;
+    const caretTop = rect.top + m.padT + line * m.lineH - ta.scrollTop;
+    let top = caretTop + m.lineH;
+
+    // popup: max-width 420, max-height 280 (см. .ac-popup)
+    const popupH = Math.min(280, itemCount * 26 + 8);
+    if (top + popupH > window.innerHeight && caretTop - popupH > 0) top = caretTop - popupH;
+    left = Math.max(4, Math.min(left, window.innerWidth - 424));
 
     return { top, left };
   }
@@ -668,7 +792,7 @@
   <div class="editor-overlay" onkeydown={onKeydown} role="dialog" aria-modal="true">
     <div class="editor-header">
       <span class="editor-title">{title}</span>
-      {#if readonly}<span class="ro-badge">read-only</span>{/if}
+      {#if readonly}<span class="ro-badge">{i18n.t('ft.readonly')}</span>{/if}
       <span class="spacer"></span>
 
       {#if lang === 'klipper'}
@@ -716,7 +840,7 @@
           <span class="loading-text">{i18n.t('ft.loading')}</span>
         </div>
       {:else}
-        <div class="code-wrap">
+        <div class="code-wrap" dir="ltr">
           <!-- нумерация строк -->
           <div class="gutter" style:width="{gutterWidthCh}ch">
             <pre class="gutter-pre" bind:this={gutterPreEl} aria-hidden="true">{gutterText}</pre>
@@ -742,7 +866,7 @@
                 oninput={onInput}
                 onscroll={(e) => { syncScroll(e); closeSuggestions(); }}
                 onclick={(e) => { onEditorClick(e); onCursorMove(); }}
-                onkeyup={onCursorMove}
+                onkeyup={onKeyUp}
                 onkeydown={(e) => {
                   // не пускаем событие наверх: overlay-обработчик иначе
                   // выполнит onKeydown второй раз (двойные скобки/табы/save)
@@ -755,7 +879,7 @@
 
             <!-- поиск / замена -->
             {#if searchOpen}
-              <div class="search-bar" role="search">
+              <div class="search-bar" role="search" dir={uiDir}>
                 <div class="sb-row">
                   <input
                     class="sb-input"
@@ -841,7 +965,7 @@
 
           <!-- оглавление секций конфига -->
           {#if tocOpen && lang === 'klipper'}
-            <nav class="toc">
+            <nav class="toc" dir={uiDir}>
               <div class="toc-title">{i18n.t('ft.toc')}</div>
               {#each toc as item, i (i)}
                 <button class="toc-item" title={item.name} onclick={() => jumpToLine(item.line)}>
