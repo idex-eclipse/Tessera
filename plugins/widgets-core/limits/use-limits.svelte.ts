@@ -181,7 +181,7 @@ function createLimitsCore(api: PluginApi, printerId: string) {
     await loadMeta(gen);
   }
 
-  init();
+  void init();
 
   function destroy(): void {
     teardown();

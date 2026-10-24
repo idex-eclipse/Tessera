@@ -7,6 +7,7 @@
   import MacroParamsMenu from '../MacroParamsMenu.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
   import { buildMacroScript } from '../../../../shared/macro-params';
+  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -33,12 +34,15 @@
 
   let printState = $state<string>('idle');
   $effect(() => {
+    printState = 'idle'; // новый принтер — состояние неизвестно, пока не придёт начальное
+    // immediate: иначе после F5 посреди печати чип считался бы доступным до смены состояния
     return api.moonraker().subscribe(
       { print_stats: ['state'] },
       (delta: any) => {
         const s = delta?.print_stats?.state;
         if (typeof s === 'string') printState = s;
       },
+      { immediate: true },
     );
   });
   let isPrinting = $derived(printState === 'printing' || printState === 'paused');
@@ -49,7 +53,7 @@
   let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
 
   let paramsMenuOpen = $state(false);
-  let paramsAnchor = $state<{ left: number; top: number; bottom: number } | null>(null);
+  let paramsAnchor = $state<{ left: number; right: number; top: number; bottom: number } | null>(null);
 
   function openChip(): void {
     if (disabled) return;
@@ -57,15 +61,22 @@
     if (!rect) return;
 
     if (hasParams) {
-      paramsAnchor = { left: rect.left, top: rect.top, bottom: rect.bottom };
+      paramsAnchor = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
       paramsMenuOpen = true;
     } else {
-      placement = { above: rect.top > 180, alignRight: rect.left + 220 > window.innerWidth };
+      placement = { above: rect.top > 180, alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()) };
       popoverOpen = true;
     }
   }
 
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    if (!popoverOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popoverOpen = false; };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   let confirmOpen = $state(false);
   let pendingValues: Record<string, string> | null = null;
@@ -105,7 +116,10 @@
     role="button"
     tabindex={disabled ? -1 : 0}
     onkeydown={(e) => {
-      if (e.key === 'Enter' && !disabled) openChip();
+      if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
+        e.preventDefault();
+        openChip();
+      }
     }}
   >
     {#if klippy.state !== 'ready'}
@@ -184,7 +198,7 @@
       border-color var(--transition-fast),
       box-shadow var(--transition-fast);
   }
-  .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .stripe { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 3px; }
 
   .body {
     display: flex;
@@ -230,7 +244,7 @@
   .chip-popover {
     position: absolute;
     bottom: calc(100% + 6px);
-    left: 0;
+    inset-inline-start: 0;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -243,7 +257,7 @@
     gap: var(--space-xs);
   }
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  .chip-popover.align-right { left: auto; right: 0; }
+  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .pop-title {
     font-family: ui-monospace, monospace;

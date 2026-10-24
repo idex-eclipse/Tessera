@@ -39,12 +39,12 @@
 
       <div class="fil-row">
         <div class="fil-info">
-          <span class="fil-name" title={s.id}>{s.name}</span>
+          <bdi class="fil-name" title={s.id}>{s.name}</bdi>
           <span class="fil-kind">{kindLabel(s)}</span>
         </div>
 
         {#if s.kind === 'hall'}
-          <span class="fil-value" title="{i18n.t('widgets.filament.diameter')}{st?.raw != null ? ` · raw ${st.raw}` : ''}">
+          <span class="fil-value" dir="ltr" title="{i18n.t('widgets.filament.diameter')}{st?.raw != null ? ` · raw ${st.raw}` : ''}">
             {(st?.diameter ?? 0).toFixed(2)} mm
           </span>
         {/if}
@@ -122,6 +122,7 @@
   }
 
   .fil-name {
+    display: block;
     font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
@@ -177,7 +178,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-sm);
-    padding: 0 0 0 var(--space-md);
+    padding-block: 0;
+    padding-inline: var(--space-md) 0;
   }
 
   .fil-check.flow {

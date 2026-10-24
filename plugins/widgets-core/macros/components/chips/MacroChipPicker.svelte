@@ -108,7 +108,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-sm);
     transition: background var(--transition-fast);
   }

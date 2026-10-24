@@ -4,6 +4,7 @@
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
+  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -61,11 +62,18 @@
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 220, alignRight: rect.left + 240 > window.innerWidth };
+      placement = { above: rect.top > 220, alignRight: shouldAlignToEnd(rect, 240, window.innerWidth, isRtl()) };
     }
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    if (!popoverOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popoverOpen = false; };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   function toggleEnabled(): void {
     if (!sensor || !sensorState) return;
@@ -87,7 +95,7 @@
     onclick={openPopover}
     role="button"
     tabindex={disabled ? -1 : 0}
-    onkeydown={(e) => { if (e.key === 'Enter' && !disabled) openPopover(); }}
+    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
   >
     {#if klippy.state !== 'ready'}
       <KlippyNotReadyChip />
@@ -145,7 +153,8 @@
     height: 100%;
     min-width: 104px;
     max-width: 240px;
-    padding: 4px 10px 6px 12px;
+    padding-block: 4px 6px;
+    padding-inline: 12px 10px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--bg-surface);
@@ -155,7 +164,7 @@
 
   .stripe {
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: 0;
     bottom: 0;
     width: 3px;
@@ -225,7 +234,7 @@
   .chip-popover {
     position: absolute;
     bottom: calc(100% + 6px);
-    left: 0;
+    inset-inline-start: 0;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -238,7 +247,7 @@
     gap: var(--space-xs);
   }
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  .chip-popover.align-right { left: auto; right: 0; }
+  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .pop-title {
     font-size: var(--font-size-sm);

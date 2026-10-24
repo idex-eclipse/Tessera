@@ -67,7 +67,7 @@
           {#each g.items as it (it.id)}
             <button class="picker-item" onclick={() => pick(it.id)}>
               <span class="picker-name">{it.label}</span>
-              <span class="picker-kind">{it.kind}</span>
+              <span class="picker-kind" dir="ltr">{it.kind}</span>
             </button>
           {/each}
         </PickerSection>
@@ -83,7 +83,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);
     padding: var(--space-xs) var(--space-sm);
     border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-    background: transparent; cursor: pointer; text-align: left; font-size: var(--font-size-sm);
+    background: transparent; cursor: pointer; text-align: start; font-size: var(--font-size-sm);
     transition: background var(--transition-fast);
   }
   .picker-item:hover { background: var(--bg-surface-hover); }

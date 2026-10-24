@@ -525,10 +525,6 @@ function createToolheadCore(api: PluginApi, printerId: string) {
   // Settings helpers (namespace своего принтера через settingsFor)
   // ------------------------------------------------------------------
 
-  function invertSign(): number {
-    return settingsApi.get<boolean>('tools.invert') === true ? -1 : 1;
-  }
-
   function feedFor(axis: string): number {
     return axis === 'Z' ? Math.min(ui.feedZ, meta.maxZVelocity) : ui.feedXY;
   }
@@ -628,8 +624,10 @@ function createToolheadCore(api: PluginApi, printerId: string) {
   }
 
   function forceMoveStepper(stepper: string, dist: number): void {
-    const d = dist * invertSign();
     const axis = stepper.toLowerCase().includes('z') ? 'Z' : 'X';
+    // инверсия берётся из ui.invert по оси (как в jog); раньше читался устаревший булев флаг
+    // и после перехода на формат {x,y,z} инверсия FORCE_MOVE молча не применялась
+    const d = dist * (ui.invert[axis.toLowerCase() as 'x' | 'z'] ? -1 : 1);
     script(`FORCE_MOVE STEPPER="${stepper}" DISTANCE=${d} VELOCITY=${feedFor(axis)}`);
   }
 
@@ -730,6 +728,7 @@ function createToolheadCore(api: PluginApi, printerId: string) {
       settingsApi.onChange((k) => {
         if (
           k === 'tools.style' || k === 'tools.invert' || k === 'tools.steps' ||
+          k === 'tools.feedXY' || k === 'tools.feedZ' ||
           k === 'tools.directMode' || k === 'tools.directAxis'
         ) loadUi();
       }),
@@ -766,7 +765,7 @@ function createToolheadCore(api: PluginApi, printerId: string) {
     await loadMeta(gen);
   }
 
-  init();
+  void init();
 
   function destroy(): void {
     teardown();

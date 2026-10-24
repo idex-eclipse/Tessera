@@ -80,7 +80,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);
     padding: var(--space-xs) var(--space-sm);
     border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-    background: transparent; cursor: pointer; text-align: left; font-size: var(--font-size-sm);
+    background: transparent; cursor: pointer; text-align: start; font-size: var(--font-size-sm);
     transition: background var(--transition-fast);
   }
 

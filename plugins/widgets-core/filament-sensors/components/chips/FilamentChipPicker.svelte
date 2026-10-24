@@ -53,7 +53,7 @@
         <PickerSection title={g.title} count={g.items.length}>
           {#each g.items as s (s.id)}
             <button class="picker-item" onclick={() => pick(s.id)}>
-              <span class="picker-name">{s.name}</span>
+              <bdi class="picker-name">{s.name}</bdi>
             </button>
           {/each}
         </PickerSection>
@@ -75,7 +75,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-sm);
     transition: background var(--transition-fast);
   }

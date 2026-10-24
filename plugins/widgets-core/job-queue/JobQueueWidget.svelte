@@ -17,11 +17,16 @@
     if (!Number.isFinite(sec)) return '—';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
-    return m ? `${m}m ${s}s` : `${s}s`;
+    const um = i18n.t('widgets.jobQueue.unit.m');
+    const us = i18n.t('widgets.jobQueue.unit.s');
+    return m ? `${m}${um} ${s}${us}` : `${s}${us}`;
   }
 
+  const KNOWN_STATES = ['ready', 'loading', 'starting', 'paused', 'unknown'];
+
+  // t() возвращает ключ для неизвестного состояния — показываем «Unknown», а не ключ
   function stateLabel(s: string): string {
-    return i18n.t(`widgets.jobQueue.state.${s}`) ?? s;
+    return i18n.t(`widgets.jobQueue.state.${KNOWN_STATES.includes(s) ? s : 'unknown'}`);
   }
 
   function stateClass(s: string): string {
@@ -69,15 +74,16 @@
       {#each store.jobs as j, i (j.job_id)}
         <li class="jq-row">
           <span class="jq-idx">{i + 1}</span>
-          <span class="jq-name" title={j.filename}>
+          <bdi class="jq-name" title={j.filename}>
             {j.filename.split('/').pop() ?? j.filename}
-          </span>
-          <span class="jq-time" title={i18n.t('widgets.jobQueue.inQueue')}>
+          </bdi>
+          <span class="jq-time" dir="ltr" title={i18n.t('widgets.jobQueue.inQueue')}>
             {formatInQueue(j.time_in_queue)}
           </span>
           <button
             class="jq-ico"
             title={i18n.t('widgets.jobQueue.jump')}
+            aria-label={i18n.t('widgets.jobQueue.jump')}
             disabled={i === 0}
             onclick={() => store.jump(j.job_id)}
           >
@@ -86,6 +92,7 @@
           <button
             class="jq-ico danger"
             title={i18n.t('widgets.jobQueue.remove')}
+            aria-label={i18n.t('widgets.jobQueue.remove')}
             onclick={() => store.remove([j.job_id])}
           >
             <Icon name="trash" size={13} />
@@ -196,6 +203,10 @@
   }
 
   .jq-name {
+    display: block;
+    direction: ltr; /* имя файла — как есть, слева направо */
+    unicode-bidi: isolate;
+    text-align: start;
     flex: 1;
     min-width: 0;
     font-family: monospace;
