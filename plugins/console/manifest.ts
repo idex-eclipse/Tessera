@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const consoleManifest: PluginManifest = {
   id: '@core/console',
   name: 'Console',
-  version: '1.0.0',
+  version: '2.0.0',
   entry: '/plugins/console/index.js',
   pages: [
     {
@@ -26,7 +26,7 @@ export const consoleManifest: PluginManifest = {
     },
   ],
   hotkeys: [
-    // С - открыть страницу плагина с любой страницы
+    // C - открыть страницу плагина с любой страницы
     { id: 'open-console', scope: 'global', keys: 'C', handler: 'hotkeyOpenConsole', titleKey: 'console.hotkeys.open' },
     // Alt-комбинации работают и из поля ввода команды
     { id: 'focus-input', scope: 'plugin', keys: 'Alt+I', handler: 'hotkeyFocusInput', titleKey: 'console.hotkeys.focusInput' },
