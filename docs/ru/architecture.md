@@ -1,0 +1,214 @@
+# Архитектура хоста
+
+Tessera — веб-интерфейс для принтеров на Klipper/Moonraker. Хост — это
+оркестратор интерфейса; всё содержательное (температуры, файлы, камеры, консоль)
+делают **плагины**. Бэкенда нет: хост — статическое приложение на Svelte 5
+(runes) + Vite + TypeScript, которое ходит прямо в Moonraker и хранит
+настройки в `localStorage`.
+
+## Роли
+
+| Компонент | Роль | Чего НЕ делает |
+|---|---|---|
+| **Host** | вкладки принтеров, боковая панель, слот плагина, сетка дашборда, Settings, тема, язык, постоянные поверхности (баннеры, оверлеи, чипы, правая панель, fleet) | не читает температуры/статус для своего UI, не разбирает протокол Moonraker, не хранит бизнес-данные принтера |
+| **MoonrakerProxy** | пул соединений (один WebSocket на принтер), snapshot/TTL-кэш, pub/sub, дедуп подписок, poll | не читается хостом для отрисовки его UI |
+| **GuardAgent** | preflight-конвейер `request()`: опрашивает гарды плагинов | не шина; плагины друг с другом не общаются |
+| **HotkeyManager** | слушает `keydown`, сопоставляет с хоткеями плагинов и хоста, разрешает конфликты | не принимает решений за плагин |
+| **Plugin** | автономный вклад: страницы, виджеты, баннеры, оверлеи, чипы, fleet-панели, гарды, хоткеи | не общается с другими плагинами |
+| **Plugin SDK** | тонкая обёртка: `PluginApi`, типы, `defineMpuElement`, Svelte-хуки | — |
+
+## Схема
+
+```
+HOST
+header   : [Printer A][Printer B][+]                          [язык][тема]
+sidebar  : Dashboard | страницы плагинов | Settings
+main     : [баннеры (в потоке)] + [полоса чипов (в потоке)]
+           + ( дашборд-грид  |  страница плагина  |  Settings )
+right    : правая панель @core/system (сворачиваемая)
+overlays : окна плагинов (поверх main и right, под offline-overlay)
+fleet    : fullscreen-drawer ниже шапки, карточки всех принтеров
+offline  : оверлей состояния соединения (поверх всего)
+
+pool: Map<printerUrl, MoonrakerProxy>      ← инфраструктура, не состояние хоста
+        │  api.moonraker() (WS: подписки + request + кэш)     │ HTTP напрямую для файлов/превью
+        ▼                                                      ▼
+   Moonraker (WebSocket + HTTP)  →  Klipper
+```
+
+## Запуск приложения
+
+Точка входа — [`host/src/main.ts`](../../host/src/main.ts):
+
+1. Создаются сторы в таком порядке: `settings` → `printerManager` → `registry` →
+   `ui` → `i18n` → `loader` (+ `guardAgent`) → `router`.
+2. Регистрируются **core-плагины** (`loader.registerCorePlugin(manifest, module)`)
+   и их локали. Это статический код в бандле хоста; в `localStorage` они не
+   записываются.
+3. `await loader.loadEnabledPlugins()` — загрузка **remote-плагинов** из
+   `mpu:v2:plugins`: `fetch` манифеста → `import(entry)` → слияние локалей →
+   санитайз → реестр → гарды. Сбой одного плагина не мешает остальным.
+4. Монтируется `App.svelte`. Он создаёт `AppContext`, `HotkeyManager` (и
+   запускает его) и рисует оболочку.
+
+Offline **не валит загрузку**: соединения поднимаются в фоне.
+
+### AppContext
+
+Объект с зависимостями, который `App.svelte` кладёт в Svelte-контекст:
+`settings`, `printerManager`, `registry`, `ui`, `i18n`, `loader`, `router`,
+`hotkeys`. Компоненты хоста получают его через `getAppContext()`. Плагины его
+**не видят**: у них только `PluginApi`.
+
+## Слой core ([`host/src/core/`](../../host/src/core))
+
+| Файл | Отвечает за |
+|---|---|
+| `types.ts` | единый источник типов хранилища и публичных контрактов (реэкспорт `plugin-sdk/src/types`) |
+| `surfaces.ts` | таблица видов вкладов (`pages`, `widgets`, `overlays`, `banners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): валидаторы, метки, признак «постоянная поверхность» |
+| `plugin-loader.svelte.ts` | загрузка/установка/удаление/включение remote-плагинов; нормализация и санитайз вкладов; регистрация гардов |
+| `plugin-registry.svelte.ts` | реестр вкладов (`getPages/Widgets/Overlays/Banners/Chips/PrinterPanels/Hotkeys/RightPanel`) и пользовательские предпочтения принтера |
+| `plugin-api-factory.ts` | создание `PluginApi` для плагина |
+| `plugin-api-cache.ts` | единый кэш `PluginApi`: один api на плагин, пока не сменился манифест |
+| `moonraker-proxy.ts` | пул прокси, WebSocket, кэши, подписки, поллинг |
+| `guard-agent.ts` | конвейер гардов |
+| `hotkeys.ts` | чистая логика: разбор комбинаций, сопоставление событий, конфликты |
+| `hotkey-manager.svelte.ts` | слушатель `keydown`, контекст (маршрут/страница/fleet), переопределения |
+| `host-hotkeys.ts` | хостовые клавиши навигации |
+| `settings-store.svelte.ts` | `localStorage`: принтеры, плагины, ui, настройки принтеров и плагинов |
+| `settings-sync.svelte.ts` | флаги sync и миграция настроек между режимами |
+| `printer-manager.svelte.ts` | реестр принтеров, активный принтер, подключение прокси |
+| `router.svelte.ts` | hash-роутер |
+| `ui-store.svelte.ts` | тема, акцент, размеры панелей, fleet, применение атрибутов к `<html>` |
+| `host-i18n.svelte.ts` | словари и `t()`, смена языка, RTL |
+| `auth-store.svelte.ts` | токены Moonraker, оверлей входа |
+| `extensions-catalog.svelte.ts` | чтение `/extensions/index.json` |
+| `legacy-settings.ts` | детект устаревших ключей `localStorage` |
+| `default-layout.ts`, `default-chips.ts`, `layout-utils.ts` | стандартный состав дашборда и полосы чипов |
+
+### Реестр вкладов
+
+Единый стор по видам поверхностей; все списки хранят пары
+`{ pluginId, contribution }` в порядке регистрации. Порядок регистрации важен:
+core-плагины регистрируются раньше remote, remote — в порядке записей
+`mpu:v2:plugins`. Реестр делает две вещи:
+
+1. отвечает «какие вклады зарегистрированы»;
+2. хранит предпочтения пользователя по принтеру: видимость страниц,
+   выбор провайдера виджета, раскладку дашборда, чипы.
+
+Никаких приоритетов или «лучшего провайдера»: **что показывать, решает только
+пользователь** (или плагин — для баннеров и оверлеев).
+
+### Загрузчик плагинов
+
+Для каждого манифеста:
+
+1. `prepareManifest` — копирует вклады, чтобы не мутировать исходный объект;
+2. `normalizeContribs` — для legacy-полей `component`/`headerComponent` оборачивает
+   Svelte-экспорт модуля в Custom Element (`mpu-auto-…`), подставляет
+   `iconSvg` из `pageIcons`;
+3. `sanitizeSurfaceContributions` — отбрасывает невалидные вклады по таблице
+   `surfaces.ts` с предупреждением; `rightPanel` принимается только у `@core/system`;
+4. `activate` — состояние загрузчика + реестр + гарды (единый путь и для
+   core, и для remote, и для install/enable).
+
+### PluginApi и его кэш
+
+`getPluginApi(ctx, pluginId)` возвращает один и тот же `PluginApi` для плагина,
+пока не сменился объект его манифеста (горячее обновление). Стабильность
+важна: `PluginElementHost` пересоздаёт Custom Element при смене `api`. Для ещё
+не загруженного плагина (страницы, виджеты) допускается api с заглушкой манифеста.
+
+## Поверхности и их рендер
+
+Все поверхности рендерятся одинаково: [`PluginElementHost`](../../host/src/components/plugin-element-host.svelte)
+создаёт элемент по тегу, выставляет свойства `api` и `params`, добавляет в DOM.
+[`PluginSurface`](../../host/src/components/PluginSurface.svelte) — тонкая обёртка,
+которая сама получает `api` из кэша.
+
+| Компонент хоста | Поверхность |
+|---|---|
+| `PluginSlot` | страница плагина |
+| `Dashboard` / `WidgetContainer` / `PluginWidgetRenderer` | виджеты |
+| `PluginBanners` | баннеры |
+| `PluginOverlaysLayer` | оверлеи |
+| `QuickAccessPanel` / `AddChipDialog` | чипы |
+| `FleetMode` | fleet-панели |
+| `AppRightPanel` | правая панель |
+
+Подробности и контракты `params` — в [surfaces.md](surfaces.md).
+
+## Маршрутизация
+
+Hash-роутер. Поддерживает deep-link, F5 и back/forward.
+
+| URL | Маршрут |
+|---|---|
+| `#/` | дашборд активного принтера |
+| `#/p/:printerId` | дашборд принтера |
+| `#/p/:printerId/:pageId?query` | страница плагина (query → `params`) |
+| `#/settings[/section]` | Settings |
+
+Смена активного принтера по hash'у — часть роутера; клик по вкладке принтера
+ведёт на дашборд этого принтера.
+
+## Мультипринтерность
+
+- У хоста есть реестр принтеров; один из них *активный* (вкладка).
+- Прокси всех принтеров живут одновременно; переключение вкладки их не рвёт.
+- API плагина: `moonraker()` / `settings` — активный принтер (сахар),
+  `moonrakerFor(id)` / `settingsFor(id)` — любой принтер.
+- **Fleet-режим** — drawer ниже шапки, перекрывает main, боковую и правую панели.
+  Открытие fleet *не* меняет активного принтера. Закрытый fleet = размонтирован.
+- Состояние `fleetOpen` сохраняется между сессиями.
+
+## Состояние соединения
+
+- Бейдж статуса на вкладке принтера (по `readyState` прокси).
+- **Offline-overlay** — поверх интерфейса, когда активный принтер недоступен:
+  статус, кнопка Retry, время последней связи. Пользователь может переключиться
+  на другой принтер, не закрывая оверлей. Оверлей показывает только
+  инфраструктурный статус и не читает данные принтера.
+- Баннер Klipper (в `@core/system`) — отдельная сущность: состояние прошивки, а не
+  соединения.
+
+## Что не входит в хост (намеренно)
+
+- общая шина между плагинами, общий state, `emit/on`;
+- гранулярные permissions, capabilities, priority, «лучший провайдер»;
+- мутация запросов гардами и приоритеты гардов;
+- автообновление remote-плагинов из сети;
+- бэкенд/сервер для хранения настроек.
+
+## Разработка
+
+```bash
+npm run dev            # Vite dev-сервер (хост + раздача extensions/)
+npm run build          # production-сборка хоста в host/dist
+npm run typecheck      # tsc --noEmit
+npm run svelte-check   # проверка .svelte-файлов
+npm test               # vitest (node-окружение)
+```
+
+Тесты живут рядом с кодом (`__tests__/`, `*.test.ts`) и запускаются в
+node-окружении. Эффекты Svelte (`$effect`) в нём не исполняются, поэтому код,
+который должен тестироваться без DOM, выносят в чистые функции
+(пример: `hotkeys.ts` + явный `checkConflicts()` в менеджере).
+
+## Структура репозитория
+
+```
+host/            приложение-хост (src/core, src/components, src/pages, src/i18n, src/styles)
+plugin-sdk/      типы, define-element, Svelte-хуки
+plugins/         core-плагины (+ plugins/shared — общие UI-кирпичи и парсеры)
+extensions/      provisioning-папка remote-плагинов (+ index.json)
+tools/           extensions-sync.cjs
+deploy/          install.sh и конфигурация nginx
+docs/            эта документация (ru/ и en/)
+```
+
+`plugins/shared/*` — общий код core-плагинов (файловая таблица, редактор,
+диалоги, парсеры). Это **не** канал данных между плагинами, а кирпичи UI,
+которые core-плагины импортируют статически. Remote-плагин этим кодом не
+пользуется: он самодостаточен и несёт свои зависимости в бандле.
