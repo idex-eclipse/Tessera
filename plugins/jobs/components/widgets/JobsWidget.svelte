@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { createFileOps } from '../shared/file-table/file-ops';
-  import FileTable from '../shared/file-table/FileTable.svelte';
-  import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { createFileOps } from '../../../shared/file-table/file-ops.ts';
+  import FileTable from '../../../shared/file-table/FileTable.svelte';
+  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { jobsCustomAction, jobsMenuItems } from './jobs-menu';
+  import { jobsCustomAction, jobsMenuItems } from '../../jobs-menu.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

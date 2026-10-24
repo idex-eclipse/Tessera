@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { createFileOps, type FileRef } from '../shared/file-table/file-ops';
-  import FileTable from '../shared/file-table/FileTable.svelte';
-  import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
-  import ThreeMFInspector from '../shared/3mf-parser/3Mf-Inspector.svelte';
-  import { openThreeMF } from '../shared/3mf-parser/parser';
-  import type { ThreeMFHandle } from '../shared/3mf-parser/types';
+  import { createFileOps, type FileRef } from '../../../shared/file-table/file-ops.ts';
+  import FileTable from '../../../shared/file-table/FileTable.svelte';
+  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import ThreeMFInspector from '../../../shared/3mf-parser/3Mf-Inspector.svelte';
+  import { openThreeMF } from '../../../shared/3mf-parser/parser.ts';
+  import type { ThreeMFHandle } from '../../../shared/3mf-parser/types.ts';
 
-  import { is3mf, jobsCustomAction, jobsMenuItems } from './jobs-menu';
-  import { JOBS_PAGE_SCOPE } from './hotkeys.ts';
-  import { jobsUi } from './page-ui-state.svelte.ts';
+  import { is3mf, jobsCustomAction, jobsMenuItems } from '../../jobs-menu.ts';
+  import { JOBS_PAGE_SCOPE } from '../../hotkeys.ts';
+  import { jobsUi } from '../../page-ui-state.svelte.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
