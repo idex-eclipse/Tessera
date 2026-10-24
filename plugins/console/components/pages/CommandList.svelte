@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import type { MacroParam } from '../shared/macro-params';
-  import type { BuiltinHelp } from './gcode-builtins';
+  import type { MacroParam } from '../../../shared/macro-params';
+  import type { BuiltinHelp } from '../../gcode-builtins';
 
   interface Props {
     commands: Record<string, string>;
@@ -141,7 +141,7 @@
     color: var(--text-primary);
     font-family: monospace;
     font-size: var(--font-size-sm);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: background var(--transition-fast), border-color var(--transition-fast);
   }

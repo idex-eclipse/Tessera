@@ -25,6 +25,17 @@ export const consoleManifest: PluginManifest = {
       minSize: { w: 4, h: 3 },
     },
   ],
+  hotkeys: [
+    // С - открыть страницу плагина с любой страницы
+    { id: 'open-console', scope: 'global', keys: 'C', handler: 'hotkeyOpenConsole', titleKey: 'console.hotkeys.open' },
+    // Alt-комбинации работают и из поля ввода команды
+    { id: 'focus-input', scope: 'plugin', keys: 'Alt+I', handler: 'hotkeyFocusInput', titleKey: 'console.hotkeys.focusInput' },
+    { id: 'clear-log', scope: 'plugin', keys: 'Alt+C', handler: 'hotkeyClear', titleKey: 'console.hotkeys.clear' },
+    { id: 'refresh-log', scope: 'plugin', keys: 'Alt+R', handler: 'hotkeyRefresh', titleKey: 'console.hotkeys.refresh' },
+    { id: 'toggle-autoscroll', scope: 'plugin', keys: 'Alt+S', handler: 'hotkeyToggleAutoscroll', titleKey: 'console.hotkeys.autoscroll' },
+    { id: 'toggle-reverse', scope: 'plugin', keys: 'Alt+O', handler: 'hotkeyToggleReverse', titleKey: 'console.hotkeys.reverse' },
+    { id: 'toggle-filters', scope: 'plugin', keys: 'Alt+F', handler: 'hotkeyToggleFilters', titleKey: 'console.hotkeys.filters' },
+  ],
   locales: ['en', 'ru'],
   defaultSettings: {},
 };
