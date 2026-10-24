@@ -15,6 +15,7 @@ export {
   hotkeyTabMesh, hotkeyTabProbe, hotkeyTabHeaters, hotkeyTabShaper,
   hotkeyTestzUp, hotkeyTestzDown, hotkeyTestzUpFine, hotkeyTestzDownFine,
   hotkeyProbeAccept, hotkeyProbeAbort,
+  hotkeyOpenCalibrations,
 } from './hotkeys.ts';
 
 export const pageIcons: Record<string, string> = {

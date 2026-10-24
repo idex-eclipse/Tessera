@@ -88,13 +88,28 @@ export const systemManifest = definePlugin({
       handler: 'hotkeyToggleNotifications',
       titleKey: 'system.hotkeys.toggleNotifications',
     },
-    // Alt+M: страница «Система» откуда угодно; Alt+R — обновить её данные
+    // M: страница «Система» откуда угодно; Alt+R — обновить её данные
     {
       id: 'open-machine',
       scope: 'global',
-      keys: 'Alt+M',
+      keys: 'M',
       handler: 'hotkeyOpenMachine',
       titleKey: 'system.hotkeys.openMachine',
+    },
+    // U: выбрать файл для загрузки; P: флажок «Начать печать после загрузки»
+    {
+      id: 'upload-file',
+      scope: 'global',
+      keys: 'U',
+      handler: 'hotkeyUploadFile',
+      titleKey: 'system.hotkeys.uploadFile',
+    },
+    {
+      id: 'toggle-print-after',
+      scope: 'global',
+      keys: 'P',
+      handler: 'hotkeyTogglePrintAfter',
+      titleKey: 'system.hotkeys.togglePrintAfter',
     },
     {
       id: 'refresh-machine',

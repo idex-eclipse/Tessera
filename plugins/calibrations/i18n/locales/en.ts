@@ -173,6 +173,7 @@ export const en = {
     },
 
     hotkeys: {
+      open: 'Open the Calibrations page',
       tabMesh: 'Calibrations: Bed Mesh tab',
       tabProbe: 'Calibrations: Probe & Z Offset tab',
       tabHeaters: 'Calibrations: Heaters tab',

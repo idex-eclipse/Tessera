@@ -3,6 +3,7 @@ export const en = {
     title: 'History',
     unit: { h: 'h', m: 'm', s: 's', meter: 'm', km: 'km' },
     hotkeys: {
+      open: 'Open the History page',
       find: 'History: search',
       refresh: 'History: refresh table and statistics',
     },

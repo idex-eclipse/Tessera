@@ -33,6 +33,8 @@ export const jobsManifest: PluginManifest = {
   ],
 
   hotkeys: [
+    // открыть страницу плагина с любой страницы
+    { id: 'open-jobs', scope: 'global', keys: 'J', handler: 'hotkeyOpenJobs', titleKey: 'jobs.hotkeys.open' },
     // Ctrl+F вместо поиска браузера → поиск файлов; Alt+R → обновить список
     { id: 'find-job', scope: 'plugin', keys: 'Ctrl+F', handler: 'hotkeyFindJob', titleKey: 'jobs.hotkeys.find' },
     { id: 'refresh-jobs', scope: 'plugin', keys: 'Alt+R', handler: 'hotkeyRefreshJobs', titleKey: 'jobs.hotkeys.refresh' },

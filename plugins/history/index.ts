@@ -8,6 +8,6 @@ export const pageIcons: Record<string, string> = {
 };
 
 export { guardHistoryOwnerOnly } from './guards.ts';
-export { hotkeyFindHistory, hotkeyRefreshHistory } from './hotkeys.ts';
+export { hotkeyFindHistory, hotkeyRefreshHistory, hotkeyOpenHistory } from './hotkeys.ts';
 
 defineMpuElement('mpu-history-page', HistoryPage);

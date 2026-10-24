@@ -69,6 +69,16 @@
 
   onMount(() => hotkeys.start());
 
+  // Любая смена маршрута (hotkey «открыть страницу», кнопка «назад» и т.п.) выводит из
+  // fleet-режима: он перекрывает страницу, и переход иначе остался бы незамеченным.
+  let lastHash = router.hash;
+  $effect(() => {
+    const hash = router.hash;
+    if (hash === lastHash) return;
+    lastHash = hash;
+    if (ui.fleetOpen) ui.setFleet(false);
+  });
+
   let route = $derived(router.route);
   let sidebarCollapsed = $derived(ui.sidebarCollapsed);
 </script>

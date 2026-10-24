@@ -10,7 +10,7 @@ export const pageIcons: Record<string, string> = {
 };
 
 export { guardNo3mfPrint } from './guards.ts';
-export { hotkeyFindJob, hotkeyRefreshJobs } from './hotkeys.ts';
+export { hotkeyFindJob, hotkeyRefreshJobs, hotkeyOpenJobs } from './hotkeys.ts';
 
 defineMpuElement('mpu-jobs-page', JobsPage);
 defineMpuElement('mpu-jobs-widget', JobsWidget);
