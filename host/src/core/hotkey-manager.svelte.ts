@@ -8,7 +8,10 @@ import {
   type HotkeyEntry,
   type HotkeyBinding,
   type HotkeyConflict,
+  hotkeyKey,
+  parseCombo,
 } from './hotkeys';
+import type { HotkeyScope } from '../../../plugin-sdk/src/types';
 import { HOST_HOTKEY_OWNER, type HostHotkey } from './host-hotkeys';
 import type { RegisteredHotkey, RegisteredPage } from './surfaces';
 import type { Route } from './router.svelte.ts';
@@ -48,11 +51,38 @@ export interface HotkeyManagerDeps {
   appliesToActivePrinter(pluginId: string): boolean;
   /** true — поверх main открыт fleet-drawer. */
   isFleetOpen?(): boolean;
+  /**
+   * Переопределения пользователя (device-global): `${pluginId}:${id}` → новая
+   * комбинация или null (отключено). Читается реактивно (settings.ui).
+   */
+  getOverrides?(): Record<string, string | null>;
   /** Хостовые hotkeys (навигация). Конфликтуют с плагинными по общим правилам. */
   hostHotkeys?: readonly HostHotkey[];
   /** Подписка на keydown; по умолчанию window. */
   target?: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
   warn?(message: string, detail?: unknown): void;
+}
+
+/** Строка списка горячих клавиш для Settings / About. */
+export interface HotkeyItem {
+  /** Ключ переопределения: `${pluginId}:${id}`. */
+  key: string;
+  pluginId: string;
+  id: string;
+  scope: HotkeyScope;
+  titleKey?: string;
+  /** Комбинация из манифеста / хоста. */
+  defaultKeys: string;
+  /** Действующая комбинация (с учётом переопределения); null — отключена пользователем. */
+  keys: string | null;
+  /** Каноничная запись действующей комбинации. */
+  canonical: string | null;
+  customized: boolean;
+  userDisabled: boolean;
+  /** Реально срабатывает (не отключена пользователем и не в конфликте). */
+  enabled: boolean;
+  /** Кто делит комбинацию в конфликте: "pluginId/id". */
+  conflictsWith: string[];
 }
 
 export type HotkeyManager = ReturnType<typeof createHotkeyManager>;
@@ -88,15 +118,70 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
   }));
 
   // Плагин не может выдать себя за хост: его вклады с владельцем '@host' отбрасываются.
-  const analysis: HotkeyAnalysis = $derived(
-    analyzeHotkeys([
-      ...hostEntries,
-      ...deps.registry.getHotkeys().filter((h) => h.pluginId !== HOST_HOTKEY_OWNER),
-    ]),
-  );
+  const baseEntries: HotkeyEntry[] = $derived([
+    ...hostEntries,
+    ...deps.registry.getHotkeys().filter((h) => h.pluginId !== HOST_HOTKEY_OWNER),
+  ]);
+
+  /**
+   * Действующие записи: переопределение пользователя заменяет keys,
+   * null исключает запись. Некорректное переопределение игнорируется.
+   */
+  const effectiveEntries: HotkeyEntry[] = $derived.by(() => {
+    const overrides = deps.getOverrides?.() ?? {};
+    const out: HotkeyEntry[] = [];
+    for (const entry of baseEntries) {
+      const override = overrides[hotkeyKey(entry.pluginId, entry.contribution.id)];
+      if (override === null) continue;
+      if (typeof override === 'string' && parseCombo(override)) {
+        out.push({ ...entry, contribution: { ...entry.contribution, keys: override } });
+      } else {
+        out.push(entry);
+      }
+    }
+    return out;
+  });
+
+  const analysis: HotkeyAnalysis = $derived(analyzeHotkeys(effectiveEntries));
+
+  const items: HotkeyItem[] = $derived.by(() => {
+    const overrides = deps.getOverrides?.() ?? {};
+    return baseEntries.map((entry) => {
+      const { id, scope, titleKey, keys: defaultKeys } = entry.contribution;
+      const key = hotkeyKey(entry.pluginId, id);
+      const override = overrides[key];
+      const userDisabled = override === null;
+      const validOverride = typeof override === 'string' && parseCombo(override) !== null;
+
+      const binding = analysis.bindings.find(
+        (b) => b.pluginId === entry.pluginId && b.contribution.id === id,
+      );
+      const conflict = analysis.conflicts.find((c) =>
+        c.members.some((m) => m.pluginId === entry.pluginId && m.id === id),
+      );
+
+      return {
+        key,
+        pluginId: entry.pluginId,
+        id,
+        scope,
+        titleKey,
+        defaultKeys,
+        keys: userDisabled ? null : validOverride ? override : defaultKeys,
+        canonical: binding?.canonical ?? null,
+        customized: userDisabled || validOverride,
+        userDisabled,
+        enabled: Boolean(binding?.enabled),
+        conflictsWith: (conflict?.members ?? [])
+          .filter((m) => !(m.pluginId === entry.pluginId && m.id === id))
+          .map((m) => `${m.pluginId}/${m.id}`),
+      };
+    });
+  });
 
   const warnedConflicts = new Set<string>();
   const warnedHandlers = new Set<string>();
+  let suspended = false;
 
   function pageOwner(pageId: string): string | undefined {
     return deps.registry.getPages().find((p) => p.contribution.id === pageId)?.pluginId;
@@ -127,6 +212,7 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
 
   /** Обработчик keydown. Возвращает true, если комбинация была обработана. */
   function handleKeydown(event: KeyboardEvent): boolean {
+    if (suspended) return false;
     if (event.defaultPrevented || event.repeat || event.isComposing) return false;
 
     const editable = isEditableTarget(event);
@@ -218,9 +304,23 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
     start,
     handleKeydown,
     checkConflicts,
+    /**
+     * Приостанавливает срабатывание хоткеев (запись новой комбинации в Settings).
+     * Возвращает функцию возобновления.
+     */
+    suspend(): () => void {
+      suspended = true;
+      return () => {
+        suspended = false;
+      };
+    },
     /** Все биндинги (включая отключённые из-за конфликтов). */
     get bindings(): HotkeyBinding[] {
       return analysis.bindings;
+    },
+    /** Все хоткеи (хост + плагины) с состоянием: для Settings. */
+    get items(): HotkeyItem[] {
+      return items;
     },
     get conflicts(): HotkeyConflict[] {
       return analysis.conflicts;

@@ -96,6 +96,7 @@ const DEFAULT_UI_STATE: UiState = {
   fleetOpen: false,
   fleetPanels: [],
   fleetPanelsCustomized: false,
+  hotkeyOverrides: {},
 };
 
 const LEGACY_UNPREFIXED_KEYS = new Set<string>([
@@ -637,6 +638,29 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   }
 
   // ------------------------------------------------------------------
+  // Hotkey overrides (device-global)
+  // ------------------------------------------------------------------
+
+  function getHotkeyOverrides(): Record<string, string | null> {
+    return ui.hotkeyOverrides;
+  }
+
+  /** keys — новая комбинация, null — отключить клавишу. */
+  function setHotkeyOverride(key: string, keys: string | null): void {
+    patchUi({ hotkeyOverrides: { ...ui.hotkeyOverrides, [key]: keys } });
+  }
+
+  /** Вернуть значение по умолчанию для одной клавиши. */
+  function clearHotkeyOverride(key: string): void {
+    const { [key]: _removed, ...rest } = ui.hotkeyOverrides;
+    patchUi({ hotkeyOverrides: rest });
+  }
+
+  function resetHotkeyOverrides(): void {
+    patchUi({ hotkeyOverrides: {} });
+  }
+
+  // ------------------------------------------------------------------
   // Plugin settings
   // ------------------------------------------------------------------
 
@@ -956,6 +980,10 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     getFleetPanels,
     setFleetPanels,
     resetFleetPanels,
+    getHotkeyOverrides,
+    setHotkeyOverride,
+    clearHotkeyOverride,
+    resetHotkeyOverrides,
 
     getPluginSettings,
     getPluginSetting,
@@ -1174,6 +1202,13 @@ function normalizeUiState(value: unknown): UiState {
       ? source.fleetPanelsCustomized
       : false;
 
+  const hotkeyOverrides: Record<string, string | null> = {};
+  if (isRecord(source.hotkeyOverrides)) {
+    for (const [key, value] of Object.entries(source.hotkeyOverrides)) {
+      if (value === null || typeof value === 'string') hotkeyOverrides[key] = value;
+    }
+  }
+
   return {
     theme,
     locale,
@@ -1187,6 +1222,7 @@ function normalizeUiState(value: unknown): UiState {
     fleetOpen,
     fleetPanels,
     fleetPanelsCustomized,
+    hotkeyOverrides,
   };
 }
 

@@ -60,6 +60,7 @@
     appliesToActivePrinter: (pluginId) =>
       loader.pluginAppliesToPrinter(pluginId, printerManager.activePrinterId ?? ''),
     isFleetOpen: () => ui.fleetOpen,
+    getOverrides: () => settings.ui.hotkeyOverrides,
     hostHotkeys: createHostHotkeys({ router, printerManager, ui }),
   });
 

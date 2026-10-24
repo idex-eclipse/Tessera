@@ -6,17 +6,19 @@
   import SectionPrinters from './section-printers.svelte';
   import SectionPages from './section-pages.svelte';
   import SectionPlugins from './section-plugins.svelte';
+  import SectionHotkeys from './section-hotkeys.svelte';
   import SectionAbout from './section-about.svelte';
 
   const { router, i18n } = getAppContext();
 
-  type SectionId = 'general' | 'printers' | 'plugins' | 'pages' | 'about';  // 'dashboard' убран
+  type SectionId = 'general' | 'printers' | 'plugins' | 'pages' | 'hotkeys' | 'about';  // 'dashboard' убран
 
   const sections: { id: SectionId; icon: string; labelKey: string }[] = [
     { id: 'general', icon: 'settings', labelKey: 'settings.general' },
     { id: 'printers', icon: 'printer', labelKey: 'settings.printers' },
     { id: 'plugins', icon: 'file', labelKey: 'settings.plugins' },
     { id: 'pages', icon: 'dashboard', labelKey: 'settings.pages' },
+    { id: 'hotkeys', icon: 'keyboard', labelKey: 'settings.hotkeys.title' },
     { id: 'about', icon: 'globe', labelKey: 'settings.about.title' },
   ];
 
@@ -68,6 +70,8 @@
       <SectionPages />
     {:else if section === 'plugins'}
       <SectionPlugins />
+    {:else if section === 'hotkeys'}
+      <SectionHotkeys />
     {:else if section === 'about'}
       <SectionAbout />
     {:else}

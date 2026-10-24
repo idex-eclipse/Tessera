@@ -69,6 +69,12 @@ export interface UiState {
   fleetOpen?: boolean;
   fleetPanels: FleetPanelLayoutItem[];
   fleetPanelsCustomized: boolean;
+  /**
+   * Переопределения горячих клавиш (device-global).
+   * Ключ `${pluginId}:${hotkeyId}`; строка — новая комбинация,
+   * null — клавиша отключена пользователем. Нет ключа — значение по умолчанию.
+   */
+  hotkeyOverrides: Record<string, string | null>;
 }
 
 /**
