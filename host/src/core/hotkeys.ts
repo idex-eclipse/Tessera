@@ -286,3 +286,53 @@ export function analyzeHotkeys(
     invalid,
   };
 }
+
+// ------------------------------------------------------------------
+// Переопределения пользователя / запись комбинации
+// ------------------------------------------------------------------
+
+/** Ключ переопределения в настройках: `${pluginId}:${hotkeyId}`. */
+export function hotkeyKey(pluginId: string, id: string): string {
+  return `${pluginId}:${id}`;
+}
+
+/**
+ * Комбинация из события клавиатуры (запись новой клавиши в Settings).
+ * null — нажат только модификатор или клавиша не распознана.
+ */
+export function comboFromEvent(event: KeyEventLike): Combo | null {
+  if (MODIFIER_KEYS.has((event.key ?? '').toLowerCase())) return null;
+  const key = eventKey(event);
+  if (!key || key === 'dead' || key === 'unidentified' || key === 'process') return null;
+  return {
+    ctrl: event.ctrlKey,
+    alt: event.altKey,
+    shift: event.shiftKey,
+    meta: event.metaKey,
+    key,
+  };
+}
+
+const ARROW_SYMBOLS: Record<string, string> = {
+  arrowup: '↑',
+  arrowdown: '↓',
+  arrowleft: '←',
+  arrowright: '→',
+};
+
+/** Человекочитаемая запись: "Ctrl+Shift+K", на macOS — "Cmd", "Option". */
+export function displayCombo(combo: Combo, mac: boolean = detectMacPlatform()): string {
+  const parts: string[] = [];
+  if (combo.ctrl) parts.push('Ctrl');
+  if (combo.alt) parts.push(mac ? 'Option' : 'Alt');
+  if (combo.shift) parts.push('Shift');
+  if (combo.meta) parts.push(mac ? 'Cmd' : 'Win');
+
+  let key: string;
+  if (combo.key === ' ') key = 'Space';
+  else if (ARROW_SYMBOLS[combo.key]) key = ARROW_SYMBOLS[combo.key]!;
+  else if (combo.key.length === 1) key = combo.key.toUpperCase();
+  else key = combo.key.charAt(0).toUpperCase() + combo.key.slice(1);
+
+  return [...parts, key].join('+');
+}

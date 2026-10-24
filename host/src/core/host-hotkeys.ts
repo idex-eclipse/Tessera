@@ -38,7 +38,7 @@ export function createHostHotkeys(deps: {
     router.navigateToPrinter(printerId);
   }
 
-  function step(delta: 1 | -1): void {
+  function step(delta: 1 | -1 | 0): void {
     const printers = printerManager.printers;
     if (printers.length === 0) return;
     const index = printers.findIndex((p) => p.id === printerManager.activePrinterId);
@@ -77,6 +77,12 @@ export function createHostHotkeys(deps: {
       titleKey: 'settings.about.hostHotkeys.printerPrev',
       allowInInputs: false,
       run: () => step(-1),
+    },
+    {
+      id: 'dashboard',
+      keys: 'D',
+      titleKey: 'settings.about.hostHotkeys.dashboard',
+      run: () => step(0),
     },
   ];
 }

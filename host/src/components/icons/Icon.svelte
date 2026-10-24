@@ -53,6 +53,13 @@
   {:else if name === 'printer'}
     <polyline points="6 9 6 2 18 2 18 9"></polyline>
     <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2v-6H6v6z"></path>
+  {:else if name === 'keyboard'}
+    <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+    <line x1="6" y1="10" x2="6.01" y2="10"></line>
+    <line x1="10" y1="10" x2="10.01" y2="10"></line>
+    <line x1="14" y1="10" x2="14.01" y2="10"></line>
+    <line x1="18" y1="10" x2="18.01" y2="10"></line>
+    <line x1="8" y1="14" x2="16" y2="14"></line>
   {:else}
     <!-- fallback: file -->
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
