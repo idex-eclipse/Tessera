@@ -185,6 +185,20 @@ An overlay is a floating window (usually modal) above main and the right panel,
 below the offline overlay. The typical case: a dialog the plugin opens based on
 printer state (for example, confirming a manual probing step).
 
+**How an overlay differs from an ordinary pop-up window.** A pop-up window (a
+popover, or a dialog inside a page or widget) can only be shown by the plugin on
+its own page, while its element is mounted. An overlay is a persistent surface: its
+element is always mounted, so the plugin can show the window **on any page and
+anywhere in the UI** — for example, the manual-probing dialog appears even if the
+user is on the console page at that moment. If a window only needs to exist inside
+your own page, you do not need an overlay.
+
+A side effect: since an overlay is always mounted, it is also a good place to start
+background plugin logic that must live independently of pages (for example,
+tracking the state of all printers for guards — see [guards.md](guards.md)).
+Declare hotkeys for an overlay's actions with `scope: 'global'`
+(see [hotkeys.md](hotkeys.md)).
+
 How it works:
 
 - The host mounts a **permanent layer** `position: fixed; inset: 0` with
