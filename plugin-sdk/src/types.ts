@@ -34,15 +34,38 @@ export interface WidgetSize {
 }
 
 /**
+ * Строковые параметры, которые хост передаёт Custom Element'у поверхности
+ * (свойство `params`; дублируются в `dataset`).
+ */
+export type MpuParams = Record<string, string>;
+
+/**
+ * Базовый контракт любого вклада-поверхности: Custom Element по тегу.
+ * Все поверхности (pages/widgets/overlays/banners/chips/printerPanels/rightPanel)
+ * рендерятся одинаково: хост создаёт элемент и инжектит свойства
+ * `api` (PluginApi) и `params` (MpuParams).
+ */
+export interface ElementContribution {
+  /** CE-тег (для legacy-вкладов может быть заполнен загрузчиком из component). */
+  element?: string;
+}
+
+/** Вклад с идентификатором внутри плагина и обязательным CE-тегом. */
+export interface SurfaceContribution {
+  id: string;
+  element: string;
+}
+
+/**
  * Page contributed by a plugin.
  */
-export interface PageContribution {
+export interface PageContribution extends ElementContribution {
   id: string;
   titleKey: string;
   icon?: string;
   iconSvg?: string;
-  component?: string;  // legacy: Svelte-экспорт (auto-wrap в element)
-  element?: string;    // new: Custom Element tag
+  /** @deprecated Svelte-экспорт модуля; загрузчик оборачивает его в CE и заполняет element. */
+  component?: string;
 }
 
 /**
@@ -52,15 +75,17 @@ export interface PageContribution {
  * - type identifies widget kind
  * - provider identifies concrete implementation
  */
-export interface WidgetContribution {
+export interface WidgetContribution extends ElementContribution {
   type: string;
   provider: string;
   titleKey: string;
   icon?: string;
-  component?: string;        // legacy: Svelte-экспорт (auto-wrap)
-  headerComponent?: string;  // legacy: header Svelte-экспорт (auto-wrap)
-  element?: string;          // new: Custom Element tag
-  headerElement?: string;    // new: header Custom Element tag
+  /** @deprecated Svelte-экспорт модуля; загрузчик оборачивает его в CE и заполняет element. */
+  component?: string;
+  /** @deprecated Svelte-экспорт шапки; загрузчик заполняет headerElement. */
+  headerComponent?: string;
+  /** CE-тег компонента в шапке виджета. */
+  headerElement?: string;
   defaultSize?: WidgetSize;
   minSize?: WidgetSize;
 }
@@ -114,10 +139,7 @@ export interface QuickChipLayoutItem {
  * Floating layer above main and right panel.
  * Visibility is controlled by the plugin itself.
  */
-export interface OverlayContribution {
-  id: string;
-  element: string;
-}
+export interface OverlayContribution extends SurfaceContribution {}
 
 /**
  * Banner contributed by a plugin.
@@ -125,9 +147,7 @@ export interface OverlayContribution {
  * In-flow block above main content.
  * Visibility is controlled by the plugin itself.
  */
-export interface BannerContribution {
-  id: string;
-  element: string;
+export interface BannerContribution extends SurfaceContribution {
   scope?: 'all' | 'dashboard';
 }
 
@@ -138,8 +158,8 @@ export interface BannerContribution {
  * в fleet-режиме (fullscreen-слой ниже шапки, `?fleet=1`).
  *
  * Хост инжектит в CE стандартные свойства:
- *   mpuApi     — PluginApi
- *   mpuParams  — { printerId: string, active: '1' | '0' }
+ *   api     — PluginApi
+ *   params  — { printerId: string }
  *
  * Плагин читает данные своего принтера через api.moonrakerFor(params.printerId).
  * Видимость секции (mount/unmount) решает хост по режиму fleet.
@@ -148,9 +168,7 @@ export interface BannerContribution {
  * в каждой карточке принтера монтируется стек вкладов по порядку регистрации
  * (как banners).
  */
-export interface PrinterPanelContribution {
-  id: string;
-  element: string;
+export interface PrinterPanelContribution extends SurfaceContribution {
   titleKey?: string;
 }
 
@@ -160,10 +178,7 @@ export interface PrinterPanelContribution {
  * Unique slot.
  * Loader accepts this ONLY from '@core/system'.
  */
-export interface RightPanelContribution {
-  id: string;
-  element: string;
-}
+export interface RightPanelContribution extends SurfaceContribution {}
 
 /**
  * Контекст, в котором принимается решение гарда. Добавлен в фазе 2

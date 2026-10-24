@@ -1,8 +1,13 @@
 import type {
-  LocaleDirection,
-  ThemeMode,
-  QuickChipLayoutItem,
-} from '../../../plugin-sdk/src/types';
+  DashboardWidgetLayoutItem,
+  FleetPanelLayoutItem,
+  PluginSettingsState,
+  PrinterRecord,
+  PrinterSettingsState,
+  RemotePluginRecord,
+  UiState,
+} from './types';
+import type { LocaleDirection, ThemeMode, QuickChipLayoutItem } from '../../../plugin-sdk/src/types';
 
 import {
   MemoryStorage,
@@ -28,74 +33,17 @@ import { isPluginSynced, isDashboardSynced, onSyncChange, setPluginSynced, setDa
  * - legacy schema only detected, then user decides export/reset
  */
 
-export interface PrinterRecord {
-  id: string;
-  name: string;
-  url: string;
-}
-
-export interface RemotePluginRecord {
-  manifestUrl: string;
-  enabled: boolean;
-  printerIds: string[];
-  source?: 'catalog' | 'url';
-  installedVersion?: string;
-}
-
-export interface UiState {
-  theme: ThemeMode;
-  locale: string;
-  dir: LocaleDirection;
-  sidebarCollapsed: boolean;
-  sidebarWidth: number;
-  rightPanelCollapsed: boolean;
-  rightPanelWidth: number;
-  bgImage: string | null;
-  accent: string | null;
-  fleetOpen?: boolean;
-  fleetPanels: FleetPanelLayoutItem[];
-  fleetPanelsCustomized: boolean;
-}
+export type {
+  DashboardWidgetLayoutItem,
+  FleetPanelLayoutItem,
+  PluginSettingsState,
+  PrinterRecord,
+  PrinterSettingsState,
+  RemotePluginRecord,
+  UiState,
+};
 
 export const BG_IMAGE_MAX_CHARS = 2_500_000;
-
-export interface DashboardWidgetLayoutItem {
-  instanceId: string;
-  type: string;
-  provider: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-export interface FleetPanelLayoutItem {
-  pluginId: string;
-  contributionId: string;
-  visible: boolean;
-}
-
-export interface PrinterSettingsState {
-  /**
-   * Page visibility per global page id.
-   * If absent, page is visible by default.
-   */
-  pages: Record<string, boolean>;
-
-  /**
-   * Explicit widget provider selection.
-   * key: widget type
-   * value: provider id
-   */
-  widgetProviders: Record<string, string>;
-
-  dashboardLayout: DashboardWidgetLayoutItem[];
-  dashboardLayoutCustomized?: boolean;
-  quickChips: QuickChipLayoutItem[];
-  quickChipsCustomized?: boolean;
-}
-
-export type PluginSettingsState = Record<string, unknown>;
 
 export interface LegacySchemaInfo {
   detected: boolean;

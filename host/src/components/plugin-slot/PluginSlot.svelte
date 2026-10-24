@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getAppContext } from '../../app-context';
-  import { createPluginApi } from '../../core/plugin-api-factory';
+  import { getPluginApi } from '../../core/plugin-api-cache';
 
   import PluginElementHost from '../plugin-element-host.svelte';
 
@@ -10,14 +10,7 @@
 
   const page = ctx.registry.getPages().find((p) => p.contribution.id === pageId);
 
-  let api = $derived.by(() => {
-    if (!page) return null;
-    const loaded = ctx.loader.getLoadedPlugin(page.pluginId);
-    const manifest =
-      loaded?.manifest ??
-      ({ id: page.pluginId, name: page.pluginId, version: '0.0.0', entry: '' } as any);
-    return createPluginApi(ctx, page.pluginId, manifest);
-  });
+  let api = $derived(page ? getPluginApi(ctx, page.pluginId, { allowUnloaded: true }) : null);
 
   let tag = $derived(page?.contribution.element ?? '');
 </script>

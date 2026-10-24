@@ -1132,8 +1132,8 @@ describe('plugin-loader / guards', () => {
 
     const registered = guardAgent.getRegisteredGuards();
     expect(registered).toHaveLength(1);
-    expect(registered[0].pluginId).toBe('@core/calibrations');
-    expect(registered[0].id).toBe('calib-safety');
+    expect(registered[0]?.pluginId).toBe('@core/calibrations');
+    expect(registered[0]?.guardId).toBe('calib-safety');
   });
 
   it('registers guards from remote plugin', async () => {
@@ -1161,7 +1161,7 @@ describe('plugin-loader / guards', () => {
 
     const registered = guardAgent.getRegisteredGuards();
     expect(registered).toHaveLength(1);
-    expect(registered[0].pluginId).toBe('@third/plugin');
+    expect(registered[0]?.pluginId).toBe('@third/plugin');
   });
 
   it('unregisters guards when plugin is uninstalled', async () => {

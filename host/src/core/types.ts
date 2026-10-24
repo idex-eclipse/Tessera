@@ -8,18 +8,22 @@
 import type {
   ConnectionStatus,
   LocaleDirection,
-  PageContribution,
-  PluginManifest,
   ThemeMode,
-  WidgetContribution,
-  ChipContribution,
   QuickChipLayoutItem,
-  OverlayContribution,
-  BannerContribution,
-  RightPanelContribution,
 } from '../../../plugin-sdk/src/types';
 
+import type {
+  RegisteredBanner,
+  RegisteredChip,
+  RegisteredOverlay,
+  RegisteredPage,
+  RegisteredPrinterPanel,
+  RegisteredRightPanel,
+  RegisteredWidget,
+} from './surfaces';
+
 export * from '../../../plugin-sdk/src/types';
+export type * from './surfaces';
 
 /**
  * Stored printer record.
@@ -41,6 +45,10 @@ export interface RemotePluginRecord {
   manifestUrl: string;
   enabled: boolean;
   printerIds: string[];
+  /** Происхождение установки (каталог / URL). */
+  source?: 'catalog' | 'url';
+  /** Версия на момент установки — для бейджа «доступно обновление». */
+  installedVersion?: string;
 }
 
 /**
@@ -55,23 +63,11 @@ export interface UiState {
   sidebarWidth: number;
   rightPanelCollapsed: boolean;
   rightPanelWidth: number;
+  bgImage: string | null;
+  accent: string | null;
+  fleetOpen?: boolean;
   fleetPanels: FleetPanelLayoutItem[];
   fleetPanelsCustomized: boolean;
-}
-
-export interface RegisteredOverlay {
-  pluginId: string;
-  contribution: OverlayContribution;
-}
-
-export interface RegisteredBanner {
-  pluginId: string;
-  contribution: BannerContribution;
-}
-
-export interface RegisteredRightPanel {
-  pluginId: string;
-  contribution: RightPanelContribution;
 }
 
 /**
@@ -132,7 +128,10 @@ export interface PrinterSettingsState {
   pages: PageVisibilityMap;
   widgetProviders: WidgetProviderSelectionMap;
   dashboardLayout: DashboardWidgetLayoutItem[];
+  /** false/undefined = виртуальный стандартный layout. */
+  dashboardLayoutCustomized?: boolean;
   quickChips: QuickChipLayoutItem[];
+  quickChipsCustomized?: boolean;
 }
 
 /**
@@ -140,24 +139,6 @@ export interface PrinterSettingsState {
  * localStorage key: mpu:v2:plugin-settings:<printerId>:<pluginId>
  */
 export type PluginSettingsState = Record<string, unknown>;
-
-/**
- * Registry read model: pages.
- */
-export interface RegisteredPage {
-  pluginId: string;
-  manifest: PluginManifest;
-  contribution: PageContribution;
-}
-
-/**
- * Registry read model: widgets.
- */
-export interface RegisteredWidget {
-  pluginId: string;
-  manifest: PluginManifest;
-  contribution: WidgetContribution;
-}
 
 /**
  * Registry public read surface.
@@ -173,6 +154,8 @@ export interface PluginRegistryView {
 
   getOverlays(): RegisteredOverlay[];
   getBanners(): RegisteredBanner[];
+  getChips(): RegisteredChip[];
+  getPrinterPanels(): RegisteredPrinterPanel[];
   getRightPanel(): RegisteredRightPanel | undefined;
 }
 

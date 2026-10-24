@@ -8,7 +8,7 @@
   import PluginWidgetRenderer from './PluginWidgetRenderer.svelte';
 
   import { getAppContext } from '../../app-context';
-  import { createPluginApi } from '../../core/plugin-api-factory';
+  import { getPluginApi } from '../../core/plugin-api-cache';
   import PluginElementHost from '../../components/plugin-element-host.svelte';
 
   let {
@@ -39,22 +39,9 @@
     `grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h};`,
   );
 
-  const pluginApi = $derived.by(() => {
-    if (!widget) return null;
-
-    const loaded = ctx.loader.getLoadedPlugin(widget.pluginId);
-
-    return createPluginApi(
-      ctx,
-      widget.pluginId,
-      loaded?.manifest ?? {
-        id: widget.pluginId,
-        name: widget.pluginId,
-        version: '0.0.0',
-        entry: '',
-      },
-    );
-  });
+  const pluginApi = $derived(
+    widget ? getPluginApi(ctx, widget.pluginId, { allowUnloaded: true }) : null,
+  );
 
   let headerTag = $derived(widget?.contribution.headerElement ?? '');
 

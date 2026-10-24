@@ -7,7 +7,7 @@
   import type { FleetPanelLayoutItem } from '../../core/settings-store.svelte.ts';
 
   import { getAppContext } from '../../app-context.ts';
-  import { createPluginApi } from '../../core/plugin-api-factory.ts';
+  import { getPluginApi } from '../../core/plugin-api-cache.ts';
 
   import Icon from '../../../../plugins/shared/icons/Icon.svelte';
   import ConnectionStatus from '../connection-status/ConnectionStatus.svelte';
@@ -146,16 +146,7 @@
     }),
   );
 
-  const apiCache = new Map<string, PluginApi>();
-  function apiFor(pluginId: string): PluginApi | null {
-    const cached = apiCache.get(pluginId);
-    if (cached) return cached;
-    const loaded = ctx.loader.getLoadedPlugin(pluginId);
-    if (!loaded) return null;
-    const api = createPluginApi(ctx, pluginId, loaded.manifest);
-    apiCache.set(pluginId, api);
-    return api;
-  }
+  const apiFor = (pluginId: string) => getPluginApi(ctx, pluginId);
 
   function handleClose() {
     ui.setFleet(false);
@@ -249,7 +240,7 @@
     if (dragIndex < index) target -= 1;
     if (after) target += 1;
 
-    next.splice(target, 0, moved);
+    if (moved) next.splice(target, 0, moved);
     layout = next;
     persistLayout();
     endDrag();

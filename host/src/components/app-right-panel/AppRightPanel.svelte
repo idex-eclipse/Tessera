@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getAppContext } from '../../app-context';
-  import { createPluginApi } from '../../core/plugin-api-factory';
+  import { getPluginApi } from '../../core/plugin-api-cache';
   import PluginElementHost from '../plugin-element-host.svelte';
   import Icon from '../icons/Icon.svelte';
 
@@ -25,12 +25,7 @@
     }
   });
 
-  let loaded = $derived(panel ? ctx.loader.getLoadedPlugin(panel.pluginId) : null);
-
-  let api = $derived.by(() => {
-    if (!panel || !loaded) return null;
-    return createPluginApi(ctx, panel.pluginId, loaded.manifest);
-  });
+  let api = $derived(panel ? getPluginApi(ctx, panel.pluginId) : null);
 
   function toggle() {
     ctx.ui.toggleRightPanel();

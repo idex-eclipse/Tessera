@@ -1,5 +1,8 @@
 <script lang="ts">
-  import type { PluginApi } from '../../../plugin-sdk/src/types';
+  import type { MpuParams, PluginApi } from '../../../plugin-sdk/src/types';
+
+  /** Custom Element поверхности: хост инжектит api и params свойствами. */
+  type MpuElement = HTMLElement & { api: PluginApi; params: MpuParams };
 
   let {
     tag,
@@ -9,14 +12,14 @@
   }: {
     tag: string;
     api: PluginApi;
-    params?: Record<string, string>;
+    params?: MpuParams;
     fill?: boolean;
   } = $props();
 
   let hostEl: HTMLDivElement | null = null;
-  let current: HTMLElement | null = null;
+  let current: MpuElement | null = null;
 
-  function syncDataset(el: HTMLElement, p: Record<string, string>): void {
+  function syncDataset(el: HTMLElement, p: MpuParams): void {
     for (const [key, value] of Object.entries(p)) {
       el.dataset[key] = String(value);
     }
@@ -36,9 +39,9 @@
       return;
     }
 
-    current = document.createElement(tag);
-    (current as any).api = api;
-    (current as any).params = params;
+    current = document.createElement(tag) as MpuElement;
+    current.api = api;
+    current.params = params;
     syncDataset(current, params);
     hostEl.appendChild(current);
   }
@@ -52,7 +55,7 @@
 
   $effect(() => {
     if (!current) return;
-    (current as any).params = params;
+    current.params = params;
     syncDataset(current, params);
   });
 </script>

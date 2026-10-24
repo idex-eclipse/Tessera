@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createGuardAgent, GuardError, type GuardNotifyDetail } from '../guard-agent';
+import { createGuardAgent, GuardError, type GuardAgentOptions, type GuardNotifyDetail } from '../guard-agent';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-function agentWith(opts = {}) {
-  return createGuardAgent({ newToken: (() => { let i = 0; return () => `t${++i}`; }), ...opts });
+function agentWith(opts: GuardAgentOptions = {}) {
+  let i = 0;
+  return createGuardAgent({ newToken: () => `t${++i}`, ...opts });
 }
 
 describe('guard-agent', () => {
   it('passes through when no guards match', async () => {
     const agent = agentWith();
-    await expect(agent.runPreflight('p1', 'printer.print.start', { filename: 'a' })).resolves.toBeUndefined();
+    await expect(agent.runPreflight('p1', 'pA', 'printer.print.start', { filename: 'a' })).resolves.toBeUndefined();
   });
 
   it('runs chain in registration order, glob matchers work', async () => {
@@ -23,11 +24,11 @@ describe('guard-agent', () => {
     agent.registerGuards('b', [{ id: 'g2', match: ['printer.*'], handler: 'h' }], {
       h: () => { order.push('g2'); return { action: 'allow' }; },
     });
-    await agent.runPreflight('x', 'printer.print.start', undefined);
+    await agent.runPreflight('x', 'pA', 'printer.print.start', undefined);
     expect(order).toEqual(['g1', 'g2']);
 
     order.length = 0;
-    await agent.runPreflight('x', 'server.info', undefined);
+    await agent.runPreflight('x', 'pA', 'server.info', undefined);
     expect(order).toEqual([]);
   });
 
@@ -35,7 +36,7 @@ describe('guard-agent', () => {
     const agent = agentWith();
     const h = vi.fn(() => ({ action: 'allow' as const }));
     agent.registerGuards('a', [{ id: 'g1', match: ['m'], handler: 'h' }], { h });
-    await agent.runPreflight('a', 'm', undefined);
+    await agent.runPreflight('a', 'pA', 'm', undefined);
     expect(h).not.toHaveBeenCalled();
   });
 
@@ -47,7 +48,7 @@ describe('guard-agent', () => {
     });
     agent.registerGuards('b', [{ id: 'g2', match: ['m'], handler: 'h' }], { h: second });
 
-    const err = await agent.runPreflight('x', 'm', undefined).then(
+    const err = await agent.runPreflight('x', 'pA', 'm', undefined).then(
       () => null,
       (e) => e as GuardError,
     );
@@ -75,17 +76,17 @@ describe('guard-agent', () => {
     agent.registerGuards('b', [{ id: 'after', match: ['m'], handler: 'after' }], { after });
 
     let settled = false;
-    const p = agent.runPreflight('x', 'm', { v: 1 }).then(() => { settled = true; });
+    const p = agent.runPreflight('x', 'pA', 'm', { v: 1 }).then(() => { settled = true; });
     await flush();
     expect(settled).toBe(false);
     expect(agent.getParkedChains()).toHaveLength(1);
 
-    await expect(agent.runPreflight('x', 'm', { v: 1 })).rejects.toMatchObject({
+    await expect(agent.runPreflight('x', 'pA', 'm', { v: 1 })).rejects.toMatchObject({
       rejection: { code: 'already_pending' },
     });
 
     // другие params — не дубль: цепочка проходит насквозь (f уже allow)
-    await agent.runPreflight('x', 'm', { v: 2 });
+    await agent.runPreflight('x', 'pA', 'm', { v: 2 });
 
     agent.resume(token!, 'accept');
     await p;
@@ -101,7 +102,7 @@ describe('guard-agent', () => {
     agent.registerGuards('a', [{ id: 'f', match: ['m'], handler: 'f' }], {
       f: (_r: unknown, tok: string) => { token = tok; return { action: 'freeze' }; },
     });
-    const p = agent.runPreflight('x', 'm', undefined);
+    const p = agent.runPreflight('x', 'pA', 'm', undefined);
     await flush();
     agent.resume(token, 'deny', 'user.cancel');
     const err = await p.then(() => null, (e) => e as GuardError);
@@ -117,10 +118,10 @@ describe('guard-agent', () => {
     agent.registerGuards('a', [{ id: 'slow', match: ['m'], handler: 'h' }], {
       h: () => new Promise(() => {}),
     });
-    const err = await agent.runPreflight('x', 'm', undefined).then(() => null, (e) => e as GuardError);
+    const err = await agent.runPreflight('x', 'pA', 'm', undefined).then(() => null, (e) => e as GuardError);
     expect(err!.rejection).toMatchObject({ code: 'guard_timeout', pluginId: 'a' });
     expect(events).toEqual([
-      { kind: 'decision_timeout', pluginId: 'a', guardId: 'slow', method: 'm' },
+      { kind: 'decision_timeout', pluginId: 'a', guardId: 'slow', method: 'm', targetPrinterId: 'pA' },
     ]);
   });
 
@@ -133,14 +134,14 @@ describe('guard-agent', () => {
     agent.registerGuards('a', [{ id: 'f', match: ['m'], handler: 'f' }], {
       f: () => ({ action: 'freeze' }),
     });
-    const p = agent.runPreflight('x', 'm', undefined);
+    const p = agent.runPreflight('x', 'pA', 'm', undefined);
     await flush();
     expect(agent.getParkedChains()).toHaveLength(1);
     const err = await p.then(() => null, (e) => e as GuardError);
     expect(err!.rejection).toMatchObject({ code: 'guard_timeout' });
     expect(agent.getParkedChains()).toHaveLength(0);
     expect(events).toEqual([
-      { kind: 'park_timeout', pluginId: 'a', guardId: 'f', method: 'm' },
+      { kind: 'park_timeout', pluginId: 'a', guardId: 'f', method: 'm', targetPrinterId: 'pA' },
     ]);
   });
 
@@ -149,7 +150,7 @@ describe('guard-agent', () => {
     agent.registerGuards('a', [{ id: 'f', match: ['m'], handler: 'f' }], {
       f: () => ({ action: 'freeze' }),
     });
-    const p = agent.runPreflight('x', 'm', undefined);
+    const p = agent.runPreflight('x', 'pA', 'm', undefined);
     await flush();
     expect(agent.getParkedChains()).toHaveLength(1);
     const err = await p.then(() => null, (e) => e as GuardError);
@@ -162,7 +163,7 @@ describe('guard-agent', () => {
     agent.registerGuards('a', [{ id: 'f', match: ['m'], handler: 'f' }], {
       f: () => ({ action: 'freeze' }),
     });
-    const p = agent.runPreflight('x', 'm', undefined);
+    const p = agent.runPreflight('x', 'pA', 'm', undefined);
     await flush();
     agent.unregisterGuards('a');
     const err = await p.then(() => null, (e) => e as GuardError);
