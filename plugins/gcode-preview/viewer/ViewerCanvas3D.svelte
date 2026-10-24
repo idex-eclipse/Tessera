@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -11,6 +11,7 @@
   import Icon from '../../shared/icons/Icon.svelte';
   import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte.ts';
   import ConfirmDialog from '../../shared/confirm-dialog.svelte';
+  import { previewUi } from './preview-ui-state.svelte';
 
   // ---- 1. props первым: Svelte 5 требует объявление до первого $effect ----
   let {
@@ -76,6 +77,14 @@
   }>();
 
   let confirmExclude = $state<string | null>(null);
+
+  // открытый диалог гасит команды hotkeys; при размонтировании флаг снимается
+  $effect(() => {
+    previewUi.dialogOpen = confirmExclude !== null;
+  });
+  onDestroy(() => {
+    previewUi.dialogOpen = false;
+  });
 
   function doExclude(): void {
     if (confirmExclude) void excludeStore.exclude(confirmExclude);
@@ -574,6 +583,7 @@
 
 <style>
   .canvas-wrap {
+    direction: ltr; /* геометрия модели физическая: левый/правый край не зависят от языка */
     position: relative;
     width: 100%;
     height: 100%;

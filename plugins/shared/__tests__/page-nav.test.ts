@@ -4,6 +4,8 @@ import type { PluginApi, PluginManifest } from '../../../plugin-sdk/src/types';
 import * as calibrations from '../../calibrations/hotkeys';
 import { calibrationsManifest } from '../../calibrations/manifest';
 import * as config from '../../config/hotkeys';
+import * as gcodePreview from '../../gcode-preview/hotkeys';
+import { gcodePreviewManifest } from '../../gcode-preview/manifest';
 import * as consolePlugin from '../../console/hotkeys';
 import { consoleManifest } from '../../console/manifest';
 import { configManifest } from '../../config/manifest';
@@ -47,7 +49,8 @@ const OPEN_PAGE_KEYS: Array<[PluginManifest, Record<string, unknown>, string, st
   [systemManifest, system, 'open-machine', 'M', 'hotkeyOpenMachine', 'machine'],
   [configManifest, config, 'open-config', 'Shift+C', 'hotkeyOpenConfig', 'config'],
   [calibrationsManifest, calibrations, 'open-calibrations', 'Shift+A', 'hotkeyOpenCalibrations', 'calibrations'],
-  [consoleManifest, consolePlugin, 'open-console', 'Shift+O', 'hotkeyOpenConsole', 'console'],
+  [consoleManifest, consolePlugin, 'open-console', 'C', 'hotkeyOpenConsole', 'console'],
+  [gcodePreviewManifest, gcodePreview, 'open-preview', 'G', 'hotkeyOpenPreview', 'gcode-preview'],
 ];
 
 describe.each(OPEN_PAGE_KEYS)('open-page hotkey of %#', (manifest, mod, id, keys, handler, page) => {

@@ -2,19 +2,22 @@
   import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
 
   import GCodeViewer from './viewer/GCodeViewer.svelte';
-  import { ensureParsed, getEntry } from './viewer/gcode-store.svelte';
+  import { ensureParsed, getEntry, reloadParsed } from './viewer/gcode-store.svelte';
 
   import { usePrintProgress } from './viewer/use-print-progress.svelte';
   import { segmentAtOffset } from './viewer/parse-gcode';
 
-  import { isCleared, unclear, clearPreview } from './viewer/preview-ui-state.svelte';
+  import { untrack } from 'svelte';
+
+  import { isCleared, unclear, clearPreview, usePreviewCommands } from './viewer/preview-ui-state.svelte';
   import Icon from '../shared/icons/Icon.svelte';
   import HeaderHelp from '../shared/header-help/HeaderHelp.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;
   let { params = {} }: { params?: Record<string, string> } = $props();
-  let printFile = $state('');
+  const progress = usePrintProgress(api);
+  let printFile = $derived(progress.filename);
   let cleared = $derived(isCleared(api, 'page'));
   let path = $derived(
     !cleared && params.file
@@ -24,11 +27,7 @@
         : '',
   );
   let fileName = $derived(path.split('/').pop() ?? '');
-  let entry = $derived(getEntry(path));
-
-  const progress = usePrintProgress(api);
-
-
+  let entry = $derived(getEntry(api, path));
 
   let relViewed = $derived(path.startsWith('gcodes/') ? path.slice(7) : path);
 
@@ -42,15 +41,23 @@
     if (params.file) unclear(api, 'page');
   });
 
+  // Новая печать (смена файла в print_stats) снимает «Очистить»; при открытии страницы
+  // уже очищенное состояние сохраняется (сравниваем только со вторым и далее значениями).
+  let lastPrintFile = untrack(() => printFile);
   $effect(() => {
-    return api.moonraker().subscribe(
-      { print_stats: ['filename'] },
-      (d: any) => {
-        const fn = d?.print_stats?.filename;
-        if (typeof fn === 'string') printFile = fn;
-      },
-      { immediate: true },
-    );
+    const fn = printFile;
+    if (fn === lastPrintFile) return;
+    lastPrintFile = fn;
+    if (fn) untrack(() => unclear(api, 'page'));
+  });
+
+  // Alt+X / Alt+R из hotkeys
+  usePreviewCommands((c) => {
+    if (c.name === 'clear') {
+      if (path) clearPreview(api, 'page');
+    } else if (c.name === 'reload') {
+      reloadParsed(api, path);
+    }
   });
 
   $effect(() => {
@@ -63,10 +70,11 @@
     <div class="page-header">
       <span class="page-title">{i18n.t('gcodePreview.title')}</span>
       {#if fileName}
-        <span class="file-name">{fileName}</span>
+        <bdi class="file-name">{fileName}</bdi>
         <button
           class="clear-btn"
           title={i18n.t('gcodePreview.clear')}
+          aria-label={i18n.t('gcodePreview.clear')}
           onclick={() => clearPreview(api, 'page')}
         >
           <Icon name="x" size={14} />
@@ -106,14 +114,14 @@
   .preview-page { height: 100%; }
   .preview-card { display: flex; flex-direction: column; height: 100%; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden; }
   .preview-card .page-header { margin-bottom: 0; }
-  .file-name { color: var(--text-muted); font-family: monospace; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-name { direction: ltr; unicode-bidi: isolate; color: var(--text-muted); font-family: monospace; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .preview-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--space-md); }
   .empty { color: var(--text-muted); text-align: center; padding: var(--space-lg); }
   .empty-hint { color: var(--text-muted); font-size: var(--font-size-sm); text-align: center; }
   .error { color: var(--danger); }
 
   .clear-btn {
-    margin-left: auto;
+    margin-inline-start: auto;
     display: flex;
     align-items: center;
     justify-content: center;

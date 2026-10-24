@@ -202,7 +202,7 @@ describe('session lifecycle', () => {
 // ------------------------------------------------------------------
 
 describe('hotkey handlers', () => {
-  it('Shift+O opens the console page of the active printer', () => {
+  it('C opens the console page of the active printer', () => {
     const location = { hash: '' };
     vi.stubGlobal('location', location);
     hotkeys.hotkeyOpenConsole({ printer: { id: 'printer-1' } } as unknown as PluginApi);
@@ -268,7 +268,7 @@ describe('manifest', () => {
       expect(h.titleKey?.startsWith('console.hotkeys.')).toBe(true);
     }
     const open = consoleManifest.hotkeys?.find((h) => h.id === 'open-console');
-    expect(open).toMatchObject({ scope: 'global', keys: 'Shift+O' });
+    expect(open).toMatchObject({ scope: 'global', keys: 'C' });
     expect(consoleManifest.pages?.some((p) => p.id === 'console')).toBe(true);
   });
 

@@ -6,6 +6,7 @@
   import type { ParsedGcode } from './parse-gcode';
 
   import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte';
+  import { usePreviewCommands } from './preview-ui-state.svelte';
 
   const api = usePluginApi();
   const excludeStore = useExcludeObjects(api);
@@ -75,6 +76,40 @@
     if (l !== layer) layer = l;
   });
 
+  // Команды hotkeys (Alt+PageUp/PageDown, Alt+Home/End, Alt+T/B/M/F/C)
+  usePreviewCommands((c) => {
+    const max = Math.max(0, parsed.layerZ.length - 1);
+    switch (c.name) {
+      case 'layer-step':
+        pauseFollow();
+        layer = Math.min(max, Math.max(0, layer + c.amount));
+        break;
+      case 'layer-first':
+        pauseFollow();
+        layer = 0;
+        break;
+      case 'layer-last':
+        pauseFollow();
+        layer = max;
+        break;
+      case 'toggle-travel':
+        showTravel = !showTravel;
+        break;
+      case 'toggle-bounds':
+        showBounds = !showBounds;
+        break;
+      case 'toggle-mode':
+        if (allow3d) mode = mode === '2d' ? '3d' : '2d';
+        break;
+      case 'toggle-follow':
+        if (progressSeg != null) setFollow(!follow);
+        break;
+      case 'toggle-color':
+        colorMode = colorMode === 'extruder' ? 'type' : 'extruder';
+        break;
+    }
+  });
+
   let noObjectsHint = $derived(
     excludeStore.available && excludeStore.objects.length === 0 && parsed.objects.length === 0,
   );
@@ -89,13 +124,13 @@
       </div>
     {/if}
 
-    <label class="layer-label">
+    <span class="layer-label">
       {i18n.t('gcodePreview.layer')}
-      <span class="layer-count" style:min-width="{countWidth}ch">{layer + 1}/{parsed.layerZ.length}</span>
-      <span class="layer-z">
+      <bdi class="layer-count" style:min-width="{countWidth}ch">{layer + 1}/{parsed.layerZ.length}</bdi>
+      <bdi class="layer-z">
         Z <span class="layer-znum" style:min-width="{zWidth}ch">{layerZ.toFixed(2)}</span> mm
-      </span>
-    </label>
+      </bdi>
+    </span>
 
     {#if progressSeg != null}
       <label class="check">
@@ -145,7 +180,11 @@
     {/if}
 
   <div class="viewer-footer">
-    {parsed.moveCount} moves · {parsed.layerZ.length} layers · {parsed.extruderCount} extruder(s)
+    {i18n.t('gcodePreview.summary', {
+      moves: parsed.moveCount,
+      layers: parsed.layerZ.length,
+      extruders: parsed.extruderCount,
+    })}
     {#if noObjectsHint}
       <span class="viewer-note">· {i18n.t('gcodePreview.noObjects')}</span>
     {/if}
@@ -161,9 +200,8 @@
   .mode.active { background: var(--bg-surface-active); color: var(--accent); }
   .mode:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  .layer-label { font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
-  .layer-z { color: var(--text-muted); margin-left: var(--space-xs); }
-  .layer-slider { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  /* слои растут слева направо независимо от направления интерфейса */
+  .layer-slider { flex: 1; min-width: 120px; accent-color: var(--accent); direction: ltr; }
   .layer-label {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
@@ -178,7 +216,7 @@
 
   .layer-z {
     color: var(--text-muted);
-    margin-left: var(--space-xs);
+    margin-inline-start: var(--space-xs);
   }
 
   .layer-znum {
