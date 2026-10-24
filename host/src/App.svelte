@@ -61,7 +61,7 @@
       loader.pluginAppliesToPrinter(pluginId, printerManager.activePrinterId ?? ''),
     isFleetOpen: () => ui.fleetOpen,
     getOverrides: () => settings.ui.hotkeyOverrides,
-    hostHotkeys: createHostHotkeys({ router, printerManager, ui }),
+    hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route }),
   });
 
   const ctx: AppContext = { settings, printerManager, registry, ui, i18n, loader, router, hotkeys };
