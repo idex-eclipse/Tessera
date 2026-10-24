@@ -4,6 +4,8 @@ import type { PluginApi, PluginManifest } from '../../../plugin-sdk/src/types';
 import * as calibrations from '../../calibrations/hotkeys';
 import { calibrationsManifest } from '../../calibrations/manifest';
 import * as config from '../../config/hotkeys';
+import * as consolePlugin from '../../console/hotkeys';
+import { consoleManifest } from '../../console/manifest';
 import { configManifest } from '../../config/manifest';
 import * as history from '../../history/hotkeys';
 import { historyManifest } from '../../history/manifest';
@@ -45,6 +47,7 @@ const OPEN_PAGE_KEYS: Array<[PluginManifest, Record<string, unknown>, string, st
   [systemManifest, system, 'open-machine', 'M', 'hotkeyOpenMachine', 'machine'],
   [configManifest, config, 'open-config', 'Shift+C', 'hotkeyOpenConfig', 'config'],
   [calibrationsManifest, calibrations, 'open-calibrations', 'Shift+A', 'hotkeyOpenCalibrations', 'calibrations'],
+  [consoleManifest, consolePlugin, 'open-console', 'Shift+O', 'hotkeyOpenConsole', 'console'],
 ];
 
 describe.each(OPEN_PAGE_KEYS)('open-page hotkey of %#', (manifest, mod, id, keys, handler, page) => {

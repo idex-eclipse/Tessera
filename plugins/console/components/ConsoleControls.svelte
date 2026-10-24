@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
-  import { getPrefs, setPrefs } from './console-session.svelte';
+  import { getPrefs, setPrefs } from '../console-session.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -15,6 +15,8 @@
   class:active={prefs.autoscroll}
   onclick={() => setPrefs(api, printerId, { autoscroll: !prefs.autoscroll })}
   title={i18n.t('console.autoscroll')}
+  aria-label={i18n.t('console.autoscroll')}
+  aria-pressed={prefs.autoscroll}
 >
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="7 6 12 11 17 6"></polyline>
@@ -27,6 +29,8 @@
   class:active={prefs.reverse}
   onclick={() => setPrefs(api, printerId, { reverse: !prefs.reverse })}
   title={i18n.t('console.reverse')}
+  aria-label={i18n.t('console.reverse')}
+  aria-pressed={prefs.reverse}
 >
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="m21 16-4 4-4-4"></path>

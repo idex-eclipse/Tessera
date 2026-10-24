@@ -1,14 +1,17 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { onDestroy, untrack } from 'svelte';
 
-  import Icon from '../shared/icons/Icon.svelte';
+  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+
+  import Icon from '../../shared/icons/Icon.svelte';
 
   import {
     compileFilters,
     getPrefs,
     setPrefs,
     TEMP_FILTER_PRESET,
-  } from './console-session.svelte';
+  } from '../console-session.svelte';
+  import { consoleUi } from '../page-ui-state.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -28,12 +31,32 @@
     open = false;
   }
 
-  // позиция после рендера панели: под кнопкой, при нехватке места — над ней
+  // Alt+F: счётчик из hotkeys; последнее виденное значение — вне реактивности
+  let seenToggleSeq = untrack(() => consoleUi.toggleFiltersSeq);
+  $effect(() => {
+    const seq = consoleUi.toggleFiltersSeq;
+    if (seq === seenToggleSeq) return;
+    seenToggleSeq = seq;
+    open = !untrack(() => open);
+  });
+
+  // открытое меню гасит остальные клавиши страницы (иначе Alt+C стёр бы лог из поля шаблона)
+  $effect(() => {
+    consoleUi.filtersOpen = open;
+  });
+  onDestroy(() => {
+    consoleUi.filtersOpen = false;
+  });
+
+  // позиция после рендера панели: под кнопкой, при нехватке места — над ней;
+  // в RTL панель выравнивается по правому краю кнопки
   $effect(() => {
     if (!open || !btnEl || !panelEl) return;
     const b = btnEl.getBoundingClientRect();
     const r = panelEl.getBoundingClientRect();
-    const left = Math.max(8, Math.min(b.left, window.innerWidth - r.width - 8));
+    const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+    const preferred = rtl ? b.right - r.width : b.left;
+    const left = Math.max(8, Math.min(preferred, window.innerWidth - r.width - 8));
     let top = b.bottom + 4;
     if (top + r.height > window.innerHeight - 8) {
       top = Math.max(8, b.top - r.height - 4);
@@ -65,6 +88,8 @@
   class="ctl"
   class:active
   title={i18n.t('console.filters.title')}
+  aria-label={i18n.t('console.filters.title')}
+  aria-expanded={open}
   bind:this={btnEl}
   onclick={(e) => {
     e.stopPropagation();
@@ -74,12 +99,13 @@
   <Icon name="filter" size={14} />
 </button>
 
+<svelte:window
+  onkeydown={(e) => open && e.key === 'Escape' && closeMenu()}
+  onclick={() => open && closeMenu()}
+  onresize={() => open && closeMenu()}
+/>
+
 {#if open}
-  <window
-    onkeydown={(e) => e.key === 'Escape' && closeMenu()}
-    onclick={closeMenu}
-    onresize={closeMenu}>
-  </window>
 
   <div
     class="filter-panel"
@@ -117,6 +143,7 @@
             <span class="fp-pattern">{entry.source}</span>
             <button
               class="fp-x"
+              aria-label={i18n.t('console.filters.remove')}
               title={i18n.t('console.filters.remove')}
               onclick={() => removePattern(entry.source)}
             >
@@ -130,6 +157,7 @@
     <div class="fp-add">
       <input
         class="fp-input"
+        dir="ltr"
         type="text"
         placeholder={i18n.t('console.filters.addPlaceholder')}
         bind:value={draft}

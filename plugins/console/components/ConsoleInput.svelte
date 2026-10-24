@@ -1,6 +1,14 @@
 <script lang="ts">
-  import { matchSuggestions, getMacroParams, type Suggestion } from './console-session.svelte';
-  import type { BuiltinHelp } from './gcode-builtins';
+  import { untrack } from 'svelte';
+
+  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+
+  import { matchSuggestions, getMacroParams, isPrinting, type Suggestion } from '../console-session.svelte';
+  import type { BuiltinHelp } from '../gcode-builtins';
+  import { consoleUi } from '../page-ui-state.svelte';
+  import { breaksPrint } from '../print-safety';
+
+  const i18n = usePluginApi().i18n;
 
   let {
     disabled,
@@ -29,6 +37,8 @@
   let dismissed = $state(false);
   let historyIndex = $state(-1);
   let inputEl = $state<HTMLInputElement | null>(null);
+  /** Скрипт, перезапуск которым при печати уже предупредили (нужен повторный Enter). */
+  let armed = $state<string | null>(null);
 
   let suggestions = $derived.by(() => {
     if (dismissed || disabled) return [];
@@ -41,6 +51,8 @@
     void input;
     highlight = 0;
     dismissed = false;
+    // правка текста снимает «взвод» подтверждения
+    if (untrack(() => armed) !== null && input.trim() !== untrack(() => armed)) armed = null;
   });
 
   // fillTrigger: imperative fill через reactive prop
@@ -49,6 +61,15 @@
       input = fillTrigger.text;
       inputEl?.focus();
     }
+  });
+
+  // Alt+I: фокус в поле ввода (счётчик из hotkeys; последнее виденное значение — вне реактивности)
+  let seenFocusSeq = untrack(() => consoleUi.focusInputSeq);
+  $effect(() => {
+    const seq = consoleUi.focusInputSeq;
+    if (seq === seenFocusSeq) return;
+    seenFocusSeq = seq;
+    inputEl?.focus();
   });
 
   function accept(s: Suggestion): void {
@@ -65,6 +86,15 @@
   function send(): void {
     const script = input.trim();
     if (!script || disabled) return;
+
+    // RESTART / FIRMWARE_RESTART при идущей печати: первый Enter предупреждает, второй отправляет.
+    // (Свои запросы плагина GuardAgent не проверяет — защита в интерфейсе.)
+    if (isPrinting(printerId) && breaksPrint(script) && armed !== script) {
+      armed = script;
+      return;
+    }
+
+    armed = null;
     input = '';
     historyIndex = -1;
     onSend(script);
@@ -167,12 +197,20 @@
 
   <input
     class="console-input"
+    dir="ltr"
     {placeholder}
     bind:value={input}
     bind:this={inputEl}
     onkeydown={onKeydown}
     disabled={disabled}
+    spellcheck="false"
+    autocomplete="off"
+    autocapitalize="off"
   />
+
+  {#if armed !== null}
+    <p class="restart-warn" role="alert">{i18n.t('console.confirmRestart')}</p>
+  {/if}
 </div>
 
 <style>
@@ -182,9 +220,9 @@
 
   .autocomplete {
     position: absolute;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     bottom: calc(100% + 4px);
+    direction: ltr; /* команды и сигнатуры G-code — всегда слева направо */
     margin: 0;
     padding: var(--space-xs);
     list-style: none;
@@ -212,7 +250,7 @@
     padding: var(--space-xs) var(--space-sm);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     font-family: monospace;
     font-size: var(--font-size-sm);
   }
@@ -264,6 +302,12 @@
     gap: 4px;
     padding: 2px var(--space-sm) var(--space-xs);
     margin-top: -2px;
+  }
+
+  .restart-warn {
+    margin: var(--space-xs) 0 0;
+    color: var(--warning);
+    font-size: var(--font-size-sm);
   }
 
   .ac-req {

@@ -3,16 +3,20 @@ import type { PluginApi } from '../../plugin-sdk/src/types';
 import { parseMacroParams, type MacroParam } from '../shared/macro-params';
 
 import type { BuiltinHelp } from './gcode-builtins';
+import { isPrintActive } from './print-safety';
 
 /**
  * Console log = Moonraker `server.gcode_store` (single source of truth,
- * same on every device) + local-only notes (client errors, klippy events).
+ * same on every device).
  * Live updates: notify_gcode_response / own sends trigger a debounced
  * refetch; a slow poll covers silent commands from other clients.
  *
  * Per-printer subscriptions with keep-alive: подписки и poll живут для всех
- * принтеров, не только активного. При переключении вкладок state мгновенно
- * доступен (без loading). При удалении принтера — cleanup.
+ * принтеров, не только активного. При переключении принтеров state мгновенно
+ * доступен (без loading). Жизненный цикл — по счётчику потребителей: пока смонтирована
+ * хотя бы одна поверхность консоли (страница / виджет), подписки живы; когда не осталось
+ * ни одной — всё отключается (иначе poll 500 строк каждые 2 с шёл бы вечно),
+ * накопленные строки остаются до удаления принтера.
  */
 
 export type ConsoleLineKind = 'sent' | 'response' | 'system';
@@ -37,6 +41,10 @@ const REFRESH_DEBOUNCE_MS = 300;
 let storeLinesByPrinter = $state<Record<string, ConsoleLine[]>>({});
 let connectedByPrinter = $state<Record<string, boolean>>({});
 let pausedByPrinter = $state<Record<string, boolean>>({});
+let printStateByPrinter = $state<Record<string, string>>({});
+
+/** Защита от гонки ответов: применяется только самый свежий запрос store. */
+const loadSeq = new Map<string, number>();
 
 let noteId = 0;
 
@@ -47,6 +55,7 @@ const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let printersUnsub: (() => void) | null = null;
 let settingsUnsub: (() => void) | null = null;
+let consumers = 0;
 
 function now(): string {
   return new Date().toLocaleTimeString(undefined, { hour12: false });
@@ -64,13 +73,25 @@ export function isConnected(printerId: string): boolean {
   return connectedByPrinter[printerId] ?? false;
 }
 
+/** Идёт ли на принтере печать (или пауза) — для подтверждения перезапуска. */
+export function isPrinting(printerId: string): boolean {
+  return isPrintActive(printStateByPrinter[printerId]);
+}
+
 /**
  * Clears the local view and pauses auto-refresh until new activity,
  * so the console doesn't repopulate from the store on the next poll.
  */
 export function clearLines(printerId: string): void {
+  loadSeq.set(printerId, (loadSeq.get(printerId) ?? 0) + 1); // ответ запроса «в полёте» устарел
   storeLinesByPrinter[printerId] = [];
   pausedByPrinter[printerId] = true;
+}
+
+/** Принудительно перечитать store (снимает паузу после «Очистить»). */
+export function refreshNow(api: PluginApi, printerId: string): void {
+  pausedByPrinter[printerId] = false;
+  void refreshFromStore(api, printerId);
 }
 
 export async function sendCommand(
@@ -88,19 +109,42 @@ export async function sendCommand(
 }
 
 /**
- * Attaches subscriptions to ALL printers (per-printer keep-alive).
- * Called once at app startup (host-level), not per-component.
+ * Подключает подписки ко ВСЕМ принтерам (per-printer keep-alive). Вызывается каждой
+ * смонтированной поверхностью консоли; возвращает функцию отключения (вызвать в
+ * onDestroy). Подписки создаются при первом потребителе и снимаются при последнем.
  */
-export function attach(api: PluginApi): void {
+export function attach(api: PluginApi): () => void {
+  consumers++;
+  start(api);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    consumers = Math.max(0, consumers - 1);
+    if (consumers === 0) stop();
+  };
+}
+
+function stop(): void {
+  printersUnsub?.();
+  printersUnsub = null;
+  settingsUnsub?.();
+  settingsUnsub = null;
+  for (const pid of Array.from(dataUnsubsByPrinter.keys())) unsubscribePrinter(pid);
+}
+
+function start(api: PluginApi): void {
   if (printersUnsub) return; // already attached
 
   printersUnsub = api.onPrintersChange((printers) => {
     const alive = new Set(printers.map((p) => p.id));
 
-    // Unsubscribe removed printers
+    // Unsubscribe removed printers (+ drop their state)
     for (const pid of Array.from(dataUnsubsByPrinter.keys())) {
       if (!alive.has(pid)) {
         unsubscribePrinter(pid);
+        dropPrinterState(pid);
       }
     }
 
@@ -144,10 +188,14 @@ function scheduleRefresh(api: PluginApi, printerId: string): void {
 }
 
 async function refreshFromStore(api: PluginApi, printerId: string): Promise<void> {
+  const seq = (loadSeq.get(printerId) ?? 0) + 1;
+  loadSeq.set(printerId, seq);
   try {
     const res = await api
       .moonrakerFor(printerId)
       .request<any>('server.gcode_store', { count: STORE_COUNT });
+    // за время запроса пришёл более свежий (или «Очистить») — этот ответ устарел
+    if (loadSeq.get(printerId) !== seq) return;
     const entries: GcodeStoreEntry[] = Array.isArray(res) ? res : (res?.gcode_store ?? []);
     storeLinesByPrinter[printerId] = mapEntries(entries);
   } catch {
@@ -191,6 +239,7 @@ function mapEntries(entries: GcodeStoreEntry[]): ConsoleLine[] {
 function subscribeForPrinter(api: PluginApi, printerId: string): void {
   // Unsubscribe if already subscribed (shouldn't happen, but safety)
   unsubscribePrinter(printerId);
+  pausedByPrinter[printerId] = false;
 
   const unsubs: Array<() => void> = [];
 
@@ -236,8 +285,21 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
     }),
   );
 
-  // Страховка: «молчаливые» команды с других клиентов.
+  // Состояние печати — для подтверждения RESTART / FIRMWARE_RESTART при вводе.
+  unsubs.push(
+    h.subscribe(
+      { print_stats: ['state'] },
+      (delta: any) => {
+        const st = delta?.print_stats?.state;
+        if (typeof st === 'string') printStateByPrinter[printerId] = st;
+      },
+      { immediate: true },
+    ),
+  );
+
+  // Страховка: «молчаливые» команды с других клиентов. Скрытая вкладка не опрашивается.
   const poll = setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return;
     if (!pausedByPrinter[printerId]) void refreshFromStore(api, printerId);
   }, POLL_MS);
   pollTimersByPrinter.set(printerId, poll);
@@ -272,10 +334,16 @@ function unsubscribePrinter(printerId: string): void {
     refreshTimers.delete(printerId);
   }
 
-  // Cleanup state (опционально: можно оставить для keep-alive)
+  // накопленные строки остаются (keep-alive); полная очистка — dropPrinterState
+}
+
+/** Принтер удалён из реестра: забыть всё, что о нём накоплено. */
+function dropPrinterState(printerId: string): void {
   delete storeLinesByPrinter[printerId];
   delete connectedByPrinter[printerId];
   delete pausedByPrinter[printerId];
+  delete printStateByPrinter[printerId];
+  loadSeq.delete(printerId);
 }
 
 // ------------------------------------------------------------------
@@ -324,7 +392,7 @@ export function matchSuggestions(
     );
     const cur = current.toUpperCase();
 
-    return macroParams[key]
+    return (macroParams[key] ?? [])
       .filter((p) => !used.has(p.name.toUpperCase()) && p.name.toUpperCase().startsWith(cur))
       .map((p) => ({
         kind: 'param' as const,
