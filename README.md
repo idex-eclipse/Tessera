@@ -43,15 +43,18 @@
   - [System & notifications](#system-notifications)
   - [Console](#console)
   - [Multi-printer & personalization](#multi-printer-personalization)
+  - [Hotkeys](#hotkeys)
 - [Requirements](#requirements)
 - [Installation](#installation)
   - [One-liner (Armbian / Debian)](#installer-one-liner)
   - [Manual / development](#manual-development)
   - [First launch](#first-launch)
 - [For developers](#for-developers)
+  - [Documentation](#documentation)
   - [Architecture in one paragraph](#architecture)
   - [Plugin model](#plugin-model)
   - [Guards](#guards)
+  - [Hotkeys API](#hotkeys-api)
   - [Remote plugins & delivery](#remote-plugins-delivery)
   - [Where settings live](#where-settings-live)
   - [Project structure](#project-structure)
@@ -163,6 +166,20 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 - **Themes** — light & dark, every color a CSS variable; accent customization and custom background images are supported
 - **i18n** — English & Russian, RTL-ready layout
 
+<a id="hotkeys"></a>
+### Hotkeys
+
+Keyboard navigation plus shortcuts contributed by plugins, all remappable in **Settings → Hotkeys**:
+
+- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers
+- **Plugin shortcuts** — a plugin declares them in its manifest with a scope: *global* (everywhere), *dashboard* (only on the dashboard) or *plugin* (only on that plugin's own page)
+- **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on macOS and Ctrl elsewhere
+- **Conflict-safe** — if two shortcuts collide, **both are disabled** with a console warning and a mark in Settings (the same key is fine for *dashboard* + *plugin*, or for two different plugins' own pages)
+- **Typing-safe** — bare keys and `Shift+key` never fire while you type in a field; `Ctrl`/`Alt`/`Cmd` combos do
+- **Yours to change** — rebind, disable or reset any shortcut (host or plugin); overrides are stored device-wide
+
+Some combinations are claimed by the browser or OS before the page sees them (for example `Ctrl+1…9` tab switching in some browsers, or `Ctrl+←/→` Spaces switching on macOS) — rebind those in Settings.
+
 <a id="requirements"></a>
 ## Requirements
 
@@ -203,7 +220,7 @@ The installer is **idempotent** — re-running it updates everything in place. I
 | Variable | Default | Purpose |
 |---|---|---|
 | `TESSERA_DIR` | `~/tessera` | clone + build + extensions directory |
-| `TESSERA_PORT` | `8080` | nginx port for the UI (prompted, re-asked on conflict) |
+| `TESSERA_PORT` | `8000` | nginx port for the UI (prompted, re-asked on conflict) |
 | `TESSERA_REPO` / `TESSERA_BRANCH` | repo / `main` | forks and dev channels |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker upstream for the proxy |
 | `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | Klipper config dir (multi-instance kiauh aware) |
@@ -226,7 +243,8 @@ cd tessera
 npm install
 npm run dev        # vite dev server + /extensions/ middleware
 npm run build      # production bundle → host/dist
-npm run check      # svelte-check + tsc
+npm run typecheck  # tsc --noEmit
+npm run svelte-check
 npm run test       # vitest
 ```
 
@@ -244,10 +262,25 @@ config).
 <a id="for-developers"></a>
 ## For developers
 
+<a id="documentation"></a>
+### Documentation
+
+Full developer documentation lives in [`docs/en`](docs/en/README.md) (Russian: [`docs/ru`](docs/ru/README.md)):
+
+| | |
+|---|---|
+| [Plugin development guide](docs/en/plugin-development.md) | manifest, Custom Element contract, build rules, lifecycle, pitfalls |
+| [Surfaces](docs/en/surfaces.md) | pages, widgets, banners, overlays, chips, fleet panels, hotkeys |
+| [PluginApi](docs/en/plugin-api.md) | the full API reference |
+| [Moonraker proxy](docs/en/moonraker-proxy.md) | requests, subscriptions, cache, polling, errors, auth |
+| [Guards](docs/en/guards.md) · [Hotkeys](docs/en/hotkeys.md) | pre-flight request checks · keyboard shortcuts |
+| [Settings](docs/en/settings.md) · [i18n & theming](docs/en/i18n-and-theming.md) · [Deployment](docs/en/deployment.md) | storage, translations & CSS variables, installing plugins |
+| [Architecture](docs/en/architecture.md) | how the host is put together |
+
 <a id="architecture"></a>
 ### Architecture in one paragraph
 
-The **host** is a deliberately dumb orchestrator: printer tabs, sidebar, dashboard grid, settings, theme, locale, and the persistent surfaces (banners, chip strip, overlays, right panel). It never parses Moonraker's protocol and never reads business data to draw its own chrome. **MoonrakerProxy** pools one WebSocket per printer with snapshot caching, subscription de-duplication and poll-on-demand. **GuardAgent** wraps every plugin `request()` in a declarative pre-flight chain and is target-printer aware, so fleet/multi-printer actions are checked against the printer being addressed. **Plugins** are autonomous contributions — pages, widgets, chips, overlays, banners, printer panels — that subscribe to the proxy themselves and never talk to each other. Per-printer data hooks are pooled through a **core-keeper**: cores are created lazily, reference-counted, and kept alive after consumers unmount, so plugin state survives navigation and fleet drawer cycles. The **SDK** is a thin hook layer. There is no backend, no shared state bus, and no plugin-to-plugin channel, by design.
+The **host** is a deliberately dumb orchestrator: printer tabs, sidebar, dashboard grid, settings, theme, locale, and the persistent surfaces (banners, chip strip, overlays, right panel). It never parses Moonraker's protocol and never reads business data to draw its own chrome. **MoonrakerProxy** pools one WebSocket per printer with snapshot caching, subscription de-duplication and poll-on-demand. **GuardAgent** wraps every plugin `request()` in a declarative pre-flight chain and is target-printer aware, so fleet/multi-printer actions are checked against the printer being addressed. **Plugins** are autonomous contributions — pages, widgets, chips, overlays, banners, printer panels — that subscribe to the proxy themselves and never talk to each other. Per-printer data hooks are pooled through a **core-keeper**: cores are created lazily, reference-counted, and kept alive after consumers unmount, so plugin state survives navigation and fleet drawer cycles. The **SDK** is a thin hook layer. All contribution kinds (pages, widgets, overlays, banners, chips, printer panels, hotkeys) go through one registry table, a single per-plugin API cache serves every surface, and a **HotkeyManager** resolves keyboard shortcuts across host and plugins. There is no backend, no shared state bus, and no plugin-to-plugin channel, by design.
 
 <a id="plugin-model"></a>
 ### Plugin model
@@ -264,13 +297,14 @@ interface PluginManifest {
   banners?: BannerContribution[];    // in-flow blocks above main
   rightPanel?: RightPanelContribution; // unique slot — accepted from @core/system only
   printerPanels?: PrinterPanelContribution[]; // fleet cards: one instance per printer
+  hotkeys?: HotkeyContribution[];    // keyboard shortcuts: global / dashboard / plugin-page scope
   guards?: GuardContribution[];      // pre-flight request interception
   locales?: string[];
   defaultSettings?: Record<string, unknown>;
 }
 ```
 
-Surfaces are rendered as **Custom Elements**; the host injects the plugin API and params as properties (`mpuApi`, `mpuParams`). Core plugins use Svelte 5 runes via a context auto-wrapper; **remote plugins can be written in any framework** — the contract is CE + property  injection (battle-tested with a React 18 plugin).
+Surfaces are rendered as **Custom Elements**; the host injects the plugin API and params as properties (`api`, `params`). Core plugins use Svelte 5 runes via a context auto-wrapper; **remote plugins can be written in any framework** — the contract is CE + property injection (battle-tested with a React 18 plugin).
 
 The plugin API gives you:
 
@@ -290,10 +324,11 @@ api.settingsFor(printerId)  // same PluginSettingsApi, but scoped to a specific 
 api.i18n                    // t(key, params), live locale + dir
 api.theme                   // current theme, onThemeChange
 api.guards.resume(...)      // continue a frozen request chain
+api.printers               // printer registry (read-only); onPrintersChange
 api.onPrinterChange / onLocaleChange / onThemeChange
 ```
 
-**Printer panels** (`printerPanels`) are Custom Elements that render once per printer while fleet mode is open. The host injects `mpuParams.printerId`; the panel reads its data through `api.moonrakerFor(printerId)` and persists preferences through `api.settingsFor(printerId)`. Each panel instance is isolated — unmounting one card does not affect others, and closing the drawer tears down all subscriptions cleanly.
+**Printer panels** (`printerPanels`) are Custom Elements that render once per printer while fleet mode is open. The host injects `params.printerId`; the panel reads its data through `api.moonrakerFor(printerId)` and persists preferences through `api.settingsFor(printerId)`. Each panel instance is isolated — unmounting one card does not affect others, and closing the drawer tears down all subscriptions cleanly.
 
 The fleet drawer can reorder and hide these panels per device. The host keeps the DOM in stable registration order and changes visual order with CSS `order`, so panels are not remounted when the user drags them. This preserves Custom Element internal state and avoids zero-height collapse artifacts.
 
@@ -312,6 +347,18 @@ contract.
 
 Guards are declarative matchers on the request **method string** (e.g. `printer.gcode.script`, `printer.print.start`). The host builds a chain from all matching guards minus the initiator's own (anti-recursion), walks it sequentially, and each handler returns `allow`, `deny` (with attribution) or `freeze` — a parked request the guarding plugin resumes via token after showing its own overlay. Handlers receive the target printer id, so multi-printer and fleet actions can be validated against the printer actually being addressed. Timeouts are fail-closed (10 s decision, 10 min park) and surface in the notification center. Guards never mutate requests, have no priorities beyond registration order, and are a **pre-flight check of local actions, not a security boundary** — prints started from other clients are invisible to them by design.
 
+<a id="hotkeys-api"></a>
+### Hotkeys API
+
+Shortcuts are declarative, like guards:
+
+```json
+{ "hotkeys": [ { "id": "acme-refresh", "scope": "plugin", "keys": "Alt+R",
+                 "handler": "refreshHandler", "titleKey": "acme.hotkey.refresh" } ] }
+```
+
+`handler` names an export of the plugin module with the signature `(api, event) => void | Promise<void>`. `scope` is `global`, `dashboard` or `plugin`. The host owns the listener, scope resolution, conflict detection (colliding shortcuts are disabled together) and the user's rebinding UI; the plugin just reacts. See the [hotkeys reference](docs/en/hotkeys.md).
+
 <a id="remote-plugins-delivery"></a>
 ### Remote plugins & delivery
 
@@ -319,7 +366,7 @@ Four layers, no network auto-updates — **files on disk are the source of truth
 (analogous to Klipper extras):
 
 1. **Provisioning** — `extensions/<id>/` on the host (dev: vite middleware; prod: nginx `location /extensions/`);
-2. **Discovery** — same-origin catalog `/extensions/index.json`, regenerated by `tools/extensions-sync.js`; plus an advanced *Add by URL* mode with a trust confirmation and an `external` badge;
+2. **Discovery** — same-origin catalog `/extensions/index.json`, regenerated by `tools/extensions-sync.cjs`; plus an advanced *Add by URL* mode with a trust confirmation and an `external` badge;
 3. **Loading** — fetch manifest → resolve entry against the manifest origin → `import()` → merge locales → sanitize contributions;
 4. **Enablement** — per-printer enable, version badges, hot *Update* without reload.
 
@@ -328,7 +375,7 @@ Remote plugin build rules (vite lib-mode): define `process.env.NODE_ENV`, keep r
 <a id="where-settings-live"></a>
 ### Where settings live
 
-Everything is `localStorage` under a versioned prefix (`mpu:v2:*`): printers, active printer, installed plugins, UI prefs (including fleet-mode state, fleet panel order/visibility, accent color, and background image), per-printer dashboard/page/chip layout, and plugin settings (per printer or device-global). Schema changes show an export-or-reset dialog — there are no silent migrations.
+Everything is `localStorage` under a versioned prefix (`mpu:v2:*`): printers, active printer, installed plugins, UI prefs (including fleet-mode state, fleet panel order/visibility, accent color, background image and hotkey overrides), per-printer dashboard/page/chip layout, and plugin settings (per printer or device-global). Schema changes show an export-or-reset dialog — there are no silent migrations.
 
 <a id="project-structure"></a>
 <details>
@@ -353,9 +400,9 @@ tessera/
 │   ├── system/        # right panel, banner, notifications, machine page, power chip
 │   └── console · jobs · history · config · gcode-preview
 ├── extensions/      # remote-plugin provisioning folder (index.json generated)
-├── tools/           # extensions-sync.js, gen-favicon.mjs
+├── tools/           # extensions-sync.cjs
 ├── deploy/          # install.sh, reference nginx config
-└── docs/            # architecture, plugin development, proxy, settings
+└── docs/            # developer documentation (en/, ru/)
 ```
 
 </details>
