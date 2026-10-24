@@ -111,6 +111,13 @@ export function createFileOps(api: PluginApi) {
     return res.text();
   }
 
+  /** Скачивает файл целиком (например, .3mf для инспектора) с токеном авторизации. */
+  async function readBlob(ref: FileRef): Promise<Blob> {
+    const res = await fetch(fileUrl(ref), { cache: 'no-store', headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.blob();
+  }
+
   async function saveText(ref: FileRef, content: string): Promise<void> {
     const blob = new Blob([content], { type: 'application/octet-stream' });
     const form = new FormData();
@@ -167,7 +174,7 @@ export function createFileOps(api: PluginApi) {
 
   return {
     fileUrl, viewUrl, startPrint, refreshMetadata, createZip, download,
-    rename, copy, remove, readText, saveText,
+    rename, copy, remove, readText, readBlob, saveText,
     upload, createDirectory, createFile
   };
 }

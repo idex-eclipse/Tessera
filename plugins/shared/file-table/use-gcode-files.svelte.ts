@@ -63,6 +63,29 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
   let currentPrint = $state<{ filename: string; state: string } | null>(null);
 
   const unsubs: Array<() => void> = [];
+  // Ответ устаревшего запроса не должен перезаписать свежий (быстрая навигация, refresh).
+  let loadSeq = 0;
+
+  // notify_filelist_changed приходит пачкой (загрузка папки, массовое удаление):
+  // коалесцируем перезагрузки, чтобы не слать десятки get_directory подряд.
+  const RELOAD_COALESCE_MS = 300;
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingFiles = false;
+  let pendingHistory = false;
+
+  function scheduleReload(what: { files?: boolean; history?: boolean }): void {
+    pendingFiles ||= what.files === true;
+    pendingHistory ||= what.history === true;
+    if (reloadTimer) return;
+    reloadTimer = setTimeout(() => {
+      reloadTimer = null;
+      const files = pendingFiles;
+      const history = pendingHistory;
+      pendingFiles = pendingHistory = false;
+      if (files) void load();
+      if (history) void loadHistory();
+    }, RELOAD_COALESCE_MS);
+  }
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
@@ -77,6 +100,7 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
   }
 
   async function load(): Promise<void> {
+    const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
@@ -90,6 +114,7 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
         path: dirPath(),
         extended: true,
       });
+      if (seq !== loadSeq) return;
 
       dirs = (res.dirs ?? [])
         .map((d) => ({
@@ -128,9 +153,10 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
         }))
         .sort((a, b) => b.modified - a.modified);
     } catch (e) {
+      if (seq !== loadSeq) return;
       error = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -158,8 +184,9 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
   }
 
   function statusOf(filename: string): string | null {
-    if (currentPrint && currentPrint.filename === filename) return currentPrint.state;
-    return statuses[filename] ?? null;
+    const full = path ? `${path}/${filename}` : filename;
+    if (currentPrint && currentPrint.filename === full) return currentPrint.state;
+    return statuses[full] ?? null;
   }
 
   function navigate(p: string): void {
@@ -174,11 +201,12 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
     if (!h) return;
 
     unsubs.push(
-      h.onNotify('notify_filelist_changed', () => {
-        void load();
-        void loadHistory();
-      }),
+      h.onNotify('notify_filelist_changed', () => scheduleReload({ files: true })),
     );
+
+    // Итог печати меняет статус файла (completed/cancelled/error), а список файлов — нет:
+    // без этой подписки статусы устаревали до ближайшего изменения файлов.
+    unsubs.push(h.onNotify('notify_history_changed', () => scheduleReload({ history: true })));
 
     unsubs.push(
       h.subscribe(
@@ -213,6 +241,10 @@ function createGcodeFilesCore(api: PluginApi, printerId: string) {
 
   function destroy(): void {
     for (const u of unsubs) u();
+    if (reloadTimer) {
+      clearTimeout(reloadTimer);
+      reloadTimer = null;
+    }
   }
 
   return {

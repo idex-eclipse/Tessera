@@ -47,7 +47,17 @@ export const en = {
     refresh: 'Refresh',
     thumbnail: 'Preview',
     queue: 'Add to queue',
+    open3mf: 'Open in 3MF inspector',
+    hotkeys: {
+      find: 'Jobs: search files',
+      refresh: 'Jobs: refresh file list',
+    },
+    guard: {
+      three_mf_not_printable: '3MF is a project container, not G-code: open it in the 3MF inspector and print the extracted G-code',
+    },
     uploadPrint: {
+      startFailed: 'G-code was uploaded, but the print could not be started.',
+      busyPrinting: 'A print is already in progress.',
       parseFailed: 'Failed to parse 3MF file.',
       uploadFailed: 'Failed to upload G-code to printer.',
       downloadFailed: 'Failed to download 3MF file from printer.',

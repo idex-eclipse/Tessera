@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const jobsManifest: PluginManifest = {
   id: '@core/jobs',
   name: 'Jobs',
-  version: '1.0.0',
+  version: '2.0.0',
   entry: '/plugins/jobs/index.js',
   pages: [
     { 
@@ -24,6 +24,20 @@ export const jobsManifest: PluginManifest = {
       minSize: { w: 4, h: 2 },
     },
   ],
+  guards: [
+    {
+      id: 'jobs-no-3mf-print',
+      match: ['printer.print.start', 'server.job_queue.post_job'],
+      handler: 'guardNo3mfPrint',
+    },
+  ],
+
+  hotkeys: [
+    // Ctrl+F вместо поиска браузера → поиск файлов; Alt+R → обновить список
+    { id: 'find-job', scope: 'plugin', keys: 'Ctrl+F', handler: 'hotkeyFindJob', titleKey: 'jobs.hotkeys.find' },
+    { id: 'refresh-jobs', scope: 'plugin', keys: 'Alt+R', handler: 'hotkeyRefreshJobs', titleKey: 'jobs.hotkeys.refresh' },
+  ],
+
   locales: ['en', 'ru'],
   defaultSettings: {},
 };

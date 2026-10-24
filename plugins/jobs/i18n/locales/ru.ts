@@ -3,7 +3,7 @@ export const ru = {
     title: 'Задания',
     print: 'Напечатать',
     edit: 'Редактировать',
-    refreshMetadata: 'Обновить метаданные',
+    meta: 'Обновить метаданные',
     preview: 'Предпросмотр gcode',
     zip: 'Создать zip',
     download: 'Скачать',
@@ -47,7 +47,17 @@ export const ru = {
     refresh: 'Обновить',
     thumbnail: 'Превью',
     queue: 'В очередь',
+    open3mf: 'Открыть в 3MF-инспекторе',
+    hotkeys: {
+      find: 'Задания: поиск файлов',
+      refresh: 'Задания: обновить список файлов',
+    },
+    guard: {
+      three_mf_not_printable: '3MF — контейнер проекта, а не G-code: откройте его в 3MF-инспекторе и печатайте извлечённый G-code',
+    },
     uploadPrint: {
+      startFailed: 'G-code загружен, но запустить печать не удалось.',
+      busyPrinting: 'Печать уже идёт.',
       parseFailed: 'Не удалось разобрать файл 3MF.',
       uploadFailed: 'Не удалось загрузить G-code в принтер.',
       downloadFailed: 'Не удалось скачать файл 3MF с принтера.',
