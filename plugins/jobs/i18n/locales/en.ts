@@ -49,6 +49,7 @@ export const en = {
     queue: 'Add to queue',
     open3mf: 'Open in 3MF inspector',
     hotkeys: {
+      open: 'Open the Jobs page',
       find: 'Jobs: search files',
       refresh: 'Jobs: refresh file list',
     },

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -161,6 +163,28 @@
   }
 
   let fileInputEl = $state<HTMLInputElement | null>(null);
+
+  // Hotkeys U / P (см. hotkeys.ts) просят панель открыть выбор файла и переключить флажок.
+  // Флажок не читаем напрямую в эффекте (untrack): иначе эффект зависел бы от собственной записи.
+  let lastPickSeq = systemUiState.uploadPickSeq;
+  $effect(() => {
+    const seq = systemUiState.uploadPickSeq;
+    if (seq === lastPickSeq) return;
+    lastPickSeq = seq;
+    fileInputEl?.click();
+  });
+
+  let lastPrintToggleSeq = systemUiState.printAfterToggleSeq;
+  $effect(() => {
+    const seq = systemUiState.printAfterToggleSeq;
+    if (seq === lastPrintToggleSeq) return;
+    lastPrintToggleSeq = seq;
+    // без готового Klipper флажок заблокирован (как и чекбокс)
+    if (!klippy.ready) return;
+    untrack(() => {
+      printAfter = !printAfter;
+    });
+  });
 
   // ------------------------------------------------------------------
   // 3MF Inspector
@@ -345,8 +369,8 @@
         disabled={uploadProgress !== null}
         onclick={() => fileInputEl?.click()}
         title={!klippy.ready
-          ? `${i18n.t('system.uploadPrint.title')} — ${i18n.t('system.uploadUpload.printSkipped')}`
-          : i18n.t('system.uploadPrint.title')}
+          ? `${i18n.t('system.uploadPrint.title')} — ${i18n.t('system.uploadPrint.printSkipped')}`
+          : `${i18n.t('system.uploadPrint.title')} (${printAfterShown ? i18n.t('system.uploadPrint.printAfterOn') : i18n.t('system.uploadPrint.printAfterOff')})`}
       >
         <span class="nav-icon">
           {#if uploadProgress !== null}

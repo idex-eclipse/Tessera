@@ -190,7 +190,7 @@ describe('updateRequestFor', () => {
 });
 
 describe('hotkeys', () => {
-  it('Alt+M opens the Machine page of the active printer (id is URL-encoded)', () => {
+  it('M opens the Machine page of the active printer (id is URL-encoded)', () => {
     const location = { hash: '' };
     vi.stubGlobal('location', location);
     hotkeys.hotkeyOpenMachine({ printer: { id: 'p 1' } } as unknown as PluginApi);

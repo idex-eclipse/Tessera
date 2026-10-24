@@ -4,6 +4,8 @@ export const en = {
     hotkeys: {
       toggleNotifications: 'Show / hide the notification center',
       openMachine: 'Open the Machine page',
+      uploadFile: 'Upload a G-code file…',
+      togglePrintAfter: 'Toggle "Start print after upload"',
       refresh: 'Machine: refresh data',
     },
     units: { h: 'h', m: 'm', s: 's' },
@@ -47,6 +49,8 @@ export const en = {
       dropzone: 'Drop G-code file here',
       selectFile: 'Select file…',
       printAfter: 'Start print after upload',
+      printAfterOn: 'print after upload: on',
+      printAfterOff: 'print after upload: off',
       uploading: 'Uploading {name}…',
       uploaded: 'Uploaded, starting print…',
       uploadFailed: 'Upload failed',

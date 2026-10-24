@@ -1,5 +1,6 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
+import { openPluginPage } from '../shared/page-nav';
 import { gcode, runGcode } from './commands.ts';
 import { requestTab, type CalibrationsTab } from './page-ui-state.svelte.ts';
 import { isManualProbeActive } from './printer-tracker.ts';
@@ -45,3 +46,8 @@ export const hotkeyTestzUpFine = (api: PluginApi) => whileProbing(api, gcode.tes
 export const hotkeyTestzDownFine = (api: PluginApi) => whileProbing(api, gcode.testz(`-${TESTZ_STEP_FINE}`));
 export const hotkeyProbeAccept = (api: PluginApi) => whileProbing(api, gcode.accept);
 export const hotkeyProbeAbort = (api: PluginApi) => whileProbing(api, gcode.abort);
+
+/** Shift+A: открыть страницу (клавиша глобальная — работает с любой страницы). */
+export function hotkeyOpenCalibrations(api: PluginApi): void {
+  openPluginPage(api, 'calibrations');
+}

@@ -13,6 +13,8 @@ export const historyManifest: PluginManifest = {
     },
   ],
   hotkeys: [
+    // открыть страницу плагина с любой страницы
+    { id: 'open-history', scope: 'global', keys: 'H', handler: 'hotkeyOpenHistory', titleKey: 'history.hotkeys.open' },
     // Ctrl+F вместо поиска браузера → поиск по истории; Alt+R → обновить таблицу и статистику
     { id: 'find-history', scope: 'plugin', keys: 'Ctrl+F', handler: 'hotkeyFindHistory', titleKey: 'history.hotkeys.find' },
     { id: 'refresh-history', scope: 'plugin', keys: 'Alt+R', handler: 'hotkeyRefreshHistory', titleKey: 'history.hotkeys.refresh' },

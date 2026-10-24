@@ -28,6 +28,7 @@ export const en = {
       config_examples: 'Config samples',
     },
     hotkeys: {
+      open: 'Open the Config files page',
       find: 'Config files: search files',
       tabLogs: 'Config files: Logs tab',
       tabDocs: 'Config files: Docs tab',

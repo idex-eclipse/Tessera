@@ -67,6 +67,8 @@ export const calibrationsManifest = definePlugin({
   ],
 
   hotkeys: [
+    // открыть страницу плагина с любой страницы
+    { id: 'open-calibrations', scope: 'global', keys: 'Shift+A', handler: 'hotkeyOpenCalibrations', titleKey: 'calibrations.hotkeys.open' },
     // страница калибровок: вкладки
     { id: 'tab-mesh', scope: 'plugin', keys: 'Alt+1', handler: 'hotkeyTabMesh', titleKey: 'calibrations.hotkeys.tabMesh' },
     { id: 'tab-probe', scope: 'plugin', keys: 'Alt+2', handler: 'hotkeyTabProbe', titleKey: 'calibrations.hotkeys.tabProbe' },

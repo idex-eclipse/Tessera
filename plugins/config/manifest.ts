@@ -22,6 +22,8 @@ export const configManifest: PluginManifest = {
   ],
 
   hotkeys: [
+    // открыть страницу плагина с любой страницы
+    { id: 'open-config', scope: 'global', keys: 'Shift+C', handler: 'hotkeyOpenConfig', titleKey: 'config.hotkeys.open' },
     // Ctrl+F вместо поиска браузера → поиск файлов; Alt+L/D/C → вкладки правой таблицы
     { id: 'find-file', scope: 'plugin', keys: 'Ctrl+F', handler: 'hotkeyFindFile', titleKey: 'config.hotkeys.find' },
     { id: 'tab-logs', scope: 'plugin', keys: 'Alt+L', handler: 'hotkeyTabLogs', titleKey: 'config.hotkeys.tabLogs' },

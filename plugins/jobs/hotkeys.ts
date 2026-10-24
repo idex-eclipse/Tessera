@@ -1,5 +1,6 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
+import { openPluginPage } from '../shared/page-nav';
 import { requestRefresh, requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
 import { isEditorOpen } from '../shared/text-editor-dialog/editor-state.svelte';
 
@@ -26,4 +27,9 @@ export function hotkeyFindJob(api: PluginApi): void {
 export function hotkeyRefreshJobs(api: PluginApi): void {
   if (blocked()) return;
   requestRefresh(api, JOBS_PAGE_SCOPE);
+}
+
+/** J: открыть страницу (клавиша глобальная — работает с любой страницы). */
+export function hotkeyOpenJobs(api: PluginApi): void {
+  openPluginPage(api, 'jobs');
 }

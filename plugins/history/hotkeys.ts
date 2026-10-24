@@ -1,5 +1,6 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
+import { openPluginPage } from '../shared/page-nav';
 import { requestRefresh, requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
 
 import { historyUi } from './page-ui-state.svelte.ts';
@@ -23,4 +24,9 @@ export function hotkeyRefreshHistory(api: PluginApi): void {
   if (historyUi.dialogOpen) return;
   requestRefresh(api, HISTORY_SCOPE);
   historyUi.refreshSeq++;
+}
+
+/** H: открыть страницу (клавиша глобальная — работает с любой страницы). */
+export function hotkeyOpenHistory(api: PluginApi): void {
+  openPluginPage(api, 'history');
 }

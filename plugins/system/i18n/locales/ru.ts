@@ -3,6 +3,8 @@ export const ru = {
     hotkeys: {
       toggleNotifications: 'Показать / скрыть центр уведомлений',
       openMachine: 'Открыть страницу «Система»',
+      uploadFile: 'Загрузить G-code файл…',
+      togglePrintAfter: 'Переключить «Начать печать после загрузки»',
       refresh: 'Система: обновить данные',
     },
     units: { h: 'ч', m: 'м', s: 'с' },
@@ -45,6 +47,8 @@ export const ru = {
       dropzone: 'Перетащите G-code сюда',
       selectFile: 'Выбрать файл…',
       printAfter: 'Начать печать после загрузки',
+      printAfterOn: 'печать после загрузки: вкл',
+      printAfterOff: 'печать после загрузки: выкл',
       uploading: 'Загружается {name}…',
       uploaded: 'Загружено, запускаю печать…',
       uploadFailed: 'Ошибка загрузки',

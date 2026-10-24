@@ -1,5 +1,6 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
+import { openPluginPage } from '../shared/page-nav';
 import { requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
 import { isEditorOpen } from '../shared/text-editor-dialog/editor-state.svelte';
 
@@ -31,4 +32,9 @@ export function hotkeyTabDocs(): void {
 
 export function hotkeyTabExamples(): void {
   if (!isEditorOpen()) setTab('config_examples');
+}
+
+/** Shift+C: открыть страницу (клавиша глобальная — работает с любой страницы). */
+export function hotkeyOpenConfig(api: PluginApi): void {
+  openPluginPage(api, 'config');
 }

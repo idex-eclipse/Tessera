@@ -8,6 +8,6 @@ export const pageIcons: Record<string, string> = {
 };
 
 export { guardCriticalConfig } from './guards.ts';
-export { hotkeyFindFile, hotkeyTabLogs, hotkeyTabDocs, hotkeyTabExamples } from './hotkeys.ts';
+export { hotkeyFindFile, hotkeyTabLogs, hotkeyTabDocs, hotkeyTabExamples, hotkeyOpenConfig } from './hotkeys.ts';
 
 defineMpuElement('mpu-config-page', ConfigPage);
