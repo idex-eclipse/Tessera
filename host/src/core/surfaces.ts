@@ -104,11 +104,12 @@ const ID_AND_ELEMENT = ['id', 'element'] as const;
 
 function isValidHotkey(value: unknown): boolean {
   if (!hasStrings(value, ['id', 'keys', 'handler'])) return false;
-  const h = value as { scope?: unknown; keys: string };
+  const h = value as { scope?: unknown; keys: string; allowInInputs?: unknown };
   return (
     typeof h.scope === 'string' &&
     (HOTKEY_SCOPES as readonly string[]).includes(h.scope) &&
-    parseCombo(h.keys) !== null
+    parseCombo(h.keys) !== null &&
+    (h.allowInInputs === undefined || typeof h.allowInInputs === 'boolean')
   );
 }
 

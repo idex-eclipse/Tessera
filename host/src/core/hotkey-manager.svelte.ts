@@ -5,9 +5,11 @@ import {
   eventMatches,
   hasCommandModifier,
   type HotkeyAnalysis,
+  type HotkeyEntry,
   type HotkeyBinding,
   type HotkeyConflict,
 } from './hotkeys';
+import { HOST_HOTKEY_OWNER, type HostHotkey } from './host-hotkeys';
 import type { RegisteredHotkey, RegisteredPage } from './surfaces';
 import type { Route } from './router.svelte.ts';
 
@@ -46,6 +48,8 @@ export interface HotkeyManagerDeps {
   appliesToActivePrinter(pluginId: string): boolean;
   /** true — поверх main открыт fleet-drawer. */
   isFleetOpen?(): boolean;
+  /** Хостовые hotkeys (навигация). Конфликтуют с плагинными по общим правилам. */
+  hostHotkeys?: readonly HostHotkey[];
   /** Подписка на keydown; по умолчанию window. */
   target?: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
   warn?(message: string, detail?: unknown): void;
@@ -69,7 +73,27 @@ function conflictSignature(c: HotkeyConflict): string {
 export function createHotkeyManager(deps: HotkeyManagerDeps) {
   const warn = deps.warn ?? ((message, detail) => console.warn(message, detail));
 
-  const analysis: HotkeyAnalysis = $derived(analyzeHotkeys(deps.registry.getHotkeys()));
+  const hostByKey = new Map((deps.hostHotkeys ?? []).map((h) => [h.id, h]));
+
+  const hostEntries: HotkeyEntry[] = (deps.hostHotkeys ?? []).map((h) => ({
+    pluginId: HOST_HOTKEY_OWNER,
+    contribution: {
+      id: h.id,
+      keys: h.keys,
+      scope: 'global',
+      handler: h.id,
+      titleKey: h.titleKey,
+      allowInInputs: h.allowInInputs,
+    },
+  }));
+
+  // Плагин не может выдать себя за хост: его вклады с владельцем '@host' отбрасываются.
+  const analysis: HotkeyAnalysis = $derived(
+    analyzeHotkeys([
+      ...hostEntries,
+      ...deps.registry.getHotkeys().filter((h) => h.pluginId !== HOST_HOTKEY_OWNER),
+    ]),
+  );
 
   const warnedConflicts = new Set<string>();
   const warnedHandlers = new Set<string>();
@@ -110,9 +134,22 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
     for (const binding of analysis.bindings) {
       if (!binding.enabled) continue;
       if (!eventMatches(event, binding.combo)) continue;
-      // В полях ввода срабатывают только комбинации с Ctrl/Alt/Meta.
-      if (editable && !hasCommandModifier(binding.combo)) continue;
+      // В полях ввода: по умолчанию только комбинации с Ctrl/Alt/Meta; allowInInputs переопределяет.
+      const allowInInputs = binding.contribution.allowInInputs ?? hasCommandModifier(binding.combo);
+      if (editable && !allowInInputs) continue;
       if (!isInScope(binding)) continue;
+      if (binding.pluginId === HOST_HOTKEY_OWNER) {
+        const host = hostByKey.get(binding.contribution.id);
+        if (!host) continue;
+        event.preventDefault();
+        try {
+          host.run(event);
+        } catch (error) {
+          reportHandlerError(binding, error);
+        }
+        return true;
+      }
+
       if (!deps.appliesToActivePrinter(binding.pluginId)) continue;
 
       const handler = resolveHandler(binding);
