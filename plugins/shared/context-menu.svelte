@@ -3,13 +3,10 @@
 
   import Icon from './icons/Icon.svelte';
 
-  export interface ContextMenuItem {
-    id: string;
-    label: string;
-    icon?: string;
-    danger?: boolean;
-    disabled?: boolean;
-  }
+  import type { ContextMenuItem as MenuItem } from './context-menu-types';
+
+  /** Единственное определение — context-menu-types.ts (доступно и обычным .ts-модулям). */
+  export type ContextMenuItem = MenuItem;
 
   let {
     x,

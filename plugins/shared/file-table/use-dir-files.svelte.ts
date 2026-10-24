@@ -33,6 +33,7 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
   // Защита от гонки: ответ устаревшего запроса не должен перезаписать свежий
   // (быстрая навигация по каталогам, refresh во время загрузки).
   let loadSeq = 0;
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
@@ -94,7 +95,16 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
     const h = safeHandle();
     if (!h) return;
 
-    unsubs.push(h.onNotify('notify_filelist_changed', () => void load()));
+    // notify_filelist_changed приходит пачкой (загрузка папки) — коалесцируем перезагрузки
+    unsubs.push(
+      h.onNotify('notify_filelist_changed', () => {
+        if (reloadTimer) return;
+        reloadTimer = setTimeout(() => {
+          reloadTimer = null;
+          void load();
+        }, 300);
+      }),
+    );
     unsubs.push(
       h.onConnectionStatusChange((s) => {
         if (s === 'open') void load();
@@ -108,6 +118,10 @@ function createDirFilesCore(api: PluginApi, printerId: string, root: string) {
 
   function destroy(): void {
     for (const u of unsubs) u();
+    if (reloadTimer) {
+      clearTimeout(reloadTimer);
+      reloadTimer = null;
+    }
   }
 
   return {
