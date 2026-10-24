@@ -1,7 +1,6 @@
 <script lang="ts">
   import { getAppContext } from '../../app-context';
-  import { createPluginApi } from '../../core/plugin-api-factory';
-  import PluginElementHost from '../plugin-element-host.svelte';
+  import PluginSurface from '../PluginSurface.svelte';
 
   const ctx = getAppContext();
 
@@ -11,21 +10,13 @@
 {#if overlays.length > 0}
   <div class="plugin-overlays-layer">
     {#each overlays as overlay (`${overlay.pluginId}:${overlay.contribution.id}`)}
-      {@const loaded = ctx.loader.getLoadedPlugin(overlay.pluginId)}
-      {@const api = loaded
-        ? createPluginApi(ctx, overlay.pluginId, loaded.manifest)
-        : null}
-
-      {#if api}
-        <div class="plugin-overlay-item">
-          <PluginElementHost
-            tag={overlay.contribution.element}
-            {api}
-            params={{}}
-            fill={false}
-          />
-        </div>
-      {/if}
+      <div class="plugin-overlay-item">
+        <PluginSurface
+          pluginId={overlay.pluginId}
+          tag={overlay.contribution.element}
+          fill={false}
+        />
+      </div>
     {/each}
   </div>
 {/if}

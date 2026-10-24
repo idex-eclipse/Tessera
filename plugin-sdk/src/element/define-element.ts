@@ -1,20 +1,22 @@
 import { mount, unmount, type Component } from 'svelte';
 
 import MpuBridge from './MpuBridge.svelte';
+import type { MpuParams, PluginApi } from '../types';
 
-export function defineMpuElement(tag: string, Comp: Component<any>): void {
-  if (customElements.get(tag)) return;
+export function defineMpuElement(tag: string, Comp: Component<{ params?: MpuParams }>): void {
+  // Вне браузера (node/SSR, тесты) регистрировать нечего.
+  if (typeof customElements === 'undefined' || customElements.get(tag)) return;
 
   class MpuHostElement extends HTMLElement {
-    #api: unknown = null;
-    #params: Record<string, string> = {};
+    #api: PluginApi | null = null;
+    #params: MpuParams = {};
     #ctx: object | null = null;
 
-    set api(v: unknown) { this.#api = v; }
-    get api(): unknown { return this.#api; }
+    set api(v: PluginApi | null) { this.#api = v; }
+    get api(): PluginApi | null { return this.#api; }
 
-    set params(v: Record<string, string>) { this.#params = v ?? {}; }
-    get params(): Record<string, string> { return this.#params; }
+    set params(v: MpuParams) { this.#params = v ?? {}; }
+    get params(): MpuParams { return this.#params; }
 
     connectedCallback(): void {
       if (this.#ctx) return;
@@ -23,7 +25,7 @@ export function defineMpuElement(tag: string, Comp: Component<any>): void {
         target: this,
         props: {
           Component: Comp,
-          get api() { return self.#api; },
+          get api() { return self.#api as PluginApi; },
           get params() { return self.#params; },
         },
       });

@@ -1,14 +1,19 @@
-import type {
-  BannerContribution,
-  OverlayContribution,
-  PageContribution,
-  PluginManifest,
-  RightPanelContribution,
-  WidgetContribution,
-  ChipContribution,
-  PrinterPanelContribution,
-  QuickChipLayoutItem,
-} from '../../../plugin-sdk/src/types';
+import type { PluginManifest, QuickChipLayoutItem } from '../../../plugin-sdk/src/types';
+
+import {
+  SINGLETON_SURFACES,
+  SURFACE_KINDS,
+  contributionsOf,
+  type Registered,
+  type RegisteredBanner,
+  type RegisteredChip,
+  type RegisteredOverlay,
+  type RegisteredPage,
+  type RegisteredPrinterPanel,
+  type RegisteredRightPanel,
+  type RegisteredWidget,
+  type SurfaceKind,
+} from './surfaces.ts';
 
 import type {
   DashboardWidgetLayoutItem,
@@ -41,40 +46,15 @@ import { findFreeSpot } from './layout-utils.ts';
 // Types
 // ------------------------------------------------------------------
 
-export interface RegisteredOverlay {
-  pluginId: string;
-  contribution: OverlayContribution;
-}
-
-export interface RegisteredBanner {
-  pluginId: string;
-  contribution: BannerContribution;
-}
-
-export interface RegisteredRightPanel {
-  pluginId: string;
-  contribution: RightPanelContribution;
-}
-
-export interface RegisteredPage {
-  pluginId: string;
-  contribution: PageContribution;
-}
-
-export interface RegisteredWidget {
-  pluginId: string;
-  contribution: WidgetContribution;
-}
-
-export interface RegisteredChip {
-  pluginId: string;
-  contribution: ChipContribution;
-}
-
-export interface RegisteredPrinterPanel {
-  pluginId: string;
-  contribution: PrinterPanelContribution;
-}
+export type {
+  RegisteredBanner,
+  RegisteredChip,
+  RegisteredOverlay,
+  RegisteredPage,
+  RegisteredPrinterPanel,
+  RegisteredRightPanel,
+  RegisteredWidget,
+} from './surfaces.ts';
 
 export type PluginRegistry = ReturnType<typeof createPluginRegistry>;
 
@@ -84,92 +64,58 @@ export type PluginRegistry = ReturnType<typeof createPluginRegistry>;
 
 export function createPluginRegistry(settings: SettingsStore) {
   /**
-   * Reactive state: registered contributions.
+   * Reactive state: registered contributions, один список на вид поверхности.
+   * Порядок внутри списка = порядок регистрации плагинов.
    */
-  let pages = $state<RegisteredPage[]>([]);
-  let widgets = $state<RegisteredWidget[]>([]);
-  let overlays = $state<RegisteredOverlay[]>([]);
-  let banners = $state<RegisteredBanner[]>([]);
+  type SurfaceStore = { [K in SurfaceKind]: Registered<K>[] };
+
+  const emptyStore = (): SurfaceStore => ({
+    pages: [],
+    widgets: [],
+    overlays: [],
+    banners: [],
+    chips: [],
+    printerPanels: [],
+  });
+
+  let surfaces = $state<SurfaceStore>(emptyStore());
   let rightPanel = $state<RegisteredRightPanel | null>(null);
-  let chips = $state<RegisteredChip[]>([]); 
-  let printerPanels = $state<RegisteredPrinterPanel[]>([]);
 
   // ------------------------------------------------------------------
   // Registration / unregistration
   // ------------------------------------------------------------------
 
+  function appendSurface<K extends SurfaceKind>(kind: K, pluginId: string, manifest: PluginManifest): void {
+    const list = contributionsOf(manifest, kind);
+    if (list.length === 0) return;
+
+    const added = list.map((contribution) => ({ pluginId, contribution })) as Registered<K>[];
+    surfaces[kind] = [...(surfaces[kind] as Registered<K>[]), ...added] as SurfaceStore[K];
+  }
+
   function registerPlugin(manifest: PluginManifest): void {
     unregisterPlugin(manifest.id);
 
-    if (manifest.pages && manifest.pages.length > 0) {
-      const newPages: RegisteredPage[] = manifest.pages.map((contribution) => ({
-        pluginId: manifest.id,
-        contribution,
-      }));
-
-      pages = [...pages, ...newPages];
+    for (const kind of SURFACE_KINDS) {
+      appendSurface(kind, manifest.id, manifest);
     }
 
-    if (manifest.widgets && manifest.widgets.length > 0) {
-      const newWidgets: RegisteredWidget[] = manifest.widgets.map((contribution) => ({
-        pluginId: manifest.id,
-        contribution,
-      }));
-
-      widgets = [...widgets, ...newWidgets];
+    if (SINGLETON_SURFACES.includes('rightPanel') && manifest.rightPanel) {
+      rightPanel = { pluginId: manifest.id, contribution: manifest.rightPanel };
     }
+  }
 
-    if (manifest.overlays && manifest.overlays.length > 0) {
-      const newOverlays: RegisteredOverlay[] = manifest.overlays.map((contribution) => ({
-        pluginId: manifest.id,
-        contribution,
-      }));
-
-      overlays = [...overlays, ...newOverlays];
-    }
-
-    if (manifest.banners && manifest.banners.length > 0) {
-      const newBanners: RegisteredBanner[] = manifest.banners.map((contribution) => ({
-        pluginId: manifest.id,
-        contribution,
-      }));
-
-      banners = [...banners, ...newBanners];
-    }
-
-    if (manifest.rightPanel) {
-      rightPanel = {
-        pluginId: manifest.id,
-        contribution: manifest.rightPanel,
-      };
-    }
-
-    if (manifest.chips && manifest.chips.length > 0) {
-      const newChips: RegisteredChip[] = manifest.chips.map((contribution) => ({
-        pluginId: manifest.id,
-        contribution,
-      }));
-
-      chips = [...chips, ...newChips];
-    }
-
-    if (manifest.printerPanels && manifest.printerPanels.length > 0) {
-      const newPanels: RegisteredPrinterPanel[] = manifest.printerPanels.map((contribution) => ({
-        pluginId: manifest.id,
-        contribution,
-      }));
-
-      printerPanels = [...printerPanels, ...newPanels];
+  function dropSurface<K extends SurfaceKind>(kind: K, pluginId: string): void {
+    const current = surfaces[kind] as Registered<K>[];
+    if (current.some((r) => r.pluginId === pluginId)) {
+      surfaces[kind] = current.filter((r) => r.pluginId !== pluginId) as SurfaceStore[K];
     }
   }
 
   function unregisterPlugin(pluginId: string): void {
-    pages = pages.filter((page) => page.pluginId !== pluginId);
-    widgets = widgets.filter((widget) => widget.pluginId !== pluginId);
-    overlays = overlays.filter((overlay) => overlay.pluginId !== pluginId);
-    banners = banners.filter((banner) => banner.pluginId !== pluginId);
-    chips = chips.filter((chip) => chip.pluginId !== pluginId);
-    printerPanels = printerPanels.filter((panel) => panel.pluginId !== pluginId);
+    for (const kind of SURFACE_KINDS) {
+      dropSurface(kind, pluginId);
+    }
 
     if (rightPanel && rightPanel.pluginId === pluginId) {
       rightPanel = null;
@@ -181,17 +127,17 @@ export function createPluginRegistry(settings: SettingsStore) {
   // ------------------------------------------------------------------
 
   function getPages(): RegisteredPage[] {
-    return pages;
+    return surfaces.pages;
   }
 
   function getWidgets(): RegisteredWidget[] {
-    return widgets;
+    return surfaces.widgets;
   }
 
   function getWidgetTypes(): string[] {
     const types = new Set<string>();
 
-    for (const widget of widgets) {
+    for (const widget of surfaces.widgets) {
       types.add(widget.contribution.type);
     }
 
@@ -199,7 +145,7 @@ export function createPluginRegistry(settings: SettingsStore) {
   }
 
   function getProvidersForType(type: string): RegisteredWidget[] {
-    return widgets.filter((widget) => widget.contribution.type === type);
+    return surfaces.widgets.filter((widget) => widget.contribution.type === type);
   }
 
   function hasMultipleProviders(type: string): boolean {
@@ -207,19 +153,19 @@ export function createPluginRegistry(settings: SettingsStore) {
   }
 
   function getOverlays(): RegisteredOverlay[] {
-    return overlays;
+    return surfaces.overlays;
   }
 
   function getBanners(): RegisteredBanner[] {
-    return banners;
+    return surfaces.banners;
   }
 
   function getChips(): RegisteredChip[] {
-    return chips;
+    return surfaces.chips;
   }
 
   function getPrinterPanels(): RegisteredPrinterPanel[] {
-    return printerPanels;
+    return surfaces.printerPanels;
   }
 
   function getRightPanel(): RegisteredRightPanel | undefined {
@@ -249,7 +195,7 @@ export function createPluginRegistry(settings: SettingsStore) {
     }
 
     if (providers.length === 1) {
-      return providers[0] ?? null;;
+      return providers[0] ?? null;
     }
 
     // Multiple providers: check user's explicit selection.
@@ -266,7 +212,7 @@ export function createPluginRegistry(settings: SettingsStore) {
     }
 
     // Fallback: first registered provider (not "best", just first).
-    return providers[0] ?? null;;
+    return providers[0] ?? null;
   }
 
   // ------------------------------------------------------------------
@@ -274,7 +220,7 @@ export function createPluginRegistry(settings: SettingsStore) {
   // ------------------------------------------------------------------
 
   function getVisiblePages(printerId: string): RegisteredPage[] {
-    return pages.filter((page) => {
+    return surfaces.pages.filter((page) => {
       return settings.getPageVisibility(printerId, page.contribution.id);
     });
   }

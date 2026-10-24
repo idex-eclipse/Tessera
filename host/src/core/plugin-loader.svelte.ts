@@ -7,6 +7,14 @@ import { defineMpuElement } from '../../../plugin-sdk/src/element/define-element
 import type { Component } from 'svelte';
 
 import type { GuardAgent } from './guard-agent';
+import {
+  RIGHT_PANEL_OWNER_PLUGIN_ID,
+  SINGLETON_SPECS,
+  SINGLETON_SURFACES,
+  SURFACE_KINDS,
+  SURFACE_SPECS,
+  hasPersistentSurfaces,
+} from './surfaces';
 
 
 /**
@@ -26,8 +34,6 @@ import type { GuardAgent } from './guard-agent';
  * Core plugins are NOT stored in mpu:v2:plugins.
  * Only remote plugins are persisted there.
  */
-
-const RIGHT_PANEL_OWNER_PLUGIN_ID = '@core/system';
 
 // ------------------------------------------------------------------
 // Types
@@ -101,28 +107,17 @@ function prepareManifest(
   manifest: PluginManifest,
   module: Record<string, unknown> | null,
 ): PluginManifest {
-  const prepared: PluginManifest = {
-    ...manifest,
-    pages: manifest.pages ? manifest.pages.map((p) => ({ ...p })) : undefined,
-    widgets: manifest.widgets
-      ? manifest.widgets.map((w) => ({ ...w }))
-      : undefined,
-    overlays: manifest.overlays
-      ? manifest.overlays.map((o) => ({ ...o }))
-      : undefined,
-    banners: manifest.banners
-      ? manifest.banners.map((b) => ({ ...b }))
-      : undefined,
-    chips: manifest.chips
-      ? manifest.chips.map((c) => ({ ...c }))
-      : undefined,
-    printerPanels: manifest.printerPanels
-      ? manifest.printerPanels.map((p) => ({ ...p }))
-      : undefined,
-    rightPanel: manifest.rightPanel
-      ? { ...manifest.rightPanel }
-      : undefined,
-  };
+  const prepared: PluginManifest = { ...manifest };
+
+  // Копия вкладов: нормализация и санитайз не мутируют исходный манифест.
+  for (const kind of SURFACE_KINDS) {
+    const list = manifest[kind];
+    if (list) setManifestField(prepared, kind, list.map((c) => ({ ...c })));
+  }
+  for (const kind of SINGLETON_SURFACES) {
+    const value = manifest[kind];
+    if (value) setManifestField(prepared, kind, { ...value });
+  }
 
   normalizeContribs(prepared, module);
   sanitizeSurfaceContributions(prepared);
@@ -130,94 +125,65 @@ function prepareManifest(
   return prepared;
 }
 
+function setManifestField(manifest: PluginManifest, key: string, value: unknown): void {
+  (manifest as unknown as Record<string, unknown>)[key] = value;
+}
+
+/**
+ * Единый санитайз вкладов по таблицам SURFACE_SPECS / SINGLETON_SPECS:
+ * невалидные вклады отбрасываются с предупреждением, не-массив → undefined.
+ * Уникальные слоты дополнительно проверяются на плагин-владельца (решение L).
+ */
 function sanitizeSurfaceContributions(manifest: PluginManifest): void {
-  if (Array.isArray(manifest.overlays)) {
-    manifest.overlays = manifest.overlays.filter((overlay) => {
-      const valid = isValidSurfaceContribution(overlay);
+  for (const kind of SURFACE_KINDS) {
+    const { validate, label } = SURFACE_SPECS[kind];
+    if (!validate) continue;
 
-      if (!valid) {
-        console.warn(
-          `[plugin-loader] Plugin "${manifest.id}" has invalid overlay contribution`,
-          overlay,
-        );
-      }
+    const list: unknown = manifest[kind];
+    if (list === undefined) continue;
 
-      return valid;
-    });
-  } else if (manifest.overlays !== undefined) {
-    manifest.overlays = undefined;
+    if (!Array.isArray(list)) {
+      setManifestField(manifest, kind, undefined);
+      continue;
+    }
+
+    setManifestField(
+      manifest,
+      kind,
+      list.filter((item) => {
+        const valid = validate(item);
+        if (!valid) {
+          console.warn(
+            `[plugin-loader] Plugin "${manifest.id}" has invalid ${label} contribution`,
+            item,
+          );
+        }
+        return valid;
+      }),
+    );
   }
 
-  if (Array.isArray(manifest.banners)) {
-    manifest.banners = manifest.banners.filter((banner) => {
-      const valid = isValidSurfaceContribution(banner);
+  for (const kind of SINGLETON_SURFACES) {
+    const value = manifest[kind];
+    if (!value) continue;
 
-      if (!valid) {
-        console.warn(
-          `[plugin-loader] Plugin "${manifest.id}" has invalid banner contribution`,
-          banner,
-        );
-      }
-
-      return valid;
-    });
-  } else if (manifest.banners !== undefined) {
-    manifest.banners = undefined;
-  }
-
-  if (Array.isArray(manifest.chips)) {
-    manifest.chips = manifest.chips.filter((chip) => {
-      const valid = isValidChipContribution(chip);
-
-      if (!valid) {
-        console.warn(
-          `[plugin-loader] Plugin "${manifest.id}" has invalid chip contribution`,
-          chip,
-        );
-      }
-
-      return valid;
-    });
-  } else if (manifest.chips !== undefined) {
-    manifest.chips = undefined;
-  }
-
-  if (Array.isArray(manifest.printerPanels)) {
-    manifest.printerPanels = manifest.printerPanels.filter((panel) => {
-      const valid = isValidPrinterPanelContribution(panel);
-
-      if (!valid) {
-        console.warn(
-          `[plugin-loader] Plugin "${manifest.id}" has invalid printerPanel contribution`,
-          panel,
-        );
-      }
-
-      return valid;
-    });
-  } else if (manifest.printerPanels !== undefined) {
-    manifest.printerPanels = undefined;
-  }
-
-  if (manifest.rightPanel) {
-    if (manifest.id !== RIGHT_PANEL_OWNER_PLUGIN_ID) {
+    if (kind === 'rightPanel' && manifest.id !== RIGHT_PANEL_OWNER_PLUGIN_ID) {
       console.warn(
         `[plugin-loader] Plugin "${manifest.id}" tried to register rightPanel. ` +
           `rightPanel is only allowed for "${RIGHT_PANEL_OWNER_PLUGIN_ID}". ` +
           `Contribution rejected.`,
       );
-
-      manifest.rightPanel = undefined;
-      return;
+      setManifestField(manifest, kind, undefined);
+      continue;
     }
 
-    if (!isValidSurfaceContribution(manifest.rightPanel)) {
+    const { validate, label } = SINGLETON_SPECS[kind];
+    if (validate && !validate(value)) {
       console.warn(
-        `[plugin-loader] Plugin "${manifest.id}" has invalid rightPanel contribution`,
-        manifest.rightPanel,
+        `[plugin-loader] Plugin "${manifest.id}" has invalid ${label} contribution`,
+        value,
       );
-
-      manifest.rightPanel = undefined;
+      setManifestField(manifest, kind, undefined);
     }
   }
 }
@@ -258,15 +224,44 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
       source: 'core',
     };
 
-    loadedPlugins.set(prepared.id, loaded);
-    registry.registerPlugin(prepared);
-    registerGuardsFor(prepared, module);
+    activate(loaded);
+  }
+
+  /**
+   * Единая активация загруженного плагина (core и remote): состояние лоадера,
+   * реестр вкладов, гарды. Обратная операция — deactivate.
+   */
+  function activate(loaded: LoadedPlugin): void {
+    loadedPlugins.set(loaded.manifest.id, loaded);
+    registry.registerPlugin(loaded.manifest);
+    registerGuardsFor(loaded.manifest, loaded.module);
+  }
+
+  function deactivate(pluginId: string): void {
+    registry.unregisterPlugin(pluginId);
+    guardAgent.unregisterGuards(pluginId);
+    loadedPlugins.delete(pluginId);
+  }
+
+  /** fetch manifest → validate → import entry → locales → prepare. */
+  async function fetchRemote(manifestUrl: string): Promise<{ loaded: LoadedPlugin; version: string }> {
+    const manifest = await fetchManifest(manifestUrl);
+    validateManifest(manifest, manifestUrl);
+
+    const entryUrl = resolveEntryUrl(manifest.entry, manifestUrl);
+    const module = await importModule(entryUrl);
+    registerPluginLocales(module);
+
+    const prepared = prepareManifest(manifest, module as Record<string, unknown> | null);
+    return {
+      loaded: { manifest: prepared, module, source: 'remote', manifestUrl },
+      version: manifest.version,
+    };
   }
 
   function registerPluginLocales(module: unknown): void {
+    const locales = (module as { locales?: Record<string, unknown> } | null)?.locales;
     if (!i18n) return;
-
-    const locales = (module as { locales?: Record<string, Record<string, unknown>> } | null)?.locales;
     if (!locales || typeof locales !== 'object') return;
 
     for (const [locale, messages] of Object.entries(locales)) {
@@ -293,41 +288,19 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
   /**
    * Installs a remote plugin by manifest URL.
    *
-   * Flow:
-   * 1. Fetch manifest from URL
-   * 2. Validate manifest
-   * 3. Resolve entry relative to manifest origin
-   * 4. Dynamic import the entry
-   * 5. Register in registry
-   * 6. Save to settings (mpu:v2:plugins)
+   * Flow: fetchRemote (fetch, validate, resolve entry relative to the manifest
+   * origin, import, locales) → activate (registry + guards) → persist
+   * in settings (mpu:v2:plugins).
    */
   async function installRemotePlugin(
     manifestUrl: string,
     printerIds: string[] = [],
     source: 'catalog' | 'url' = 'url',
   ): Promise<void> {
-    const manifest = await fetchManifest(manifestUrl);
-    validateManifest(manifest, manifestUrl);
+    const { loaded, version } = await fetchRemote(manifestUrl);
+    activate(loaded);
 
-    const entryUrl = resolveEntryUrl(manifest.entry, manifestUrl);
-    const module = await importModule(entryUrl);
-    registerPluginLocales(module);
-    const prepared = prepareManifest(
-      manifest,
-      module as Record<string, unknown> | null,
-    );
-
-    const loaded: LoadedPlugin = {
-      manifest: prepared,
-      module,
-      source: 'remote',
-      manifestUrl,
-    };
-
-    loadedPlugins.set(prepared.id, loaded);
-    registry.registerPlugin(prepared);
-
-    settings.addPlugin(manifestUrl, printerIds, source, manifest.version);
+    settings.addPlugin(manifestUrl, printerIds, source, version);
   }
 
   /**
@@ -341,9 +314,7 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
       return;
     }
 
-    registry.unregisterPlugin(loaded.manifest.id);
-    guardAgent.unregisterGuards(loaded.manifest.id);   
-    loadedPlugins.delete(loaded.manifest.id);
+    deactivate(loaded.manifest.id);
     settings.removePlugin(manifestUrl);
   }
 
@@ -363,9 +334,9 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
 
     if (enabled) {
       registry.registerPlugin(loaded.manifest);
-      registerGuardsFor(loaded.manifest, loaded.module); 
+      registerGuardsFor(loaded.manifest, loaded.module);
     } else {
-      guardAgent.unregisterGuards(loaded.manifest.id); 
+      guardAgent.unregisterGuards(loaded.manifest.id);
       registry.unregisterPlugin(loaded.manifest.id);
     }
   }
@@ -416,9 +387,7 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
         loaded.manifestUrl &&
         !enabledUrls.has(loaded.manifestUrl)
       ) {
-        registry.unregisterPlugin(id);
-        guardAgent.unregisterGuards(id);   
-        loadedPlugins.delete(id);
+        deactivate(id);
       }
     }
 
@@ -426,27 +395,8 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
       .filter((plugin) => plugin.enabled)
       .map(async (plugin) => {
         try {
-          const manifest = await fetchManifest(plugin.manifestUrl);
-          validateManifest(manifest, plugin.manifestUrl);
-
-          const entryUrl = resolveEntryUrl(manifest.entry, plugin.manifestUrl);
-          const module = await importModule(entryUrl);
-          registerPluginLocales(module);
-          const prepared = prepareManifest(
-            manifest,
-            module as Record<string, unknown> | null,
-          );
-
-          const loaded: LoadedPlugin = {
-            manifest: prepared,
-            module,
-            source: 'remote',
-            manifestUrl: plugin.manifestUrl,
-          };
-
-          loadedPlugins.set(prepared.id, loaded);
-          registry.registerPlugin(prepared);
-          registerGuardsFor(prepared, module);
+          const { loaded } = await fetchRemote(plugin.manifestUrl);
+          activate(loaded);
         } catch (error) {
           console.error(
             `[plugin-loader] Failed to load plugin from ${plugin.manifestUrl}:`,
@@ -522,7 +472,7 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     const surfaceIds: string[] = [];
 
     for (const loaded of loadedPlugins.values()) {
-      if (hasSurfaces(loaded.manifest)) {
+      if (hasPersistentSurfaces(loaded.manifest)) {
         surfaceIds.push(loaded.manifest.id);
       }
     }
@@ -600,82 +550,6 @@ function validateManifest(manifest: PluginManifest, sourceUrl: string): void {
   }
 }
 
-interface SurfaceContributionLike {
-  id?: unknown;
-  element?: unknown;
-}
-
-function isValidSurfaceContribution(
-  value: unknown,
-): value is { id: string; element: string } {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as SurfaceContributionLike;
-
-  return (
-    typeof candidate.id === 'string' &&
-    candidate.id.length > 0 &&
-    typeof candidate.element === 'string' &&
-    candidate.element.length > 0
-  );
-}
-
-interface ChipContributionLike {
-  type?: unknown;
-  provider?: unknown;
-  titleKey?: unknown;
-  element?: unknown;
-  pickerElement?: unknown;
-}
-
-function isValidChipContribution(
-  value: unknown,
-): value is ChipContributionLike {
-  if (!value || typeof value !== 'object') return false;
-  const c = value as ChipContributionLike;
-  return (
-    typeof c.type === 'string' && c.type.length > 0 &&
-    typeof c.provider === 'string' && c.provider.length > 0 &&
-    typeof c.titleKey === 'string' && c.titleKey.length > 0 &&
-    typeof c.element === 'string' && c.element.length > 0 &&
-    typeof c.pickerElement === 'string' && c.pickerElement.length > 0
-  );
-}
-
-interface PrinterPanelContributionLike {
-  id?: unknown;
-  element?: unknown;
-  titleKey?: unknown;
-}
-
-function isValidPrinterPanelContribution(
-  value: unknown,
-): value is PrinterPanelContributionLike {
-  if (!value || typeof value !== 'object') return false;
-  const p = value as PrinterPanelContributionLike;
-  return (
-    typeof p.id === 'string' && p.id.length > 0 &&
-    typeof p.element === 'string' && p.element.length > 0
-  );
-}
-
-/**
- * Плагин имеет постоянные поверхности (overlays / banners / rightPanel).
- * Такие плагины должны быть активированы eagerly на старте,
- * чтобы оверлеи/баннеры работали без посещения страницы плагина.
- */
-function hasSurfaces(manifest: PluginManifest): boolean {
-  return Boolean(
-    (manifest.overlays && manifest.overlays.length > 0) ||
-      (manifest.banners && manifest.banners.length > 0) ||
-      (manifest.chips && manifest.chips.length > 0) ||
-      (manifest.printerPanels && manifest.printerPanels.length > 0) ||
-      manifest.rightPanel,
-  );
-}
-
 /**
  * Resolves entry URL relative to the manifest's origin.
  *
@@ -686,7 +560,8 @@ function resolveEntryUrl(entry: string, manifestUrl: string): string {
   try {
     // manifestUrl может прийти относительным (same-origin каталог) —
     // достраиваем base от origin хоста, иначе new URL(entry, base) бросает
-    const base = new URL(manifestUrl, window.location.href);
+    const pageUrl = typeof window !== 'undefined' ? window.location.href : undefined;
+    const base = new URL(manifestUrl, pageUrl);
     return new URL(entry, base).href;
   } catch {
     throw new Error(

@@ -174,6 +174,7 @@
           <ColorPickerMenu
             value={customValue}
             onPick={(hex) => {
+              if (!hex) return;
               customValue = hex;
               applyCustom();
             }

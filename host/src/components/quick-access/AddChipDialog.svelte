@@ -3,7 +3,7 @@
   import type { QuickChipLayoutItem } from '../../../../plugin-sdk/src/types';
 
   import { getAppContext } from '../../app-context';
-  import { createPluginApi } from '../../core/plugin-api-factory';
+  import { getPluginApi } from '../../core/plugin-api-cache';
   import PluginElementHost from '../plugin-element-host.svelte';
 
   let {
@@ -29,16 +29,7 @@
 
   let bodyEl = $state<HTMLDivElement | null>(null);
 
-  const apiCache = new Map<string, PluginApi>();
-  function apiFor(pluginId: string): PluginApi | null {
-    const cached = apiCache.get(pluginId);
-    if (cached) return cached;
-    const loaded = ctx.loader.getLoadedPlugin(pluginId);
-    if (!loaded) return null;
-    const api = createPluginApi(ctx, pluginId, loaded.manifest);
-    apiCache.set(pluginId, api);
-    return api;
-  }
+  const apiFor = (pluginId: string) => getPluginApi(ctx, pluginId);
 
   /** Уже размещённые id предмета — подсказка picker'у (может скрыть занятые). */
   function placedIdsFor(type: string, provider: string): string {

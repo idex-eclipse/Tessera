@@ -6,6 +6,6 @@ import type { PluginManifest } from './types';
  * In this phase it only preserves manifest typing.
  * No runtime behavior is added yet.
  */
-export function definePlugin<T extends PluginManifest>(manifest: T): T {
+export function definePlugin<const T extends PluginManifest>(manifest: T): T {
   return manifest;
 }

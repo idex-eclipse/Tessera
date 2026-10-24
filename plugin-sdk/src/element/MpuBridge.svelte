@@ -2,16 +2,16 @@
   import type { Component as SvelteComponent } from 'svelte';
 
   import { providePluginApi } from '../svelte/index';
-  import type { PluginApi } from '../types';
+  import type { MpuParams, PluginApi } from '../types';
 
   let {
     Component,
     api,
     params = {},
   }: {
-    Component: SvelteComponent<any>;
+    Component: SvelteComponent<{ params?: MpuParams }>;
     api: PluginApi;
-    params?: Record<string, string>;
+    params?: MpuParams;
   } = $props();
 
   providePluginApi(api);

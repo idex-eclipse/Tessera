@@ -18,7 +18,7 @@
   let error = $state<string | null>(null);
 
   function loadedByUrl(u: string) {
-    return loaded.find((p: any) => p.manifestUrl === u);
+    return loaded.find((p) => p.manifestUrl === u);
   }
 
   async function fetchManifest(): Promise<void> {
@@ -203,7 +203,8 @@
 
   <div class="plugin-list">
     {#each loaded as p (p.manifest.id)}
-      {@const isCore = !p.manifestUrl || (p as any).builtin}
+      {@const manifestUrl = p.manifestUrl}
+      {@const isCore = !manifestUrl || p.source === 'core'}
       {@const record = remotePlugins.find((r) => r.manifestUrl === p.manifestUrl)}
       <div class="plugin-row">
         <div class="plugin-info">
@@ -216,11 +217,11 @@
           </span>
         </div>
         <div class="plugin-actions">
-          {#if !isCore}
-            <button class="btn btn-secondary" onclick={() => toggle(p.manifestUrl, !record?.enabled)}>
+          {#if manifestUrl && !isCore}
+            <button class="btn btn-secondary" onclick={() => toggle(manifestUrl, !record?.enabled)}>
               {record?.enabled ? i18n.t('settings.disable') : i18n.t('settings.enable')}
             </button>
-            <button class="btn btn-danger" onclick={() => remove(p.manifestUrl)}>
+            <button class="btn btn-danger" onclick={() => remove(manifestUrl)}>
               {i18n.t('common.remove')}
             </button>
           {/if}
