@@ -1,7 +1,7 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
-import JobsPage from './JobsPage.svelte';
-import JobsWidget from './JobsWidget.svelte';
-import JobsWidgetHeaderActions from './JobsWidgetHeaderActions.svelte';
+import JobsPage from './components/pages/JobsPage.svelte';
+import JobsWidget from './components/widgets/JobsWidget.svelte';
+import JobsWidgetHeaderActions from './components/widgets/JobsWidgetHeaderActions.svelte';
 
 import fileIcon from './icons/file.svg?raw';
 
