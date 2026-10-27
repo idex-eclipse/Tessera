@@ -75,13 +75,13 @@ The UI is built from **plugins**: the host provides the shell (printer tabs, sid
 
 A drag-and-drop grid of autonomous widgets, arranged per printer:
 
-- **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series
+- **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series, switchable columns, and an optional **On time** column: a per-heater timer that switches the heater off N minutes after it reaches its target (e.g. heating the hotend for a filament change without extra macros). The countdown runs in the browser, is ignored during a print, and Klipper's idle timeout remains the safety net
 - **Status** — print progress, layer & ETA, pause / resume / cancel, speed & flow factors
 - **Macros** — buttons with automatic parameter forms parsed from your macro bodies (defaults pre-filled, required fields flagged)
 - **Tools** — jog cross/rows, extrude & retract, force move, motors off, IDEX carriage modes (PRIMARY / COPY / MIRROR / experimental DIRECT-mode from [Dmitry Butyugin's fork of Klipper for IDEX printers](https://github.com/dmbutyugin/klipper/tree/generic-cartesian)), active-tool awareness, plus one-tap **QGL** / **Z-tilt** buttons when those commands are available
 - **Limits** — velocity, acceleration and square-corner velocity on the fly
 - **Outputs** — fan sliders and output-pin control (PWM and digital), plus read-only indicators for Klipper-managed auto-fans (heater_fan / controller_fan / temperature_fan)
-- **Camera** — live MJPEG/HLS views, multiple streams
+- **Camera** — live MJPEG/HLS views, multiple streams; flip through cameras with side buttons or a swipe on touch screens, name and measured FPS under the picture, and a click-to-expand viewer with a live camera list and ↑/↓ navigation; auto-reconnects after stream drops
 - **Filament** — runout sensor status and enable/disable
 - **Job queue** — reorder, start, manage queued prints
 
@@ -171,7 +171,7 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 
 Keyboard navigation plus shortcuts contributed by plugins, all remappable in **Settings → Hotkeys**:
 
-- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers
+- **Navigation** — `F` toggles fleet mode, `D` opens the dashboard, `R` shows/hides the right panel, `N` the notification center, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `Ctrl+↑` / `Ctrl+↓` step through the sidebar pages; built-in pages open from anywhere (`J` Jobs, `H` History, `M` Machine, `Shift+C` Config, `Shift+A` Calibrations, `C` Console, `G` G-code preview), `U` picks a G-code file to upload and `P` toggles *print after upload*
 - **Plugin shortcuts** — a plugin declares them in its manifest with a scope: *global* (everywhere), *dashboard* (only on the dashboard) or *plugin* (only on that plugin's own page)
 - **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on macOS and Ctrl elsewhere
 - **Conflict-safe** — if two shortcuts collide, **both are disabled** with a console warning and a mark in Settings (the same key is fine for *dashboard* + *plugin*, or for two different plugins' own pages)

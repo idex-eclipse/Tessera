@@ -80,6 +80,18 @@ const off = api.onLocaleChange((locale, dir) => rerender());
 `margin-inline-start`, `padding-inline`, `inset-inline-end`, `text-align: start`,
 `border-inline-start` вместо `left/right`.
 
+Помимо CSS-свойств проверьте такие случаи RTL:
+
+- **Поповеры и меню**, позиционируемые из JS: выравнивайте по *концевому* краю кнопки
+  через `isRtl()` / `shouldAlignToEnd()` из `plugins/shared/popover-align`, а не через
+  `right:`.
+- **Направленные иконки** (шевроны пары «назад/вперёд»): сама пара меняется местами во
+  flex-ряду, поэтому иконку зеркальте (`:global([dir='rtl']) … { transform: scaleX(-1) }`).
+- **Свайпы**: в RTL направление инвертируется (свайп влево = «назад»).
+- **Ненаправленный контент** остаётся LTR даже в RTL-интерфейсе: числа с `°C`, `+`, `%`
+  (`direction: ltr; unicode-bidi: isolate`), оси времени графиков, оси джога.
+  Пользовательские имена, где возможна смесь письменностей, оборачивайте в `<bdi>`.
+
 ---
 
 ## Дизайн-система

@@ -80,6 +80,17 @@ RTL use **logical** CSS properties: `margin-inline-start`, `padding-inline`,
 `inset-inline-end`, `text-align: start`, `border-inline-start` instead of
 `left/right`.
 
+Beyond CSS properties, check these RTL cases:
+
+- **Popovers and menus** positioned with JS: align to the button's *end* edge via
+  `isRtl()` / `shouldAlignToEnd()` from `plugins/shared/popover-align`, not with `right:`.
+- **Directional icons** (chevrons of a prev/next pair): the pair swaps sides by itself in a
+  flex row, so mirror the icon (`:global([dir='rtl']) … { transform: scaleX(-1) }`).
+- **Swipe gestures**: invert the direction in RTL (swipe left = "previous").
+- **Content that is not directional** stays LTR even in an RTL interface: numbers with
+  `°C`, `+`, `%` (`direction: ltr; unicode-bidi: isolate`), chart time axes, jog axes.
+  User names that may mix scripts go in `<bdi>`.
+
 ---
 
 ## The design system

@@ -136,17 +136,56 @@ The host also does not call the handler if the event is already handled
 | Keys | Action |
 |---|---|
 | `F` | open/close fleet mode |
+| `D` | open the active printer's dashboard |
+| `R` | show/hide the right panel |
+| `N` | show/hide the notification center (see the note below) |
 | `Ctrl+1` … `Ctrl+9` | go to the dashboard of the printer with that number (nothing if there is none) |
 | `Ctrl+→` | the next printer (wraps around) |
 | `Ctrl+←` | the previous printer (wraps around) |
+| `Ctrl+↓` | the next section in sidebar order: Dashboard → plugin pages → Dashboard again |
+| `Ctrl+↑` | the previous section (from the Dashboard — to the last page) |
 
-A switch closes fleet so that the result is visible. `F` and `Ctrl+arrows` do not
-fire in input fields. Do not take these combinations in plugins — both sides would
-be disabled.
+Section cycling takes into account only the pages visible for the active printer
+(Settings → Pages). From Settings or from a hidden page, `Ctrl+↓` opens the Dashboard
+and `Ctrl+↑` the last page.
+
+A switch closes fleet so that the result is visible. Single keys (`F`, `D`, `R`, `N`)
+and `Ctrl+arrows` do not fire in input fields. Do not take these combinations in
+plugins — both sides would be disabled.
+
+**A note on `N`.** The notification center belongs to the `@core/system` plugin, so that
+plugin declares the key itself (scope `global`, handler `hotkeyToggleNotifications`), not
+the host. In the list and in Settings → Hotkeys it appears in the System plugin's group;
+the conflict rules and reassignment work the same as for host keys.
 
 Platform limitations (the host cannot influence them): `Ctrl+1…9` is taken by the
 browser in some browsers/OSes (tab switching), and `Ctrl+←/→` on macOS switch
 desktops by default.
+
+## Built-in plugin keys: opening pages and uploading
+
+Each built-in plugin declares a **global** "open my page" key (works from any page,
+without `Ctrl`):
+
+| Keys | Page / action | Plugin |
+|---|---|---|
+| `J` | Jobs | `@core/jobs` |
+| `H` | History | `history` |
+| `M` | Machine ("System") | `@core/system` |
+| `Shift+C` | Config files | `@core/config` |
+| `Shift+A` | Calibrations | `@core/calibrations` |
+| `C` | Console | `@core/console` |
+| `G` | G-code preview | `@core/gcode-preview` |
+| `U` | choose a G-code file to upload (right panel) | `@core/system` |
+| `P` | toggle "Start print after upload" | `@core/system` |
+
+Naming convention: if the first letter of the name is unique — a single letter (`J`,
+`H`, `M`); if several plugins share it (Config, Calibrations, Console…) — `Shift` + a
+letter. Plugins that have not been reviewed yet do not declare an open-page key for now.
+All these keys can be reassigned in Settings → Hotkeys.
+
+Single letters do not fire in input fields. An open-page key leaves fleet mode: the host
+closes it on any route change.
 
 ## User reassignment
 
@@ -184,3 +223,16 @@ provides the hint to the user.
 - Always set `titleKey`: without it Settings shows only the `id`.
 - A handler should be fast and idempotent; start long operations and return a
   Promise without blocking the thread.
+
+## Keys inside a window: not a manifest hotkey
+
+Keys that only make sense **while your own modal window is open** (the camera viewer:
+`↑`/`↓` switch cameras, `Esc` closes) do not need a manifest entry. Listen to `keydown`
+on `window` only while the window is open (`<svelte:window onkeydown>` guarded by an
+`open` flag, as `shared/image-viewer-dialog` does) and:
+
+- ignore events with modifiers, `defaultPrevented` and `isComposing`, so host keys such
+  as `Ctrl+↑/↓` are not affected;
+- call `preventDefault()` for the keys you handle (otherwise arrows scroll the page);
+- these keys do not appear in Settings → Hotkeys and cannot be reassigned — use a
+  manifest hotkey for anything that should be.

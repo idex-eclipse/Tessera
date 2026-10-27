@@ -212,7 +212,10 @@ api.moonraker().onNotify('notify_gcode_response', (params) => {
 api.moonraker().onNotify('notify_filelist_changed', () => reload());
 ```
 
-`params` are passed "as is" (usually an array). Frequently used events:
+`params` are passed "as is" (usually an array). Many notifications wrap their payload in a
+single-element array: `notify_webcams_changed` delivers `[{ webcams: [...] }]`, not the list
+itself. Unwrap `params[0]` and tolerate an unexpected shape (re-request the data instead of
+treating it as "empty"). Frequently used events:
 
 | Event | When |
 |---|---|
