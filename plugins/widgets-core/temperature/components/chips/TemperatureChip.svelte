@@ -1,6 +1,7 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useTemperatureData } from '../../use-temperature.svelte';
+  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
   import TempKindIcon from '../TempKindIcon.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
@@ -46,11 +47,25 @@
     if (editMode || !sensor || !controlled || missing) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 180, alignRight: rect.left + 220 > window.innerWidth };
+      // поповер выравнивается по начальному краю чипа (в RTL — по правому)
+      placement = {
+        above: rect.top > 180,
+        alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()),
+      };
     }
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape') closePopover();
+  }
+
+  $effect(() => {
+    if (!popoverOpen) return;
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   async function handleSetTarget(e: Event): Promise<void> {
     e.preventDefault();
@@ -137,6 +152,7 @@
     min-width: 96px;
     max-width: 220px;
     padding: 3px 8px 4px 10px;
+    padding-inline: 10px 8px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--bg-surface);
@@ -149,7 +165,7 @@
 
   .stripe {
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: 0;
     bottom: 0;
     width: 3px;
@@ -180,7 +196,8 @@
   }
 
   .target {
-    margin-left: auto;
+    margin-inline-start: auto;
+    direction: ltr;
     flex-shrink: 0;
     font-family: ui-monospace, monospace;
     font-size: var(--font-size-md);
@@ -201,7 +218,8 @@
   }
 
   .value {
-    margin-left: auto;
+    margin-inline-start: auto;
+    direction: ltr;
     font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--text-primary);
@@ -213,7 +231,7 @@
     font-size: var(--font-size-lg);
     font-weight: 500;
     color: var(--text-muted);
-    margin-left: 2px;
+    margin-inline-start: 2px;
   }
 
   .value.muted {
@@ -260,8 +278,8 @@
 
   .chip-popover {
     position: absolute; 
-    bottom: calc(100% + 6px); 
-    left: 0; z-index: 1001;
+    bottom: calc(100% + 6px);
+    inset-inline-start: 0; z-index: 1001;
     background: var(--bg-surface); 
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md); 
@@ -272,7 +290,7 @@
 
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
 
-  .chip-popover.align-right { left: auto; right: 0; }
+  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .chip-popover label {
     display: flex;
@@ -314,7 +332,7 @@
     color: var(--accent-text); 
   }
   
-  .pop-hint { color: var(--text-muted); font-size: 11px; margin-left: 4px; }
+  .pop-hint { color: var(--text-muted); font-size: 11px; margin-inline-start: 4px; }
 
   .kind {
     display: flex;

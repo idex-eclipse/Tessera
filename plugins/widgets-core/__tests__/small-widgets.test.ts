@@ -36,6 +36,17 @@ describe('popover alignment', () => {
   });
 });
 
+describe('locales of widgets-core', () => {
+  it('en and ru define exactly the same keys, with the same {placeholders}', () => {
+    const e = flat(en);
+    const r = flat(ru);
+    expect(Object.keys(r).sort()).toEqual(Object.keys(e).sort());
+
+    const ph = (v: unknown) => (typeof v === 'string' ? (v.match(/\{\w+\}/g) ?? []).sort() : []);
+    for (const k of Object.keys(e)) expect(ph(r[k]), k).toEqual(ph(e[k]));
+  });
+});
+
 describe('locales of the small widgets', () => {
   // остальные виджеты (macros / temperature / tools) проверяются при их ревью
   const OWN = /^widgets.(filament|limits|outputs|jobQueue)./;

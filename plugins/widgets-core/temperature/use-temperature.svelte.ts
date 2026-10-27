@@ -9,6 +9,14 @@ import {
   sensorSortKey,
   type SensorKind,
 } from './data';
+import {
+  HOLD_MAX_MINUTES,
+  HOLD_OFF,
+  holdRemainingMs,
+  sameHold,
+  stepHold,
+  type HoldState,
+} from './hold-timer';
 import { SeriesBuffer } from '../../shared/uplot-core/series-buffer';
 import {
   createCoreKeeper,
@@ -26,6 +34,8 @@ export interface TempColumns {
   rate: boolean;
   current: boolean;
   target: boolean;
+  /** таймер «время включения»: пока колонка скрыта, таймер не работает */
+  hold: boolean;
 }
 
 const DEFAULT_COLUMNS: TempColumns = {
@@ -33,7 +43,11 @@ const DEFAULT_COLUMNS: TempColumns = {
   rate: true,
   current: true,
   target: true,
+  hold: false,
 };
+
+const COLUMNS_KEY = 'temperature.columns';
+const HOLD_MINUTES_KEY = 'temperature.holdMinutes';
 
 let columns = $state<TempColumns>({ ...DEFAULT_COLUMNS });
 
@@ -41,14 +55,14 @@ export function useTemperaturePrefs(api: PluginApi) {
   function load(): void {
     columns = {
       ...DEFAULT_COLUMNS,
-      ...(api.settings.get<Partial<TempColumns>>('temperature.columns') ?? {}),
+      ...(api.settings.get<Partial<TempColumns>>(COLUMNS_KEY) ?? {}),
     };
   }
 
   load();
 
   const off = api.settings.onChange((k, v) => {
-    if (k === 'temperature.columns' && v && typeof v === 'object') {
+    if (k === COLUMNS_KEY && v && typeof v === 'object') {
       columns = { ...DEFAULT_COLUMNS, ...(v as Partial<TempColumns>) };
     }
   });
@@ -60,7 +74,7 @@ export function useTemperaturePrefs(api: PluginApi) {
 
   function setColumn(key: keyof TempColumns, value: boolean): void {
     columns = { ...columns, [key]: value };
-    api.settings.set('temperature.columns', columns);
+    api.settings.set(COLUMNS_KEY, columns);
   }
 
   return {
@@ -153,6 +167,31 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
 
   const buffers = new Map<string, SensorBuffers>();
 
+  // ---- таймер «время включения» (работает в браузере) ----
+  const settingsApi = api.settingsFor(printerId);
+  let holdMinutes = $state<Record<string, number>>(readHoldMinutes());
+  let holdColumnOn = $state(readHoldColumn());
+  let holds = $state<Record<string, HoldState>>({});
+  let holdNow = $state(Date.now());
+  let printing = false;
+  let holdInterval: ReturnType<typeof setInterval> | null = null;
+
+  function readHoldMinutes(): Record<string, number> {
+    const raw = settingsApi.get<Record<string, unknown>>(HOLD_MINUTES_KEY);
+    const out: Record<string, number> = {};
+    if (raw && typeof raw === 'object') {
+      for (const [k, v] of Object.entries(raw)) {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[k] = Math.min(v, HOLD_MAX_MINUTES);
+      }
+    }
+    return out;
+  }
+
+  function readHoldColumn(): boolean {
+    const cols = settingsApi.get<Partial<TempColumns>>(COLUMNS_KEY);
+    return cols?.hold ?? DEFAULT_COLUMNS.hold;
+  }
+
   let generation = 0;
   let unsubStatus: (() => void) | null = null;
   const unsubs: Array<() => void> = [];
@@ -177,6 +216,11 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
       unsubStatus = null;
     }
 
+    if (holdInterval) {
+      clearInterval(holdInterval);
+      holdInterval = null;
+    }
+
     for (const u of unsubs.splice(0)) u();
     // buffers не чистим: ядро умирает полностью только при prune/evict,
     // а на klippy-событии делаем reseed, который сам сбросит буферы.
@@ -184,6 +228,16 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
 
   async function init(): Promise<void> {
     const gen = ++generation;
+
+    // настройки читаются раньше handle: таймер не должен зависеть от соединения
+    unsubs.push(
+      settingsApi.onChange((k, v) => {
+        if (k === HOLD_MINUTES_KEY) holdMinutes = readHoldMinutes();
+        else if (k === COLUMNS_KEY) holdColumnOn = readHoldColumn();
+        evalHolds();
+      }),
+    );
+    holdInterval = setInterval(onHoldTick, 1000);
 
     const h = safeHandle();
     if (!h) return;
@@ -194,6 +248,8 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
       h.onConnectionStatusChange((s) => {
         connected = s === 'open';
         if (s === 'open' && gen === generation) {
+          // история из кэша за время обрыва устарела: иначе график получит провал
+          invalidatePrinterCaches(printerId);
           void refresh(gen);
         }
       }),
@@ -297,7 +353,8 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
 
       const temps: number[] = entry?.temperatures ?? [];
       const targets: number[] = entry?.targets ?? [];
-      const powers: number[] = entry?.powers ?? [];
+      // у вентиляторов Moonraker отдаёт скорость в `speeds`, а не `powers`
+      const powers: number[] = entry?.powers ?? entry?.speeds ?? [];
       const startTime: number = entry?.start_time ?? 0;
 
       let buf = buffers.get(name);
@@ -333,7 +390,7 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
         target: kind !== 'sensor' ? lastOf(targets) : null,
         power: kind !== 'sensor' ? lastOf(powers) : null,
         rate: buf.temp.rate(),
-        speed: null,
+        speed: kind === 'fan' ? lastOf(powers) : null,
         minTemp: prev?.minTemp ?? null,
         maxTemp: prev?.maxTemp ?? null,
         chartVisible: prev?.chartVisible ?? true,
@@ -349,6 +406,7 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
 
     sensors = next;
     tick++;
+    evalHolds();
   }
 
   // ------------------------------------------------------------------
@@ -415,11 +473,13 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
     for (const s of sensors) {
       objects[s.name] =
         s.kind === 'sensor' ? ['temperature']
-        : s.kind === 'fan' ? ['temperature', 'target', 'power', 'speed']
+        : s.kind === 'fan' ? ['temperature', 'target', 'speed']
         : ['temperature', 'target', 'power'];
     }
 
     if (Object.keys(objects).length === 0) return;
+
+    objects.print_stats = ['state']; // таймер нагревателя не работает во время печати
 
     unsubStatus = h.subscribe(
       objects,
@@ -441,8 +501,14 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
       if (typeof d.temperature === 'number') s.temperature = d.temperature;
       if (typeof d.target === 'number' && s.kind !== 'sensor') s.target = d.target;
       if (typeof d.power === 'number' && s.kind !== 'sensor') s.power = d.power;
-      if (typeof d.speed === 'number' && s.kind === 'fan') s.speed = d.speed;
+      if (typeof d.speed === 'number' && s.kind === 'fan') {
+        s.speed = d.speed;
+        s.power = d.speed; // таблица и график читают мощность вентилятора из power
+      }
     }
+
+    const ps = delta.print_stats?.state;
+    if (typeof ps === 'string') printing = ps === 'printing' || ps === 'paused';
 
     // push tick
     let pushed = false;
@@ -465,6 +531,7 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
     }
 
     if (pushed) tick++;
+    evalHolds();
   }
 
   // ------------------------------------------------------------------
@@ -499,6 +566,90 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
   }
 
   // ------------------------------------------------------------------
+  // Hold timer: «включить нагреватель на N минут после достижения цели».
+  // Отсчёт идёт в браузере; при потере связи нагреватель остаётся включённым,
+  // страховка — idle_timeout Klipper. Во время печати не взводится и сбрасывается.
+  // ------------------------------------------------------------------
+
+  const RETRY_FIRE_MS = 5000;
+
+  function effectiveMinutes(name: string): number {
+    return holdColumnOn ? (holdMinutes[name] ?? 0) : 0;
+  }
+
+  function evalHolds(): void {
+    const now = Date.now();
+    const next: Record<string, HoldState> = {};
+    let changed = false;
+
+    for (const s of sensors) {
+      if (s.kind !== 'heater') continue;
+
+      const prev = holds[s.name] ?? HOLD_OFF;
+      const minutes = effectiveMinutes(s.name);
+      const res = stepHold(prev, {
+        target: s.target,
+        temperature: s.temperature,
+        minutes,
+        blocked: printing,
+        now,
+      });
+
+      let state = res.state;
+      // нет связи — выключить не получится: ждём в holding, сработает после реконнекта
+      if (res.fire && !connected) state = prev;
+      else if (res.fire) void fireHold(s.name, minutes);
+
+      if (state.phase !== 'off') next[s.name] = state;
+      if (!sameHold(state, prev)) changed = true;
+    }
+
+    if (Object.keys(holds).length !== Object.keys(next).length) changed = true;
+    if (changed) holds = next;
+    if (Object.values(next).some((h) => h.phase === 'holding')) holdNow = now;
+  }
+
+  async function fireHold(name: string, minutes: number): Promise<void> {
+    const h = safeHandle();
+    const gcode = buildTargetGcode(name, 'heater', 0);
+    try {
+      if (!h || !gcode) throw new Error('no handle');
+      await h.request('printer.gcode.script', { script: gcode });
+    } catch (e) {
+      console.error('[temperature] hold off failed, retry:', name, e);
+      // вернуть в holding так, чтобы повтор случился через RETRY_FIRE_MS
+      const cur = holds[name];
+      if (cur && cur.phase === 'done') {
+        holds = {
+          ...holds,
+          [name]: { ...cur, phase: 'holding', startedAt: Date.now() - minutes * 60_000 + RETRY_FIRE_MS },
+        };
+      }
+    }
+  }
+
+  function onHoldTick(): void {
+    evalHolds();
+  }
+
+  function setHoldMinutes(name: string, minutes: number): void {
+    if (!Number.isFinite(minutes) || minutes < 0) return;
+    const m = Math.min(minutes, HOLD_MAX_MINUTES);
+    const next = { ...holdMinutes };
+    if (m > 0) next[name] = m;
+    else delete next[name];
+    holdMinutes = next;
+    settingsApi.set(HOLD_MINUTES_KEY, next);
+    evalHolds();
+  }
+
+  /** Состояние таймера строки: фаза и остаток (с) для UI */
+  function holdStatus(name: string): { phase: HoldState['phase']; remainingMs: number | null } {
+    const st = holds[name] ?? HOLD_OFF;
+    return { phase: st.phase, remainingMs: holdRemainingMs(st, effectiveMinutes(name), holdNow) };
+  }
+
+  // ------------------------------------------------------------------
   // Boot
   // ------------------------------------------------------------------
 
@@ -522,6 +673,11 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
       return tick;
     },
     buffers,
+    get holdMinutes() {
+      return holdMinutes;
+    },
+    holdStatus,
+    setHoldMinutes,
     toggleChart,
     togglePower,
     setTarget,
