@@ -3,6 +3,7 @@
 
   import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import TargetInput from '../TargetInput.svelte';
+  import HoldInput from '../HoldInput.svelte';
   import TempKindIcon from '../TempKindIcon.svelte';
   import { useTemperatureData, useTemperaturePrefs } from '../../use-temperature.svelte';
   import TemperatureChart from '../TemperatureChart.svelte';
@@ -24,7 +25,7 @@
 
   function fmtPower(p: number | null): string {
     if (p == null) return '';
-    if (p <= 0) return 'off';
+    if (p <= 0) return i18n.t('widgets.temperature.off');
     return `${Math.round(p * 100)}%`;
   }
 
@@ -48,6 +49,7 @@
         {#if prefs.columns.rate}<col class="w-rate" />{/if}
         {#if prefs.columns.current}<col class="w-current" />{/if}
         {#if prefs.columns.target}<col class="w-target" />{/if}
+        {#if prefs.columns.hold}<col class="w-hold" />{/if}
       </colgroup>
 
       <thead>
@@ -57,6 +59,7 @@
           {#if prefs.columns.rate}<th class="col-rate">{i18n.t('widgets.temperature.rate')}</th>{/if}
           {#if prefs.columns.current}<th class="col-current">{i18n.t('widgets.temperature.current')}</th>{/if}
           {#if prefs.columns.target}<th class="col-target">{i18n.t('widgets.temperature.target')}</th>{/if}
+          {#if prefs.columns.hold}<th class="col-hold" title={i18n.t('widgets.temperature.holdHint')}>{i18n.t('widgets.temperature.heaterTime')}</th>{/if}
         </tr>
       </thead>
 
@@ -106,6 +109,20 @@
                 {/if}
               </td>
             {/if}
+
+            {#if prefs.columns.hold}
+              <td class="col-hold">
+                {#if s.kind === 'heater'}
+                  {@const st = temp.holdStatus(s.name)}
+                  <HoldInput
+                    value={temp.holdMinutes[s.name] ?? 0}
+                    phase={st.phase}
+                    remainingMs={st.remainingMs}
+                    onCommit={(m) => temp.setHoldMinutes(s.name, m)}
+                  />
+                {/if}
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
@@ -147,6 +164,7 @@
   .w-rate { width: 120px; }
   .w-current { width: 120px; }
   .w-target { width: 120px; }
+  .w-hold { width: 130px; }
 
   .temp-table th {
     text-align: center;
@@ -173,15 +191,24 @@
 
   .temp-table th:first-child,
   .temp-table td:first-child {
-    text-align: left;
+    text-align: start;
   }
 
   .col-power,
   .col-rate,
   .col-current,
-  .col-target {
+  .col-target,
+  .col-hold {
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* числа с «°C», «+», «%» не должны переставляться знаками в RTL */
+  td.col-power,
+  td.col-rate,
+  td.col-current {
+    direction: ltr;
+    unicode-bidi: isolate;
   }
 
   td.col-current {

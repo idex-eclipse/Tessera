@@ -93,6 +93,7 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
     flex-shrink: 0;
+    direction: ltr;
   }
 
   .ft-target {
@@ -101,6 +102,7 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
     flex-shrink: 0;
+    direction: ltr;
   }
 
   .ft-klippy {
