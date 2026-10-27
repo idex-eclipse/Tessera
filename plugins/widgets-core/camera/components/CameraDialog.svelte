@@ -43,7 +43,13 @@
     if (!draft.name.trim()) return;
     onSave({ ...draft, name: draft.name.trim() }, dialogState?.mode === 'add');
   }
+
+  function onKey(e: KeyboardEvent): void {
+    if (dialogState && e.key === 'Escape' && !e.defaultPrevented) onClose();
+  }
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 {#if dialogState}
   <div class="dlg-backdrop" onclick={onClose} role="presentation"></div>
@@ -51,7 +57,7 @@
   <div class="dlg">
     <div class="dlg-head">
       <span>{dialogState.mode === 'add' ? i18n.t('widgets.camera.add') : i18n.t('widgets.camera.edit')}</span>
-      <button class="dlg-x" onclick={onClose}>×</button>
+      <button class="dlg-x" aria-label={i18n.t('widgets.camera.close')} onclick={onClose}>×</button>
     </div>
 
     <div class="dlg-body">
@@ -227,7 +233,7 @@
 
   .btn.primary {
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
   }
 
   .btn.primary:disabled {

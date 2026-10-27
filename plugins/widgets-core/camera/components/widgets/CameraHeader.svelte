@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../shared/icons/Icon.svelte';
+  import { isRtl } from '../../../../shared/popover-align';
 
   import { useCameras } from '../../use-cameras.svelte.ts';
 
@@ -12,12 +11,15 @@
 
   let menuOpen = $state(false);
   let btnEl = $state<HTMLButtonElement | null>(null);
-  let pos = $state({ top: 0, right: 0 });
+  let pos = $state<{ top: number; left?: number; right?: number }>({ top: 0, right: 0 });
 
   function toggleMenu(): void {
     if (!menuOpen && btnEl) {
       const r = btnEl.getBoundingClientRect();
-      pos = { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) };
+      // меню выравнивается по краю кнопки со стороны конца (в RTL — по левому)
+      pos = isRtl()
+        ? { top: r.bottom + 4, left: Math.max(8, r.left) }
+        : { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) };
     }
     menuOpen = !menuOpen;
   }
@@ -34,18 +36,6 @@
 </script>
 
 <div class="hdr">
-  {#if store.enabled.length > 1}
-    <select
-      class="cam-select"
-      value={store.active?.name ?? ''}
-      onchange={(e) => store.setActive(e.currentTarget.value)}
-    >
-      {#each store.enabled as c (c.name)}
-        <option value={c.name}>{c.name}</option>
-      {/each}
-    </select>
-  {/if}
-
   <button
     class="hdr-btn"
     class:active={menuOpen}
@@ -59,7 +49,12 @@
 
 {#if menuOpen}
   <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>
-  <div class="menu" style:top="{pos.top}px" style:right="{pos.right}px">
+  <div
+    class="menu"
+    style:top="{pos.top}px"
+    style:left={pos.left !== undefined ? `${pos.left}px` : undefined}
+    style:right={pos.right !== undefined ? `${pos.right}px` : undefined}
+  >
     <button class="menu-item" onclick={() => { store.openAdd(); menuOpen = false; }}>
       {i18n.t('widgets.camera.add')}
     </button>
@@ -81,16 +76,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-  }
-
-  .cam-select {
-    max-width: 160px;
-    padding: 2px var(--space-xs);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
   }
 
   .hdr-btn {
