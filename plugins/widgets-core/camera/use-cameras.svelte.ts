@@ -9,6 +9,7 @@ import {
   createCoreKeeper,
   createDelegateStore,
 } from '../../shared/core-keeper/core-keeper';
+import { cycleIndex, extractWebcams } from './camera-utils';
 
 export interface WebcamItem {
   name: string;
@@ -86,9 +87,12 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     }
   }
 
-  function applyList(raw: any): void {
-    const arr = Array.isArray(raw) ? raw : (raw?.webcams ?? []);
+  // false — форма ответа не распознана, список не тронут
+  function applyList(raw: unknown): boolean {
+    const arr = extractWebcams(raw);
+    if (!arr) return false;
     cameras = arr.filter((c: any) => c && c.name).map(normalize);
+    return true;
   }
 
   async function loadList(gen: number): Promise<void> {
@@ -109,6 +113,14 @@ function createCamerasCore(api: PluginApi, printerId: string) {
   function setActive(name: string): void {
     activeName = name;
     settingsApi.set('camera.active', name);
+  }
+
+  // Листание по кругу среди включённых камер
+  function step(delta: number): void {
+    if (enabled.length < 2) return;
+    const cur = enabled.findIndex((c) => c.name === active?.name);
+    const next = enabled[cycleIndex(cur < 0 ? 0 : cur, delta, enabled.length)];
+    if (next) setActive(next.name);
   }
 
   // CRUD — используется только legacy-UI (CameraPage). Fleet-панели не
@@ -137,9 +149,15 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     };
     if (!isNew && item.uid) params.uid = item.uid;
 
-    await h
+    // при ошибке диалог остаётся открытым — введённые данные не теряем
+    const ok = await h
       .request('server.webcams.post_item', params)
-      .catch((e) => console.error('[camera] save failed:', e));
+      .then(() => true)
+      .catch((e) => {
+        console.error('[camera] save failed:', e);
+        return false;
+      });
+    if (!ok) return;
     dialog = null;
     await loadList(generation);
   }
@@ -151,9 +169,14 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     } catch {
       return;
     }
-    await h
+    const ok = await h
       .request('server.webcams.delete_item', item.uid ? { uid: item.uid } : { name: item.name })
-      .catch((e) => console.error('[camera] delete failed:', e));
+      .then(() => true)
+      .catch((e) => {
+        console.error('[camera] delete failed:', e);
+        return false;
+      });
+    if (!ok) return;
     toDelete = null;
     await loadList(generation);
   }
@@ -190,7 +213,9 @@ function createCamerasCore(api: PluginApi, printerId: string) {
       if (gen === generation) void loadList(gen);
     }));
     unsubs.push(h.onNotify('notify_webcams_changed', (p: any) => {
-      if (gen === generation) applyList(p);
+      if (gen !== generation) return;
+      // params приходят массивом-обёрткой [{ webcams }]; не поняли форму — перечитываем
+      if (!applyList(p)) void loadList(gen);
     }));
 
     await loadList(gen);
@@ -209,6 +234,7 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     get dialog() { return dialog; },
     get toDelete() { return toDelete; },
     setActive,
+    step,
     saveCamera,
     deleteCamera,
     openAdd,
