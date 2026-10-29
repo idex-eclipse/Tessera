@@ -5,7 +5,7 @@
 
   import { isRtl } from '../../../../shared/popover-align';
 
-  import { useTemperaturePrefs, type TempColumns } from '../../use-temperature.svelte';
+  import { useTemperaturePrefs, type TempColumns, type TempViewMode } from '../../use-temperature.svelte';
 
   const api = useWidget();
   const i18n = useI18n();
@@ -22,6 +22,12 @@
     { key: 'current', label: 'widgets.temperature.current' },
     { key: 'target', label: 'widgets.temperature.target' },
     { key: 'hold', label: 'widgets.temperature.heaterTime' },
+  ];
+
+  const VIEWS: Array<{ key: TempViewMode; label: string }> = [
+    { key: 'auto', label: 'widgets.temperature.viewAuto' },
+    { key: 'table', label: 'widgets.temperature.viewTable' },
+    { key: 'cards', label: 'widgets.temperature.viewCards' },
   ];
 
   /**
@@ -98,6 +104,9 @@
     <h4>{i18n.t('widgets.temperature.help.TargetTitle')}</h4>
     <p>{i18n.t('widgets.temperature.help.TargetText')}</p>
 
+    <h4>{i18n.t('widgets.temperature.help.ViewTitle')}</h4>
+    <p>{i18n.t('widgets.temperature.help.ViewText')}</p>
+
     <h4>{i18n.t('widgets.temperature.help.ColumnsTitle')}</h4>
     <p>{i18n.t('widgets.temperature.help.ColumnsText')}</p>
 
@@ -116,6 +125,22 @@
     style:left="{pos.left}px"
     role="menu"
   >
+    <div class="menu-title">{i18n.t('widgets.temperature.view')}</div>
+
+    {#each VIEWS as v (v.key)}
+      <button
+        class="menu-item"
+        class:checked={prefs.viewMode === v.key}
+        role="menuitemradio"
+        aria-checked={prefs.viewMode === v.key}
+        onclick={() => prefs.setViewMode(v.key)}
+      >
+        <span class="check">{prefs.viewMode === v.key ? '●' : ''}</span>
+        {i18n.t(v.label)}
+      </button>
+    {/each}
+
+    <div class="menu-sep"></div>
     <div class="menu-title">{i18n.t('widgets.temperature.columns')}</div>
 
     {#each COLUMNS as col (col.key)}
@@ -176,6 +201,7 @@
     z-index: 461;
     min-width: 210px;
     max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
     overflow-y: auto;
     padding: var(--space-xs);
     background: var(--bg-surface);
@@ -193,6 +219,12 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-muted);
+  }
+
+  .menu-sep {
+    height: 1px;
+    margin: var(--space-xs) 0;
+    background: var(--border-color);
   }
 
   .menu-item {
@@ -218,5 +250,11 @@
     flex-shrink: 0;
     color: var(--accent);
     font-size: 12px;
+  }
+
+  /* сенсорный указатель: зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .hdr-btn { width: 36px; height: 36px; }
+    .menu-item { min-height: 40px; }
   }
 </style>

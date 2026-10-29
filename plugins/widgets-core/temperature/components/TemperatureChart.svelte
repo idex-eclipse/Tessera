@@ -38,7 +38,7 @@
   .temp-chart-wrap {
     direction: ltr; /* время идёт слева направо независимо от языка интерфейса */
     width: 100%;
-    min-height: 400px;
+    min-height: clamp(220px, 45dvh, 400px);
     height: 100%;
   }
 </style>

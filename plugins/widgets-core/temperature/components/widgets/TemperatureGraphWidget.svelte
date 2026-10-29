@@ -7,6 +7,9 @@
   import TempKindIcon from '../TempKindIcon.svelte';
   import { useTemperatureData, useTemperaturePrefs } from '../../use-temperature.svelte';
   import TemperatureChart from '../TemperatureChart.svelte';
+  import SensorPopover from '../SensorPopover.svelte';
+  import { observeWidth } from '../../../../shared/responsive/observe-width';
+  import { fmtPower, fmtRate, fmtTemp } from '../../format';
 
   const api = useWidget();
   const i18n = useI18n();
@@ -19,30 +22,112 @@
   let hasPrinter = $derived(api.printer.url !== '');
   let ready = $derived(temp.klippyState === 'ready');
 
-  function fmtTemp(t: number | null): string {
-    return t == null ? '—' : `${t.toFixed(1)}°C`;
+  const offLabel = $derived(i18n.t('widgets.temperature.off'));
+
+  // ------------------------------------------------------------------
+  // Режим отображения: таблица или карточки
+  //
+  // «auto»: таблица, пока помещается (ей нужна ширина: имя + включённые столбцы по 120–130px),
+  // иначе карточки. Порог считаем по реально включённым столбцам, а не по константе: виджет
+  // бывает узким и на широком экране. «table» / «cards» — принудительно (в настройках виджета).
+  // ------------------------------------------------------------------
+
+  const NAME_MIN = 150;
+  const COL_WIDTH = { power: 120, rate: 120, current: 120, target: 120, hold: 130 } as const;
+
+  let width = $state(0);
+  let needed = $derived(
+    NAME_MIN +
+      (Object.keys(COL_WIDTH) as Array<keyof typeof COL_WIDTH>).reduce(
+        (sum, k) => sum + (prefs.columns[k] ? COL_WIDTH[k] : 0),
+        0,
+      ),
+  );
+  // width === 0 — ещё не измерено: рисуем таблицу, чтобы не мигать карточками
+  let cards = $derived(
+    prefs.viewMode === 'cards' || (prefs.viewMode === 'auto' && width > 0 && width < needed),
+  );
+
+  let openSensor = $state<string | null>(null);
+  let openAnchor = $state<HTMLElement | null>(null);
+
+  function openPopover(name: string, e: MouseEvent): void {
+    if (openSensor === name) {
+      openSensor = null;
+      return;
+    }
+    openAnchor = e.currentTarget as HTMLElement;
+    openSensor = name;
   }
 
-  function fmtPower(p: number | null): string {
-    if (p == null) return '';
-    if (p <= 0) return i18n.t('widgets.temperature.off');
-    return `${Math.round(p * 100)}%`;
+  function closePopover(): void {
+    openSensor = null;
   }
 
-  function fmtRate(r: number | null): string {
-    if (r == null || !Number.isFinite(r)) return '+0.0°C/s';
-    const sign = r >= 0 ? '+' : '';
-    return `${sign}${r.toFixed(1)}°C/s`;
+  // закрываем popover, когда виджет вернулся к таблице
+  $effect(() => {
+    if (!cards) openSensor = null;
+  });
+
+  /** Вторая строка карточки: текущая / заданная (нагреватели), скорость (вентиляторы), текущая. */
+  function cardValue(s: {
+    kind: string;
+    temperature: number | null;
+    target: number | null;
+    power: number | null;
+  }): { main: string; sub: string } {
+    if (s.kind === 'fan') return { main: fmtPower(s.power, offLabel), sub: '' };
+    const sub = s.kind !== 'sensor' && s.target != null && s.target > 0 ? `/ ${Math.round(s.target)}°C` : '';
+    return { main: fmtTemp(s.temperature), sub };
   }
 </script>
 
-<div class="temp-widget">
+<div class="temp-widget" use:observeWidth={(w) => (width = w)}>
   {#if !hasPrinter}
     <p class="notice">{i18n.t('widgets.temperature.noPrinter')}</p>
   {:else if !ready}
     <KlipperNotReady />
+  {:else if cards}
+    <ul class="sensor-cards">
+      {#each temp.sensors as s (s.name)}
+        {@const v = cardValue(s)}
+        <li>
+          <button
+            class="sensor-card"
+            class:dim={!s.chartVisible}
+            class:open={openSensor === s.name}
+            style="--sensor-color: {s.color}"
+            aria-haspopup="dialog"
+            aria-expanded={openSensor === s.name}
+            onclick={(e) => openPopover(s.name, e)}
+          >
+            <span class="card-name">
+              <span class="icon-wrap" style="color: {s.color}">
+                <TempKindIcon kind={s.kind} speed={s.kind === 'fan' ? s.power : null} size={18} />
+              </span>
+              <span class="label">{s.displayName}</span>
+            </span>
+            <span class="card-value">
+              <span class="card-main">{v.main}</span>
+              {#if v.sub}<span class="card-sub">{v.sub}</span>{/if}
+            </span>
+          </button>
+        </li>
+      {/each}
+    </ul>
+
+    {#if openSensor && openAnchor}
+      <SensorPopover
+        anchor={openAnchor}
+        name={openSensor}
+        {temp}
+        columns={prefs.columns}
+        onClose={closePopover}
+      />
+    {/if}
   {:else}
-    <table class="temp-table">
+    <div class="table-wrap">
+    <table class="temp-table" style:min-width="{needed}px">
       <colgroup>
         <col />
         {#if prefs.columns.power}<col class="w-power" />{/if}
@@ -93,7 +178,7 @@
                     onclick={() => togglePower(s.name)}
                     title={i18n.t('widgets.temperature.togglePower')}
                   >
-                    {fmtPower(s.power)}
+                    {fmtPower(s.power, offLabel)}
                   </button>
                 {/if}
               </td>
@@ -127,6 +212,7 @@
         {/each}
       </tbody>
     </table>
+    </div>
   {/if}
 
   <div class="chart-slot">
@@ -144,6 +230,10 @@
     flex-direction: column;
     gap: var(--space-md);
     height: 100%;
+    min-height: 0;
+    /* много датчиков + график выше виджета: прокручиваем, а не режем график */
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .notice {
@@ -265,8 +355,96 @@
     background: var(--bg-surface-active);
   }
 
+  /* Высота графика берётся от слота, а не слот от графика: uPlot держит размер в пикселях, и при
+     базе `auto` слот «запоминал» высоту, полученную в другом режиме (карточки → таблица), и
+     выдавливал таблицу. Минимум равен минимуму самого графика; при нехватке места виджет
+     прокручивается. */
   .chart-slot {
-    flex: 1;
-    min-height: 120px;
+    flex: 1 1 0;
+    min-height: clamp(220px, 45dvh, 400px);
   }
+
+  /* принудительная «Таблица» в узком виджете: таблица держит нужную ширину, виджет скроллится вбок */
+  .table-wrap {
+    overflow-x: auto;
+    /* overflow ≠ visible делает flex-элемент сжимаемым до 0 — таблица не должна уступать графику */
+    flex-shrink: 0;
+  }
+
+  /* ---------- карточки датчиков (как чипы быстрого доступа) ---------- */
+
+  .sensor-cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--space-xs);
+  }
+
+  .sensor-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 2px;
+    width: 100%;
+    min-height: 56px;
+    padding-block: 4px 6px;
+    padding-inline: 12px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    text-align: start;
+    cursor: pointer;
+    overflow: hidden;
+    transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .sensor-card::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 3px;
+    background: var(--sensor-color, var(--accent));
+  }
+
+  .sensor-card:hover {
+    box-shadow: var(--shadow-sm);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  }
+
+  .sensor-card.open { background: var(--bg-surface-active); border-color: var(--accent); }
+  .sensor-card.dim { opacity: 0.55; }
+
+  .card-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-width: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .card-name .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .card-value {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    /* числа с «°C», «%» не переставляются знаками в RTL */
+    direction: ltr;
+    unicode-bidi: isolate;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card-main { font-size: var(--font-size-lg); font-weight: 700; }
+  .card-sub { font-size: var(--font-size-sm); color: var(--text-muted); }
 </style>

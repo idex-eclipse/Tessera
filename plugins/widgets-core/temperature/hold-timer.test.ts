@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   formatCountdown,
   HOLD_OFF,
+  HOLD_MAX_MINUTES,
   holdRemainingMs,
+  parseHoldMinutes,
   stepHold,
   type HoldInput,
   type HoldState,
@@ -82,5 +84,30 @@ describe('holdRemainingMs / formatCountdown', () => {
     expect(formatCountdown(125_000)).toBe('2:05');
     expect(formatCountdown(500)).toBe('0:01');
     expect(formatCountdown(0)).toBe('0:00');
+  });
+});
+
+describe('parseHoldMinutes', () => {
+  it('treats empty input as "timer off"', () => {
+    expect(parseHoldMinutes('')).toBe(0);
+    expect(parseHoldMinutes('   ')).toBe(0);
+    expect(parseHoldMinutes(null)).toBe(0);
+    expect(parseHoldMinutes(undefined)).toBe(0);
+  });
+
+  it('parses numbers and strings, fractions allowed', () => {
+    expect(parseHoldMinutes('15')).toBe(15);
+    expect(parseHoldMinutes(2.5)).toBe(2.5);
+    expect(parseHoldMinutes(0)).toBe(0);
+  });
+
+  it('caps at HOLD_MAX_MINUTES', () => {
+    expect(parseHoldMinutes('99999')).toBe(HOLD_MAX_MINUTES);
+  });
+
+  it('rejects negative and non-numeric input', () => {
+    expect(parseHoldMinutes('-1')).toBeNull();
+    expect(parseHoldMinutes('abc')).toBeNull();
+    expect(parseHoldMinutes(NaN)).toBeNull();
   });
 });

@@ -29,6 +29,18 @@ export interface HoldInput {
 
 export const HOLD_MAX_MINUTES = 1440;
 
+/**
+ * Разбор поля «минуты»: пусто → 0 (таймер выключен), число → ограничено HOLD_MAX_MINUTES,
+ * не число / отрицательное → null (ввод невалиден).
+ */
+export function parseHoldMinutes(raw: string | number | null | undefined): number | null {
+  const text = String(raw ?? '').trim();
+  if (text === '') return 0;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(n, HOLD_MAX_MINUTES);
+}
+
 /** Допуск «цель достигнута», °C: ПИД колеблется возле цели */
 export const REACHED_TOLERANCE = 2;
 
