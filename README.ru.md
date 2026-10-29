@@ -20,7 +20,7 @@
   <img alt="Vite" src="https://img.shields.io/badge/vite-5-646cff.svg" />
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6.svg" />
   <img alt="Бэкенд отсутствует" src="https://img.shields.io/badge/backend-none-informational.svg" />
-  <img alt="Версия" src="https://img.shields.io/badge/version-0.3.0-green.svg" />
+  <img alt="Версия" src="https://img.shields.io/badge/version-0.5.0-green.svg" />
 </p>
 
 ---
