@@ -294,4 +294,34 @@ describe('locales', () => {
       expect(keys[k], k).toBeTypeOf('string');
     }
   });
+
+  it('define every key the monitoring UI and alerts look up dynamically', () => {
+    const keys = flat(en);
+    const dynamic = [
+      ...['overview', 'monitoring', 'maintenance'].map((t) => `system.tabs.${t}`),
+      ...['ok', 'warn', 'crit', 'unknown'].map((s) => `system.health.state.${s}`),
+      ...['undervoltage', 'freqCapped', 'throttled', 'tempLimit'].map((f) => `system.throttle.${f}`),
+      ...['retransmit', 'invalid', 'highLoad', 'busState', 'busErrors'].map((r) => `system.link.reason.${r}`),
+      ...['active', 'warning', 'passive', 'off'].map((s) => `system.link.bus.${s}`),
+      ...['ot', 'otpw', 's2ga', 's2gb', 's2vsa', 's2vsb', 'ola', 'olb', 't120', 't143', 't150', 't157'].map(
+        (f) => `system.tmc.flag.${f}`,
+      ),
+      ...['host', 'mcu', 'tmc'].map((s) => `system.notifications.src.${s}`),
+      'system.units.d', 'system.notifications.throttle', 'system.notifications.mcuLink',
+      'system.notifications.canbus', 'system.tmc.idle', 'system.tmc.idleHint', 'system.health.idle',
+      'system.hotkeys.tabOverview', 'system.hotkeys.tabMonitoring',
+      'system.hotkeys.tabMaintenance', 'system.charts.mcuRetrans', 'system.charts.mcuRtt',
+    ];
+    for (const k of dynamic) expect(keys[k], k).toBeTypeOf('string');
+  });
+
+  it('keep the placeholders of the alert texts identical in en and ru', () => {
+    const vars = (s: unknown) => (String(s).match(/\{\w+\}/g) ?? []).sort();
+    const e = flat(en);
+    const r = flat(ru);
+    for (const k of ['throttle', 'mcuLink', 'canbus']) {
+      expect(vars(r[`system.notifications.${k}`]), k).toEqual(vars(e[`system.notifications.${k}`]));
+    }
+    expect(vars(r['system.tmc.seen'])).toEqual(vars(e['system.tmc.seen']));
+  });
 });

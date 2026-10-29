@@ -20,6 +20,9 @@ export {
   hotkeyRefreshMachine,
   hotkeyUploadFile,
   hotkeyTogglePrintAfter,
+  hotkeyTabOverview,
+  hotkeyTabMonitoring,
+  hotkeyTabMaintenance,
 } from './hotkeys.ts';
 
 defineMpuElement('mpu-system-page', SystemPage);

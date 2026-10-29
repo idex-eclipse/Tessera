@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const systemManifest = definePlugin({
   id: '@core/system',
   name: 'System',
-  version: '2.0.0',
+  version: '3.0.0',
   entry: '/plugins/system/index.js',
 
   pages: [
@@ -117,6 +117,28 @@ export const systemManifest = definePlugin({
       keys: 'Alt+R',
       handler: 'hotkeyRefreshMachine',
       titleKey: 'system.hotkeys.refresh',
+    },
+    // Alt+1/2/3: вкладки страницы (как в Calibrations)
+    {
+      id: 'tab-overview',
+      scope: 'plugin',
+      keys: 'Alt+1',
+      handler: 'hotkeyTabOverview',
+      titleKey: 'system.hotkeys.tabOverview',
+    },
+    {
+      id: 'tab-monitoring',
+      scope: 'plugin',
+      keys: 'Alt+2',
+      handler: 'hotkeyTabMonitoring',
+      titleKey: 'system.hotkeys.tabMonitoring',
+    },
+    {
+      id: 'tab-maintenance',
+      scope: 'plugin',
+      keys: 'Alt+3',
+      handler: 'hotkeyTabMaintenance',
+      titleKey: 'system.hotkeys.tabMaintenance',
     },
   ],
 

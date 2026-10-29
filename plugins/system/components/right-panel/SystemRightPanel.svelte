@@ -837,8 +837,7 @@
 
   .nav-item.collapsed {
     justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
+    padding-inline: 0;
     gap: 0;
   }
 

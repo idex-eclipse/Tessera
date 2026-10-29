@@ -9,6 +9,7 @@ import { systemUiState } from '../system-ui-state.svelte';
 
 afterEach(() => {
   systemUiState.notificationsOpen = false;
+  systemUiState.activeTab = 'overview';
 });
 
 describe('system hotkeys', () => {
@@ -38,5 +39,26 @@ describe('system hotkeys', () => {
     const analysis = analyzeHotkeys([...host, ...mine]);
     expect(analysis.invalid).toEqual([]);
     expect(analysis.conflicts).toEqual([]);
+  });
+
+  it('Alt+1/2/3 switch the page tabs', () => {
+    hotkeys.hotkeyTabMonitoring();
+    expect(systemUiState.activeTab).toBe('monitoring');
+    hotkeys.hotkeyTabMaintenance();
+    expect(systemUiState.activeTab).toBe('maintenance');
+    hotkeys.hotkeyTabOverview();
+    expect(systemUiState.activeTab).toBe('overview');
+  });
+
+  it('declares the tab hotkeys as plugin-scoped Alt+digits with exported handlers', () => {
+    const tabs = (systemManifest.hotkeys ?? []).filter((h) => h.id.startsWith('tab-'));
+    expect(tabs.map((h) => [h.keys, h.scope, h.handler])).toEqual([
+      ['Alt+1', 'plugin', 'hotkeyTabOverview'],
+      ['Alt+2', 'plugin', 'hotkeyTabMonitoring'],
+      ['Alt+3', 'plugin', 'hotkeyTabMaintenance'],
+    ]);
+    for (const h of tabs) {
+      expect(typeof (hotkeys as Record<string, unknown>)[h.handler], h.handler).toBe('function');
+    }
   });
 });

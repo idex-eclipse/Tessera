@@ -35,16 +35,6 @@ export interface PowerDeviceModel {
   type: string;
 }
 
-export interface McuModel {
-  name: string;
-  version: string;
-  build: string;
-  freq: number | null;
-  load: number | null;
-  constants: Record<string, unknown> | null;
-  stats: Record<string, unknown> | null;
-}
-
 export interface ProcPoint {
   t: number;
   sysCpu: number | null;
@@ -159,14 +149,12 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
   let updateLog = $state<Array<{ app: string; line: string }>>([]);
 
   let power = $state<PowerDeviceModel[]>([]);
-  let mcus = $state<McuModel[]>([]);
   let proc = $state<ProcPoint[]>([]);
   let access = $state<AccessModel>({ available: false, loginEnabled: false, users: [] });
   let busy = $state('');
 
   let generation = 0;
   const unsubs: Array<() => void> = [];
-  let unsubMcu: (() => void) | null = null;
 
   const klippy = useKlippyState(api, printerId ?? undefined);
 
@@ -308,47 +296,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
       if (dev && typeof p.status === 'string') dev.status = p.status;
     }
     power = [...power];
-  }
-
-  function applyMcuDelta(delta: any): void {
-    if (!klippy.ready) return;
-    if (!delta || typeof delta !== 'object') return;
-    const next = [...mcus];
-
-    for (const [name, d] of Object.entries(delta)) {
-      if (!/^mcu(\s|$)/.test(name)) continue;
-      const rec = d as any;
-      if (!rec || typeof rec !== 'object') continue;
-
-      const existing = next.find((m) => m.name === name);
-      const model: McuModel = {
-        name,
-        version: typeof rec.mcu_version === 'string' ? rec.mcu_version : existing?.version ?? '',
-        build:
-          typeof rec.mcu_build_versions === 'string'
-            ? rec.mcu_build_versions
-            : Array.isArray(rec.mcu_build_versions)
-              ? rec.mcu_build_versions.join(', ')
-              : existing?.build ?? '',
-        freq: rec.mcu_constants?.CLOCK_FREQ ?? existing?.freq ?? null,
-        load: rec.last_stats?.mcu_task_avg ?? existing?.load ?? null,
-        constants:
-          rec.mcu_constants && typeof rec.mcu_constants === 'object'
-            ? (rec.mcu_constants as Record<string, unknown>)
-            : (existing?.constants ?? null),
-        stats:
-          rec.last_stats && typeof rec.last_stats === 'object'
-            ? (rec.last_stats as Record<string, unknown>)
-            : (existing?.stats ?? null),
-      };
-
-      const idx = next.findIndex((m) => m.name === name);
-      if (idx >= 0) next[idx] = model;
-      else next.push(model);
-    }
-
-    next.sort((a, b) => a.name.localeCompare(b.name));
-    mcus = next;
   }
 
   function applyProcStat(params: any): void {
@@ -528,43 +475,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
     access = { available, loginEnabled, users };
   }
 
-  async function loadMcus(gen: number): Promise<void> {
-    const h = safeHandle();
-    if (!h) return;
-
-    if (unsubMcu) {
-      unsubMcu();
-      unsubMcu = null;
-    }
-
-    if (!klippy.ready) {
-      mcus = [];
-      return;
-    }
-
-    const list = await h.request<any>('printer.objects.list').catch(() => null);
-    if (gen !== generation) return;
-
-    const names = ((list?.objects ?? []) as string[]).filter((n) => /^mcu(\s|$)/.test(n));
-    if (names.length === 0) {
-      mcus = [];
-      return;
-    }
-
-    const objects: Record<string, string[]> = {};
-    for (const n of names) {
-      objects[n] = ['mcu_version', 'mcu_build_versions', 'mcu_constants', 'last_stats'];
-    }
-
-    unsubMcu = h.subscribe(
-      objects,
-      (delta: any) => {
-        if (gen === generation) applyMcuDelta(delta);
-      },
-      { immediate: true },
-    );
-  }
-
   async function loadUpdates(gen: number): Promise<void> {
     const h = safeHandle();
     if (!h) return;
@@ -580,7 +490,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
       loadSystemInfo(gen),
       loadPower(gen),
       loadAccess(gen),
-      loadMcus(gen),
       loadUpdates(gen),
     ]);
   }
@@ -666,10 +575,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
   function teardown(): void {
     generation++;
     for (const u of unsubs.splice(0)) u();
-    if (unsubMcu) {
-      unsubMcu();
-      unsubMcu = null;
-    }
   }
 
   async function init(): Promise<void> {
@@ -682,7 +587,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
       h.onNotify('notify_klippy_ready', () => {
         if (gen === generation) {
           void loadKlipperMeta(gen);
-          void loadMcus(gen);
         }
       }),
     );
@@ -755,9 +659,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
     },
     get power() {
       return power;
-    },
-    get mcus() {
-      return mcus;
     },
     get proc() {
       return proc;
