@@ -95,6 +95,9 @@
     transform: translate(-50%, -50%);
     width: 90%;
     max-width: 420px;
+    max-height: 90vh;
+    max-height: 90dvh;
+    container-type: inline-size;
     background: var(--bg-surface);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);

@@ -132,6 +132,10 @@
     transform: translate(-50%, -50%);
     width: 90%;
     max-width: 420px;
+    max-height: 90vh;
+    max-height: 90dvh;
+    overflow-y: auto;
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
@@ -277,5 +281,10 @@
 
   .btn.danger:hover:not(:disabled) {
     filter: brightness(1.1);
+  }
+
+  /* узкий контейнер (сам диалог): кнопки не ниже 44px */
+  @container (max-width: 520px) {
+    .step, .btn { min-height: 44px; }
   }
 </style>

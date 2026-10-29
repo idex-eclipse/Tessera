@@ -1,0 +1,78 @@
+/*
+ * Таблица, которая на узком контейнере превращается в список карточек.
+ *
+ * Разметка: <table class="card-table"> и у каждой <td> атрибут data-label с названием
+ * колонки (берётся из <th>). Колонка действий — класс `col-actions` (уходит вправо).
+ * Адаптация идёт по ширине ближайшего container (@container), а не окна: см. docs
+ * («Узкие экраны»); корень поверхности плагина обязан быть `container-type: inline-size`.
+ *
+ * Подключение: import '../../shared/responsive/card-table.css' (как shared/input/inputs.css).
+ * Стили компонента (scoped) имеют большую специфичность, поэтому поверх них переопределено
+ * только border-bottom ячеек (!important); остальное компонент задаёт сам.
+ */
+
+@container (max-width: 520px) {
+  table.card-table,
+  table.card-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  /* заголовок скрыт визуально, но остаётся для скринридеров */
+  table.card-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  table.card-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: var(--space-xs);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  table.card-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  table.card-table td {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 40%;
+    min-width: 0;
+    border-bottom: none !important;
+  }
+
+  table.card-table td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 0.85em;
+    font-weight: 500;
+  }
+
+  /* первая ячейка (имя) — на всю ширину карточки, без подписи */
+  table.card-table td:first-child {
+    flex-basis: 100%;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  table.card-table td:first-child::before,
+  table.card-table td.col-actions::before {
+    content: none;
+  }
+
+  table.card-table td.col-actions {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+}

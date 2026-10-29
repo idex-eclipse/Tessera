@@ -193,12 +193,22 @@
   }
   .preview {
     max-width: 100%;
-    max-height: 420px;
+    max-height: min(420px, 70dvh);
     object-fit: contain;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--bg-surface-hover);
   }
   .empty { color: var(--text-muted); text-align: center; padding: var(--space-lg); margin: 0; }
-  :global(mpu-calibrations-page) { display: flex; flex-direction: column; width: 100%; min-height: 100%; }
+  /* container: панели внутри адаптируются по ширине страницы, а не окна (сайдбар и правая
+     панель сужают область). Пороги — @container 720px (столбец) и 480px (компакт). */
+  :global(mpu-calibrations-page) {
+    display: flex; flex-direction: column; width: 100%; min-height: 100%;
+    container-type: inline-size;
+  }
+
+  @container (max-width: 480px) {
+    .body { padding: var(--space-sm); gap: var(--space-sm); }
+    .tab { min-height: 40px; padding-inline: var(--space-sm); }
+  }
 </style>

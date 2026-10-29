@@ -199,7 +199,7 @@
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 
-  @media (max-width: 480px) {
+  @container (max-width: 480px) {
     .livez { grid-template-columns: 1fr; }
   }
 </style>

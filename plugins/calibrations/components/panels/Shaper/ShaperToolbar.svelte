@@ -91,4 +91,9 @@
     font-size: var(--font-size-sm); color: var(--text-secondary); cursor: pointer;
   }
   .switch input { cursor: pointer; }
+
+  /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .icon-btn { width: 36px; height: 36px; }
+  }
 </style>

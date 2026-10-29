@@ -84,4 +84,12 @@
   .tab:hover { background: var(--bg-surface-hover); }
   .tab.active { background: var(--bg-surface-active); color: var(--accent); font-weight: 600; }
   .body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-sm) var(--space-md) var(--space-md); }
+
+  /* container: вложенные панели (Probe/LiveZ/PID) адаптируются по ширине виджета */
+  :global(mpu-calibrations-widget) { display: block; height: 100%; container-type: inline-size; }
+
+  @container (max-width: 480px) {
+    .body { padding: var(--space-xs) var(--space-sm) var(--space-sm); }
+    .tab { min-height: 36px; }
+  }
 </style>
