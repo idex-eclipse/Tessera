@@ -139,8 +139,14 @@ The host also does not call the handler if the event is already handled
 | `Ctrl+1` … `Ctrl+9` | go to the dashboard of the printer with that number (nothing if there is none) |
 | `Ctrl+→` | the next printer (wraps around) |
 | `Ctrl+←` | the previous printer (wraps around) |
+| `D` | go to the active printer's dashboard |
+| `Ctrl+↓` / `Ctrl+↑` | the next / previous section in sidebar order (Dashboard → plugin pages → Dashboard) |
+| `R` | show / hide the right panel |
+| `L` | show / hide the left menu |
 
-A switch closes fleet so that the result is visible. `F` and `Ctrl+arrows` do not
+A switch closes fleet so that the result is visible. `R` and `L` collapse/expand the
+panels on a wide screen and open/close the full-width overlay on a narrow one
+(see [surfaces.md](surfaces.md#9-narrow-screens)). `F` and `Ctrl+arrows` do not
 fire in input fields. Do not take these combinations in plugins — both sides would
 be disabled.
 

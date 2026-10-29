@@ -279,7 +279,9 @@ interpret it. What items exist and how they look is up to the plugin.
 - The chip root stretches to the full slot height (**80px**), width follows
   content; limit it on the plugin side (`max-width` + `text-overflow: ellipsis`).
 - Reveal the action with a **popover**, not by expanding the chip in place
-  (otherwise the strip reflows).
+  (otherwise the strip reflows). Open it **downward** by default (the strip sits under the
+  banners and the header): `shouldOpenAbove()` and `shouldAlignToEnd()` from
+  `plugins/shared/popover-align.ts` decide the side and the alignment (LTR/RTL).
 - When `edit === '1'` (dashboard edit mode) the host draws its own affordances
   (frame, "+", close buttons, drag-and-drop). The chip must not perform actions in
   this mode.
@@ -375,8 +377,9 @@ cannot use the right panel.
 The host switches to "narrow" mode at a width ≤ **768px** (a single breakpoint,
 `NARROW_BREAKPOINT` in `ui-store`). The side panels follow the *window* width
 (`ui.isNarrow`); banners, chips and widgets follow the width of the *work area*
-(main/dashboard), so a wide window with both sidebars open can still be "narrow" for them. Every plugin surface the host mounts
-itself (banners, chips, widget body, right panel) receives
+(main/dashboard), so a wide window with both sidebars open can still be "narrow" for
+them. Every plugin surface the host mounts itself (banners, chips, widget body, right
+panel) receives
 `params.narrow` = `'true'` | `'false'` — a string, like the other `params`.
 The value is fixed when the element is mounted; on a window resize the host only
 updates the element's `data-narrow` attribute (component props are not reactive).

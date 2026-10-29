@@ -75,7 +75,7 @@ The UI is built from **plugins**: the host provides the shell (printer tabs, sid
 
 A drag-and-drop grid of autonomous widgets, arranged per printer:
 
-- **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series
+- **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series; a table or compact **cards** view (automatic by the widget's width), plus an optional per-heater **on-time timer**
 - **Status** — print progress, layer & ETA, pause / resume / cancel, speed & flow factors
 - **Macros** — buttons with automatic parameter forms parsed from your macro bodies (defaults pre-filled, required fields flagged)
 - **Tools** — jog cross/rows, extrude & retract, force move, motors off, IDEX carriage modes (PRIMARY / COPY / MIRROR / experimental DIRECT-mode from [Dmitry Butyugin's fork of Klipper for IDEX printers](https://github.com/dmbutyugin/klipper/tree/generic-cartesian)), active-tool awareness, plus one-tap **QGL** / **Z-tilt** buttons when those commands are available
@@ -92,7 +92,7 @@ Every widget is data-autonomous: it subscribes to the proxy itself, so two widge
 
 A persistent strip under the banners keeps the most urgent controls one tap away on **every page** — mid-print, on the jobs screen, in settings:
 
-- **Temperature chips** — current value, target badge, heating/cooling trend, tap-to-set popover with presets
+- **Temperature chips** — current value, target badge, heating/cooling trend, tap-to-set popover (optional heater on-time timer)
 - **Macro chips** — run instantly, or open the parameter form
 - **Output chips** — fan/pin state with spinning-fan feedback; preset buttons (0/25/50/75/100 %) + fine slider
 - **Tuning chips** — pressure advance, retraction, flow and speed factor, with a live preview of the exact G-code that will be sent
@@ -168,13 +168,14 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 - **Settings sync** — opt-in per plugin, device-global
 - **Themes** — light & dark, every color a CSS variable; accent customization and custom background images are supported
 - **i18n** — English & Russian, RTL-ready layout
+- **Narrow screens** — below 768px the side panels open as full-width overlays, the dashboard becomes one column (each widget keeps its row height), banners group into a summary row and chips fold into an accordion; pages and widgets adapt to their own width, not just the window's
 
 <a id="hotkeys"></a>
 ### Hotkeys
 
 Keyboard navigation plus shortcuts contributed by plugins, all remappable in **Settings → Hotkeys**:
 
-- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers
+- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `D` opens the dashboard, `R` / `L` toggle the right panel and the left menu
 - **Plugin shortcuts** — a plugin declares them in its manifest with a scope: *global* (everywhere), *dashboard* (only on the dashboard) or *plugin* (only on that plugin's own page)
 - **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on macOS and Ctrl elsewhere
 - **Conflict-safe** — if two shortcuts collide, **both are disabled** with a console warning and a mark in Settings (the same key is fine for *dashboard* + *plugin*, or for two different plugins' own pages)

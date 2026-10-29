@@ -301,11 +301,11 @@ hostContainer.appendChild(el);
 | Поверхность | Элемент | `params` |
 |---|---|---|
 | Страница (`pages[].element`) | страница | query-параметры маршрута (`#/p/<printer>/<page>?file=a.gcode` → `{ file: 'a.gcode' }`) |
-| Виджет (`widgets[].element`) | тело виджета | query-параметры маршрута дашборда (`edit`, `preview`, …) |
+| Виджет (`widgets[].element`) | тело виджета | query-параметры маршрута дашборда (`edit`, `preview`, …) + `narrow: 'true' \| 'false'` |
 | Шапка виджета (`widgets[].headerElement`) | кнопки в шапке | `{}` |
-| Баннер (`banners[]`) | баннер | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings' }` |
+| Баннер (`banners[]`) | баннер | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
 | Оверлей (`overlays[]`) | оверлей | `{}` |
-| Чип (`chips[].element`) | чип | `{ chipId, chipLabel?, edit: '1' \| '0' }` |
+| Чип (`chips[].element`) | чип | `{ chipId, chipLabel?, edit: '1' \| '0', narrow: 'true' \| 'false' }` |
 | Picker чипа (`chips[].pickerElement`) | каталог предметов | `{ edit: '1', placed: '<JSON-массив id>' }` |
 | Fleet-панель (`printerPanels[]`) | карточка принтера | `{ printerId }` |
 | Hotkey (`hotkeys[]`) | — (функция, не элемент) | см. [hotkeys.md](hotkeys.md) |

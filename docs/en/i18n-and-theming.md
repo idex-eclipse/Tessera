@@ -175,7 +175,7 @@ The basic unit of the interface is the **panel** (card).
   (drawn by the host), actions in the header (`headerElement`), denser content.
 - A **chip** is not a panel but a mini element: an 80px-high slot, width by content;
   a two-line body (category on top — uppercase, muted; the value below); a status
-  indicator stripe on the left in a semantic color; the action is a popover;
+  indicator stripe on the left in a semantic color; the action is a popover (opens downward by default);
   *missing* — a dashed border and muted text.
 - **Modal windows** (overlays): a `--bg-overlay` backdrop, the dialog is a panel.
 - Buttons: an accent fill (`--accent` + `--accent-text`) for the main action,
@@ -192,4 +192,7 @@ covers the UI, but your element stays mounted and keeps receiving events.
 - Interactive elements are real `button`/`a`/`input`, not a `div` with `onclick`.
 - Visible focus (`--accent-ring`/`--border-focus`).
 - Do not block page scroll or the mouse wheel without need.
-- Keep working at narrow widths: the dashboard grid collapses into one column.
+- Keep working at narrow widths: when the dashboard is narrower than 768px its grid becomes one
+  column (a widget still occupies its `h` rows, so its height is definite). Adapt with container
+  queries, not `@media`, and size touch targets with `@media (pointer: coarse)` — see
+  [surfaces.md → Narrow screens](surfaces.md#9-narrow-screens).

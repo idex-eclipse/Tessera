@@ -79,7 +79,8 @@ it: they have only `PluginApi`.
 | `settings-sync.svelte.ts` | sync flags and settings migration between modes |
 | `printer-manager.svelte.ts` | the printer registry, the active printer, attaching proxies |
 | `router.svelte.ts` | the hash router |
-| `ui-store.svelte.ts` | theme, accent, panel sizes, fleet, applying attributes to `<html>` |
+| `ui-store.svelte.ts` | theme, accent, panel sizes, fleet, applying attributes to `<html>`; the narrow-window flag (`isNarrow`, `NARROW_BREAKPOINT`) and the transient side-panel overlay (`mobilePanel`) |
+| `narrow-width.ts` | the Svelte action that tells whether an element (the work area, the dashboard) is narrower than the breakpoint |
 | `host-i18n.svelte.ts` | dictionaries and `t()`, language change, RTL |
 | `auth-store.svelte.ts` | Moonraker tokens, the sign-in overlay |
 | `extensions-catalog.svelte.ts` | reading `/extensions/index.json` |

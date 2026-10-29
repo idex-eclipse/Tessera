@@ -79,7 +79,8 @@ Offline **не валит загрузку**: соединения подним�
 | `settings-sync.svelte.ts` | флаги sync и миграция настроек между режимами |
 | `printer-manager.svelte.ts` | реестр принтеров, активный принтер, подключение прокси |
 | `router.svelte.ts` | hash-роутер |
-| `ui-store.svelte.ts` | тема, акцент, размеры панелей, fleet, применение атрибутов к `<html>` |
+| `ui-store.svelte.ts` | тема, акцент, размеры панелей, fleet, применение атрибутов к `<html>`; признак узкого окна (`isNarrow`, `NARROW_BREAKPOINT`) и временный оверлей боковой панели (`mobilePanel`) |
+| `narrow-width.ts` | Svelte-action: уже ли элемент (рабочая область, дашборд) брейкпоинта |
 | `host-i18n.svelte.ts` | словари и `t()`, смена языка, RTL |
 | `auth-store.svelte.ts` | токены Moonraker, оверлей входа |
 | `extensions-catalog.svelte.ts` | чтение `/extensions/index.json` |
