@@ -6,7 +6,7 @@
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReady.svelte';
   import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
   import Icon from '../../../shared/icons/Icon.svelte';
-  import { isRtl, shouldAlignToEnd } from '../../../shared/popover-align.ts';
+  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../shared/popover-align.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -47,7 +47,7 @@
   const POPOVER_WIDTH = 240;
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
+  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
 
   function openPopover(): void {
     if (disabled) return;
@@ -55,7 +55,7 @@
     if (rect) {
       // Поповер растёт от начала строки: вправо в LTR, влево в RTL — проверяем нужный край.
       placement = {
-        above: rect.top > 260,
+        above: shouldOpenAbove(rect, 260, window.innerHeight),
         alignRight: shouldAlignToEnd(rect, POPOVER_WIDTH, window.innerWidth, isRtl()),
       };
     }

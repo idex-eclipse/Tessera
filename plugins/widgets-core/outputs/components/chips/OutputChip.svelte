@@ -5,7 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
-  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
+  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -55,13 +55,13 @@
   // --- поповер ---
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
+  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
 
   function openPopover(): void {
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 180, alignRight: shouldAlignToEnd(rect, 240, window.innerWidth, isRtl()) };
+      placement = { above: shouldOpenAbove(rect, 180, window.innerHeight), alignRight: shouldAlignToEnd(rect, 240, window.innerWidth, isRtl()) };
     }
     popoverOpen = true;
   }
