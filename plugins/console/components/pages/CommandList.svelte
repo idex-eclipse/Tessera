@@ -129,6 +129,18 @@
     align-content: start;
   }
 
+  /* узкая страница: список лежит под консолью — элементы в несколько колонок, чтобы
+     в невысокой нижней части помещалось больше команд */
+  @container (max-width: 720px) {
+    .command-list-grid {
+      grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+    }
+  }
+
+  @media (pointer: coarse) {
+    .command-item { min-height: 40px; }
+  }
+
   .command-item {
     display: flex;
     flex-direction: column;

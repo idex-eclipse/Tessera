@@ -81,6 +81,14 @@
 </div>
 
 <style>
+  /* Контейнер: раскладка зависит от ширины страницы, а не окна (сайдбар и правая панель
+     сужают область). Узкий режим — см. @container ниже. */
+  :global(mpu-console-page) {
+    display: block;
+    height: 100%;
+    container-type: inline-size;
+  }
+
   .console-page {
     height: 100%;
     display: flex;
@@ -149,4 +157,24 @@
 
   .btn-secondary { background: var(--bg-surface-hover-no-override); color: var(--text-primary); }
   .btn-secondary:hover { background: var(--border-color); }
+
+  /* Узкая страница: консоль сверху (≈70%), список команд под ней (≈30%).
+     Минимумы не дают частям схлопнуться на низком экране — страница тогда скроллится. */
+  @container (max-width: 720px) {
+    .console-layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(260px, 5fr) minmax(150px, 5fr);
+    }
+
+    .console-sidebar { min-width: 0; }
+
+    .console-card .page-header { flex-wrap: wrap; row-gap: var(--space-xs); }
+    .console-card .page-header .actions { flex-wrap: wrap; margin-inline-start: 0; }
+    .console-body { padding: var(--space-sm); }
+  }
+
+  /* сенсорный указатель: кнопка «очистить» не ниже 36px */
+  @media (pointer: coarse) {
+    .btn { min-height: 36px; }
+  }
 </style>

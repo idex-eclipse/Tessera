@@ -230,7 +230,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
-    max-height: 240px;
+    max-height: min(240px, 35dvh);
     overflow-y: auto;
     z-index: 50;
   }
@@ -342,5 +342,16 @@
 
   .p-def {
     color: var(--accent);
+  }
+
+  /* узкий контейнер (страница или виджет): строки автодополнения переносятся */
+  @container (max-width: 480px) {
+    .ac-item { flex-wrap: wrap; row-gap: 0; }
+    .ac-sig { white-space: normal; }
+    .ac-help { white-space: normal; }
+  }
+
+  @media (pointer: coarse) {
+    .ac-item { min-height: 40px; align-items: center; }
   }
 </style>

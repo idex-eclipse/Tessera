@@ -40,6 +40,13 @@
 </div>
 
 <style>
+  /* контейнер: автодополнение внутри подстраивается под ширину виджета */
+  :global(mpu-console-widget) {
+    display: block;
+    height: 100%;
+    container-type: inline-size;
+  }
+
   .console-widget {
     display: flex;
     flex-direction: column;
