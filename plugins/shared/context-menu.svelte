@@ -107,7 +107,7 @@
     background: transparent;
     color: var(--text-primary);
     font-size: var(--font-size-md);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
 
@@ -124,8 +124,8 @@
   .ctx-aside {
     display: flex;
     align-items: stretch;
-    padding-left: var(--space-xs);
-    margin-left: var(--space-xs);
-    border-left: 1px solid var(--border-color);
+    padding-inline-start: var(--space-xs);
+    margin-inline-start: var(--space-xs);
+    border-inline-start: 1px solid var(--border-color);
   }
 </style>

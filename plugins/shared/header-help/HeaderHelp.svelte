@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../icons/Icon.svelte';
+  import { isRtl } from '../popover-align';
 
   let { title, children }: {
     title: string;
@@ -9,8 +10,9 @@
   let open = $state(false);
   let btnEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
-  let pos = $state({ top: -9999, right: -9999 });
+  let pos = $state<{ top: number; left?: number; right?: number }>({ top: -9999, right: -9999 });
 
+  /** Поповер выравнивается по «начальному» краю кнопки: справа в LTR, слева в RTL. */
   function place(): void {
     const r = btnEl?.getBoundingClientRect();
     const el = menuEl;
@@ -22,6 +24,11 @@
     if (mh <= spaceBelow) top = r.bottom + 4;
     else if (mh <= r.top - 4) top = r.top - 4 - mh;
     else top = Math.max(8, window.innerHeight - mh - 8);
+    if (isRtl()) {
+      const left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - mw - 8));
+      pos = { top, left };
+      return;
+    }
     const rightPreferred = Math.max(8, window.innerWidth - r.right);
     const right = Math.min(rightPreferred, Math.max(8, window.innerWidth - mw - 8));
     pos = { top, right };
@@ -71,7 +78,8 @@
     class="help-menu"
     bind:this={menuEl}
     style:top="{pos.top}px"
-    style:right="{pos.right}px"
+    style:left={pos.left !== undefined ? `${pos.left}px` : undefined}
+    style:right={pos.right !== undefined ? `${pos.right}px` : undefined}
     role="dialog"
     aria-label={title}
   >
@@ -151,7 +159,7 @@
 
   .help-body :global(ul) {
     margin: 0;
-    padding-left: 1.2em;
+    padding-inline-start: 1.2em;
   }
 
   .help-body :global(li) {
