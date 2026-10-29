@@ -46,7 +46,7 @@ export function hotkeyRefreshMachine(): void {
   systemUiState.refreshSeq++;
 }
 
-/** Alt+1 / Alt+2 / Alt+3 (только на странице «Система»): вкладки Обзор / Мониторинг / Обслуживание. */
+/** Alt+1 / Alt+2 / Alt+3 (только на странице «Система»): вкладки Система / Мониторинг / Хранилище и обновления. */
 export function hotkeyTabOverview(): void {
   systemUiState.activeTab = 'overview';
 }

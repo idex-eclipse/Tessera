@@ -143,9 +143,9 @@ Long-running calibrations survive tab switches and printer switching — activit
 - **Right panel** (always available): emergency stop, service restarts, power devices, host shutdown/reboot, upload-and-print, Moonraker accounts
 - **Notification center** — toasts + a filterable side panel, aggregated across all configured printers with per-printer badges; fed by Klipper responses, shutdowns, **TMC driver flags** (over-temperature / stall, edge-detected), **host throttling and MCU link / CAN bus problems** (debounced), guard denials, and plugin notifications (`M118 MPU_NOTIFY …` convention)
 - **Machine page** with tabs (`Alt+1/2/3`) and a health strip (host · MCU · drivers) above them:
-  - **Overview** — system info, SD card, live host load charts
+  - **System** — system info, SD card, live host load charts
   - **Monitoring** — host throttling / under-voltage (Raspberry Pi) and CPU temperature; per-MCU load, retransmit and round-trip charts, CAN bus state; TMC driver status table with decoded flags and "seen earlier" history
-  - **Maintenance** — storage, database, update manager with commit history and rollback
+  - **Storage & updates** — storage, database, update manager with commit history and rollback
 - **Klipper state banner** — distinct from connection status: firmware errors and startup are shown where they belong
 
 <a id="console"></a>

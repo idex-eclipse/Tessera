@@ -6,18 +6,18 @@ export const ru = {
       uploadFile: 'Загрузить G-code файл…',
       togglePrintAfter: 'Переключить «Начать печать после загрузки»',
       refresh: 'Система: обновить данные',
-      tabOverview: 'Система: вкладка «Обзор»',
-      tabMonitoring: 'Система: вкладка «Мониторинг»',
-      tabMaintenance: 'Система: вкладка «Обслуживание»',
+      tabOverview: 'Вкладка «Система»',
+      tabMonitoring: 'Вкладка «Мониторинг»',
+      tabMaintenance: 'Вкладка «Хранилище и обновления»',
     },
     units: { d: 'д', h: 'ч', m: 'м', s: 'с' },
 
     // Вкладки страницы + здоровье принтера
     tabs: {
       label: 'Разделы',
-      overview: 'Обзор',
+      overview: 'Система',
       monitoring: 'Мониторинг',
-      maintenance: 'Обслуживание',
+      maintenance: 'Хранилище и обновления',
     },
     health: {
       title: 'Состояние принтера',

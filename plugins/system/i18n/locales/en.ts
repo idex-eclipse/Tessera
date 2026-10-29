@@ -7,18 +7,18 @@ export const en = {
       uploadFile: 'Upload a G-code file…',
       togglePrintAfter: 'Toggle "Start print after upload"',
       refresh: 'Machine: refresh data',
-      tabOverview: 'Machine: Overview tab',
+      tabOverview: 'Machine: System tab',
       tabMonitoring: 'Machine: Monitoring tab',
-      tabMaintenance: 'Machine: Maintenance tab',
+      tabMaintenance: 'Machine: Storage & updates tab',
     },
     units: { d: 'd', h: 'h', m: 'm', s: 's' },
 
     // Page tabs + printer health
     tabs: {
       label: 'Sections',
-      overview: 'Overview',
+      overview: 'System',
       monitoring: 'Monitoring',
-      maintenance: 'Maintenance',
+      maintenance: 'Storage & updates',
     },
     health: {
       title: 'Printer health',
