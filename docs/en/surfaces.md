@@ -125,8 +125,10 @@ The types from which the host assembles the default dashboard:
 
 ### Grid
 
-12 columns, row height `--grid-row-height` (80px); on narrow screens the grid
-collapses into a single column. The layout is stored per printer
+12 columns, row height `--grid-row-height` (80px); when the dashboard itself is
+narrower than 768px (not the window: the sidebar and right panel count) the grid
+becomes a single column, and a widget still occupies its `h` rows, so its height
+is always definite. The layout is stored per printer
 (`dashboardLayout`) and edited in `#/dashboard?edit=1` mode.
 
 ### Parameters
@@ -383,6 +385,14 @@ keep working exactly as on desktop.
 
 What the host does by itself in narrow mode:
 
+- **Adapting inside a plugin.** Prefer container queries over `@media`: a page or
+  widget may be narrow on a wide screen. Make the surface root a container
+  (`:global(mpu-x) { display:block; container-type:inline-size }`) and query it:
+  `@container (max-width: 720px)` — stack columns, `480px` — compact. A dialog that
+  is `position: fixed` is not inside any container: make its panel one. Tables that
+  must not scroll sideways: `plugins/shared/responsive/card-table.css` turns a
+  `table.card-table` (with `data-label` on each `td`) into cards below 520px.
+  Touch targets: use `@media (pointer: coarse)`, not the window width.
 - **Side panels** (menu and right panel) open over the content at full width under
   the header; at most one is open. The right panel always receives
   `collapsed: 'false'`; the saved "collapsed" state and width are ignored.

@@ -36,7 +36,7 @@
   let hasMultipleProviders = $derived(registry.hasMultipleProviders(item.type));
   const ctx = getAppContext();
   let gridStyle = $derived(
-    `grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h};`,
+    `grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h}; --h: ${item.h};`,
   );
 
   const pluginApi = $derived(

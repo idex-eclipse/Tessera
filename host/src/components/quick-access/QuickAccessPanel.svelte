@@ -271,7 +271,7 @@
     {/if}
 
     <!-- Скрываем через CSS, а не {#if}: иначе chips теряют состояние при сворачивании -->
-    <div class="qa-chips" class:accordion-closed={collapsedByAccordion} class:accordion-body={narrow && !editMode}>
+    <div class="qa-chips" class:accordion-closed={collapsedByAccordion}>
       {#each resolved as r (r.item.instanceId)}
         {#if r.element && r.pluginId}
           {@const api = apiFor(r.pluginId)}
@@ -449,11 +449,8 @@
 
   .qa-chips.accordion-closed { display: none; }
 
-  /* два ряда chips видны сразу, остальное — внутренний скролл, чтобы не съедать экран */
-  .qa-chips.accordion-body {
-    max-height: calc(var(--grid-row-height) * 2 + var(--space-xs));
-    overflow-y: auto;
-  }
+  /* Без max-height/overflow: поповеры chips позиционируются внутри полосы и обрезались бы
+     скролл-контейнером. Место ограничивает сам аккордеон (по умолчанию свёрнут). */
 
   /* ✕ 28px визуально, зона нажатия расширена до ~44px */
   .quick-access.narrow .qa-x {
