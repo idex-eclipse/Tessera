@@ -1,4 +1,4 @@
-import { onDestroy, untrack } from 'svelte';
+import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
 import {
@@ -66,7 +66,9 @@ function createHealthCore(api: PluginApi, printerId: string) {
   // ---------------- MCU / CAN / TMC ----------------
 
   function applyDelta(delta: unknown): void {
-    if (!klippy.ready) return;
+    // Без проверки klippy.ready: снимок `immediate` приходит один раз и терялся бы, если
+    // реактивное состояние ещё не успело обновиться. Подписка живёт ровно пока Klipper
+    // готов (см. init), так что устаревшие дельты сюда не попадают.
     const res = model.apply(delta, Date.now() / 1000);
     if (res.mcus) mcus = res.mcus;
     if (res.tmc) tmc = res.tmc;
@@ -173,30 +175,43 @@ function createHealthCore(api: PluginApi, printerId: string) {
 
   // ---------------- Жизненный цикл ----------------
 
-  // Подписка привязана к реактивному klippy.ready: так не теряется случай,
-  // когда Klipper уже готов к моменту создания ядра (notify_klippy_ready не придёт).
-  let wasReady: boolean | null = null;
-  const stopEffects = $effect.root(() => {
-    $effect(() => {
-      const ready = klippy.ready;
-      untrack(() => {
-        // Рестарт Klipper: пока он не готов и ещё RESTART_QUIET_SEC после — связь с MCU
-        // не оценивается (ретрансмиты при переподключении штатны). Первое же ready
-        // при открытии страницы окно не включает.
-        if (!ready) model.holdOff(Infinity);
-        else if (wasReady === false) model.holdOff(Date.now() / 1000 + RESTART_QUIET_SEC);
-        wasReady = ready;
-
-        if (ready) void subscribeObjects();
-        else unsubscribeObjects();
-      });
-    });
-  });
-
+  // Подписки — императивно, по событиям. Намеренно НЕ $effect: ядро keep-alive живёт
+  // дольше компонента, который его создал, а эффект привязан к жизненному циклу
+  // компонента (см. use-calibrations). Случай «Klipper уже готов к созданию ядра»
+  // закрывает onReady: он срабатывает на каждое открытие сокета и сразу, если сокет открыт.
   function init(): void {
     const gen = ++generation;
     const h = safeHandle();
     if (!h) return;
+
+    unsubs.push(
+      h.onReady(() => {
+        if (gen !== generation) return;
+        void refresh();
+        void subscribeObjects();
+      }),
+    );
+
+    // Список объектов зависит от конфига — перечитываем при каждом возврате в ready.
+    // Рестарт Klipper: пока он не готов и ещё RESTART_QUIET_SEC после — связь с MCU
+    // не оценивается (ретрансмиты при переподключении штатны).
+    unsubs.push(
+      h.onNotify('notify_klippy_ready', () => {
+        if (gen !== generation) return;
+        model.holdOff(Date.now() / 1000 + RESTART_QUIET_SEC);
+        void subscribeObjects();
+      }),
+    );
+
+    for (const ev of ['notify_klippy_started', 'notify_klippy_shutdown', 'notify_klippy_disconnected']) {
+      unsubs.push(
+        h.onNotify(ev, () => {
+          if (gen !== generation) return;
+          model.holdOff(Infinity);
+          unsubscribeObjects();
+        }),
+      );
+    }
 
     unsubs.push(
       h.onNotify('notify_proc_stat_update', (params) => {
@@ -209,11 +224,6 @@ function createHealthCore(api: PluginApi, printerId: string) {
         if (gen === generation) applyThrottled(Array.isArray(params) ? params[0] : params);
       }),
     );
-    unsubs.push(
-      h.onReady(() => {
-        if (gen === generation) void refresh();
-      }),
-    );
   }
 
   init();
@@ -222,7 +232,6 @@ function createHealthCore(api: PluginApi, printerId: string) {
     generation++;
     unsubscribeObjects();
     for (const u of unsubs.splice(0)) u();
-    stopEffects();
   }
 
   return {
