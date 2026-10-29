@@ -29,6 +29,7 @@ const ru: I18nMessages = {
       title: 'Панель управления',
       expand: 'Развернуть панель',
       collapse: 'Свернуть панель',
+      open: 'Открыть панель управления',
     },
     auth: {
       title: 'Требуется авторизация',
@@ -45,6 +46,14 @@ const ru: I18nMessages = {
     settings: 'Настройки',
     addPrinter: 'Добавить принтер',
     collapse: 'Свернуть меню',
+    menu: 'Меню',
+    openMenu: 'Открыть меню',
+  },
+
+  banners: {
+    summary: 'Уведомления: {count}',
+    show: 'Показать уведомления',
+    hide: 'Скрыть уведомления',
   },
 
   printer: {
@@ -90,6 +99,7 @@ const ru: I18nMessages = {
         printerPrev: 'Предыдущий принтер',
         dashboard: 'Открыть панель управления активного принтера',
         toggleRightPanel: 'Показать / скрыть правую панель',
+        toggleSidebar: 'Показать / скрыть левое меню',
         pageNext: 'Следующая страница (в порядке сайдбара)',
         pagePrev: 'Предыдущая страница (в порядке сайдбара)',
       },
@@ -187,6 +197,9 @@ const ru: I18nMessages = {
   },
 
   quickAccess: {
+    title: 'Быстрый доступ',
+    moveBefore: 'Сдвинуть раньше',
+    moveAfter: 'Сдвинуть позже',
     empty: 'Нет доступных провайдеров чипов',
     addChip: 'Добавить чип',
     resetLayout: 'Сбросить чипы',

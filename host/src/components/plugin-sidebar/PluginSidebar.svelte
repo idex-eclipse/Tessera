@@ -62,7 +62,7 @@
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     width: 100%;
     transition: background var(--transition-fast), color var(--transition-fast);
     white-space: nowrap;
@@ -80,8 +80,7 @@
 
   .nav-item.collapsed {
     justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
+    padding-inline: 0;
     gap: 0;
   }
 

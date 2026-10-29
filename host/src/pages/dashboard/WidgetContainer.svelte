@@ -105,7 +105,7 @@
     order: 0;
     flex: 1;
     min-width: 0;
-    text-align: left;      /* убираем центрирование */
+    text-align: start;      /* убираем центрирование */
     font-size: var(--font-size-md);
     font-weight: 600;
     color: var(--text-primary);
@@ -121,7 +121,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-    margin-left: auto;     /* действия всегда справа */
+    margin-inline-start: auto;     /* действия всегда справа */
     flex-shrink: 0;
   }
 

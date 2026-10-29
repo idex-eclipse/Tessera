@@ -17,7 +17,7 @@ function createFakeDocument() {
   };
 }
 
-function setup(options: { applyDom?: boolean } = {}) {
+function setup(options: Partial<Parameters<typeof createUiStore>[1]> = {}) {
   const storage = new MemoryStorage();
   const settings = createSettingsStore({ storage });
   const doc = createFakeDocument();
@@ -202,5 +202,112 @@ describe('ui-store / environment safety', () => {
 
     expect(ui.theme).toBe('dark');
     expect(ui.locale).toBe('ru');
+  });
+});
+function createFakeMatchMedia(initial: boolean) {
+  let listener: ((event: { matches: boolean }) => void) | null = null;
+  const mql = {
+    matches: initial,
+    addEventListener(_type: 'change', cb: (event: { matches: boolean }) => void): void {
+      listener = cb;
+    },
+  };
+  return {
+    matchMedia: () => mql,
+    set(matches: boolean): void {
+      mql.matches = matches;
+      listener?.({ matches });
+    },
+  };
+}
+
+describe('ui-store / narrow viewport', () => {
+  it('follows the media query', () => {
+    const mm = createFakeMatchMedia(true);
+    const { ui } = setup({ matchMedia: mm.matchMedia });
+
+    expect(ui.isNarrow).toBe(true);
+    mm.set(false);
+    expect(ui.isNarrow).toBe(false);
+  });
+
+  it('is not narrow without matchMedia', () => {
+    const { ui } = setup();
+    expect(ui.isNarrow).toBe(false);
+  });
+
+  it('opens one mobile panel at a time and toggles it', () => {
+    const mm = createFakeMatchMedia(true);
+    const { ui } = setup({ matchMedia: mm.matchMedia });
+
+    ui.openMobilePanel('nav');
+    expect(ui.mobilePanel).toBe('nav');
+
+    ui.openMobilePanel('right');
+    expect(ui.mobilePanel).toBe('right');
+
+    ui.toggleMobilePanel('right');
+    expect(ui.mobilePanel).toBeNull();
+  });
+
+  it('ignores open on wide viewport and closes the panel when widening', () => {
+    const mm = createFakeMatchMedia(false);
+    const { ui } = setup({ matchMedia: mm.matchMedia });
+
+    ui.openMobilePanel('nav');
+    expect(ui.mobilePanel).toBeNull();
+
+    mm.set(true);
+    ui.openMobilePanel('nav');
+    expect(ui.mobilePanel).toBe('nav');
+
+    mm.set(false);
+    expect(ui.mobilePanel).toBeNull();
+  });
+
+  it('toggleSidebar / toggleRightPanel drive the overlay when narrow', () => {
+    const mm = createFakeMatchMedia(true);
+    const { ui, settings } = setup({ matchMedia: mm.matchMedia });
+
+    ui.toggleRightPanel();
+    expect(ui.mobilePanel).toBe('right');
+    ui.toggleSidebar();
+    expect(ui.mobilePanel).toBe('nav');
+    ui.toggleSidebar();
+    expect(ui.mobilePanel).toBeNull();
+
+    ui.toggleRightPanel(false);
+    expect(ui.mobilePanel).toBe('right');
+    ui.toggleRightPanel(true);
+    expect(ui.mobilePanel).toBeNull();
+
+    expect(settings.ui.sidebarCollapsed).toBe(false);
+    expect(settings.ui.rightPanelCollapsed).toBe(false);
+  });
+
+  it('toggleRightPanel keeps toggling the persisted state when wide', () => {
+    const mm = createFakeMatchMedia(false);
+    const { ui, settings } = setup({ matchMedia: mm.matchMedia });
+
+    ui.toggleRightPanel();
+    expect(settings.ui.rightPanelCollapsed).toBe(true);
+    expect(ui.mobilePanel).toBeNull();
+  });
+
+  it('does not touch persisted sidebar / right-panel settings', () => {
+    const mm = createFakeMatchMedia(true);
+    const { ui, settings } = setup({ matchMedia: mm.matchMedia });
+    const before = {
+      collapsed: settings.ui.sidebarCollapsed,
+      rightCollapsed: settings.ui.rightPanelCollapsed,
+      rightWidth: settings.ui.rightPanelWidth,
+    };
+
+    ui.openMobilePanel('right');
+    ui.closeMobilePanel();
+
+    expect(settings.ui.sidebarCollapsed).toBe(before.collapsed);
+    expect(settings.ui.rightPanelCollapsed).toBe(before.rightCollapsed);
+    expect(settings.ui.rightPanelWidth).toBe(before.rightWidth);
   });
 });

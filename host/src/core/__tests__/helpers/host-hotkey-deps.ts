@@ -14,7 +14,7 @@ export function fakeHostHotkeyDeps() {
       navigateToPluginPage: vi.fn(),
     },
     printerManager: { printers: [], activePrinterId: null } as never,
-    ui: { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn() },
+    ui: { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn(), toggleSidebar: vi.fn() },
     registry: { getVisiblePages: () => [] },
     getRoute: (): Route => ({ kind: 'dashboard', printerId: null, query: {} }),
   };

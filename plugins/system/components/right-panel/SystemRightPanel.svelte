@@ -17,8 +17,13 @@
 
   import { useNotifications } from '../../use-notifications.svelte.ts';
   import ToastStack from '../overlays/ToastStack.svelte';
+  import { useNarrow } from '../../use-narrow.svelte.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
+
+  // На узком экране панель смонтирована только пока открыта, поэтому тосты
+  // показывает оверлей уведомлений (всегда смонтирован), а не панель.
+  const narrow = useNarrow();
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -739,7 +744,9 @@
     </button>
   </div>
 </div>
-<ToastStack />
+{#if !narrow.value}
+  <ToastStack />
+{/if}
 
 <input
   type="file"

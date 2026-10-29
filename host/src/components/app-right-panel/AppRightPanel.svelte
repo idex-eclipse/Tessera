@@ -19,6 +19,17 @@
   let dragStartWidth = 0;
   let hasPrinter = $derived((ctx.settings?.printers?.length ?? 0) > 0);
 
+  // Узкий экран: панель — оверлей на всю ширину, сохранённое «свёрнуто» и ширина игнорируются.
+  let narrow = $derived(ctx.ui.isNarrow);
+  let open = $derived(ctx.ui.mobilePanel === 'right');
+  let isCollapsed = $derived(collapsed && !narrow);
+
+  let closeBtn = $state<HTMLButtonElement | null>(null);
+
+  $effect(() => {
+    if (narrow && open) closeBtn?.focus();
+  });
+
   $effect(() => {
     if (!dragging) {
       localWidth = storedWidth;
@@ -26,6 +37,12 @@
   });
 
   let api = $derived(panel ? getPluginApi(ctx, panel.pluginId) : null);
+
+  // Хоткей `R` может «открыть» панель, которой нет (нет принтера / плагина): не оставляем
+  // main заблокированным (inert) без видимого оверлея.
+  $effect(() => {
+    if (open && !(panel && api && hasPrinter)) ctx.ui.closeMobilePanel();
+  });
 
   function toggle() {
     ctx.ui.toggleRightPanel();
@@ -59,18 +76,29 @@
   }
 </script>
 
-{#if panel && api && hasPrinter}
+{#if panel && api && hasPrinter && (!narrow || open)}
   <aside
     class="right-panel"
-    class:collapsed
-    style={`--right-panel-width: ${localWidth}px`}
+    class:collapsed={isCollapsed}
+    class:drawer={narrow}
+    style={narrow ? undefined : `--right-panel-width: ${localWidth}px`}
     aria-label={ctx.i18n.t('common.rightPanel.title')}
   >
-    {#if !collapsed}
+    {#if !isCollapsed}
       <header class="right-panel-header">
         <span class="right-panel-title">
           {ctx.i18n.t('common.rightPanel.title')}
         </span>
+        {#if narrow}
+          <button
+            class="drawer-close"
+            bind:this={closeBtn}
+            onclick={() => ctx.ui.closeMobilePanel()}
+            aria-label={ctx.i18n.t('common.close')}
+          >
+            <Icon name="x" />
+          </button>
+        {/if}
       </header>
     {/if}
 
@@ -78,11 +106,15 @@
       <PluginElementHost
         tag={panel.contribution.element}
         {api}
-        params={{ collapsed: collapsed ? 'true' : 'false' }}
+        params={{
+          collapsed: isCollapsed ? 'true' : 'false',
+          narrow: narrow ? 'true' : 'false',
+        }}
       />
     </div>
 
-    <!-- кнопка сворачивания — ВСЕГДА внизу, в обоих состояниях -->
+    <!-- кнопка сворачивания — ВСЕГДА внизу, в обоих состояниях (кроме узкого экрана) -->
+    {#if !narrow}
     <footer class="right-panel-footer">
       <button
         class="nav-item"
@@ -94,7 +126,7 @@
           : ctx.i18n.t('common.rightPanel.collapseMenu')}
       >
         <span class="nav-icon">
-          <Icon name={collapsed ? 'chevron-left' : 'chevron-right'} />
+          <Icon name={collapsed ? 'chevron-left' : 'chevron-right'} flip />
         </span>
         {#if !collapsed}
           <span class="nav-label">
@@ -112,6 +144,7 @@
       onpointermove={onPointerMove}
       onpointerup={onPointerUp}
     ></div>
+    {/if}
   </aside>
 {/if}
 
@@ -132,6 +165,42 @@
 
   .right-panel.collapsed {
     width: var(--right-panel-collapsed-width, 56px);
+  }
+
+  /* Узкий экран: оверлей на всю ширину под шапкой */
+  .right-panel.drawer {
+    position: fixed;
+    inset-block: var(--header-height) 0;
+    inset-inline: 0;
+    width: auto;
+    border-inline-start: none;
+    z-index: var(--z-drawer);
+    transition: none;
+    animation: drawer-in-end 200ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .right-panel.drawer {
+      animation: none;
+    }
+  }
+
+  .drawer-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .drawer-close:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
 
   .right-panel-header {
@@ -201,7 +270,7 @@
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     width: 100%;
     transition: background var(--transition-fast), color var(--transition-fast);
     white-space: nowrap;
@@ -214,8 +283,7 @@
 
   .nav-item.collapsed {
     justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
+    padding-inline: 0;
     gap: 0;
   }
 

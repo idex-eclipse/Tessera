@@ -833,7 +833,7 @@
     border-color: var(--danger);
   }
   .editor-done {
-    margin-left: auto;
+    margin-inline-start: auto;
     padding: var(--space-xs) var(--space-md);
     border: none;
     border-radius: var(--radius-sm);

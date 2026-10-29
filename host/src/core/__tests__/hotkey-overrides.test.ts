@@ -41,7 +41,7 @@ function setup(manifests: PluginManifest[] = [plugin()], fn = vi.fn()) {
   const registry = createPluginRegistry(settings);
   for (const m of manifests) registry.registerPlugin(m);
 
-  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn() };
+  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn(), toggleSidebar: vi.fn() };
   const manager = createHotkeyManager({
     registry,
     getRoute: () => ({ kind: 'dashboard', printerId: 'a', query: {} }),

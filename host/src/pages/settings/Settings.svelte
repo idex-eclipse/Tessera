@@ -83,7 +83,7 @@
 <style>
   .settings-page { display: flex; gap: var(--space-lg); height: 100%; }
   .settings-nav { display: flex; flex-direction: column; gap: var(--space-xs); width: 200px; flex-shrink: 0; background-color: var(--bg-app); border-radius: var(--radius-md); padding: var(--space-sm)}
-  .settings-nav-item { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border: none; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); cursor: pointer; text-align: left; }
+  .settings-nav-item { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border: none; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); cursor: pointer; text-align: start; }
   .settings-nav-item:hover { background: var(--bg-surface-hover); }
   .settings-nav-item.active { background: var(--bg-surface-active); color: var(--accent); }
   .settings-content { flex: 1; overflow-y: auto; padding: var(--space-md); background: var(--bg-surface); border-radius: var(--radius-lg); }

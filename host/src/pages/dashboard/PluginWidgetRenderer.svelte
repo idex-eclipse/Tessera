@@ -1,5 +1,6 @@
 <script lang="ts">
   import PluginElementHost from '../../components/plugin-element-host.svelte';
+  import { getAppContext } from '../../app-context.ts';
 
   import type { PluginApi, WidgetContribution } from '../../../../plugin-sdk/src/types';
 
@@ -15,11 +16,14 @@
     api: PluginApi;
   } = $props();
 
+  const ctx = getAppContext();
+
   let bodyTag = $derived(widget.contribution.element ?? '');
+  let elementParams = $derived({ ...params, narrow: ctx.ui.isNarrow ? 'true' : 'false' });
 </script>
 
 {#if bodyTag}
-  <PluginElementHost tag={bodyTag} {api} {params} />
+  <PluginElementHost tag={bodyTag} {api} params={elementParams} />
 {:else}
   <div class="widget-load-error">
     Element not found: {widget.contribution.element || widget.contribution.component}

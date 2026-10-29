@@ -6,6 +6,7 @@
   import type { WidgetContribution } from '../../../../plugin-sdk/src/types';
 
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
+  import { getAppContext } from '../../app-context.ts';
 
   import WidgetContainer from './WidgetContainer.svelte';
   import AddWidgetDialog from './AddWidgetDialog.svelte';
@@ -45,19 +46,9 @@
   // Mobile detection
   // ------------------------------------------------------------------
 
-  let isMobile = $state(
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
-  );
-
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px)');
-    const handler = (e: MediaQueryListEvent) => {
-      isMobile = e.matches;
-    };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  });
+  // Единый источник брейкпоинта — ui-store (NARROW_BREAKPOINT).
+  const appCtx = getAppContext();
+  let isMobile = $derived(appCtx.ui.isNarrow);
 
   let mobileLayout = $derived.by(() => {
     if (!isMobile || !layout) return layout;

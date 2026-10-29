@@ -6,6 +6,7 @@
   import { getAppContext } from '../../app-context.ts';
   import { getPluginApi } from '../../core/plugin-api-cache.ts';
   import PluginElementHost from '../plugin-element-host.svelte';
+  import Icon from '../icons/Icon.svelte';
   import { confirm } from '../confirm/confirm-dialog.svelte.ts';
   import AddChipDialog from './AddChipDialog.svelte';
 
@@ -63,10 +64,30 @@
 
   let visible = $derived(editMode || resolved.some((r) => r.element !== null));
 
+  // ---------- Узкий экран: аккордеон ----------
+  // Свёрнут по умолчанию; в edit-режиме всегда раскрыт. «Узкий» не значит «сенсорный»:
+  // мышиный DnD остаётся, а кнопки порядка добавлены для тача, где HTML5 DnD не работает.
+  let narrow = $derived(ctx.ui.isNarrow);
+  let accordionOpen = $state(false);
+  let activeCount = $derived(resolved.filter((r) => r.element !== null).length);
+  let collapsedByAccordion = $derived(narrow && !editMode && !accordionOpen);
+  let touchEdit = $derived(narrow && editMode);
+
+  function moveChip(index: number, delta: -1 | 1): void {
+    if (!printerId) return;
+    const to = index + delta;
+    if (to < 0 || to >= chips.length) return;
+    const next = [...chips];
+    const [moved] = next.splice(index, 1);
+    if (moved) next.splice(to, 0, moved);
+    ctx.settings.setQuickChips(printerId, next);
+  }
+
   function paramsFor(item: QuickChipLayoutItem): Record<string, string> {
     const p: Record<string, string> = {
       chipId: item.id,
       edit: editMode ? '1' : '0',
+      narrow: narrow ? 'true' : 'false',
     };
     if (item.label) p.chipLabel = item.label;
     return p;
@@ -129,7 +150,9 @@
     if (dragSourceIndex === index) return;
 
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const side: 'before' | 'after' = e.clientX < r.left + r.width / 2 ? 'before' : 'after';
+    // В RTL порядок идёт справа налево: левая половина — «после».
+    const leftHalf = e.clientX < r.left + r.width / 2;
+    const side: 'before' | 'after' = leftHalf !== ctx.ui.isRtl ? 'before' : 'after';
 
     dragOverIndex = index;
     dragOverSide = side;
@@ -144,7 +167,8 @@
     }
 
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const after = e.clientX >= r.left + r.width / 2;
+    const rightHalf = e.clientX >= r.left + r.width / 2;
+    const after = rightHalf !== ctx.ui.isRtl;
 
     const next = [...chips];
     const [moved] = next.splice(dragSourceIndex, 1);
@@ -183,8 +207,46 @@
   }
 </script>
 
+{#snippet moveControls(index: number)}
+  {#if touchEdit}
+    <div class="qa-move">
+      <button
+        class="qa-move-btn"
+        disabled={index === 0}
+        onclick={() => moveChip(index, -1)}
+        aria-label={ctx.i18n.t('quickAccess.moveBefore')}
+      >
+        <Icon name="chevron-left" size={18} flip />
+      </button>
+      <button
+        class="qa-move-btn"
+        disabled={index === chips.length - 1}
+        onclick={() => moveChip(index, 1)}
+        aria-label={ctx.i18n.t('quickAccess.moveAfter')}
+      >
+        <Icon name="chevron-right" size={18} flip />
+      </button>
+    </div>
+  {/if}
+{/snippet}
+
 {#if visible && printerId}
-  <div class="quick-access" class:edit={editMode}>
+  <div class="quick-access" class:edit={editMode} class:narrow>
+    {#if narrow && !editMode}
+      <button
+        class="qa-toggle"
+        onclick={() => (accordionOpen = !accordionOpen)}
+        aria-expanded={accordionOpen}
+      >
+        <span class="qa-toggle-title">
+          {ctx.i18n.t('quickAccess.title')} ({activeCount})
+        </span>
+        <span class="qa-chevron" class:open={accordionOpen}>
+          <Icon name="chevron-down" size={18} />
+        </span>
+      </button>
+    {/if}
+
     {#if editMode}
       <div class="qa-toolbar">
         <span class="qa-hint">{ctx.i18n.t('quickAccess.editHint')}</span>
@@ -208,7 +270,8 @@
       {/if}
     {/if}
 
-    <div class="qa-chips">
+    <!-- Скрываем через CSS, а не {#if}: иначе chips теряют состояние при сворачивании -->
+    <div class="qa-chips" class:accordion-closed={collapsedByAccordion} class:accordion-body={narrow && !editMode}>
       {#each resolved as r (r.item.instanceId)}
         {#if r.element && r.pluginId}
           {@const api = apiFor(r.pluginId)}
@@ -218,6 +281,7 @@
               class:dragging={dragSourceIndex === r.index}
               class:drag-over-before={dragOverIndex === r.index && dragOverSide === 'before'}
               class:drag-over-after={dragOverIndex === r.index && dragOverSide === 'after'}
+              class:touch-edit={touchEdit}
               draggable={editMode ? 'true' : 'false'}
               ondragstart={(e) => onDragStart(e, r.index)}
               ondragover={(e) => onDragOver(e, r.index)}
@@ -226,6 +290,7 @@
               ondragend={onDragEnd}
             >
               <PluginElementHost tag={r.element} {api} params={paramsFor(r.item)} fill={false} />
+              {@render moveControls(r.index)}
               {#if editMode}
                 <button
                   class="qa-x"
@@ -244,6 +309,7 @@
             class:dragging={dragSourceIndex === r.index}
             class:drag-over-before={dragOverIndex === r.index && dragOverSide === 'before'}
             class:drag-over-after={dragOverIndex === r.index && dragOverSide === 'after'}
+            class:touch-edit={touchEdit}
             draggable={editMode ? 'true' : 'false'}
             ondragstart={(e) => onDragStart(e, r.index)}
             ondragover={(e) => onDragOver(e, r.index)}
@@ -254,6 +320,7 @@
             <span class="qa-ghost-text">
               {ctx.i18n.t('quickAccess.providerMissing')} · {r.item.type} · {r.item.provider}
             </span>
+            {@render moveControls(r.index)}
             {#if editMode}
               <button
                 class="qa-x"
@@ -344,15 +411,78 @@
     border-radius: 2px;
     pointer-events: none;
   }
-  .quick-access.edit .qa-chip-wrap.drag-over-before::before { left: -6px; }
-  .quick-access.edit .qa-chip-wrap.drag-over-after::after  { right: -6px; }
+  .quick-access.edit .qa-chip-wrap.drag-over-before::before { inset-inline-start: -6px; }
+  .quick-access.edit .qa-chip-wrap.drag-over-after::after  { inset-inline-end: -6px; }
 
   .qa-x {
-    position: absolute; top: -6px; right: -6px; z-index: 5;
+    position: absolute; top: -6px; inset-inline-end: -6px; z-index: 5;
     width: 16px; height: 16px; border-radius: 50%; border: none;
     background: var(--danger); color: var(--accent-text); font-size: 10px; line-height: 1;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
+
+  /* ---------- Узкий экран ---------- */
+
+  .qa-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    width: 100%;
+    min-height: var(--touch-target);
+    padding: 0 var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .qa-chevron {
+    display: flex;
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+  }
+  .qa-chevron.open { transform: rotate(180deg); }
+
+  .qa-chips.accordion-closed { display: none; }
+
+  /* два ряда chips видны сразу, остальное — внутренний скролл, чтобы не съедать экран */
+  .qa-chips.accordion-body {
+    max-height: calc(var(--grid-row-height) * 2 + var(--space-xs));
+    overflow-y: auto;
+  }
+
+  /* ✕ 28px визуально, зона нажатия расширена до ~44px */
+  .quick-access.narrow .qa-x {
+    width: 28px; height: 28px; font-size: 14px;
+    top: -10px; inset-inline-end: -10px;
+  }
+  .quick-access.narrow .qa-x::after {
+    content: ''; position: absolute; inset: -8px;
+  }
+
+  /* Тач-edit: порядок меняется кнопками, под chip */
+  .qa-chip-wrap.touch-edit {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-xs);
+  }
+  .qa-move { display: flex; gap: var(--space-xs); }
+  .qa-move-btn {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    min-height: var(--touch-target);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .qa-move-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .qa-chip-wrap.ghost {
     padding: 0 var(--space-sm);
     border: 1px dashed var(--border-color);

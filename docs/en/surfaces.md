@@ -132,7 +132,8 @@ collapses into a single column. The layout is stored per printer
 ### Parameters
 
 The widget body receives `params` = the dashboard route's query parameters (for
-example `edit: '1'` in edit mode, `preview: <file>` on a preview deep link).
+example `edit: '1'` in edit mode, `preview: <file>` on a preview deep link)
+plus `narrow` (see [Narrow screens](#9-narrow-screens)).
 
 ### Widget design
 
@@ -154,10 +155,11 @@ in registration order and **push** the content down (they do not cover it).
 - **The plugin decides visibility.** The host always mounts the element; when
   there is nothing to report, the element must render *nothing* (empty content
   without height).
-- `params = { mode, route }`:
+- `params = { mode, route, narrow }`:
   - `mode` — `'expanded'` or `'collapsed'`; the host collapses banners on scroll
     down (threshold 32px) and expands them when scrolling back to the top;
-  - `route` — `'dashboard'` | `'plugin-page'` | `'settings'`.
+  - `route` — `'dashboard'` | `'plugin-page'` | `'settings'`;
+  - `narrow` — `'true'` | `'false'`, see [Narrow screens](#9-narrow-screens).
 - The `scope` field is declared in the type but is not applied by the host —
   filter by `params.route` yourself.
 - **Manual control.** A banner can request the expanded or collapsed state with
@@ -270,8 +272,8 @@ interpret it. What items exist and how they look is up to the plugin.
 
 ### Chip (`element`)
 
-- `params = { chipId, chipLabel?, edit: '1' | '0' }`. `chipId` is that same item
-  `id`; `chipLabel` is the user's label.
+- `params = { chipId, chipLabel?, edit: '1' | '0', narrow: 'true' | 'false' }`. `chipId` is
+  that same item `id`; `chipLabel` is the user's label.
 - The chip root stretches to the full slot height (**80px**), width follows
   content; limit it on the plugin side (`max-width` + `text-overflow: ellipsis`).
 - Reveal the action with a **popover**, not by expanding the chip in place
@@ -363,3 +365,36 @@ owning plugin's page). The handler is a module export
 A unique slot. The host accepts `rightPanel` **only** from `@core/system`; from any
 other plugin the contribution is rejected with a console warning. Remote plugins
 cannot use the right panel.
+
+---
+
+## 9. Narrow screens
+
+The host switches to "narrow" mode at a window width ≤ **768px** (a single
+breakpoint, `ui.isNarrow` in `ui-store`). Every plugin surface the host mounts
+itself (banners, chips, widget body, right panel) receives
+`params.narrow` = `'true'` | `'false'` — a string, like the other `params`.
+The value is fixed when the element is mounted; on a window resize the host only
+updates the element's `data-narrow` attribute (component props are not reactive).
+To react live, use `matchMedia('(max-width: 768px)')` or container queries on
+your own container: `narrow` is a convenience flag, not a replacement. Narrow
+mode means a *small window*, not a touch device: mouse, keyboard and hotkeys
+keep working exactly as on desktop.
+
+What the host does by itself in narrow mode:
+
+- **Side panels** (menu and right panel) open over the content at full width under
+  the header; at most one is open. The right panel always receives
+  `collapsed: 'false'`; the saved "collapsed" state and width are ignored.
+- **Mounting.** A side panel is mounted only while it is open. Anything that must
+  work with the panel closed (notifications, toasts, hotkey handlers) must live in
+  an always-mounted surface (an overlay) and must not depend on the panel's DOM.
+  The `R` and `L` hotkeys toggle the right panel and the left menu: on a wide
+  screen they collapse/expand them, on a narrow one they open/close the overlay.
+- **Banners.** If several banners are visible at once, the host groups them under
+  a "Notifications: N" row. A banner counts as visible when its height is non-zero,
+  so keep rendering *nothing* when there is nothing to report. Tapping the row
+  sends the same `mpu:banner-expand` / `mpu:banner-collapse` events.
+- **Chips** are folded into a "Quick access" accordion (collapsed by default, open
+  in edit mode); on touch the order is changed with buttons, not drag-and-drop.
+  The chip height is unchanged (80px).

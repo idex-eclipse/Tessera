@@ -23,7 +23,7 @@
     align-items: center;
     padding: 0 var(--space-sm);
     background: var(--bg-header);
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
     flex-shrink: 0;
     overflow: hidden;
     transition: width var(--transition-normal);
