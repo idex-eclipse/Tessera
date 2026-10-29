@@ -372,8 +372,10 @@ cannot use the right panel.
 
 ## 9. Narrow screens
 
-The host switches to "narrow" mode at a window width ≤ **768px** (a single
-breakpoint, `ui.isNarrow` in `ui-store`). Every plugin surface the host mounts
+The host switches to "narrow" mode at a width ≤ **768px** (a single breakpoint,
+`NARROW_BREAKPOINT` in `ui-store`). The side panels follow the *window* width
+(`ui.isNarrow`); banners, chips and widgets follow the width of the *work area*
+(main/dashboard), so a wide window with both sidebars open can still be "narrow" for them. Every plugin surface the host mounts
 itself (banners, chips, widget body, right panel) receives
 `params.narrow` = `'true'` | `'false'` — a string, like the other `params`.
 The value is fixed when the element is mounted; on a window resize the host only

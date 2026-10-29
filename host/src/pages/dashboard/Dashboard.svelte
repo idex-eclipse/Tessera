@@ -6,7 +6,7 @@
   import type { WidgetContribution } from '../../../../plugin-sdk/src/types';
 
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
-  import { NARROW_BREAKPOINT } from '../../core/ui-store.svelte.ts';
+  import { narrowWidth } from '../../core/narrow-width.ts';
 
   import WidgetContainer from './WidgetContainer.svelte';
   import AddWidgetDialog from './AddWidgetDialog.svelte';
@@ -51,18 +51,6 @@
   // Порог — единый брейкпоинт хоста (ui-store). Сетка остаётся сеткой: меняется только число
   // колонок (одна), высота карточки по-прежнему задаётся рядами `h`.
   let isMobile = $state(false);
-
-  $effect(() => {
-    const el = gridEl;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const measure = () => {
-      isMobile = el.clientWidth > 0 && el.clientWidth < NARROW_BREAKPOINT;
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  });
 
   let mobileLayout = $derived.by(() => {
     if (!isMobile || !layout) return layout;
@@ -347,7 +335,7 @@
       <p class="empty-hint">{i18n.t('dashboard.editToStart')}</p>
     </div>
   {:else}
-    <div class="dashboard-grid" class:edit-mode={editMode} class:mobile={isMobile} bind:this={gridEl}>
+    <div class="dashboard-grid" class:edit-mode={editMode} class:mobile={isMobile} bind:this={gridEl} use:narrowWidth={(v) => (isMobile = v)}>
       {#each displayLayout as item (item.instanceId)}
         {#if editMode}
           <div
@@ -379,6 +367,7 @@
             {printerManager}
             {i18n}
             params={params}
+            narrow={isMobile}
           />
         {/if}
       {/each}

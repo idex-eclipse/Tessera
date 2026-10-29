@@ -9,6 +9,7 @@
   import PluginSlot from '../plugin-slot/PluginSlot.svelte';
   import PluginBanners from '../plugin-banners/PluginBanners.svelte';
   import QuickAccessPanel from '../quick-access/QuickAccessPanel.svelte';
+  import { narrowWidth } from '../../core/narrow-width.ts';
 
   let {
     printerManager,
@@ -30,6 +31,10 @@
 
   let mainEl: HTMLElement | null = null;
   let scrollerEl: HTMLElement | null = null;
+
+  // Ширина рабочей области (а не окна): баннеры и чипы принимают мобильный вид, когда область
+  // уже брейкпоинта — в том числе на широком экране с двумя открытыми сайдбарами.
+  let narrow = $state(false);
 
   let bannerMode = $state<'expanded' | 'collapsed'>('expanded');
   let lock = $state<'none' | 'expanded' | 'collapsed'>('none');
@@ -122,9 +127,9 @@
   });
 </script>
 
-<main class="main" bind:this={mainEl}>
-  <PluginBanners mode={bannerMode} routeKind={route.kind} />
-  <QuickAccessPanel {route} />
+<main class="main" bind:this={mainEl} use:narrowWidth={(v) => (narrow = v)}>
+  <PluginBanners mode={bannerMode} routeKind={route.kind} {narrow} />
+  <QuickAccessPanel {route} {narrow} />
 
   <div class="route-scroll" bind:this={scrollerEl}>
     {#if route.kind === 'dashboard'}

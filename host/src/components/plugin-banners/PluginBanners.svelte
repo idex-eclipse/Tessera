@@ -6,9 +6,12 @@
   let {
     mode = 'expanded',
     routeKind = 'dashboard',
+    narrow = false,
   }: {
     mode?: 'expanded' | 'collapsed';
     routeKind?: string;
+    /** Рабочая область уже брейкпоинта (считает AppMain), а не окно. */
+    narrow?: boolean;
   } = $props();
 
   const ctx = getAppContext();
@@ -39,7 +42,7 @@
   // На узком экране несколько видимых баннеров группируются под одну строку-«аккордеон».
   // Состояние раскрытия — это bannerMode scroll-машинки AppMain; строка лишь
   // шлёт те же намерения (expand/collapse), что и плагины.
-  let grouped = $derived(ctx.ui.isNarrow && visibleCount > 1);
+  let grouped = $derived(narrow && visibleCount > 1);
   let expanded = $derived(mode === 'expanded');
 
   function toggle(event: MouseEvent) {
@@ -80,7 +83,7 @@
             params={{
               mode,
               route: routeKind,
-              narrow: ctx.ui.isNarrow ? 'true' : 'false',
+              narrow: narrow ? 'true' : 'false',
             }}
           />
         </div>

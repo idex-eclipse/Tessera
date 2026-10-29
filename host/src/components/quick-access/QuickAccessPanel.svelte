@@ -10,7 +10,7 @@
   import { confirm } from '../confirm/confirm-dialog.svelte.ts';
   import AddChipDialog from './AddChipDialog.svelte';
 
-  let { route }: { route: Route } = $props();
+  let { route, narrow = false }: { route: Route; narrow?: boolean } = $props();
 
   const ctx = getAppContext();
 
@@ -67,7 +67,6 @@
   // ---------- Узкий экран: аккордеон ----------
   // Свёрнут по умолчанию; в edit-режиме всегда раскрыт. «Узкий» не значит «сенсорный»:
   // мышиный DnD остаётся, а кнопки порядка добавлены для тача, где HTML5 DnD не работает.
-  let narrow = $derived(ctx.ui.isNarrow);
   let accordionOpen = $state(false);
   let activeCount = $derived(resolved.filter((r) => r.element !== null).length);
   let collapsedByAccordion = $derived(narrow && !editMode && !accordionOpen);

@@ -18,6 +18,7 @@
     printerManager,
     i18n,
     params = {},
+    narrow = false,
   }: {
     item: DashboardWidgetLayoutItem;
     printerId: string;
@@ -25,6 +26,8 @@
     printerManager: PrinterManager;
     i18n: HostI18n;
     params?: Record<string, string>;
+    /** Dashboard уже брейкпоинта (считает Dashboard). */
+    narrow?: boolean;
   } = $props();
 
   let widget = $derived(
@@ -70,7 +73,7 @@
 
   <div class="widget-content">
     {#if widget && pluginApi}
-      <PluginWidgetRenderer {widget} {printerId} {params} api={pluginApi} />
+      <PluginWidgetRenderer {widget} {printerId} {params} {narrow} api={pluginApi} />
     {:else}
       <div class="widget-placeholder widget-placeholder-error">
         Widget not found: {item.type} / {item.provider}
