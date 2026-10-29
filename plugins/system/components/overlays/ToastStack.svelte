@@ -88,7 +88,7 @@
     position: fixed;
     z-index: 550;
     bottom: 8px;
-    width: - min(360px, calc(100vw - 16px));
+    width: min(360px, calc(100vw - 16px));
     display: flex;
     flex-direction: column-reverse;
     gap: var(--space-xs);

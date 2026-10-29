@@ -620,17 +620,16 @@ function createAggregator(api: PluginApi) {
   // ------------------------------------------------------------------
   // Public
   // ------------------------------------------------------------------
-  let activeToasts = $derived.by(() => {
-    const visible = items.filter((n) => !n.dismissed);
-    return visible.slice(0, TOAST_CAP);
-  });
-
+  // Не $derived: агрегатор создаётся в инициализации первого потребителя, и derived
+  // уничтожается вместе с его компонентом (например, при перемонтировании правой
+  // панели) — после этого тосты переставали реагировать на dismiss. Геттер читает
+  // модульный $state напрямую, поэтому реактивен в любом потребителе.
   const store = {
     get items() {
       return items;
     },
     get activeToasts() {
-      return activeToasts;
+      return items.filter((n) => !n.dismissed).slice(0, TOAST_CAP);
     },
     get unseenCount() {
       return items.filter((n) => !n.seen).length;
