@@ -291,13 +291,14 @@ More: [docs/en/deployment.md](docs/en/deployment.md#installing-the-host-deployin
 ### Extensions
 
 Optional plugins are installed from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext)
-registry. Each plugin there is a prebuilt archive. The plugin manager downloads it,
-checks its sha256 and unpacks it into `~/tessera/extensions/`; nothing is built on the
-printer.
+registry, which holds each plugin's open sources and prebuilt archives. The plugin manager
+downloads an archive, checks its sha256 and unpacks it into `~/tessera/extensions/`;
+nothing is built on the printer.
 
 ```bash
 tessera-ext                     # menu: Install / Update / Remove (or E) in the `tessera` menu)
 tessera-ext install spoolman    # or directly
+tessera-ext branch dev          # registry branch, e.g. unreleased versions (menu: S) Settings)
 ```
 
 Then enable the plugin in the UI: **Settings → Plugins → Refresh → Install**. After an

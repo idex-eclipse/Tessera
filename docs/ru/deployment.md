@@ -61,6 +61,7 @@ tessera-ext list                # плагины реестра + что уст�
 tessera-ext install hello       # скачать → sha256 → extensions/hello/
 tessera-ext update --all        # или: update hello
 tessera-ext remove hello
+tessera-ext branch dev          # ветка реестра (и в меню: S) Settings)
 ```
 
 Команду `tessera-ext` (`/usr/local/bin/tessera-ext`) создаёт `deploy/install.sh`.
@@ -85,7 +86,13 @@ tessera-ext remove hello
 реестра появляется файл `.tessera-origin.json`. Папку, положенную вручную, CLI без
 `--force` не перезапишет.
 
-`TESSERA_REGISTRY_URL` переопределяет адрес реестра: `https://`, `file://` или
+**Ветка реестра.** CLI читает `registry/registry.json` из ветки `main` репозитория
+`Tessera-Ext`. Другая ветка (например, `dev` с ещё не выпущенными версиями)
+выбирается в меню (**S) Settings → Branch**, список веток с GitHub) или командой
+`tessera-ext branch <имя>`. Выбор сохраняется в `~/.config/tessera/tessera-ext.conf`
+и не зависит от ветки самого Tessera. `TESSERA_EXT_BRANCH` задаёт ветку на один запуск.
+
+`TESSERA_REGISTRY_URL` переопределяет адрес реестра и ветку: `https://`, `file://` или
 локальный путь. Локальный путь удобен, чтобы проверить реестр до публикации.
 
 Раздача на сервере:
@@ -283,15 +290,20 @@ TESSERA_NO_PROMPT=1 bash install.sh      # без терминала и вопр
 
 ### Публикация в реестр
 
-Реестр — репозиторий [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext).
+Реестр — репозиторий [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext). В нём
+лежат и **исходники** плагинов (`plugins/<имя>/`), и собранные из них **архивы**
+(`registry/`), поэтому каждый опубликованный архив можно сверить с открытым кодом.
 Архивы лежат рядом с `registry/registry.json` и скачиваются оттуда же
-(raw.githubusercontent.com), релизы не нужны. Папка плагина внутри Tessera
-(`Tessera/extensions/<плагин>`) упаковывается прямо в него:
+(raw.githubusercontent.com), релизы не нужны.
+
+Плагины разрабатываются в `Tessera-Ext/plugins/<имя>/`, а рядом с репозиторием лежит
+Tessera (`…/Tessera` и `…/Tessera-Ext`). `npm run dev` там пересобирает плагин при
+изменениях и копирует результат в `Tessera/extensions/<имя>/`, который раздаёт
+dev-сервер. Версия публикуется из папки плагина:
 
 ```bash
-npm run pack -- . <путь>/tessera-ext/registry   # собственный скрипт плагина (см. плагин Spoolman)
-# который вызывает:
-node tools/registry-pack.cjs path/to/built-plugin --dir hello --url-base . --out <путь>/tessera-ext/registry
+npm run pack       # собственный скрипт плагина (см. plugins/spoolman), который вызывает:
+node <Tessera>/tools/registry-pack.cjs dist --dir hello --url-base . --out <Tessera-Ext>/registry
 ```
 
 Скрипт кладёт `registry/hello-<version>.tar.gz` и добавляет или заменяет запись

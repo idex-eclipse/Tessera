@@ -62,6 +62,7 @@ tessera-ext list                # registry plugins + installed state
 tessera-ext install hello       # download → sha256 → extensions/hello/
 tessera-ext update --all        # or: update hello
 tessera-ext remove hello
+tessera-ext branch dev          # registry branch (also in the menu: S) Settings)
 ```
 
 `deploy/install.sh` creates the `tessera-ext` command (`/usr/local/bin/tessera-ext`).
@@ -87,8 +88,15 @@ failed update leaves the previous version in place. Registry plugins get an
 `.tessera-origin.json` file next to the manifest. The CLI refuses to overwrite a
 folder you put there by hand unless you pass `--force`.
 
-`TESSERA_REGISTRY_URL` overrides the registry address (`https://`, `file://` or a
-local path, which is handy for testing a registry before publishing).
+**Registry branch.** The CLI reads `registry/registry.json` from the `main` branch of
+`Tessera-Ext`. Another branch (for example `dev`, with versions that are not released
+yet) is chosen in the menu (**S) Settings → Branch**, a list of branches from GitHub)
+or with `tessera-ext branch <name>`. The choice is saved in
+`~/.config/tessera/tessera-ext.conf` and does not depend on the Tessera branch.
+`TESSERA_EXT_BRANCH` sets it for one run.
+
+`TESSERA_REGISTRY_URL` overrides the registry address and the branch (`https://`,
+`file://` or a local path, which is handy for testing a registry before publishing).
 
 Serving on the server:
 
@@ -286,14 +294,19 @@ The script does not run as root. Every install and update regenerates
 ### Publishing to the registry
 
 The registry is the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext)
-repository. Its archives sit next to `registry/registry.json` and are downloaded from
-the same place (raw.githubusercontent.com), so no releases are needed. A plugin folder
-inside a Tessera checkout (`Tessera/extensions/<plugin>`) is packed straight into it:
+repository. It holds both the plugin **sources** (`plugins/<name>/`) and the
+**archives** built from them (`registry/`), so every published archive can be checked
+against open code. Archives sit next to `registry/registry.json` and are downloaded
+from the same place (raw.githubusercontent.com), so no releases are needed.
+
+Plugins are developed in `Tessera-Ext/plugins/<name>/` with a Tessera checkout next to
+the repository (`…/Tessera` and `…/Tessera-Ext`). `npm run dev` there rebuilds on
+change and copies the result into `Tessera/extensions/<name>/`, which this dev server
+serves. A version is published from the plugin folder:
 
 ```bash
-npm run pack -- . <path-to>/tessera-ext/registry   # the plugin's own script (see the Spoolman plugin)
-# which runs:
-node tools/registry-pack.cjs path/to/built-plugin --dir hello --url-base . --out <path-to>/tessera-ext/registry
+npm run pack       # the plugin's own script (see plugins/spoolman), which runs:
+node <Tessera>/tools/registry-pack.cjs dist --dir hello --url-base . --out <Tessera-Ext>/registry
 ```
 
 It writes `registry/hello-<version>.tar.gz` and adds or replaces the plugin's entry

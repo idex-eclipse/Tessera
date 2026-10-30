@@ -11,13 +11,17 @@
  *   node tools/tessera-ext.cjs update [<name> | --all]
  *   node tools/tessera-ext.cjs remove <name>
  *   node tools/tessera-ext.cjs sync
+ *   node tools/tessera-ext.cjs branch [<name>]   show / switch the registry branch
  * <name> is the plugin id ("tessera/spoolman") or its short name ("spoolman").
  *
+ * Registry: registry/registry.json of the Tessera-Ext repository on the chosen
+ * branch (default main; saved in ~/.config/tessera/tessera-ext.conf).
  * Env:
- *   TESSERA_REGISTRY_URL — registry.json (https://, file:// or local path)
+ *   TESSERA_REGISTRY_URL — registry.json (https://, file:// or local path); overrides the branch
+ *   TESSERA_EXT_BRANCH   — branch for this run only
  *
- * Nothing is built or executed on the host: the registry ships archives built
- * in its CI, each archive is verified against sha256 from registry.json before
+ * Nothing is built or executed on the host: the registry ships prebuilt
+ * archives, each archive is verified against sha256 from registry.json before
  * it is unpacked. Only plain files and directories are accepted from archives.
  */
 
@@ -30,9 +34,73 @@ const { pathToFileURL, fileURLToPath } = require('url');
 
 const { scanExtensions, EXTENSIONS_DIR, ORIGIN_FILE } = require('./extensions-sync.cjs');
 
-const REGISTRY_URL =
-  process.env.TESSERA_REGISTRY_URL ||
-  'https://raw.githubusercontent.com/idex-eclipse/Tessera-Ext/main/registry/registry.json';
+// ------------------------------------------------------------------
+// Registry location and branch
+// ------------------------------------------------------------------
+
+const REGISTRY_REPO = 'idex-eclipse/Tessera-Ext';
+const CONF_FILE = path.join(
+  process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+  'tessera',
+  'tessera-ext.conf',
+);
+const BRANCH_RE = /^[A-Za-z0-9._\/-]{1,100}$/;
+
+/** KEY=value lines; the file is data, never code. */
+function readConf() {
+  const conf = {};
+  try {
+    for (const line of fs.readFileSync(CONF_FILE, 'utf8').split(/\r?\n/)) {
+      const m = /^([A-Z_]+)=(.*)$/.exec(line);
+      if (m) conf[m[1]] = m[2];
+    }
+  } catch {
+    // no settings yet
+  }
+  return conf;
+}
+
+function saveBranch(branch) {
+  fs.mkdirSync(path.dirname(CONF_FILE), { recursive: true });
+  fs.writeFileSync(CONF_FILE, `# Tessera plugin manager settings — written by tools/tessera-ext.cjs\nBRANCH=${branch}\n`);
+}
+
+/** Validates and saves the branch; `known` = remote branches ([] = cannot check). */
+function setBranch(name, known) {
+  if (!BRANCH_RE.test(name) || name.includes('..')) throw new Error(`invalid branch name "${name}"`);
+  if (known.length && !known.includes(name)) {
+    throw new Error(`branch "${name}" not found in ${REGISTRY_REPO}. Available: ${known.join(', ')}`);
+  }
+  saveBranch(name);
+  // The saved choice wins over the per-run variable for the rest of this run.
+  delete process.env.TESSERA_EXT_BRANCH;
+}
+
+/** { branch, url, custom } — custom = TESSERA_REGISTRY_URL overrides the branch. */
+function registrySource() {
+  const branch = process.env.TESSERA_EXT_BRANCH || readConf().BRANCH || 'main';
+  if (process.env.TESSERA_REGISTRY_URL) {
+    return { branch, url: process.env.TESSERA_REGISTRY_URL, custom: true };
+  }
+  return { branch, url: `https://raw.githubusercontent.com/${REGISTRY_REPO}/${branch}/registry/registry.json`, custom: false };
+}
+
+/** Branch names of the registry repository on GitHub ([] when offline). */
+function remoteBranches() {
+  try {
+    return execFileSync('git', ['ls-remote', '--heads', `https://github.com/${REGISTRY_REPO}.git`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 15_000,
+    })
+      .split('\n')
+      .map((l) => l.split('refs/heads/')[1])
+      .filter(Boolean)
+      .sort();
+  } catch {
+    return [];
+  }
+}
 
 /** Major version of the plugin contract (PluginApi + CE contract) this host implements. */
 const HOST_PLUGIN_API = 1;
@@ -64,7 +132,7 @@ async function fetchBytes(url) {
 }
 
 async function loadRegistry() {
-  const url = toUrl(REGISTRY_URL);
+  const url = toUrl(registrySource().url);
   const data = JSON.parse((await fetchBytes(url)).toString('utf8'));
   if (!data || data.schema !== 1 || !Array.isArray(data.plugins)) {
     throw new Error(`Unsupported registry format at ${url.href} (expected schema 1)`);
@@ -459,8 +527,12 @@ function statusText(r) {
   return c.red('Not installed');
 }
 
-function renderMain(rows, registryUrl) {
-  const left = ['', '  1) [Install]', '  2) [Update]', '  3) [Remove]', '', '  R) [Refresh]'];
+function branchLabel(source) {
+  return source.custom ? c.yellow('custom') : c.cyan(source.branch);
+}
+
+function renderMain(rows, registryUrl, source) {
+  const left = ['', '  1) [Install]', '  2) [Update]', '  3) [Remove]', '', '  S) [Settings]', '  R) [Refresh]'];
   const nameWidth = Math.min(14, Math.max(0, ...rows.map((r) => r.name.length)));
   const right = [''];
   for (const r of rows.slice(0, 8)) right.push(` ${r.name.slice(0, nameWidth).padStart(nameWidth)}: ${statusText(r)}`);
@@ -473,9 +545,26 @@ function renderMain(rows, registryUrl) {
   }
   lines.push(
     rule(MAIN_COLS, '┼'),
-    row([` Plugin API v${HOST_PLUGIN_API}`, ` Registry: ${registryUrl ? registryLabel(registryUrl) : c.red('unreachable')}`], MAIN_COLS),
+    row([` Branch: ${branchLabel(source)}`, ` Registry: ${registryUrl ? registryLabel(registryUrl) : c.red('unreachable')}`], MAIN_COLS),
     rule(MAIN_COLS, '┴'),
     row([center('Q) Quit')]),
+    boxBottom(),
+  );
+  return lines;
+}
+
+function renderSettings(source) {
+  const lines = [boxTop(), title('Settings'), rule(), row([''])];
+  lines.push(row([`  1) [Branch]   ${branchLabel(source)}`]));
+  if (source.custom) lines.push(row([c.yellow('     TESSERA_REGISTRY_URL is set: the branch is ignored')]));
+  lines.push(
+    row(['']),
+    row([c.dim(`  Registry:   ${source.url}`)]),
+    row([c.dim(`  Plugin API: v${HOST_PLUGIN_API}`)]),
+    row([c.dim(`  Saved in:   ${CONF_FILE}`)]),
+    row(['']),
+    rule(),
+    row([center('B) « Back')]),
     boxBottom(),
   );
   return lines;
@@ -573,6 +662,31 @@ async function cmdMenu() {
     return a === 'y' || a === 'yes';
   };
 
+  /** Lists the registry's branches and saves the choice; true when it changed. */
+  async function pickBranch() {
+    const current = registrySource().branch;
+    const branches = remoteBranches();
+    if (branches.length) {
+      console.log(`Branches of ${REGISTRY_REPO}:`);
+      branches.forEach((b, i) => console.log(`  ${String(i + 1).padStart(2)}) ${b}${b === current ? ` ${c.green('(current)')}` : ''}`));
+    } else {
+      console.log('[tessera-ext] cannot list branches (offline?) — type the name');
+    }
+    const raw = await prompt.ask(`###### Branch (number or name, Enter = keep ${current}): `);
+    if (!process.stdin.isTTY) console.log(raw ?? '');
+    const value = raw?.trim();
+    if (!value) return false;
+    const name = /^\d+$/.test(value) && branches.length ? branches[Number(value) - 1] : value;
+    if (!name) {
+      invalid();
+      return false;
+    }
+    if (name === current) return false;
+    setBranch(name, branches);
+    console.log(`###### Branch: ${name}`);
+    return true;
+  }
+
   await refresh();
   let screen = 'main';
   print(renderHeader());
@@ -582,13 +696,25 @@ async function cmdMenu() {
       const rows = status();
 
       if (screen === 'main') {
-        print(renderMain(rows, registry?.url));
+        print(renderMain(rows, registry?.url, registrySource()));
         const a = await ask();
         if (a === null || a === 'q') break;
         if (a === '1') screen = 'install';
         else if (a === '2') screen = 'update';
         else if (a === '3') screen = 'remove';
+        else if (a === 's') screen = 'settings';
         else if (a === 'r') await refresh();
+        else invalid();
+        continue;
+      }
+
+      if (screen === 'settings') {
+        print(renderSettings(registrySource()));
+        const a = await ask();
+        if (a === null) break;
+        if (a === 'b') screen = 'main';
+        // A new branch = another registry.json: fetch it right away.
+        else if (a === '1') await act(async () => ((await pickBranch()) ? (await refresh(), false) : false));
         else invalid();
         continue;
       }
@@ -648,7 +774,22 @@ const USAGE = `Usage: tessera-ext [command]
   update [<name>|--all] update one or all registry plugins
   remove <name>         delete an installed plugin
   sync                  rebuild extensions/index.json
+  branch [<name>]       show / switch the registry branch (saved in ${CONF_FILE})
 Options: --force (replace a hand-installed plugin / reinstall the same version)`;
+
+function cmdBranch(name) {
+  const source = registrySource();
+  if (!name) {
+    console.log(source.custom
+      ? `registry: ${source.url} (TESSERA_REGISTRY_URL; branch ${source.branch} is ignored)`
+      : `branch:   ${source.branch}\nregistry: ${source.url}`);
+    const branches = remoteBranches();
+    if (branches.length) console.log(`available: ${branches.join(', ')}`);
+    return;
+  }
+  setBranch(name, remoteBranches());
+  console.log(`branch: ${name} (saved in ${CONF_FILE})`);
+}
 
 async function main(argv) {
   const [cmd, ...rest] = argv;
@@ -663,6 +804,7 @@ async function main(argv) {
     case 'update': return void (await cmdUpdate(arg, opts));
     case 'remove': return cmdRemove(arg);
     case 'sync': return scanExtensions();
+    case 'branch': return cmdBranch(arg);
     case undefined:
       if (process.stdin.isTTY) return cmdMenu();
       console.log(USAGE);

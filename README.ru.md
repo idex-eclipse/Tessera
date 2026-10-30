@@ -290,13 +290,15 @@ Klipper. Ветка и «плагины по URL» берутся из **S) Sett
 ### Расширения
 
 Необязательные плагины ставятся из реестра
-[tessera-ext](https://github.com/idex-eclipse/Tessera-Ext). Каждый плагин там —
-готовый архив. Менеджер расширений скачивает его, сверяет sha256 и распаковывает в
-`~/tessera/extensions/`; на принтере ничего не собирается.
+[tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): там лежат открытые
+исходники каждого плагина и его готовые архивы. Менеджер расширений скачивает
+архив, сверяет sha256 и распаковывает в `~/tessera/extensions/`; на принтере ничего
+не собирается.
 
 ```bash
 tessera-ext                     # меню: Install / Update / Remove (или E) в меню `tessera`)
 tessera-ext install spoolman    # или напрямую
+tessera-ext branch dev          # ветка реестра, например невыпущенные версии (меню: S) Settings)
 ```
 
 Затем включите плагин в UI: **Settings → Plugins → Refresh → Install**. После
