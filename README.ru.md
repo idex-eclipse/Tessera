@@ -44,6 +44,8 @@
 - [Требования](#requirements)
 - [Установка](#installation)
   - [Одной строкой (Armbian / Debian)](#installer-one-liner)
+  - [Меню установщика: `tessera`](#installer-menu)
+  - [Расширения](#installing-extensions)
   - [Вручную / для разработки](#manual-development)
   - [Первый запуск](#first-launch)
 - [Разработчикам](#for-developers)
@@ -198,7 +200,7 @@ regex-фильтры сообщений и настройки reverse/autoscroll
 |---|---|
 | Расширение Klipper `gcode_shell_command` | PNG-графики shaper / belts (ставится вручную через kiauh) |
 | crowsnest / mjpegstreamer / ustreamer | виджеты камер |
-| Spoolman (через Moonraker) | плагин катушек филамента (отдельный remote-плагин, в разработке) |
+| Spoolman (через Moonraker) | необязательный плагин `tessera/spoolman` из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): катушка на каждый инструмент, проверка филамента перед печатью |
 
 <a id="installation"></a>
 ## Установка
@@ -210,34 +212,96 @@ regex-фильтры сообщений и настройки reverse/autoscroll
 curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
   -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
 ```
-Установщик открывает меню в стиле kiauh — **Install / Update / Remove / Settings** (ветка, плагины по URL) **/ Extensions**; после установки это команда `tessera` (подробнее: [docs/ru/deployment.md](docs/ru/deployment.md)). Install и Update **идемпотентны**. При установке и обновлении установщик:
-Установщик **идемпотентен** — повторный запуск обновляет всё на месте. Он:
+
+Установщик открывает меню в стиле kiauh. Выберите **1) Install** и ответьте на
+четыре вопроса: каталог установки, порт nginx, адрес Moonraker и каталог конфигов
+Klipper. Ветка и «плагины по URL» берутся из **S) Settings**, по умолчанию — `main`
+и *запрещено*. Установка:
 
 1. ставит системные зависимости (`git`, `curl`, `nginx`) и Node.js 20, если их нет;
-2. клонирует (или обновляет) репозиторий в `~/tessera` и собирает фронтенд;
-3. пишет сайт nginx (`sites-available/tessera` + симлинк в `sites-enabled`) по образцу kiauh/fluidd: SPA-fallback, no-cache `index.html`, gzip, безлимитный размер upload, `location /extensions/` для provisioning плагинов и реверс-прокси `/websocket` + `/printer|api|access|machine|server/` на Moonraker — поэтому UI **same-origin с Moonraker и не требует изменений в `moonraker.conf`**;
-4. создаёт `tessera-shell.cfg` (shell-команды shaper/belt-графиков) в папке конфига Klipper и включает его в `printer.cfg` **только если** обнаружено расширение `gcode_shell_command` — иначе печатает инструкции ручной установки через kiauh и оставляет include выключенным, чтобы отсутствие расширения никогда не уронило конфиг на рестарте;
-5. напоминает сделать `FIRMWARE_RESTART`, когда всё готово.
+2. клонирует репозиторий в `~/tessera` и собирает фронтенд;
+3. пишет сайт nginx (`sites-available/tessera` + симлинк в `sites-enabled`) по образцу kiauh/fluidd: SPA-fallback, no-cache `index.html`, gzip, безлимитный размер upload, `location /extensions/` для provisioning плагинов и реверс-прокси `/websocket` + `/printer|api|access|machine|server/` на Moonraker. Поэтому UI **same-origin с Moonraker и не требует изменений в `moonraker.conf`**;
+4. создаёт `tessera-shell.cfg` (shell-команды shaper/belt-графиков) в папке конфига Klipper и включает его в `printer.cfg` **только если** обнаружено расширение `gcode_shell_command`. Иначе печатает инструкции ручной установки через kiauh и не добавляет include, чтобы отсутствие расширения никогда не уронило конфиг на рестарте;
+5. создаёт команды `tessera` (это меню) и `tessera-ext` (менеджер расширений);
+6. напоминает сделать `FIRMWARE_RESTART`, когда всё готово.
+
+<a id="installer-menu"></a>
+### Меню установщика: `tessera`
+
+После установки то же меню открывает команда `tessera`. `/tmp/tessera-install.sh`
+больше не нужен. Навигация как в kiauh: буква или цифра, затем Enter.
+
+```
+╔═══════════════════════════════════════════════════════╗
+║ ~~~~~~~~~~~~~~~~~~~ [ Main Menu ] ~~~~~~~~~~~~~~~~~~~ ║
+╟──────────────────┬────────────────────────────────────╢
+║  1) [Install]    │   Tessera: Installed               ║
+║  2) [Update]     │    Branch: main                    ║
+║  3) [Remove]     │    Commit: e79351f (2026-10-31)    ║
+║                  │     nginx: port 8000               ║
+║                  ├────────────────────────────────────╢
+║  S) [Settings]   │ Plugins by URL: blocked            ║
+║  E) [Extensions] │     Extensions: 1 installed        ║
+╟──────────────────┴────────────────────────────────────╢
+║                        Q) Quit                        ║
+╚═══════════════════════════════════════════════════════╝
+```
+
+| Пункт | Что делает |
+|---|---|
+| **1) Install** | первая установка (см. выше) |
+| **2) Update** | показывает установленный коммит и последний коммит ветки на GitHub. *Update Tessera* скачивает, пересобирает и переписывает конфиги nginx и Klipper без вопросов. *Rebuild only* пересобирает текущие исходники |
+| **3) Remove** | полное удаление. Сначала показывает список и просит подтверждения: сайт nginx и логи, `[include]` в `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`), `tessera-shell.cfg`, обе команды, `~/tessera`. Установленные расширения можно сохранить в `~/tessera-extensions-backup`. nginx, Node.js, git и ваши графики `shapers/` остаются |
+| **S) Settings** | ветка (выбор из веток на GitHub; после смены предлагается Update) и плагины по URL (применяется сразу, без пересборки) |
+| **E) Extensions** | менеджер расширений, см. [Расширения](#installing-extensions) |
 
 <details>
-<summary><strong>Конфигурация установщика (env-переменные / промпты)</strong></summary>
+<summary><strong>Файл настроек, переменные окружения, работа без вопросов</strong></summary>
+
+Ответы установщик хранит в `~/.config/tessera/install.conf`, поэтому Update ничего не
+спрашивает. Для установки, сделанной до появления меню, значения определяются по git,
+конфигу nginx и `extensions/policy.json`.
+
+Команды без меню: `tessera install | update | rebuild | remove | extensions`. Без
+терминала или с `TESSERA_NO_PROMPT=1` запуск без аргументов устанавливает или
+обновляет без вопросов (CI).
+
+Переменные окружения имеют приоритет над `install.conf`:
 
 | Переменная | Дефолт | Назначение |
 |---|---|---|
 | `TESSERA_DIR` | `~/tessera` | директория клона + сборки + extensions |
-| `TESSERA_PORT` | `8000` | порт nginx для UI (спрашивается, пере-спрашивается при конфликте) |
-| `TESSERA_REPO` / `TESSERA_BRANCH` | репо / `main` | форки и dev-каналы |
+| `TESSERA_BRANCH` | `main` | ветка: dev-каналы, ветки разработки |
+| `TESSERA_REPO` | основной репо | форки |
+| `TESSERA_PORT` | `8000` | порт nginx для UI (пере-спрашивается при конфликте) |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker-upstream для прокси |
 | `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | папка конфига Klipper (мульти-инстанс kiauh-aware) |
 | `TESSERA_KLIPPER_DIR` | `~/klipper` | для детекта `gcode_shell_command` |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` — разрешить установку UI-плагинов по URL (выключает CSP) |
 | `TESSERA_SKIP_NGINX=1` | выкл | свой реверс-прокси |
 | `TESSERA_SKIP_KLIPPER_CFG=1` | выкл | только web UI, не трогать конфиг Klipper |
 | `TESSERA_NO_PROMPT=1` | выкл | полностью неинтерактивно (CI) |
 
-Удаление: убрать симлинк `sites-enabled/tessera`, строку `[include tessera-shell.cfg]`
-из `printer.cfg` и папку `~/tessera`.
+Подробнее: [docs/ru/deployment.md](docs/ru/deployment.md#установка-хоста-deployinstallsh).
 
 </details>
+
+<a id="installing-extensions"></a>
+### Расширения
+
+Необязательные плагины ставятся из реестра
+[tessera-ext](https://github.com/idex-eclipse/Tessera-Ext). Каждый плагин там —
+готовый архив. Менеджер расширений скачивает его, сверяет sha256 и распаковывает в
+`~/tessera/extensions/`; на принтере ничего не собирается.
+
+```bash
+tessera-ext                     # меню: Install / Update / Remove (или E) в меню `tessera`)
+tessera-ext install spoolman    # или напрямую
+```
+
+Затем включите плагин в UI: **Settings → Plugins → Refresh → Install**. После
+обновления перезагрузите страницу (F5). Подробнее:
+[docs/ru/deployment.md](docs/ru/deployment.md#из-реестра-плагинов-рекомендуемый-путь).
 
 <a id="manual-development"></a>
 ### Вручную / для разработки
@@ -367,10 +431,10 @@ Core `@core/widgets` сегодня поставляет четыре панел
 <a id="remote-plugins-delivery"></a>
 ### Remote-плагины и доставка
 
-Четыре слоя, никаких сетевых автообновлений — **файлы на диске источник истины**
+Четыре слоя, никаких автообновлений в браузере — **файлы на диске источник истины**
 (аналог Klipper extras):
 
-1. **Provisioning** — `extensions/<id>/` на хосте (dev: vite-middleware; prod: nginx `location /extensions/`);
+1. **Provisioning** — `extensions/<id>/` на хосте (dev: vite-middleware; prod: nginx `location /extensions/`). Проверенные плагины приходят из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) через `tessera-ext`: готовые архивы со сверкой sha256, на принтере ничего не собирается;
 2. **Discovery** — same-origin каталог `/extensions/index.json`, регенерируется `tools/extensions-sync.cjs`; плюс advanced-режим *Add by URL* с подтверждением доверия и бейджем `external`;
 3. **Loading** — fetch манифеста → резолв entry относительно origin манифеста → `import()` → слияние локалей → санитизация вкладов;
 4. **Enablement** — включение per-принтер, бейджи версий, горячий *Update* без перезагрузки.
@@ -405,8 +469,8 @@ tessera/
 │   ├── system/        # правая панель, баннер, уведомления, страница machine, чип power
 │   └── console · jobs · history · config · gcode-preview
 ├── extensions/      # папка provisioning remote-плагинов (index.json генерируется)
-├── tools/           # extensions-sync.cjs
-├── deploy/          # install.sh, эталонная конфигурация nginx
+├── tools/           # extensions-sync.cjs, tessera-ext.cjs (менеджер расширений), registry-pack.cjs
+├── deploy/          # install.sh (меню: `tessera`), install-ext.sh (`tessera-ext`), конфигурация nginx
 └── docs/            # документация для разработчиков (en/, ru/)
 ```
 

@@ -469,6 +469,11 @@ Settings → Plugins → **Add by URL (advanced)** — прямая устано
 браузера, которое хост обойти не может. Плагины из `extensions/` (тот же origin)
 CORS не требуют.
 
+На принтере, установленном через `deploy/install.sh`, этот режим по умолчанию
+**выключен**: nginx отдаёт CSP, запрещающий скрипты с других origin. Включается в
+меню установщика: `tessera` → **S) Settings** → **Plugins by URL** (см.
+[deployment.md](deployment.md)).
+
 ### Что смотреть в консоли
 
 - `[plugin-loader] Plugin "…" has invalid <вид> contribution` — вклад отброшен

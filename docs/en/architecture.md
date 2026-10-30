@@ -231,8 +231,8 @@ host/            the host application (src/core, src/components, src/pages, src/
 plugin-sdk/      types, define-element, Svelte hooks
 plugins/         core plugins (+ plugins/shared — shared UI bricks and parsers)
 extensions/      the provisioning folder of remote plugins (+ index.json)
-tools/           extensions-sync.cjs
-deploy/          install.sh and the nginx configuration
+tools/           extensions-sync.cjs, tessera-ext.cjs (plugin manager), registry-pack.cjs
+deploy/          install.sh (menu: `tessera`), install-ext.sh (`tessera-ext`), nginx configuration
 docs/            this documentation (ru/ and en/)
 ```
 

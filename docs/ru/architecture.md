@@ -228,8 +228,8 @@ host/            приложение-хост (src/core, src/components, src/pa
 plugin-sdk/      типы, define-element, Svelte-хуки
 plugins/         core-плагины (+ plugins/shared — общие UI-кирпичи и парсеры)
 extensions/      provisioning-папка remote-плагинов (+ index.json)
-tools/           extensions-sync.cjs
-deploy/          install.sh и конфигурация nginx
+tools/           extensions-sync.cjs, tessera-ext.cjs (менеджер расширений), registry-pack.cjs
+deploy/          install.sh (меню: `tessera`), install-ext.sh (`tessera-ext`), конфигурация nginx
 docs/            эта документация (ru/ и en/)
 ```
 

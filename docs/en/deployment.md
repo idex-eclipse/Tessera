@@ -13,8 +13,13 @@ Delivery consists of four layers:
 | **Loading** | fetch the manifest → import the module | the host's plugin loader |
 | **Enablement** | whether the plugin is enabled, on which printers | `localStorage` → `mpu:v2:plugins` |
 
-The host **does not write files itself**, and there are no updates "from the
-internet": the source of truth is the content of `extensions/`.
+The UI **does not write files itself** and never updates plugins on its own: the
+source of truth is the content of `extensions/`. Files get there in one of two ways:
+
+- **from the plugin registry** with the `tessera-ext` command (recommended): reviewed
+  prebuilt archives, checked against sha256;
+- **by hand**: you copy a plugin folder into `extensions/<name>/` and run
+  `node tools/extensions-sync.cjs` (development, private plugins).
 
 ---
 
@@ -45,9 +50,10 @@ Rules:
 
 ### From the plugin registry (recommended)
 
-Reviewed plugins are published in a separate registry repository. Its CI builds every
-plugin and publishes a `.tar.gz` archive plus `registry.json` with the archive's
-sha256. Nothing is built on the printer: the CLI downloads the archive, checks the
+Reviewed plugins are published in a separate registry repository,
+[tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): a prebuilt `.tar.gz` per
+version plus `registry.json` with the archives' sha256 (how it is filled: see
+[Publishing to the registry](#publishing-to-the-registry)). Nothing is built on the printer: the CLI downloads the archive, checks the
 hash and unpacks it into `extensions/<dir>/`:
 
 ```bash
@@ -279,12 +285,15 @@ The script does not run as root. Every install and update regenerates
 
 ### Publishing to the registry
 
-The registry's CI (or an author, locally) packs the built plugin folder:
+The registry is the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext)
+repository. Its archives sit next to `registry/registry.json` and are downloaded from
+the same place (raw.githubusercontent.com), so no releases are needed. A plugin folder
+inside a Tessera checkout (`Tessera/extensions/<plugin>`) is packed straight into it:
 
 ```bash
-node tools/registry-pack.cjs path/to/built-plugin --dir hello \
-  --url-base https://github.com/<org>/tessera-ext/releases/download/hello-1.2.0 \
-  --out registry/
+npm run pack -- . <path-to>/tessera-ext/registry   # the plugin's own script (see the Spoolman plugin)
+# which runs:
+node tools/registry-pack.cjs path/to/built-plugin --dir hello --url-base . --out <path-to>/tessera-ext/registry
 ```
 
 It writes `registry/hello-<version>.tar.gz` and adds or replaces the plugin's entry
@@ -300,9 +309,13 @@ in `registry/registry.json`:
 The archive is reproducible: entries are sorted, timestamps and owners are zeroed,
 and the gzip header has no timestamp. Anyone can rebuild a plugin from the reviewed
 commit and get the same sha256. `--url-base .` keeps archive URLs relative to
-`registry.json`.
+`registry.json`; pass a full URL (for example a GitHub Release download URL) to host
+archives elsewhere.
 
-Suggested registry workflow: an author opens a PR that pins their plugin's source
+Then commit the archive together with `registry.json`: the CLI refuses an archive
+whose sha256 differs from the index. Printers get the new version with
+`tessera-ext update --all` (or the menu), and users reload the UI page.
+
+Planned registry workflow: an author opens a PR that pins their plugin's source
 commit; a reviewer reads the diff; after merge, CI checks out that commit, builds it,
-runs `registry-pack.cjs`, uploads the archive as a release asset and commits
-`registry.json`.
+runs `registry-pack.cjs` and commits the archive and `registry.json`.

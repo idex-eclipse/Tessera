@@ -470,6 +470,10 @@ For a plugin on a **different origin**, the server must send CORS headers
 browser restriction the host cannot work around. Plugins from `extensions/` (same
 origin) do not need CORS.
 
+On a printer installed with `deploy/install.sh` this mode is **off** by default: nginx
+sends a CSP that blocks scripts from other origins. Turn it on in the installer menu:
+`tessera` → **S) Settings** → **Plugins by URL** (see [deployment.md](deployment.md)).
+
 ### What to look for in the console
 
 - `[plugin-loader] Plugin "…" has invalid <kind> contribution` — the contribution
