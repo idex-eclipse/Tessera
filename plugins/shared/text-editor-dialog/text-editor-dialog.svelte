@@ -52,8 +52,12 @@
     collectJinjaVars,
     getCompletionContext,
     getSuggestions,
+    isPassive,
     type Suggestion,
   } from './autocomplete';
+  import { mergeLocalMacros } from '../gcode-hints/catalog';
+  import { attachHints, getCatalog } from '../gcode-hints/gcode-hints-store.svelte.ts';
+  import { macroParamNamesAt, scanLocalMacros } from '../gcode-hints/local-macros';
 
   let {
     open,
@@ -95,6 +99,9 @@
 
   let suggestions = $state<Suggestion[]>([]);
   let selectedIdx = $state(0);
+  /** Список показан без набранных букв: Enter его не принимает, пока не выбирали стрелками. */
+  let acPassive = false;
+  let acNavigated = false;
   let acPos = $state<{ top: number; left: number } | null>(null);
 
   const BRACKET_PAIRS: Record<string, string> = {
@@ -136,29 +143,15 @@
 
   let jinjaVars = $derived(collectJinjaVars(snapshot));
   let allWords = $derived(collectAllWords(snapshot));
-  let gcodeCommands = $state<string[]>([]);
 
-  // список gcode-команд берём у Moonraker на каждое открытие редактора
+  // Команды, их параметры и значения — общий каталог (help + G-Codes.md + макросы принтера);
+  // макросы из редактируемого файла перекрывают данные принтера: правки ещё не в конфиге.
   $effect(() => {
     if (!open) return;
-    let cancelled = false;
-
-    api
-      .moonraker()
-      .request<Record<string, string>>('printer.gcode.help')
-      .then((help) => {
-        if (cancelled) return;
-        gcodeCommands = Object.keys(help ?? {}).sort();
-      })
-      .catch(() => {
-        // offline / метод недоступен — просто нет cmd-подсказок,
-        // общие слова файла продолжают работать
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    return attachHints(api, api.printer.id);
   });
+  let localMacros = $derived(scanLocalMacros(snapshot));
+  let catalog = $derived(mergeLocalMacros(getCatalog(api.printer.id), localMacros));
 
   let preEl = $state<HTMLPreElement | null>(null);
   let inputEl = $state<HTMLTextAreaElement | null>(null);
@@ -883,13 +876,20 @@
       acPos = null;
       return;
     }
-    const items = getSuggestions(ctx, { jinjaVars, allWords, gcodeCommands });
+    const items = getSuggestions(ctx, {
+      jinjaVars,
+      allWords,
+      catalog,
+      macroParams: ctx.inJinja ? macroParamNamesAt(text, cursor) : null,
+    });
     if (items.length === 0) {
       suggestions = [];
       acPos = null;
       return;
     }
     suggestions = items;
+    acPassive = isPassive(ctx);
+    acNavigated = false;
     selectedIdx = Math.min(selectedIdx, items.length - 1);
     acPos = computePopupPos(inputEl, cursor, items.length);
   }
@@ -965,7 +965,7 @@
     // popup: max-width 420, max-height 280 (см. .ac-popup)
     const popupH = Math.min(280, itemCount * 26 + 8);
     if (top + popupH > window.innerHeight && caretTop - popupH > 0) top = caretTop - popupH;
-    left = Math.max(4, Math.min(left, window.innerWidth - 424));
+    left = Math.max(4, Math.min(left, window.innerWidth - 524));
 
     return { top, left };
   }
@@ -996,6 +996,15 @@
     });
   }
 
+  const KIND_BADGE: Record<Suggestion['kind'], string> = {
+    var: 'v',
+    cmd: 'G',
+    macro: 'M',
+    param: 'p',
+    value: '=',
+    word: 'w',
+  };
+
   function closeSuggestions(): void {
     suggestions = [];
     acPos = null;
@@ -1005,13 +1014,21 @@
     if (suggestions.length === 0) return false;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      acNavigated = true;
       selectedIdx = (selectedIdx + 1) % suggestions.length;
       return true;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
+      acNavigated = true;
       selectedIdx = (selectedIdx - 1 + suggestions.length) % suggestions.length;
       return true;
+    }
+    // «Пассивный» список (сразу после пробела или «=») не перехватывает Enter — иначе
+    // после `G28 ` не перейти на новую строку; Tab (и стрелки + Enter) принимают.
+    if (e.key === 'Enter' && acPassive && !acNavigated) {
+      closeSuggestions();
+      return false;
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
@@ -1524,17 +1541,16 @@
 
       {#if acPos && suggestions.length > 0}
         <div class="ac-popup" style="top: {acPos.top}px; left: {acPos.left}px">
-          {#each suggestions as s, i (s.label)}
+          {#each suggestions as s, i (s.kind + s.label)}
             <button
               class="ac-item"
               class:selected={i === selectedIdx}
               onmouseenter={() => (selectedIdx = i)}
               onclick={() => acceptSuggestion(s)}
             >
-              <span class="ac-kind" class:var={s.kind === 'var'} class:cmd={s.kind === 'cmd'} class:word={s.kind === 'word'}>
-                {s.kind === 'var' ? 'v' : s.kind === 'cmd' ? 'G' : 'w'}
-              </span>
+              <span class="ac-kind {s.kind}">{KIND_BADGE[s.kind]}</span>
               <span class="ac-label">{s.label}</span>
+              {#if s.detail}<span class="ac-detail">{s.detail}</span>{/if}
             </button>
           {/each}
         </div>
@@ -1840,7 +1856,7 @@
     position: fixed;
     z-index: 600;
     min-width: 200px;
-    max-width: 420px;
+    max-width: 520px;
     max-height: 280px;
     overflow-y: auto;
     background: var(--bg-surface);
@@ -1886,13 +1902,26 @@
   .ac-kind.word { background: #7f848e; }
   .ac-kind.var { background: #61afef; }
   .ac-kind.cmd { background: #e06c75; }
+  .ac-kind.macro { background: #c678dd; }
+  .ac-kind.param { background: #98c379; }
+  .ac-kind.value { background: #d19a66; }
 
   .ac-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ac-detail {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 11px;
   }
 
   /* -------- настройка цветов подсветки -------- */

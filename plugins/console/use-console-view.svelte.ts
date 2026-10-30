@@ -6,16 +6,14 @@ import {
   applyFilters,
   attach,
   compileFilters,
-  getCommands,
   getHistory,
   getLines,
-  getMacroParams,
   getPrefs,
   isConnected,
   pushHistory,
   sendCommand,
 } from './console-session.svelte.ts';
-import { buildBuiltins } from './gcode-builtins';
+import { getCatalog } from '../shared/gcode-hints/gcode-hints-store.svelte.ts';
 import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
 
 /**
@@ -34,11 +32,9 @@ export function useConsoleView(api: PluginApi) {
   const printerId = $derived(api.printer.id);
   const lines = $derived(getLines(printerId));
   const connected = $derived(isConnected(printerId));
-  const commands = $derived(getCommands(printerId));
-  const macroParams = $derived(getMacroParams(printerId));
+  const catalog = $derived(getCatalog(printerId));
   const history = $derived(getHistory(printerId));
   const prefs = $derived(getPrefs(printerId));
-  const builtins = $derived(buildBuiltins((k) => api.i18n.t(k)));
   const visibleLines = $derived(
     prefs.filtersEnabled ? applyFilters(lines, compileFilters(prefs.filters)) : lines,
   );
@@ -51,11 +47,9 @@ export function useConsoleView(api: PluginApi) {
     get printerId() { return printerId; },
     get lines() { return lines; },
     get connected() { return connected; },
-    get commands() { return commands; },
-    get macroParams() { return macroParams; },
+    get catalog() { return catalog; },
     get history() { return history; },
     get prefs() { return prefs; },
-    get builtins() { return builtins; },
     get displayLines() { return displayLines; },
     get inputDisabled() { return inputDisabled; },
     get klippyReady() { return klippy.ready; },

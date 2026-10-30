@@ -1,17 +1,15 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import type { MacroParam } from '../../../shared/macro-params';
-  import type { BuiltinHelp } from '../../gcode-builtins';
+  import { namedParams, paramTypeLabel } from '../../../shared/gcode-hints/catalog';
+  import type { Catalog } from '../../../shared/gcode-hints/types';
 
   interface Props {
-    commands: Record<string, string>;
-    macroParams: Record<string, MacroParam[]>;
-    builtins: Record<string, BuiltinHelp>;
+    catalog: Catalog;
     onCommandClick: (command: string) => void;
   }
 
-  let { commands, macroParams, builtins, onCommandClick }: Props = $props();
+  let { catalog, onCommandClick }: Props = $props();
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -27,30 +25,19 @@
     params: ParamChip[];
   }
 
-  let entries = $derived.by<CommandEntry[]>(() => {
-    const names = Array.from(
-      new Set([...Object.keys(commands), ...Object.keys(builtins)]),
-    ).sort();
-
-    return names.map((name) => {
-      const builtin = builtins[name];
-      const macro = macroParams[name];
-
-      // приоритет как в автодополнении: макрос-параметры с типами,
-      // иначе сигнатура builtin без типов
-      const params: ParamChip[] = macro
-        ? macro.map((p) => ({ name: p.name, type: p.type }))
-        : builtin?.params
-          ? builtin.params.split(/\s+/).filter(Boolean).map((n) => ({ name: n }))
-          : [];
-
-      return {
-        name,
-        help: commands[name] ?? builtin?.help ?? '',
-        params,
-      };
-    });
-  });
+  let entries = $derived.by<CommandEntry[]>(() =>
+    [...catalog.values()]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .map((info) => {
+        // NAME=-параметры с типами/перечислениями; у G/M-команд — буквенная сигнатура
+        const named = namedParams(info);
+        const params: ParamChip[] =
+          named.length > 0
+            ? named.map((p) => ({ name: p.name, type: paramTypeLabel(p) || undefined }))
+            : info.params.map((p) => ({ name: p.name }));
+        return { name: info.name, help: info.description ?? '', params };
+      }),
+  );
 </script>
 
 <div class="command-list">

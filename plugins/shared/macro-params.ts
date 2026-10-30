@@ -57,7 +57,7 @@ function hasOptionalMarker(src: string, name: string): boolean {
 }
 
 function literalOrNone(arg: string): string | null {
-  const first = arg.split(',')[0].trim();
+  const first = (arg.split(',')[0] ?? '').trim();
   if (!first) return null;
   const q = /^'([\s\S]*)'$/.exec(first) ?? /^"([\s\S]*)"$/.exec(first);
   if (q) return q[1] ?? '';
