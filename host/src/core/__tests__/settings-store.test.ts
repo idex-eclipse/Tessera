@@ -47,6 +47,10 @@ describe('settings-store / base state', () => {
       dir: 'ltr',
       sidebarCollapsed: false,
       sidebarWidth: 280,
+      fleetOpen: false,
+      fleetPanels: [],
+      fleetPanelsCustomized: false,
+      hotkeyOverrides: {},
     });
   });
 

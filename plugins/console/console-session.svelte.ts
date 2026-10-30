@@ -1,8 +1,7 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
-import { parseMacroParams, type MacroParam } from '../shared/macro-params';
+import { attachHints, dropHints } from '../shared/gcode-hints/gcode-hints-store.svelte.ts';
 
-import type { BuiltinHelp } from './gcode-builtins';
 import { isPrintActive } from './print-safety';
 
 /**
@@ -245,7 +244,6 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
 
   ensureHistoryLoaded(api, printerId);
   ensurePrefsLoaded(api, printerId);
-  void refreshHelp(api, printerId);
 
   let h;
   try {
@@ -255,6 +253,9 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
   }
 
   connectedByPrinter[printerId] = h.readyState === 'open';
+
+  // Подсказки команд и макросов — общий модуль shared/gcode-hints (help, макросы, G-Codes.md).
+  unsubs.push(attachHints(api, printerId));
 
   // Статус соединения — только в бейдж, не в лог.
   unsubs.push(
@@ -266,7 +267,6 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
   unsubs.push(
     h.onReady(() => {
       pausedByPrinter[printerId] = false;
-      void refreshHelp(api, printerId);
       void refreshFromStore(api, printerId);
     }),
   );
@@ -276,12 +276,6 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
     h.onNotify('notify_gcode_response', () => {
       pausedByPrinter[printerId] = false;
       scheduleRefresh(api, printerId);
-    }),
-  );
-
-  unsubs.push(
-    h.onNotify('notify_config_changed', () => {
-      void refreshHelp(api, printerId);
     }),
   );
 
@@ -344,108 +338,15 @@ function dropPrinterState(printerId: string): void {
   delete pausedByPrinter[printerId];
   delete printStateByPrinter[printerId];
   loadSeq.delete(printerId);
+  dropHints(printerId);
 }
 
 // ------------------------------------------------------------------
-// G-code help (autocomplete) + shared input history
+// Shared input history (подсказки команд — в shared/gcode-hints)
 // ------------------------------------------------------------------
-
-export interface Suggestion {
-  kind: 'command' | 'param';
-  name: string;
-  help?: string;
-  signature?: string;
-  params?: MacroParam[];
-  param?: MacroParam;
-  insert: string;
-  replaceToken: boolean;
-}
-
-export function matchSuggestions(
-  commands: Record<string, string>,
-  macroParams: Record<string, MacroParam[]>,
-  builtins: Record<string, BuiltinHelp>,
-  input: string,
-): Suggestion[] {
-  const firstSpace = input.indexOf(' ');
-
-  // ---------- param-mode: первый токен — макрос с параметрами ----------
-  if (firstSpace !== -1) {
-    const first = input.slice(0, firstSpace).trim();
-    if (!first) return [];
-    const key = Object.keys(macroParams).find(
-      (k) => k.toUpperCase() === first.toUpperCase(),
-    );
-    if (!key) return [];
-
-    const rest = input.slice(firstSpace + 1);
-    const tokens = rest.split(/\s+/);
-    const current = tokens[tokens.length - 1] ?? '';
-    // пользователь дописывает значение (X=10…) — не мешаем
-    if (current.includes('=')) return [];
-
-    // параметры, уже внесённые как NAME=…, не предлагаем повторно
-    const used = new Set(
-      tokens
-        .filter((t) => t.includes('='))
-        .map((t) => (t.split('=')[0] ?? '').toUpperCase()),
-    );
-    const cur = current.toUpperCase();
-
-    return (macroParams[key] ?? [])
-      .filter((p) => !used.has(p.name.toUpperCase()) && p.name.toUpperCase().startsWith(cur))
-      .map((p) => ({
-        kind: 'param' as const,
-        name: p.name,
-        param: p,
-        insert: `${p.name}=`,
-        replaceToken: true,
-      }));
-  }
-
-  // ---------- command-mode: прежний матчинг имён команд ----------
-  const token = input.trimStart().toUpperCase();
-  if (token === '') return [];
-
-  const names = Array.from(new Set([...Object.keys(commands), ...Object.keys(builtins)]));
-  const prefix = names.filter((n) => n.toUpperCase().startsWith(token)).sort();
-  const substring = names
-    .filter((n) => !n.toUpperCase().startsWith(token) && n.toUpperCase().includes(token))
-    .sort();
-
-  return [...prefix, ...substring].map((name) => {
-    const b = builtins[name];
-    return {
-      kind: 'command' as const,
-      name,
-      // приоритет описания: Moonraker help → локализованный builtin
-      help: commands[name] ?? b?.help,
-      signature: b && b.params ? b.params : undefined,
-      params: macroParams[name],
-      insert: `${name} `,
-      replaceToken: false,
-    };
-  });
-}
-
-let helpByPrinter = $state<Record<string, Record<string, string>>>({});
-
-let macroParamsByPrinter = $state<Record<string, Record<string, MacroParam[]>>>({});
-
-export function getMacroParams(printerId: string): Record<string, MacroParam[]> {
-  return macroParamsByPrinter[printerId] ?? {};
-}
-
-export function isMacroName(name: string): boolean {
-  return /^T\d+$/i.test(name) || /^[A-Za-z_]\w*$/.test(name);
-}
 
 let historyByPrinter = $state<Record<string, string[]>>({});
 const historyLoaded = new Set<string>();
-
-export function getCommands(printerId: string): Record<string, string> {
-  return helpByPrinter[printerId] ?? {};
-}
 
 export function getHistory(printerId: string): string[] {
   return historyByPrinter[printerId] ?? [];
@@ -494,61 +395,6 @@ function reloadPrefs(api: PluginApi): void {
       api.settingsFor(pid).get<Partial<ConsolePrefs>>('consolePrefs'),
     );
   }
-}
-
-export async function refreshHelp(api: PluginApi, printerId: string): Promise<void> {
-  if (!printerId) return;
-
-  try {
-    const h = api.moonrakerFor(printerId);
-    const [help, cfgRes] = await Promise.all([
-      h.request<Record<string, string>>('printer.gcode.help'),
-      h
-        .request<any>('printer.objects.query', {
-          objects: { configfile: ['config', 'settings'] },
-        })
-        .catch(() => null),
-    ]);
-    if (help && typeof help === 'object') helpByPrinter[printerId] = help;
-
-    const cfg = cfgRes?.status?.configfile ?? {};
-    // config = сырые секции (регистр и тела гарантированы); settings — фолбэк.
-    // Разнос регистра между источниками схлопнется ниже кейс-нечувствительным матчингом.
-    const sections: Record<string, any> = { ...(cfg.settings ?? {}), ...(cfg.config ?? {}) };
-
-    const helpKeys = Object.keys(help ?? {});
-    const mp: Record<string, MacroParam[]> = {};
-    for (const [section, v] of Object.entries(sections)) {
-      if (!section.startsWith('gcode_macro ')) continue;
-      const body = typeof v?.gcode === 'string' ? v.gcode : null;
-      if (!body) continue;
-      const raw = section.slice('gcode_macro '.length);
-      // ключ = написание из help, иначе lookup по имени команды промахнётся
-      const key = helpKeys.find((k) => k.toUpperCase() === raw.toUpperCase()) ?? raw;
-      const params = parseMacroParams(body);
-      if (params.length > 0) mp[key] = params;
-    }
-    macroParamsByPrinter[printerId] = mp;
-  } catch {
-    // retry on notify_klippy_ready
-  }
-}
-
-export function matchCommands(
-  commands: Record<string, string>,
-  input: string,
-  limit = 10,
-): string[] {
-  const token = input.trimStart().toUpperCase();
-  if (token === '' || token.includes(' ')) return [];
-
-  const names = Object.keys(commands);
-  const prefix = names.filter((n) => n.toUpperCase().startsWith(token)).sort();
-  const substring = names
-    .filter((n) => !n.toUpperCase().startsWith(token) && n.toUpperCase().includes(token))
-    .sort();
-
-  return [...prefix, ...substring].slice(0, limit);
 }
 
 // ------------------------------------------------------------------

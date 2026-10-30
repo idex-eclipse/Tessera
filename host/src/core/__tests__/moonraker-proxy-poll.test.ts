@@ -300,12 +300,13 @@ describe('MoonrakerProxy / poll', () => {
       vi.advanceTimersByTime(1000);
 
       const ws1 = await waitForSocket(instances, 1);
-      const sentBeforeReopen = ws1.sentMessages.length;
+      const sentBeforeReopen = ws1.sentMessagesExcept('printer.objects.list').length;
       ws1.simulateOpen();
       await flushMicrotasks();
 
       // после open — немедленный тик всех активных поллов
-      expect(ws1.sentMessages.length).toBe(sentBeforeReopen + 1);
+      // (baseline printer.objects.list прокси отправляет сам, его не считаем)
+      expect(ws1.sentMessagesExcept('printer.objects.list').length).toBe(sentBeforeReopen + 1);
       expect(ws1.lastSentMessage()?.method).toBe('printer.info');
     } finally {
       proxy.dispose();

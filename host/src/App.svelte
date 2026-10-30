@@ -12,6 +12,7 @@
 
   import type { AppContext } from './app-context.ts';
   import { provideAppContext } from './app-context.ts';
+  import { createFleetIndex } from './core/fleet-index.svelte.ts';
   import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
   import { createHostHotkeys } from './core/host-hotkeys.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
@@ -64,10 +65,19 @@
     hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route }),
   });
 
-  const ctx: AppContext = { settings, printerManager, registry, ui, i18n, loader, router, hotkeys };
+  const fleetIndex = createFleetIndex();
+
+  const ctx: AppContext = {
+    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex,
+  };
   provideAppContext(ctx);
 
   onMount(() => hotkeys.start());
+
+  // Записи удалённых принтеров не должны оставаться в fleet-индексе.
+  $effect(() =>
+    printerManager.onPrintersChange((printers) => fleetIndex.prune(printers.map((p) => p.id))),
+  );
 
   // Любая смена маршрута (hotkey «открыть страницу», кнопка «назад» и т.п.) выводит из
   // fleet-режима: он перекрывает страницу, и переход иначе остался бы незамеченным.
@@ -77,11 +87,24 @@
     if (hash === lastHash) return;
     lastHash = hash;
     if (ui.fleetOpen) ui.setFleet(false);
+    ui.closeMobilePanel();
   });
+
+  // Fleet перекрывает страницу — боковая панель-оверлей под ним не нужна.
+  $effect(() => {
+    if (ui.fleetOpen) ui.closeMobilePanel();
+  });
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (ui.mobilePanel) ui.closeMobilePanel();
+  }
 
   let route = $derived(router.route);
   let sidebarCollapsed = $derived(ui.sidebarCollapsed);
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div
   class="app-shell"
@@ -90,7 +113,9 @@
   style:background-image={ui.bgImage ? `url("${ui.bgImage}")` : undefined}
 >
   <div class="top-row">
-    <AppBrand collapsed={sidebarCollapsed} />
+    {#if !ui.isNarrow}
+      <AppBrand collapsed={sidebarCollapsed} />
+    {/if}
     <AppHeader {printerManager} {router} {ui} {i18n} />
   </div>
 
@@ -104,9 +129,12 @@
       {route}
       collapsed={sidebarCollapsed}
       onToggleCollapse={() => ui.toggleSidebar()}
+      narrow={ui.isNarrow}
+      open={ui.mobilePanel === 'nav'}
+      onClose={() => ui.closeMobilePanel()}
     />
 
-    <div class="main-column">
+    <div class="main-column" inert={ui.mobilePanel !== null ? true : undefined}>
 
       <AppMain
         {printerManager}

@@ -28,7 +28,7 @@ const MAX_NUMBERED_PRINTERS = 9;
 export function createHostHotkeys(deps: {
   router: Pick<Router, 'navigateToPrinter' | 'navigateToDashboard' | 'navigateToPluginPage'>;
   printerManager: Pick<PrinterManager, 'printers' | 'activePrinterId'>;
-  ui: Pick<UiStore, 'toggleFleet' | 'setFleet' | 'toggleRightPanel'>;
+  ui: Pick<UiStore, 'toggleFleet' | 'setFleet' | 'toggleRightPanel' | 'toggleSidebar'>;
   /** Видимые страницы плагинов активного принтера — в порядке сайдбара. */
   registry: Pick<PluginRegistry, 'getVisiblePages'>;
   getRoute(): Route;
@@ -125,6 +125,12 @@ export function createHostHotkeys(deps: {
       keys: 'R',
       titleKey: 'settings.about.hostHotkeys.toggleRightPanel',
       run: () => ui.toggleRightPanel(),
+    },
+    {
+      id: 'toggle-sidebar',
+      keys: 'L',
+      titleKey: 'settings.about.hostHotkeys.toggleSidebar',
+      run: () => ui.toggleSidebar(),
     },
     {
       id: 'page-next',

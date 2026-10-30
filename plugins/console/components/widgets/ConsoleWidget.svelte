@@ -16,10 +16,9 @@
   <div class="console-body" class:reversed={view.prefs.reverse}>
     <div class="input-slot">
       <ConsoleInput
-        commands={view.commands}
+        catalog={view.catalog}
         history={view.history}
         printerId={view.printerId}
-        builtins={view.builtins}
         placeholder={i18n.t('console.placeholder')}
         above={!view.prefs.reverse}
         onSend={view.send}
@@ -40,6 +39,13 @@
 </div>
 
 <style>
+  /* контейнер: автодополнение внутри подстраивается под ширину виджета */
+  :global(mpu-console-widget) {
+    display: block;
+    height: 100%;
+    container-type: inline-size;
+  }
+
   .console-widget {
     display: flex;
     flex-direction: column;

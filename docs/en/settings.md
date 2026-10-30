@@ -11,6 +11,7 @@ tied to the origin and the device. The schema is versioned with the `mpu:v2:` pr
 | `mpu:v2:activePrinter` | the active printer's `id` |
 | `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
 | `mpu:v2:ui` | device UI: theme, language, `dir`, panel sizes, background, accent, fleet, hotkey overrides |
+| `mpu:v2:editor-colors` | config editor syntax colors: `{ v: 1, light: { <token>: '#rrggbb' }, dark: { … } }` — only the tokens the user changed; applied as CSS variables `--tok-<token>` (editor header → settings button) |
 | `mpu:v2:settings:<printerId>` | printer settings: page visibility, widget providers, dashboard layout, chips |
 | `mpu:v2:settings:GLOBAL` | the same, shared by all printers (if dashboard sync is on) |
 | `mpu:v2:plugin-settings:<printerId>:<pluginId>` | a plugin's settings for a printer (`api.settings`) |
@@ -140,4 +141,6 @@ get old plugin settings back without configuring them again.
 ## What the host does not keep in localStorage
 
 Nothing. Printer data (files, history, temperatures) lives in Moonraker/Klipper; the
-host does not duplicate it and does not read it for its own UI.
+host does not duplicate it and does not read it for its own UI. The fleet search
+index (tags and the name of the file being printed, published by fleet panels) is
+kept in memory only and is never persisted.

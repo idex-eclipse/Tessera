@@ -393,7 +393,7 @@ describe('printer-manager / connection state', () => {
     manager.dispose();
   });
 
-  it('shows offline overlay only when active printer is closed', () => {
+  it('shows offline overlay while active printer is connecting or closed, hides it when open', () => {
     const { manager, proxies } = setup();
 
     const printer = manager.addPrinter({
@@ -403,7 +403,11 @@ describe('printer-manager / connection state', () => {
 
     const proxy = proxies[0] as FakeProxy;
 
-    expect(manager.shouldShowOfflineOverlay).toBe(false);
+    // connecting: overlay stays visible (no flicker between reconnect attempts),
+    // but the printer is not considered offline yet
+    expect(manager.activeConnection?.status).toBe('connecting');
+    expect(manager.shouldShowOfflineOverlay).toBe(true);
+    expect(manager.isActivePrinterOffline).toBe(false);
 
     proxy.simulateClose();
 

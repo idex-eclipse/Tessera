@@ -70,5 +70,5 @@
   .page-row { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; }
   .page-row:hover { background: var(--bg-surface-hover); }
   .page-name { font-weight: 500; }
-  .page-meta { margin-left: auto; color: var(--text-muted); font-size: var(--font-size-sm); font-family: monospace; }
+  .page-meta { margin-inline-start: auto; color: var(--text-muted); font-size: var(--font-size-sm); font-family: monospace; }
 </style>

@@ -1,4 +1,4 @@
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { SeriesBuffer } from '../shared/uplot-core';
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types';
 import { createDelegateStore } from '../shared/core-keeper/core-keeper';
@@ -213,7 +213,6 @@ export function useHeaterMonitor(api: PluginApi, printerId?: string) {
   let heaterName = $state('');
 
   let currentCore = $state<HeaterStore | null>(null);
-  let currentRefCount: { inc: () => void; dec: () => void } | null = null;
 
   function ensureCore(name: string): HeaterStore {
     let printerMap = perPrinterKeepers.get(pid);
@@ -230,22 +229,8 @@ export function useHeaterMonitor(api: PluginApi, printerId?: string) {
     return core;
   }
 
-  $effect(() => {
-    const name = heaterName;
-    if (!name) {
-      currentCore = null;
-      return;
-    }
-    currentCore = ensureCore(name);
-  });
-
-  // Cleanup при unmount компонента (НЕ при смене heaterName — ядро живёт в Map)
-  onDestroy(() => {
-    // Ядро остаётся живым в perPrinterKeepers — это и есть keep-alive
-    // Cleanup при удалении принтера из реестра делается через onPrintersChange
-    // (см. ниже)
-  });
-
+  // Ядро остаётся живым в perPrinterKeepers (keep-alive) и при unmount компонента, и при
+  // смене heaterName; чистка — при удалении принтера из реестра (onPrintersChange).
   const offPrinters = api.onPrintersChange((printers) => {
     const alive = new Set(printers.map((p) => p.id));
     for (const pid of Array.from(perPrinterKeepers.keys())) {
@@ -264,8 +249,15 @@ export function useHeaterMonitor(api: PluginApi, printerId?: string) {
     offPrinters();
   });
 
+  /**
+   * Выбор нагревателя — обычное присваивание, без $effect. Вызывается из эффекта
+   * компонента, поэтому создание ядра (оно читает и пишет $state) идёт в untrack:
+   * иначе его чтения попали бы в зависимости эффекта вызывающего.
+   */
   function setHeater(name: string): void {
+    if (name === heaterName && (currentCore !== null || !name)) return;
     heaterName = name;
+    currentCore = name ? untrack(() => ensureCore(name)) : null;
   }
 
   // Делегат на текущее ядро (если выбран heaterName)

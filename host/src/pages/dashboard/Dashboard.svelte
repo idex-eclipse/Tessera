@@ -6,6 +6,7 @@
   import type { WidgetContribution } from '../../../../plugin-sdk/src/types';
 
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
+  import { narrowWidth } from '../../core/narrow-width.ts';
 
   import WidgetContainer from './WidgetContainer.svelte';
   import AddWidgetDialog from './AddWidgetDialog.svelte';
@@ -45,19 +46,11 @@
   // Mobile detection
   // ------------------------------------------------------------------
 
-  let isMobile = $state(
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
-  );
-
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px)');
-    const handler = (e: MediaQueryListEvent) => {
-      isMobile = e.matches;
-    };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  });
+  // Узость определяется шириной самого dashboard (а не окна): сайдбар и правая панель
+  // сужают область, и сетка из 12 колонок разваливается раньше, чем окно станет «мобильным».
+  // Порог — единый брейкпоинт хоста (ui-store). Сетка остаётся сеткой: меняется только число
+  // колонок (одна), высота карточки по-прежнему задаётся рядами `h`.
+  let isMobile = $state(false);
 
   let mobileLayout = $derived.by(() => {
     if (!isMobile || !layout) return layout;
@@ -342,15 +335,13 @@
       <p class="empty-hint">{i18n.t('dashboard.editToStart')}</p>
     </div>
   {:else}
-    <div class="dashboard-grid" class:edit-mode={editMode} class:mobile={isMobile} bind:this={gridEl}>
+    <div class="dashboard-grid" class:edit-mode={editMode} class:mobile={isMobile} bind:this={gridEl} use:narrowWidth={(v) => (isMobile = v)}>
       {#each displayLayout as item (item.instanceId)}
         {#if editMode}
           <div
             class="layout-card"
             class:dragging={activeId === item.instanceId}
-            style={isMobile 
-              ? "" 
-              : `grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h};`}
+            style={`grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h}; --h: ${item.h};`}
             onpointerdown={(e) => onMoveStart(item, e)}
           >
             <div class="layout-card-head">
@@ -376,6 +367,7 @@
             {printerManager}
             {i18n}
             params={params}
+            narrow={isMobile}
           />
         {/if}
       {/each}
@@ -542,37 +534,41 @@
     color: #fff;
   }
 
+  /* Узкий dashboard (ширина самой сетки < NARROW_BREAKPOINT, класс .mobile): одна колонка,
+     ряды остаются — карточка занимает `h` рядов, поэтому у виджета всегда определённая высота. */
+  .dashboard-grid.mobile {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
+  }
+
+  .dashboard-grid.mobile > :global(*) {
+    grid-column: 1 / -1 !important;
+    grid-row: span var(--h, 3) !important;
+  }
+
+  .dashboard-grid.mobile.edit-mode .layout-card {
+    cursor: default;
+  }
+
+  .dashboard-grid.mobile.edit-mode .resize-handle {
+    display: none;
+  }
+
+  .edit-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .edit-toolbar .btn {
+    min-width: 120px;
+  }
+
   @media (max-width: 768px) {
-    .dashboard-grid {
-      grid-template-columns: 1fr;
-      grid-auto-rows: auto;
-      gap: var(--space-sm);
-    }
-
-    .dashboard-grid > :global(*) {
-      grid-column: 1 / -1 !important;
-      grid-row: auto !important;
-      min-height: 240px;
-      height: auto !important;
-    }
-
-    .dashboard-grid.edit-mode .layout-card {
-      cursor: default;
-      min-height: 160px;
-    }
-
-    .dashboard-grid.edit-mode .resize-handle {
-      display: none;
-    }
-
     .edit-toolbar {
-      flex-wrap: wrap;
       gap: var(--space-xs);
     }
 
     .edit-toolbar .btn {
       flex: 1;
-      min-width: 120px;
     }
   }
 </style>

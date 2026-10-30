@@ -2,25 +2,35 @@
   import '../../../shared/input/inputs.css';
   import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { formatCountdown, HOLD_MAX_MINUTES, type HoldPhase } from '../hold-timer';
+  import { formatCountdown, HOLD_MAX_MINUTES, parseHoldMinutes, type HoldPhase } from '../hold-timer';
 
   let {
     value = 0,
     phase = 'off',
     remainingMs = null,
+    block = false,
+    deferred = false,
+    draft = $bindable<string | number>(''),
     onCommit,
   }: {
     /** минуты; 0 — таймер выключен */
     value: number;
     phase?: HoldPhase;
     remainingMs?: number | null;
-    onCommit: (minutes: number) => void;
+    /** На всю ширину контейнера (popover), а не 110px колонки таблицы. */
+    block?: boolean;
+    /**
+     * Не применять сам (ни по blur, ни по Enter): значением распоряжается форма вокруг поля —
+     * текущий ввод читается через `bind:draft`, разбор — `parseHoldMinutes`.
+     */
+    deferred?: boolean;
+    draft?: string | number;
+    onCommit?: (minutes: number) => void;
   } = $props();
 
   const i18n = useI18n();
 
   let focused = $state(false);
-  let draft = $state<string | number>('');
   let suppressBlurCommit = false;
 
   $effect(() => {
@@ -29,13 +39,12 @@
   });
 
   function commit(): void {
-    const raw = String(draft ?? '').trim();
-    const n = raw === '' ? 0 : Number(raw);
-    if (!Number.isFinite(n) || n < 0) {
+    const n = parseHoldMinutes(draft);
+    if (n === null) {
       draft = value > 0 ? String(value) : '';
       return;
     }
-    onCommit(Math.min(n, HOLD_MAX_MINUTES));
+    onCommit?.(n);
   }
 
   // справа в поле: статус вместо единицы, пока таймер взведён
@@ -48,7 +57,7 @@
   );
 </script>
 
-<label class="mpu-field hold-field" class:armed={phase === 'heating' || phase === 'holding'}>
+<label class="mpu-field hold-field" class:block class:armed={phase === 'heating' || phase === 'holding'}>
   <input
     class="mpu-input"
     type="number"
@@ -62,10 +71,10 @@
       const skip = suppressBlurCommit;
       suppressBlurCommit = false;
       focused = false;
-      if (!skip) commit();
+      if (!skip && !deferred) commit();
     }}
     onkeydown={(e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !deferred) {
         commit();
         suppressBlurCommit = true;
         (e.currentTarget as HTMLInputElement).blur();
@@ -85,6 +94,8 @@
     /* цифры и «мин»/«2:05» не должны переставляться местами в RTL */
     direction: ltr;
   }
+
+  .hold-field.block { width: 100%; flex: 1; }
 
   .hold-field .mpu-input {
     text-align: center;

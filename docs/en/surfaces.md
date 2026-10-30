@@ -33,7 +33,9 @@ main content          — dashboard / plugin page / Settings
 2. **The host passes `api` and `params`** as properties (see
    [plugin-development.md](plugin-development.md#4-the-custom-element-contract)).
 3. **The host does not read business data.** Everything a surface shows, it gets
-   from Moonraker itself.
+   from Moonraker itself. The only exception is the opaque fleet index (tags and
+   search text that fleet panels publish; the host never interprets them — see
+   [architecture.md](architecture.md#fleet-index)).
 4. **A single visual language** — the panel (see
    [i18n-and-theming.md](i18n-and-theming.md#panel-language)).
 5. The host mounts the element when the surface appears on screen and unmounts it
@@ -125,14 +127,17 @@ The types from which the host assembles the default dashboard:
 
 ### Grid
 
-12 columns, row height `--grid-row-height` (80px); on narrow screens the grid
-collapses into a single column. The layout is stored per printer
+12 columns, row height `--grid-row-height` (80px); when the dashboard itself is
+narrower than 768px (not the window: the sidebar and right panel count) the grid
+becomes a single column, and a widget still occupies its `h` rows, so its height
+is always definite. The layout is stored per printer
 (`dashboardLayout`) and edited in `#/dashboard?edit=1` mode.
 
 ### Parameters
 
 The widget body receives `params` = the dashboard route's query parameters (for
-example `edit: '1'` in edit mode, `preview: <file>` on a preview deep link).
+example `edit: '1'` in edit mode, `preview: <file>` on a preview deep link)
+plus `narrow` (see [Narrow screens](#9-narrow-screens)).
 
 ### Widget design
 
@@ -154,10 +159,11 @@ in registration order and **push** the content down (they do not cover it).
 - **The plugin decides visibility.** The host always mounts the element; when
   there is nothing to report, the element must render *nothing* (empty content
   without height).
-- `params = { mode, route }`:
+- `params = { mode, route, narrow }`:
   - `mode` — `'expanded'` or `'collapsed'`; the host collapses banners on scroll
     down (threshold 32px) and expands them when scrolling back to the top;
-  - `route` — `'dashboard'` | `'plugin-page'` | `'settings'`.
+  - `route` — `'dashboard'` | `'plugin-page'` | `'settings'`;
+  - `narrow` — `'true'` | `'false'`, see [Narrow screens](#9-narrow-screens).
 - The `scope` field is declared in the type but is not applied by the host —
   filter by `params.route` yourself.
 - **Manual control.** A banner can request the expanded or collapsed state with
@@ -270,12 +276,14 @@ interpret it. What items exist and how they look is up to the plugin.
 
 ### Chip (`element`)
 
-- `params = { chipId, chipLabel?, edit: '1' | '0' }`. `chipId` is that same item
-  `id`; `chipLabel` is the user's label.
+- `params = { chipId, chipLabel?, edit: '1' | '0', narrow: 'true' | 'false' }`. `chipId` is
+  that same item `id`; `chipLabel` is the user's label.
 - The chip root stretches to the full slot height (**80px**), width follows
   content; limit it on the plugin side (`max-width` + `text-overflow: ellipsis`).
 - Reveal the action with a **popover**, not by expanding the chip in place
-  (otherwise the strip reflows).
+  (otherwise the strip reflows). Open it **downward** by default (the strip sits under the
+  banners and the header): `shouldOpenAbove()` and `shouldAlignToEnd()` from
+  `plugins/shared/popover-align.ts` decide the side and the alignment (LTR/RTL).
 - When `edit === '1'` (dashboard edit mode) the host draws its own affordances
   (frame, "+", close buttons, drag-and-drop). The chip must not perform actions in
   this mode.
@@ -335,6 +343,10 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   not recommended yet (guards of plugins unaware of the target printer would
   decide based on the active one — see
   [guards.md](guards.md#target-scoped-guards)).
+- To take part in the fleet **search and filters**, publish an index from the panel
+  with `api.fleet.publish(params.printerId, { tags, searchText })` (in an
+  `$effect`/`connectedCallback`) and call `api.fleet.retract(params.printerId)` when
+  the panel is removed. See [plugin-api.md](plugin-api.md#fleet).
 - Closing fleet = unmounting: subscriptions and streams are released. Cache what is
   expensive to re-create (at module level).
 - The panel height follows its content; the host draws the card header (printer
@@ -363,3 +375,47 @@ owning plugin's page). The handler is a module export
 A unique slot. The host accepts `rightPanel` **only** from `@core/system`; from any
 other plugin the contribution is rejected with a console warning. Remote plugins
 cannot use the right panel.
+
+---
+
+## 9. Narrow screens
+
+The host switches to "narrow" mode at a width ≤ **768px** (a single breakpoint,
+`NARROW_BREAKPOINT` in `ui-store`). The side panels follow the *window* width
+(`ui.isNarrow`); banners, chips and widgets follow the width of the *work area*
+(main/dashboard), so a wide window with both sidebars open can still be "narrow" for
+them. Every plugin surface the host mounts itself (banners, chips, widget body, right
+panel) receives
+`params.narrow` = `'true'` | `'false'` — a string, like the other `params`.
+The value is fixed when the element is mounted; on a window resize the host only
+updates the element's `data-narrow` attribute (component props are not reactive).
+To react live, use `matchMedia('(max-width: 768px)')` or container queries on
+your own container: `narrow` is a convenience flag, not a replacement. Narrow
+mode means a *small window*, not a touch device: mouse, keyboard and hotkeys
+keep working exactly as on desktop.
+
+What the host does by itself in narrow mode:
+
+- **Adapting inside a plugin.** Prefer container queries over `@media`: a page or
+  widget may be narrow on a wide screen. Make the surface root a container
+  (`:global(mpu-x) { display:block; container-type:inline-size }`) and query it:
+  `@container (max-width: 720px)` — stack columns, `480px` — compact. A dialog that
+  is `position: fixed` is not inside any container: make its panel one. Tables that
+  must not scroll sideways: `plugins/shared/responsive/card-table.css` turns a
+  `table.card-table` (with `data-label` on each `td`) into cards below 520px.
+  Touch targets: use `@media (pointer: coarse)`, not the window width.
+- **Side panels** (menu and right panel) open over the content at full width under
+  the header; at most one is open. The right panel always receives
+  `collapsed: 'false'`; the saved "collapsed" state and width are ignored.
+- **Mounting.** A side panel is mounted only while it is open. Anything that must
+  work with the panel closed (notifications, toasts, hotkey handlers) must live in
+  an always-mounted surface (an overlay) and must not depend on the panel's DOM.
+  The `R` and `L` hotkeys toggle the right panel and the left menu: on a wide
+  screen they collapse/expand them, on a narrow one they open/close the overlay.
+- **Banners.** If several banners are visible at once, the host groups them under
+  a "Notifications: N" row. A banner counts as visible when its height is non-zero,
+  so keep rendering *nothing* when there is nothing to report. Tapping the row
+  sends the same `mpu:banner-expand` / `mpu:banner-collapse` events.
+- **Chips** are folded into a "Quick access" accordion (collapsed by default, open
+  in edit mode); on touch the order is changed with buttons, not drag-and-drop.
+  The chip height is unchanged (80px).

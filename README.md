@@ -20,7 +20,7 @@
   <img alt="Vite" src="https://img.shields.io/badge/vite-5-646cff.svg" />
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6.svg" />
   <img alt="No backend" src="https://img.shields.io/badge/backend-none-informational.svg" />
-  <img alt="Version" src="https://img.shields.io/badge/version-0.3.0-green.svg" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.5.0-green.svg" />
 </p>
 
 ---
@@ -75,13 +75,13 @@ The UI is built from **plugins**: the host provides the shell (printer tabs, sid
 
 A drag-and-drop grid of autonomous widgets, arranged per printer:
 
-- **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series, switchable columns, and an optional **On time** column: a per-heater timer that switches the heater off N minutes after it reaches its target (e.g. heating the hotend for a filament change without extra macros). The countdown runs in the browser, is ignored during a print, and Klipper's idle timeout remains the safety net
+- **Temperature** — live multi-heater chart (temp / target / power), per-sensor chips, click-to-isolate series; a table or compact **cards** view (automatic by the widget's width), plus an optional per-heater **on-time timer**
 - **Status** — print progress, layer & ETA, pause / resume / cancel, speed & flow factors
 - **Macros** — buttons with automatic parameter forms parsed from your macro bodies (defaults pre-filled, required fields flagged)
 - **Tools** — jog cross/rows, extrude & retract, force move, motors off, IDEX carriage modes (PRIMARY / COPY / MIRROR / experimental DIRECT-mode from [Dmitry Butyugin's fork of Klipper for IDEX printers](https://github.com/dmbutyugin/klipper/tree/generic-cartesian)), active-tool awareness, plus one-tap **QGL** / **Z-tilt** buttons when those commands are available
 - **Limits** — velocity, acceleration and square-corner velocity on the fly
 - **Outputs** — fan sliders and output-pin control (PWM and digital), plus read-only indicators for Klipper-managed auto-fans (heater_fan / controller_fan / temperature_fan)
-- **Camera** — live MJPEG/HLS views, multiple streams; flip through cameras with side buttons or a swipe on touch screens, name and measured FPS under the picture, and a click-to-expand viewer with a live camera list and ↑/↓ navigation; auto-reconnects after stream drops
+- **Camera** — live MJPEG/HLS views, multiple streams
 - **Filament** — runout sensor status and enable/disable
 - **Job queue** — reorder, start, manage queued prints
 
@@ -92,7 +92,7 @@ Every widget is data-autonomous: it subscribes to the proxy itself, so two widge
 
 A persistent strip under the banners keeps the most urgent controls one tap away on **every page** — mid-print, on the jobs screen, in settings:
 
-- **Temperature chips** — current value, target badge, heating/cooling trend, tap-to-set popover with presets
+- **Temperature chips** — current value, target badge, heating/cooling trend, tap-to-set popover (optional heater on-time timer)
 - **Macro chips** — run instantly, or open the parameter form
 - **Output chips** — fan/pin state with spinning-fan feedback; preset buttons (0/25/50/75/100 %) + fine slider
 - **Tuning chips** — pressure advance, retraction, flow and speed factor, with a live preview of the exact G-code that will be sent
@@ -141,8 +141,11 @@ Long-running calibrations survive tab switches and printer switching — activit
 ### System & notifications
 
 - **Right panel** (always available): emergency stop, service restarts, power devices, host shutdown/reboot, upload-and-print, Moonraker accounts
-- **Notification center** — toasts + a filterable side panel, aggregated across all configured printers with per-printer badges; fed by Klipper responses, shutdowns, **TMC driver flags** (over-temperature / stall, edge-detected), guard denials, and plugin notifications (`M118 MPU_NOTIFY …` convention)
-- **Machine page** — CPU / memory / network stats, live load charts, MCU inventory and versions, update manager with commit history and rollback
+- **Notification center** — toasts + a filterable side panel, aggregated across all configured printers with per-printer badges; fed by Klipper responses, shutdowns, **TMC driver flags** (over-temperature / stall, edge-detected), **host throttling and MCU link / CAN bus problems** (debounced), guard denials, and plugin notifications (`M118 MPU_NOTIFY …` convention)
+- **Machine page** with tabs (`Alt+1/2/3`) and a health strip (host · MCU · drivers) above them:
+  - **System** — system info, SD card, live host load charts
+  - **Monitoring** — host throttling / under-voltage (Raspberry Pi) and CPU temperature; per-MCU load, retransmit and round-trip charts, CAN bus state; TMC driver status table with decoded flags and "seen earlier" history
+  - **Storage & updates** — storage, database, update manager with commit history and rollback
 - **Klipper state banner** — distinct from connection status: firmware errors and startup are shown where they belong
 
 <a id="console"></a>
@@ -160,18 +163,20 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 - **Printer tabs** with per-printer dashboard layout, chip strip, widget providers, page visibility and plugin settings
 - **Warm switching** — per-printer hook cores are kept alive across tab changes and fleet drawer cycles, so returning to a printer restores live data without a cold resubscribe flash
 - **Fleet mode** — tap the grid button below the tabs to slide open a drawer showing every printer's camera, print status, tool position, and temperatures in a live card grid. Each card is read-only and talks to its own printer; tap **Activate** to jump to that printer's dashboard. Panels are plugin-contributed (`printerPanels` in the manifest), so third-party plugins can add their own fleet cards.
+- **Fleet search & filters** — the drawer header has a search box (printer name or the file being printed) and filter buttons (printing / idle / Klipper error) with counters. On narrow screens the buttons collapse to icons; the layout is RTL-ready
 - **Fleet panel editor** — the drawer header includes an **Edit panels** action: reorder fleet panels with drag-and-drop and hide/show them per device. The layout is stored device-globally and applied consistently across printer cards.
 - **Offline overlay** — infrastructure-only (never reads business data); you can switch printers without dismissing it
 - **Settings sync** — opt-in per plugin, device-global
 - **Themes** — light & dark, every color a CSS variable; accent customization and custom background images are supported
 - **i18n** — English & Russian, RTL-ready layout
+- **Narrow screens** — below 768px the side panels open as full-width overlays, the dashboard becomes one column (each widget keeps its row height), banners group into a summary row and chips fold into an accordion; pages and widgets adapt to their own width, not just the window's
 
 <a id="hotkeys"></a>
 ### Hotkeys
 
 Keyboard navigation plus shortcuts contributed by plugins, all remappable in **Settings → Hotkeys**:
 
-- **Navigation** — `F` toggles fleet mode, `D` opens the dashboard, `R` shows/hides the right panel, `N` the notification center, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `Ctrl+↑` / `Ctrl+↓` step through the sidebar pages; built-in pages open from anywhere (`J` Jobs, `H` History, `M` Machine, `Shift+C` Config, `Shift+A` Calibrations, `C` Console, `G` G-code preview), `U` picks a G-code file to upload and `P` toggles *print after upload*
+- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `D` opens the dashboard, `R` / `L` toggle the right panel and the left menu
 - **Plugin shortcuts** — a plugin declares them in its manifest with a scope: *global* (everywhere), *dashboard* (only on the dashboard) or *plugin* (only on that plugin's own page)
 - **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on macOS and Ctrl elsewhere
 - **Conflict-safe** — if two shortcuts collide, **both are disabled** with a console warning and a mark in Settings (the same key is fine for *dashboard* + *plugin*, or for two different plugins' own pages)
@@ -280,7 +285,7 @@ Full developer documentation lives in [`docs/en`](docs/en/README.md) (Russian: [
 <a id="architecture"></a>
 ### Architecture in one paragraph
 
-The **host** is a deliberately dumb orchestrator: printer tabs, sidebar, dashboard grid, settings, theme, locale, and the persistent surfaces (banners, chip strip, overlays, right panel). It never parses Moonraker's protocol and never reads business data to draw its own chrome. **MoonrakerProxy** pools one WebSocket per printer with snapshot caching, subscription de-duplication and poll-on-demand. **GuardAgent** wraps every plugin `request()` in a declarative pre-flight chain and is target-printer aware, so fleet/multi-printer actions are checked against the printer being addressed. **Plugins** are autonomous contributions — pages, widgets, chips, overlays, banners, printer panels — that subscribe to the proxy themselves and never talk to each other. Per-printer data hooks are pooled through a **core-keeper**: cores are created lazily, reference-counted, and kept alive after consumers unmount, so plugin state survives navigation and fleet drawer cycles. The **SDK** is a thin hook layer. All contribution kinds (pages, widgets, overlays, banners, chips, printer panels, hotkeys) go through one registry table, a single per-plugin API cache serves every surface, and a **HotkeyManager** resolves keyboard shortcuts across host and plugins. There is no backend, no shared state bus, and no plugin-to-plugin channel, by design.
+The **host** is a deliberately dumb orchestrator: printer tabs, sidebar, dashboard grid, settings, theme, locale, and the persistent surfaces (banners, chip strip, overlays, right panel). It never parses Moonraker's protocol and never reads business data to draw its own chrome (the single exception is the opaque fleet index: tags and search text that fleet panels publish for fleet search and filters, which the host stores and compares but never interprets). **MoonrakerProxy** pools one WebSocket per printer with snapshot caching, subscription de-duplication and poll-on-demand. **GuardAgent** wraps every plugin `request()` in a declarative pre-flight chain and is target-printer aware, so fleet/multi-printer actions are checked against the printer being addressed. **Plugins** are autonomous contributions — pages, widgets, chips, overlays, banners, printer panels — that subscribe to the proxy themselves and never talk to each other. Per-printer data hooks are pooled through a **core-keeper**: cores are created lazily, reference-counted, and kept alive after consumers unmount, so plugin state survives navigation and fleet drawer cycles. The **SDK** is a thin hook layer. All contribution kinds (pages, widgets, overlays, banners, chips, printer panels, hotkeys) go through one registry table, a single per-plugin API cache serves every surface, and a **HotkeyManager** resolves keyboard shortcuts across host and plugins. There is no backend, no shared state bus, and no plugin-to-plugin channel, by design.
 
 <a id="plugin-model"></a>
 ### Plugin model

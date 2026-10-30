@@ -343,7 +343,8 @@
   .session-hint { color: var(--text-muted); font-size: var(--font-size-sm); }
 
   .acc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-xs); }
-  @media (max-width: 720px) { .acc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (max-width: 720px) { .acc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (max-width: 360px) { .acc-grid { grid-template-columns: minmax(0, 1fr); } }
   .acc-cell {
     display: flex; flex-direction: column; gap: 2px; padding: var(--space-xs) var(--space-sm);
     background: var(--bg-surface-hover); border: 1px solid var(--border-color); border-radius: var(--radius-sm);

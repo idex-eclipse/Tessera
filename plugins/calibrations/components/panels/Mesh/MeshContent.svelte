@@ -538,7 +538,7 @@
   .viewer-wrap {
     position: relative;
     flex: 1;
-    min-height: 320px;
+    min-height: clamp(220px, 50dvh, 320px);
     width: 100%;
   }
 
@@ -575,7 +575,7 @@
   .dual-range {
     position: relative;
     flex: 1;
-    min-width: 160px;
+    min-width: min(160px, 100%);
     height: 24px;
   }
 
@@ -642,9 +642,14 @@
     cursor: pointer;
   }
 
-  @media (max-width: 900px) {
+  @container (max-width: 720px) {
     .mesh-content {
       grid-template-columns: 1fr;
     }
+  }
+
+  /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .icon-btn { width: 36px; height: 36px; }
   }
 </style>

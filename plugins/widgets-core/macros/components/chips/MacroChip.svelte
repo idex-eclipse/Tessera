@@ -7,7 +7,7 @@
   import MacroParamsMenu from '../MacroParamsMenu.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
   import { buildMacroScript } from '../../../../shared/macro-params';
-  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
+  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -50,7 +50,7 @@
 
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
+  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
 
   let paramsMenuOpen = $state(false);
   let paramsAnchor = $state<{ left: number; right: number; top: number; bottom: number } | null>(null);
@@ -64,7 +64,7 @@
       paramsAnchor = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
       paramsMenuOpen = true;
     } else {
-      placement = { above: rect.top > 180, alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()) };
+      placement = { above: shouldOpenAbove(rect, 180, window.innerHeight), alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()) };
       popoverOpen = true;
     }
   }

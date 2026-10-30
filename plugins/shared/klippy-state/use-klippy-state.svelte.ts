@@ -5,6 +5,7 @@ import {
   createCoreKeeper,
   createDelegateStore,
 } from '../../shared/core-keeper/core-keeper';
+import { isKlippyFault } from './klippy-fault.ts';
 
 export type KlippyState =
   | 'ready'
@@ -267,8 +268,7 @@ function createKlippyStateCore(api: PluginApi, printerId: string) {
       return (stateByPrinter[printerId] ?? 'unknown') === 'ready';
     },
     get error(): boolean {
-      const s = stateByPrinter[printerId] ?? 'unknown';
-      return s === 'error' || s === 'shutdown';
+      return isKlippyFault(stateByPrinter[printerId] ?? 'unknown');
     },
     destroy,
   };

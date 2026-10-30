@@ -2,8 +2,19 @@ import { onDestroy } from 'svelte';
 
 import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types.ts';
 
+import { createHealthWatch, type HealthAlert, type HealthWatch } from './health-alerts.ts';
+import { CANBUS_FIELDS, MCU_FIELDS } from './health-model.ts';
+import {
+  isFlagSet,
+  matchCanbus,
+  matchMcu,
+  matchTmc,
+  TMC_CRITICAL_FLAGS,
+  TMC_ERROR_FLAGS,
+} from './health-utils.ts';
+
 export type NotificationSeverity = 'critical' | 'error' | 'info';
-export type NotificationSource = 'gcode' | 'klippy' | 'tmc' | 'guard' | 'plugin';
+export type NotificationSource = 'gcode' | 'klippy' | 'tmc' | 'guard' | 'plugin' | 'host' | 'mcu';
 
 export interface NotificationItem {
   id: string;
@@ -21,15 +32,6 @@ export interface NotificationItem {
 const HISTORY_CAP = 200;
 const TOAST_CAP = 5;
 const DEDUP_MS = 100;
-
-const TMC_ERROR_FLAGS = new Set([
-  'ot', 'otpw',
-  's2ga', 's2gb', 's2vsa', 's2vsb',
-  'ola', 'olb',
-]);
-const TMC_CRITICAL_FLAGS = new Set([
-  'ot', 's2ga', 's2gb', 's2vsa', 's2vsb',
-]);
 
 const KLIPPER_CRITICAL_RE = /shutdown|mcu |thermistor|heater .* not heating|lost communication|tmc .* reports/i;
 
@@ -60,6 +62,10 @@ interface PrinterSubs {
   generation: number;
   unsubs: Array<() => void>;
   tmcUnsub: (() => void) | null;
+  /** подписка на mcu* / canbus_stats* (связь с MCU, шина CAN) */
+  healthUnsub: (() => void) | null;
+  /** детекторы здоровья: предыдущие статусы и антидребезг этого принтера */
+  watch: HealthWatch;
 }
 const subsByPrinter = new Map<string, PrinterSubs>();
 
@@ -211,7 +217,7 @@ function createAggregator(api: PluginApi) {
   function applyTmcDelta(printerId: string, delta: any): void {
     if (!delta || typeof delta !== 'object') return;
     for (const [name, d] of Object.entries(delta)) {
-      if (!/^tmc\d+ /.test(name) && !/^tmc\d+$/.test(name)) continue;
+      if (!matchTmc(name)) continue;
       const rec = d as any;
       const drv = rec?.drv_status;
       if (!drv || typeof drv !== 'object') continue;
@@ -220,8 +226,7 @@ function createAggregator(api: PluginApi) {
       const prev = prevFlags.get(key) ?? new Set();
       const cur = new Set<string>();
       for (const f of TMC_ERROR_FLAGS) {
-        const v = drv[f];
-        if (v !== undefined && v !== null && v !== 0 && v !== false) cur.add(f);
+        if (isFlagSet(drv[f])) cur.add(f);
       }
 
       for (const f of cur) {
@@ -299,9 +304,7 @@ function createAggregator(api: PluginApi) {
     const current = subsByPrinter.get(printerId);
     if (!current || current.generation !== gen || !list) return;
 
-    const names = (list.objects ?? []).filter(
-      (n: string) => typeof n === 'string' && (/^tmc\d+ /.test(n) || /^tmc\d+$/.test(n)),
-    );
+    const names = (list.objects ?? []).filter((n: string) => typeof n === 'string' && matchTmc(n));
     if (names.length === 0) return;
 
     const objects: Record<string, string[]> = {};
@@ -314,6 +317,106 @@ function createAggregator(api: PluginApi) {
       },
       { immediate: true },
     );
+  }
+
+  // ------------------------------------------------------------------
+  // Здоровье: троттлинг хоста, связь с MCU, шина CAN
+  // ------------------------------------------------------------------
+  function alertText(a: HealthAlert): string {
+    switch (a.kind) {
+      case 'throttle':
+        return api.i18n.t('system.notifications.throttle', {
+          flag: api.i18n.t(`system.throttle.${a.flag}`),
+        });
+      case 'mcuLink':
+        return api.i18n.t('system.notifications.mcuLink', {
+          name: a.mcu,
+          reason: api.i18n.t(`system.link.reason.${a.reason}`),
+        });
+      case 'canbus': {
+        const key = `system.link.bus.${a.state}`;
+        const label = api.i18n.t(key);
+        return api.i18n.t('system.notifications.canbus', {
+          name: a.mcu,
+          state: label === key ? a.state : label,
+        });
+      }
+    }
+  }
+
+  function pushAlerts(printerId: string, alerts: HealthAlert[]): void {
+    for (const a of alerts) {
+      const text = alertText(a);
+      if (isIgnored(text)) continue;
+      push(printerId, {
+        severity: a.severity,
+        source: a.kind === 'throttle' ? 'host' : 'mcu',
+        text,
+        sticky: a.sticky,
+      });
+    }
+  }
+
+  function onThrottleRaw(printerId: string, ps: PrinterSubs, raw: unknown): void {
+    pushAlerts(printerId, ps.watch.onThrottle(raw));
+  }
+
+  async function subscribeHealth(printerId: string, gen: number): Promise<void> {
+    const ps = subsByPrinter.get(printerId);
+    if (!ps || ps.generation !== gen) return;
+
+    if (ps.healthUnsub) {
+      ps.healthUnsub();
+      ps.healthUnsub = null;
+    }
+
+    let h: MoonrakerProxyHandle;
+    try {
+      h = api.moonrakerFor(printerId);
+    } catch {
+      return;
+    }
+    if (h.readyState !== 'open') return;
+
+    // текущее состояние троттлинга — дальше его присылает Moonraker
+    void h
+      .request<any>('machine.proc_stats')
+      .then((res) => {
+        if (subsByPrinter.get(printerId)?.generation === gen) {
+          onThrottleRaw(printerId, ps, res?.throttled_state);
+        }
+      })
+      .catch(() => {});
+
+    const list = await h.request<any>('printer.objects.list').catch(() => null);
+    const current = subsByPrinter.get(printerId);
+    if (!current || current.generation !== gen || !list) return;
+
+    const objects: Record<string, string[]> = {};
+    const known = new Set<string>();
+    for (const n of list.objects ?? []) {
+      if (typeof n !== 'string') continue;
+      if (matchMcu(n)) objects[n] = MCU_FIELDS;
+      else if (matchCanbus(n)) objects[n] = CANBUS_FIELDS;
+      else continue;
+      known.add(n);
+    }
+    current.watch.retain(known);
+    if (known.size === 0) return;
+
+    current.healthUnsub = h.subscribe(
+      objects,
+      (d: any) => {
+        if (current.generation === gen) pushAlerts(printerId, current.watch.onDelta(d));
+      },
+      { immediate: true },
+    );
+  }
+
+  /** Переподписка по тем же триггерам, что и у TMC (ready / открытие соединения / klippy ready). */
+  function resubscribe(printerId: string, gen: number): void {
+    void subscribeTmc(printerId, gen);
+    void subscribeHealth(printerId, gen);
   }
 
   // ------------------------------------------------------------------
@@ -374,6 +477,8 @@ function createAggregator(api: PluginApi) {
       generation: 1,
       unsubs: [],
       tmcUnsub: null,
+      healthUnsub: null,
+      watch: createHealthWatch(),
     };
     subsByPrinter.set(printerId, ps);
     const gen = ps.generation;
@@ -383,19 +488,46 @@ function createAggregator(api: PluginApi) {
 
     ps.unsubs.push(
       h.onReady(() => {
-        if (ps.generation === gen) void subscribeTmc(printerId, gen);
+        if (ps.generation === gen) resubscribe(printerId, gen);
       }),
     );
 
     ps.unsubs.push(
       h.onConnectionStatusChange((s) => {
-        if (s === 'open' && ps.generation === gen) void subscribeTmc(printerId, gen);
+        if (s === 'open' && ps.generation === gen) resubscribe(printerId, gen);
       }),
     );
 
     ps.unsubs.push(
       h.onNotify('notify_klippy_ready', () => {
-        if (ps.generation === gen) void subscribeTmc(printerId, gen);
+        if (ps.generation !== gen) return;
+        ps.watch.klippyReady(true);
+        resubscribe(printerId, gen);
+      }),
+    );
+
+    // рестарт Klipper: связь с MCU переустанавливается — ретрансмиты в этот момент штатны
+    for (const ev of ['notify_klippy_started', 'notify_klippy_shutdown', 'notify_klippy_disconnected']) {
+      ps.unsubs.push(
+        h.onNotify(ev, () => {
+          if (ps.generation === gen) ps.watch.klippyReady(false);
+        }),
+      );
+    }
+
+    // Moonraker присылает смену троттлинга отдельным событием; на всякий случай
+    // слушаем и поле throttled_state в обычном пуше статистики (проверка — по ключу, дёшево)
+    ps.unsubs.push(
+      h.onNotify('notify_cpu_throttled', (params: any) => {
+        if (ps.generation === gen) onThrottleRaw(printerId, ps, Array.isArray(params) ? params[0] : params);
+      }),
+    );
+
+    ps.unsubs.push(
+      h.onNotify('notify_proc_stat_update', (params: any) => {
+        if (ps.generation !== gen) return;
+        const p = Array.isArray(params) ? params[0] : params;
+        if (p && typeof p === 'object' && 'throttled_state' in p) onThrottleRaw(printerId, ps, p.throttled_state);
       }),
     );
 
@@ -411,7 +543,7 @@ function createAggregator(api: PluginApi) {
       }),
     );
 
-    void subscribeTmc(printerId, gen);
+    resubscribe(printerId, gen);
   }
 
   function detachPrinter(printerId: string): void {
@@ -422,6 +554,10 @@ function createAggregator(api: PluginApi) {
     if (ps.tmcUnsub) {
       ps.tmcUnsub();
       ps.tmcUnsub = null;
+    }
+    if (ps.healthUnsub) {
+      ps.healthUnsub();
+      ps.healthUnsub = null;
     }
     subsByPrinter.delete(printerId);
 
@@ -484,17 +620,16 @@ function createAggregator(api: PluginApi) {
   // ------------------------------------------------------------------
   // Public
   // ------------------------------------------------------------------
-  let activeToasts = $derived.by(() => {
-    const visible = items.filter((n) => !n.dismissed);
-    return visible.slice(0, TOAST_CAP);
-  });
-
+  // Не $derived: агрегатор создаётся в инициализации первого потребителя, и derived
+  // уничтожается вместе с его компонентом (например, при перемонтировании правой
+  // панели) — после этого тосты переставали реагировать на dismiss. Геттер читает
+  // модульный $state напрямую, поэтому реактивен в любом потребителе.
   const store = {
     get items() {
       return items;
     },
     get activeToasts() {
-      return activeToasts;
+      return items.filter((n) => !n.dismissed).slice(0, TOAST_CAP);
     },
     get unseenCount() {
       return items.filter((n) => !n.seen).length;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../shared/icons/Icon.svelte';
+  import '../../../shared/responsive/card-table.css';
 
   import { useBedMesh } from '../../use-bed-mesh.svelte.ts';
   import { gcode, runGcode } from '../../commands.ts';
@@ -65,7 +66,7 @@
         </div>
       {/if}
 
-      <table class="screws-table">
+      <table class="screws-table card-table">
         <thead>
           <tr>
             <th>{i18n.t('bedMesh.screws.screw')}</th>
@@ -76,14 +77,14 @@
         <tbody>
           {#each store.screws.results as s (s.name)}
             <tr class:base={s.isBase}>
-              <td>
+              <td data-label={i18n.t('bedMesh.screws.screw')}>
                 <span class="screw-name">{s.name}</span>
                 {#if s.isBase}
                   <span class="base-badge">{i18n.t('bedMesh.screws.base')}</span>
                 {/if}
               </td>
-              <td class="col-num">{s.z != null ? s.z.toFixed(3) : '—'}</td>
-              <td class="col-adjust">
+              <td class="col-num" data-label="Z, mm">{s.z != null ? s.z.toFixed(3) : '—'}</td>
+              <td class="col-adjust" data-label={i18n.t('bedMesh.screws.adjust')}>
                 {#if s.isBase}
                   —
                 {:else}
@@ -132,6 +133,8 @@
     width: 90%;
     max-width: 460px;
     max-height: 80vh;
+    max-height: 80dvh;
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
@@ -310,5 +313,10 @@
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* узкий контейнер (сам диалог): зона нажатия ≥ 40px */
+  @container (max-width: 520px) {
+    .icon-btn { width: 40px; height: 40px; }
   }
 </style>

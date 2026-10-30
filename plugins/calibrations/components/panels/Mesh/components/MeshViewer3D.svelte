@@ -64,6 +64,13 @@
     camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100000);
     controls = new OrbitControls(camera, canvasEl);
     controls.addEventListener('change', render);
+
+    // Сенсорный экран: один палец прокручивает страницу (иначе канва «ловит» скролл),
+    // вращение и масштаб — двумя пальцами. Мышь и перо не затронуты.
+    if (window.matchMedia?.('(pointer: coarse)').matches) {
+      controls.touches = { ONE: -1, TWO: THREE.TOUCH.DOLLY_ROTATE };
+      canvasEl.style.touchAction = 'pan-y';
+    }
   }
 
   function onResize(): void {

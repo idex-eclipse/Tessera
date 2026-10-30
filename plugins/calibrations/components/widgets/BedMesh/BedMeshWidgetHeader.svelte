@@ -18,6 +18,8 @@
   let busy = $state('');
   let menuOpen = $state(false);
   let btnEl = $state<HTMLButtonElement | null>(null);
+  const MENU_MIN_WIDTH = 230;
+  const MENU_MARGIN = 8;
   let menuPos = $state({ top: 0, left: 0 });
   let menuRtl = $state(false);
 
@@ -33,9 +35,14 @@
     if (!menuOpen && btnEl) {
       const r = btnEl.getBoundingClientRect();
       menuRtl = document.documentElement.getAttribute('dir') === 'rtl';
+      // Меню не должно выходить за экран: кнопка может быть у края узкого окна.
+      const w = Math.min(MENU_MIN_WIDTH, window.innerWidth - 2 * MENU_MARGIN);
+      const maxEdge = window.innerWidth - MENU_MARGIN;
       menuPos = {
         top: r.bottom + 4,
-        left: menuRtl ? r.left : r.right,
+        left: menuRtl
+          ? Math.min(Math.max(r.left, MENU_MARGIN), maxEdge - w)
+          : Math.max(Math.min(r.right, maxEdge), MENU_MARGIN + w),
       };
     }
     menuOpen = !menuOpen;
@@ -167,8 +174,8 @@
   .menu {
     position: fixed;
     z-index: 400;
-    min-width: 230px;
-    max-width: 320px;
+    min-width: min(230px, calc(100vw - 16px));
+    max-width: min(320px, calc(100vw - 16px));
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -224,5 +231,10 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .hdr-btn { width: 36px; height: 36px; }
   }
 </style>

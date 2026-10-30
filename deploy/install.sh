@@ -97,9 +97,9 @@ fi
 # ---------------------------------------------------------------- clone + build
 if [ -d "$INSTALL_DIR/.git" ]; then
   log "repository already exists — updating to $BRANCH"
-  # Explicit refspec ensures the remote-tracking branch is created even in shallow clones.
-  # -f forces checkout to discard any local uncommitted changes.
-  as_user "cd '$INSTALL_DIR' && git fetch --depth 1 origin '$BRANCH':refs/remotes/origin/'$BRANCH' && git checkout -f -B '$BRANCH' origin/'$BRANCH'"
+  # We use FETCH_HEAD instead of origin/<branch> to avoid 'non-fast-forward' errors
+  # that occur when switching between shallow-cloned remote tracking branches.
+  as_user "cd '$INSTALL_DIR' && git fetch --depth 1 origin '$BRANCH' && git checkout -f -B '$BRANCH' FETCH_HEAD"
 else
   log "cloning $REPO_URL ($BRANCH) → $INSTALL_DIR"
   as_user "git clone --depth 1 -b '$BRANCH' '$REPO_URL' '$INSTALL_DIR'"

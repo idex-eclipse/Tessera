@@ -5,7 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
-  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
+  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
 
   type Subject = 'pressure_advance' | 'retraction' | 'flow' | 'speed';
 
@@ -159,7 +159,7 @@
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: rect.top > 220, alignRight: shouldAlignToEnd(rect, 260, window.innerWidth, isRtl()) };
+      placement = { above: shouldOpenAbove(rect, 220, window.innerHeight), alignRight: shouldAlignToEnd(rect, 260, window.innerWidth, isRtl()) };
     }
     popoverOpen = true;
     if (subject === 'pressure_advance') {
@@ -200,7 +200,7 @@
   //popover
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
+  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
 
   let label = $derived.by(() => {
     if (customLabel) return customLabel;

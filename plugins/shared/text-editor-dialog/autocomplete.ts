@@ -3,29 +3,46 @@
  *
  * Источники предложений (в порядке приоритета):
  *  1. Jinja-переменные ({% set %}, printer.*, params.*) — в контексте {{ }} / {% %};
- *  2. G-code команды — в gcode-блоке;
+ *     `params.` внутри макроса — параметры именно этого макроса;
+ *  2. G-code в gcode-блоке: команды, параметры (`NAME=`) и перечисления значений из
+ *     общего каталога shared/gcode-hints (printer.gcode.help + G-Codes.md + макросы);
  *  3. Все слова из текста (klipper-ключи, имена секций, пути) — в любом контексте
  *     как запасной источник.
  *
  * Правила:
- *  - подсказки появляются ТОЛЬКО при непустом префиксе (минимум 1 символ);
+ *  - подсказки появляются при непустом префиксе; единственное исключение — gcode-строка
+ *    после пробела или «=» (список параметров / значений команды), см. CompletionContext;
  *  - специализированные источники имеют приоритет над «всеми словами»;
  *  - список ограничен limit (по умолчанию 12), чтобы dropdown не был бесконечным.
  */
 
+import { paramTypeLabel } from '../gcode-hints/catalog';
+import { completionTokenStart, suggestForLine, type HintSuggestion } from '../gcode-hints/suggest';
+import type { Catalog } from '../gcode-hints/types';
+
 export interface Suggestion {
   label: string;
   insert: string;
-  kind: 'var' | 'cmd' | 'word';
+  kind: 'var' | 'cmd' | 'macro' | 'param' | 'value' | 'word';
+  /** пояснение справа: описание команды, тип параметра */
+  detail?: string;
 }
 
 export interface CompletionContext {
   inJinja: boolean;
   inGcode: boolean;
   inConfig: boolean;
+  /** токен под кареткой; пуст только в gcode-строке после пробела или «=» */
   prefix: string;
   start: number;
   end: number;
+  /** gcode-строка от начала до каретки (для подбора команд / параметров / значений) */
+  linePrefix?: string;
+}
+
+/** Список показан без набранных букв (сразу после пробела или «=»). */
+export function isPassive(ctx: CompletionContext): boolean {
+  return ctx.prefix === '';
 }
 
 /**
@@ -91,14 +108,35 @@ export function getCompletionContext(
   const lineStart = curLine.search(/\S/);
   if (lineStart >= 0 && curLine[lineStart] === '#') return null;
 
+  // gcode-строка: команда, затем параметры `NAME=` и их значения
+  if (mode === 'gcode') {
+    if (curLine.includes(';')) return null; // комментарий gcode
+    const tokenStart = completionTokenStart(curLine);
+    if (tokenStart === null) return null; // каретка внутри строки в кавычках
+    const start = cursor - (curLine.length - tokenStart);
+    const gprefix = text.slice(start, cursor);
+    // пустой токен допустим только после имени команды (параметры / значения)
+    if (gprefix === '' && !/\s/.test(curLine.trimStart())) return null;
+    return {
+      inJinja: false,
+      inGcode: true,
+      inConfig: false,
+      prefix: gprefix,
+      start,
+      end: cursor,
+      linePrefix: curLine,
+    };
+  }
+
   // вне jinja — минимум один символ префикса
   const prefix = readPrefix(text, cursor, /[A-Za-z0-9_.]/);
   if (prefix === '') return null;
 
+  // сюда доходит только config-режим: gcode разобран выше, save отсёкся раньше
   return {
     inJinja: false,
-    inGcode: mode === 'gcode',
-    inConfig: mode === 'config',
+    inGcode: false,
+    inConfig: true,
     prefix,
     start: cursor - prefix.length,
     end: cursor,
@@ -155,7 +193,25 @@ export function collectAllWords(text: string, minLen = 2): string[] {
 export interface CompletionSources {
   jinjaVars: string[];
   allWords: string[];
-  gcodeCommands: string[]; // из printer.gcode.help
+  /** каталог команд (help + G-Codes.md + макросы принтера и файла) */
+  catalog?: Catalog;
+  /** параметры макроса, в теле которого каретка; null — каретка вне макроса */
+  macroParams?: string[] | null;
+}
+
+function detailOf(h: HintSuggestion): string | undefined {
+  if (h.kind === 'param' && h.param) {
+    const p = h.param;
+    const parts = [paramTypeLabel(p), p.def != null ? `= ${p.def}` : '', p.required ? '*' : ''];
+    return parts.filter(Boolean).join(' ') || h.description;
+  }
+  return h.description;
+}
+
+function fromHint(h: HintSuggestion): Suggestion {
+  const kind: Suggestion['kind'] =
+    h.kind === 'command' ? (h.command?.kind === 'macro' ? 'macro' : 'cmd') : h.kind;
+  return { label: h.label, insert: h.insert, kind, detail: detailOf(h) };
 }
 
 export function getSuggestions(
@@ -168,25 +224,36 @@ export function getSuggestions(
   const seen = new Set<string>();
 
   const push = (s: Suggestion) => {
-    if (seen.has(s.label) || s.label.toLowerCase() === q) return;
+    // набранное целиком и без дополнений (нет пробела / «=» для подстановки) не предлагаем
+    if (seen.has(s.label) || (s.label.toLowerCase() === q && s.insert === s.label)) return;
     seen.add(s.label);
     out.push(s);
   };
 
   if (ctx.inJinja) {
-    for (const v of sources.jinjaVars) {
+    // внутри макроса `params.` предлагает параметры этого макроса, а не всего файла
+    const scoped =
+      sources.macroParams && q.startsWith('params.')
+        ? sources.macroParams.map((n) => `params.${n}`)
+        : null;
+    for (const v of scoped ?? sources.jinjaVars) {
       if (out.length >= limit) break;
       if (v.toLowerCase().startsWith(q)) push({ label: v, insert: v, kind: 'var' });
     }
   } else if (ctx.inGcode) {
-    // команды из Moonraker — приоритет, затем общие слова файла
-    for (const c of sources.gcodeCommands) {
-      if (out.length >= limit) break;
-      if (c.toLowerCase().startsWith(q)) push({ label: c, insert: c, kind: 'cmd' });
+    // команды, параметры и значения из каталога — приоритет, затем общие слова файла
+    if (sources.catalog && ctx.linePrefix !== undefined) {
+      const r = suggestForLine(sources.catalog, ctx.linePrefix, { limit, skipExact: true });
+      for (const h of r.items) push(fromHint(h));
     }
-    for (const w of sources.allWords) {
-      if (out.length >= limit) break;
-      if (w.toLowerCase().startsWith(q)) push({ label: w, insert: w, kind: 'word' });
+    // слова файла: на месте команды (там живут и макросы, которых каталог ещё не знает)
+    // и как запасной вариант, когда каталог ничего не предложил
+    const commandPos = ctx.linePrefix === undefined || !/\s/.test(ctx.linePrefix.trimStart());
+    if (q !== '' && (commandPos || out.length === 0)) {
+      for (const w of sources.allWords) {
+        if (out.length >= limit) break;
+        if (w.toLowerCase().startsWith(q)) push({ label: w, insert: w, kind: 'word' });
+      }
     }
   } else {
     for (const w of sources.allWords) {

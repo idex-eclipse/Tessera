@@ -3,6 +3,7 @@
 
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
+  import '../../../../../shared/responsive/card-table.css';
 
   import { gcode, runGcode } from '../../../../commands';
   import type { BedMeshStore } from '../../../../use-bed-mesh.svelte.ts';
@@ -48,7 +49,7 @@
 {#if store.profileNames.length === 0}
   <p class="empty">{i18n.t('bedMesh.profiles.empty')}</p>
 {:else}
-  <table class="profiles-table">
+  <table class="profiles-table card-table">
     <thead>
       <tr>
         <th>{i18n.t('bedMesh.profiles.name')}</th>
@@ -63,7 +64,7 @@
         {@const p = store.mesh.profiles[name]}
         {@const active = name === store.mesh.profileName}
         <tr class:active>
-          <td>
+          <td data-label={i18n.t('bedMesh.profiles.name')}>
             <span class="cell-name">
               <span class="name">{name}</span>
               {#if active}
@@ -74,11 +75,11 @@
               {/if}
             </span>
           </td>
-          <td class="col-num">
+          <td class="col-num" data-label={i18n.t('bedMesh.profiles.points')}>
             {p ? `${p.points[0]?.length ?? 0}×${p.points.length}` : '—'}
           </td>
-          <td class="col-algo">{p?.meshParams.algo ?? '—'}</td>
-          <td class="col-actions">
+          <td class="col-algo" data-label={i18n.t('bedMesh.profiles.algo')}>{p?.meshParams.algo ?? '—'}</td>
+          <td class="col-actions" data-label={i18n.t('bedMesh.profiles.actions')}>
             <button
               class="row-btn"
               disabled={busy !== '' || active || !store.tools.profile}
@@ -198,6 +199,11 @@
     color: var(--text-muted);
     cursor: pointer;
     transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  /* узкий контейнер: зона нажатия кнопок строки ≥ 40px */
+  @container (max-width: 520px) {
+    .row-btn { width: 40px; height: 40px; }
   }
 
   .row-btn:hover:not(:disabled) {

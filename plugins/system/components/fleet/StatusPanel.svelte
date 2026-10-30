@@ -13,6 +13,8 @@
     fmtClock,
   } from '../../use-print-status.svelte.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { isKlippyFault } from '../../../shared/klippy-state/klippy-fault.ts';
+  import { buildFleetIndex } from '../../fleet-index.ts';
 
   let {
     mpuApi,
@@ -45,7 +47,7 @@
   });
 
   let klippyTone = $derived(
-    klippy.state === 'error' || klippy.state === 'shutdown'
+    isKlippyFault(klippy.state)
       ? 'danger'
       : klippy.state === 'startup' || klippy.state === 'disconnected'
         ? 'warning'
@@ -67,6 +69,13 @@
   let progress = $derived(computeProgress(m, mode));
   let remaining = $derived(computeRemaining(m, mode));
   let eta = $derived(computeEta(m, mode));
+
+  // Публикуем в fleet-индекс хоста теги и имя активного файла (поиск/фильтры fleet).
+  // Хост дедуплицирует одинаковые записи, так что тики прогресса его не будят.
+  $effect(() => {
+    api.fleet.publish(printerId, buildFleetIndex(klippy.state, m));
+  });
+  $effect(() => () => api.fleet.retract(printerId));
 
   let stateClass = $derived(
     m.state === 'printing' ? 'printing' :

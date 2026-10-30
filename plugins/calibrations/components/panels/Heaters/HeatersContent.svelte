@@ -380,7 +380,7 @@
 
     <div class="chart-wrap">
       {#if monitor.sensors.length > 0}
-        <UPlotChart {defs} {data} tick={monitor.tick} height="360px" />
+        <UPlotChart {defs} {data} tick={monitor.tick} height="clamp(220px, 45dvh, 360px)" />
       {:else}
         <p class="placeholder muted">{i18n.t('calibrations.heaters.noData')}</p>
       {/if}
@@ -446,7 +446,7 @@
     gap: var(--space-md);
     align-items: start;
   }
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     .grid {
       grid-template-columns: 1fr;
     }
@@ -625,7 +625,7 @@
     top: calc(100% + 4px);
     inset-inline-end: 0;
     z-index: 10;
-    min-width: 220px;
+    min-width: min(220px, calc(100cqw - 32px));
     padding: var(--space-sm);
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -659,4 +659,9 @@
   /* Стрелка-указатель зеркалится в RTL */
   .dir-arrow { display: inline-block; }
   :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }
+
+  /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .icon-btn { width: 36px; height: 36px; }
+  }
 </style>

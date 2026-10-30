@@ -32,6 +32,14 @@ export interface UiDocumentLike {
   };
 }
 
+export interface MediaQueryListLike {
+  matches: boolean;
+  addEventListener(
+    type: 'change',
+    listener: (event: { matches: boolean }) => void,
+  ): void;
+}
+
 export interface UiStoreOptions {
   /**
    * If true, store will apply DOM attributes.
@@ -43,9 +51,25 @@ export interface UiStoreOptions {
    * Injectable document for tests.
    */
   document?: UiDocumentLike;
+
+  /**
+   * Injectable matchMedia for tests.
+   * Defaults to window.matchMedia when available.
+   */
+  matchMedia?: (query: string) => MediaQueryListLike;
 }
 
 export type UiStore = ReturnType<typeof createUiStore>;
+
+/**
+ * Единственный брейкпоинт хоста. CSS-медиазапросы обязаны использовать
+ * то же значение (var() в @media не работает) — при смене править оба места.
+ */
+export const NARROW_BREAKPOINT = 768;
+export const NARROW_QUERY = `(max-width: ${NARROW_BREAKPOINT}px)`;
+
+/** Какая боковая панель сейчас открыта оверлеем на узком экране. */
+export type MobilePanel = 'nav' | 'right' | null;
 
 const RTL_LOCALE_PREFIXES = ['ar', 'he', 'fa', 'ur'];
 
@@ -66,6 +90,45 @@ export function createUiStore(
    * Apply initial DOM state.
    */
   applyDom();
+
+  // ------------------------------------------------------------------
+  // Narrow viewport / mobile panels
+  //
+  // Состояние временное и не пишется в settings: оно не должно затирать
+  // десктопные sidebarCollapsed / rightPanelWidth.
+  // ------------------------------------------------------------------
+
+  let narrow = $state(false);
+  let mobilePanel = $state<MobilePanel>(null);
+
+  const matchMediaImpl =
+    options.matchMedia ??
+    (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? (query: string) => window.matchMedia(query)
+      : undefined);
+
+  if (matchMediaImpl) {
+    const mql = matchMediaImpl(NARROW_QUERY);
+    narrow = mql.matches;
+    mql.addEventListener('change', (event) => {
+      narrow = event.matches;
+      if (!event.matches) mobilePanel = null;
+    });
+  }
+
+  function openMobilePanel(panel: Exclude<MobilePanel, null>): void {
+    if (!narrow) return;
+    mobilePanel = panel;
+  }
+
+  function closeMobilePanel(): void {
+    mobilePanel = null;
+  }
+
+  function toggleMobilePanel(panel: Exclude<MobilePanel, null>): void {
+    if (mobilePanel === panel) closeMobilePanel();
+    else openMobilePanel(panel);
+  }
 
   // ------------------------------------------------------------------
   // DOM synchronization
@@ -161,7 +224,20 @@ export function createUiStore(
   // Sidebar
   // ------------------------------------------------------------------
 
+  /**
+   * На узком экране «свёрнуто» не имеет смысла (панель — оверлей), поэтому
+   * toggleSidebar / toggleRightPanel управляют оверлеем: так же работают
+   * хоткеи и любые другие вызовы. `collapsed: true` — закрыть, `false` — открыть.
+   */
+  function toggleMobile(panel: Exclude<MobilePanel, null>, collapsed?: boolean): void {
+    if (collapsed === undefined) toggleMobilePanel(panel);
+    else if (collapsed) {
+      if (mobilePanel === panel) closeMobilePanel();
+    } else openMobilePanel(panel);
+  }
+
   function toggleSidebar(collapsed?: boolean): void {
+    if (narrow) return toggleMobile('nav', collapsed);
     settings.toggleSidebar(collapsed);
   }
 
@@ -170,6 +246,7 @@ export function createUiStore(
   }
 
   function toggleRightPanel(collapsed?: boolean): void {
+    if (narrow) return toggleMobile('right', collapsed);
     settings.toggleRightPanel(collapsed);
   }
 
@@ -256,6 +333,18 @@ export function createUiStore(
     get fleetOpen(): boolean {
       return settings.ui.fleetOpen ?? false;
     },
+
+    get isNarrow(): boolean {
+      return narrow;
+    },
+
+    get mobilePanel(): MobilePanel {
+      return mobilePanel;
+    },
+
+    openMobilePanel,
+    closeMobilePanel,
+    toggleMobilePanel,
 
     setTheme,
     toggleTheme,

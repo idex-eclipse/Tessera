@@ -46,7 +46,7 @@ function setup(
     navigateToDashboard: vi.fn(),
     navigateToPluginPage: vi.fn(),
   };
-  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn() };
+  const ui = { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn(), toggleSidebar: vi.fn() };
   const nav: { route: Route } = { route: opts.route ?? { kind: 'dashboard', printerId: 'a', query: {} } };
   const fakePages = (opts.pages ?? []).map((id) => ({ pluginId: 'x', contribution: { id } }));
   const registry = createPluginRegistry(createSettingsStore({ storage: new MemoryStorage() }));
@@ -206,6 +206,17 @@ describe('right panel and page navigation hotkeys', () => {
     const target = { tagName: 'INPUT' } as unknown as EventTarget;
     expect(manager.handleKeydown(ev({ code: 'KeyR', key: 'r', target }))).toBe(false);
     expect(ui.toggleRightPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('L toggles the left menu; Shift+L and typing in a field do not', () => {
+    const { manager, ui } = setup();
+    expect(manager.handleKeydown(ev({ code: 'KeyL', key: 'l' }))).toBe(true);
+    expect(ui.toggleSidebar).toHaveBeenCalledTimes(1);
+
+    expect(manager.handleKeydown(ev({ code: 'KeyL', key: 'L', shiftKey: true }))).toBe(false);
+    const target = { tagName: 'INPUT' } as unknown as EventTarget;
+    expect(manager.handleKeydown(ev({ code: 'KeyL', key: 'l', target }))).toBe(false);
+    expect(ui.toggleSidebar).toHaveBeenCalledTimes(1);
   });
 
   it('Ctrl+Down goes Dashboard -> pages in sidebar order -> back to Dashboard', () => {

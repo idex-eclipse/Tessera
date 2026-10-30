@@ -257,7 +257,7 @@
   .picker-popover {
     position: absolute;
     top: calc(100% + 6px);
-    right: 0;
+    inset-inline-end: 0;
     z-index: 20;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);

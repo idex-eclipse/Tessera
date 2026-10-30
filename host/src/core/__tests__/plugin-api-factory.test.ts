@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionStatus, PrinterInfo } from '../../../../plugin-sdk/src/types';
 import type { AppContext } from '../../app-context';
 
+import { createFleetIndex } from '../fleet-index.svelte.ts';
 import { createPluginApi } from '../plugin-api-factory';
 
 // ------------------------------------------------------------------
@@ -128,9 +129,10 @@ function createFakeManager() {
 
 type FakeManager = ReturnType<typeof createFakeManager>;
 
-function createCtx(manager: FakeManager): AppContext {
+function createCtx(manager: FakeManager, fleetIndex = createFleetIndex()): AppContext {
   return {
     printerManager: manager,
+    fleetIndex,
     settings: {
       getPluginSetting: () => undefined,
       setPluginSetting: () => {},
@@ -327,5 +329,49 @@ describe('plugin-api-factory / multi-printer API', () => {
       { id: 'b', name: 'Printer B', url: 'http://b.local' },
       { id: 'a', name: 'Printer A', url: 'http://a.local' },
     ]);
+  });
+});
+describe('plugin-api-factory / fleet index', () => {
+  const entry = {
+    tags: [{ id: 'printing', labelKey: 'k.printing' }],
+    searchText: 'benchy.gcode',
+  };
+
+  function setupFleet() {
+    const manager = createFakeManager();
+    manager.add('a', 'Printer A', 'http://a.local');
+    const fleetIndex = createFleetIndex();
+    const ctx = createCtx(manager, fleetIndex);
+    return { manager, fleetIndex, ctx };
+  }
+
+  it('fleet.publish stores the record under the calling plugin id', () => {
+    const { ctx, fleetIndex } = setupFleet();
+    const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+
+    api.fleet.publish('a', entry);
+
+    expect(fleetIndex.forPrinter('a')).toEqual(entry);
+  });
+
+  it('records of different plugins do not overwrite each other; retract is per plugin', () => {
+    const { ctx, fleetIndex } = setupFleet();
+    const one = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+    const two = createPluginApi(ctx, 'plugin-two', { ...MANIFEST, id: 'plugin-two' });
+
+    one.fleet.publish('a', entry);
+    two.fleet.publish('a', { tags: [], searchText: 'other' });
+    expect(fleetIndex.forPrinter('a')!.searchText).toBe('benchy.gcode\nother');
+
+    one.fleet.retract('a');
+    expect(fleetIndex.forPrinter('a')).toEqual({ tags: [], searchText: 'other' });
+  });
+
+  it('fleet.publish ignores an unknown printerId (printer removed meanwhile)', () => {
+    const { ctx, fleetIndex } = setupFleet();
+    const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+
+    expect(() => api.fleet.publish('gone', entry)).not.toThrow();
+    expect(fleetIndex.forPrinter('gone')).toBeNull();
   });
 });

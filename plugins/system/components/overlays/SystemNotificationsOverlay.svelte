@@ -4,6 +4,11 @@
   import { useNotifications, type NotificationItem, type NotificationSeverity } from '../../use-notifications.svelte.ts';
   import { systemUiState } from '../../system-ui-state.svelte.ts';
   import { ensurePrintTracker } from '../../print-tracker.ts';
+  import { useNarrow } from '../../use-narrow.svelte.ts';
+  import ToastStack from './ToastStack.svelte';
+
+  const narrowState = useNarrow();
+  let narrow = $derived(narrowState.value);
 
   let panelBox = $state({ right: 0, top: 0, height: 0 });
   let vw = $state(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -28,6 +33,20 @@
 
   $effect(() => {
     if (!open) return;
+
+    function onKey(e: KeyboardEvent): void {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (settingsOpen) settingsOpen = false;
+      else close();
+    }
+    window.addEventListener('keydown', onKey);
+
+    // Узкий экран: лист на всю ширину под шапкой, колонка правой панели не нужна
+    // (она там вообще не смонтирована, пока не открыта).
+    if (narrow) {
+      return () => window.removeEventListener('keydown', onKey);
+    }
+
     measureColumn();
 
     const col = document.querySelector('aside.right-panel') as HTMLElement | null;
@@ -42,13 +61,6 @@
     }
 
     window.addEventListener('resize', measureColumn);
-
-    function onKey(e: KeyboardEvent): void {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (settingsOpen) settingsOpen = false;
-      else close();
-    }
-    window.addEventListener('keydown', onKey);
 
     return () => {
       ro.disconnect();
@@ -124,13 +136,14 @@
   }
 </script>
 
-{#if open && panelBox.right > 0}
+{#if open && (narrow || panelBox.right > 0)}
   <div
     class="notifications-panel"
-    style:inset-inline-end="{panelBox.right}px"
-    style:top="{panelBox.top}px"
-    style:height="{panelBox.height}px"
-    style:width="{panelWidth}px"
+    class:sheet={narrow}
+    style:inset-inline-end={narrow ? undefined : `${panelBox.right}px`}
+    style:top={narrow ? undefined : `${panelBox.top}px`}
+    style:height={narrow ? undefined : `${panelBox.height}px`}
+    style:width={narrow ? undefined : `${panelWidth}px`}
     role="dialog"
     aria-label={i18n.t('system.notifications.title')}
   >
@@ -235,6 +248,10 @@
   </div>
 {/if}
 
+{#if narrow}
+  <ToastStack />
+{/if}
+
 <style>
   .notifications-panel {
     position: fixed;
@@ -269,6 +286,24 @@
   :global([dir='rtl']) .notifications-panel {
     --np-shadow-x: 8px;
     animation-name: np-in-rtl;
+  }
+
+  /* Узкий экран: лист на всю ширину под шапкой хоста (поверх боковых панелей, z-index 450) */
+  .notifications-panel.sheet {
+    inset-inline: 0;
+    top: var(--header-height, 48px);
+    bottom: 0;
+    border-inline-start: none;
+    box-shadow: none;
+    animation: np-fade 150ms ease-out;
+  }
+
+  @keyframes np-fade {
+    from { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .notifications-panel.sheet { animation: none; }
   }
 
   .panel-header {

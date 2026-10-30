@@ -15,14 +15,24 @@ import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
 import { gcodePreviewManifest } from '../manifest';
 import { ensureParsed, getEntry, reloadParsed } from '../viewer/gcode-store.svelte';
-import { previewUi, sendPreviewCommand } from '../viewer/preview-ui-state.svelte';
+import {
+  onPreviewCommand,
+  previewUi,
+  sendPreviewCommand,
+  type PreviewCommand,
+} from '../viewer/preview-ui-state.svelte';
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  previewUi.commandId = 0;
-  previewUi.command = null;
   previewUi.dialogOpen = false;
 });
+
+/** Подписка как у смонтированного компонента; возвращает принятые команды и отписку. */
+function listen() {
+  const got: PreviewCommand[] = [];
+  const off = onPreviewCommand((c) => got.push(c));
+  return { got, off };
+}
 
 const GCODE = 'G1 Z0.2 F1000\nG1 X10 Y10 E1\nG1 Z0.4\nG1 X20 Y20 E2\n';
 
@@ -112,22 +122,84 @@ describe('hotkey handlers', () => {
     expect(location.hash).toBe('#/p/printer-1/gcode-preview');
   });
 
-  it('send one command each, with increasing ids', () => {
+  it('send one command each, in order', () => {
+    const { got, off } = listen();
     hotkeys.hotkeyLayerUp();
-    expect(previewUi.command).toEqual({ name: 'layer-step', amount: 1 });
     hotkeys.hotkeyLayerDown10();
-    expect(previewUi.command).toEqual({ name: 'layer-step', amount: -10 });
     hotkeys.hotkeyToggleMode();
-    expect(previewUi.command).toEqual({ name: 'toggle-mode' });
-    expect(previewUi.commandId).toBe(3);
+    off();
+    expect(got).toEqual([
+      { name: 'layer-step', amount: 1 },
+      { name: 'layer-step', amount: -10 },
+      { name: 'toggle-mode' },
+    ]);
   });
 
   it('stay quiet while the exclude-object dialog is open', () => {
+    const { got, off } = listen();
     previewUi.dialogOpen = true;
     sendPreviewCommand({ name: 'clear' });
     hotkeys.hotkeyReloadPreview();
-    expect(previewUi.commandId).toBe(0);
-    expect(previewUi.command).toBeNull();
+    off();
+    expect(got).toEqual([]);
+  });
+});
+
+describe('preview commands', () => {
+  it('reach every mounted subscriber exactly once (page and widget at the same time)', () => {
+    const a = listen();
+    const b = listen();
+    sendPreviewCommand({ name: 'toggle-travel' });
+    a.off();
+    b.off();
+    expect(a.got).toEqual([{ name: 'toggle-travel' }]);
+    expect(b.got).toEqual([{ name: 'toggle-travel' }]);
+  });
+
+  it('are not delivered after unsubscribing, and not replayed to late subscribers', () => {
+    const early = listen();
+    sendPreviewCommand({ name: 'layer-first' });
+    early.off();
+    sendPreviewCommand({ name: 'layer-last' });
+
+    const late = listen();
+    late.off();
+    expect(early.got).toEqual([{ name: 'layer-first' }]);
+    expect(late.got).toEqual([]);
+  });
+
+  it('do not collapse when sent back to back in the same tick', () => {
+    const { got, off } = listen();
+    sendPreviewCommand({ name: 'layer-step', amount: 1 });
+    sendPreviewCommand({ name: 'layer-step', amount: 1 });
+    off();
+    expect(got).toHaveLength(2);
+  });
+
+  it('are harmless without subscribers', () => {
+    expect(() => sendPreviewCommand({ name: 'reload' })).not.toThrow();
+  });
+
+  it('survive a failing subscriber and a subscriber that unsubscribes while handling', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bad = onPreviewCommand(() => {
+      throw new Error('boom');
+    });
+    let once = 0;
+    const offSelf: () => void = onPreviewCommand(() => {
+      once++;
+      offSelf();
+    });
+    const ok = listen();
+
+    sendPreviewCommand({ name: 'toggle-bounds' });
+    sendPreviewCommand({ name: 'toggle-bounds' });
+
+    bad();
+    ok.off();
+    errors.mockRestore();
+    expect(ok.got).toHaveLength(2);
+    expect(once).toBe(1);
   });
 });
 

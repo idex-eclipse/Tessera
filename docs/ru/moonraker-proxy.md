@@ -211,10 +211,7 @@ api.moonraker().onNotify('notify_gcode_response', (params) => {
 api.moonraker().onNotify('notify_filelist_changed', () => reload());
 ```
 
-`params` отдаются «как есть» (чаще всего массив). Многие уведомления оборачивают данные
-в массив из одного элемента: `notify_webcams_changed` приходит как `[{ webcams: [...] }]`,
-а не сам список. Разворачивайте `params[0]` и терпимо относитесь к неожиданной форме
-(перезапросите данные, а не считайте их «пустыми»). Часто используемые события:
+`params` отдаются «как есть» (чаще всего массив). Часто используемые события:
 
 | Событие | Когда |
 |---|---|
@@ -224,6 +221,8 @@ api.moonraker().onNotify('notify_filelist_changed', () => reload());
 | `notify_history_changed` | изменилась история |
 | `notify_config_changed` | изменился конфиг |
 | `notify_active_spool_set` | Spoolman: сменилась активная катушка |
+| `notify_proc_stat_update` | статистика хоста примерно раз в секунду: CPU / память / температура, сеть, `websocket_connections` (и `throttled_state`, если хост его сообщает) |
+| `notify_cpu_throttled` | изменилось состояние троттлинга / пониженного напряжения хоста (`[{ bits, flags }]`; только Raspberry Pi) |
 | `notify_status_update` | служебное: дельты status-объектов (для этого есть `subscribe`) |
 
 Вместо `notify_status_update` пользуйтесь `subscribe` — он отфильтрует нужные

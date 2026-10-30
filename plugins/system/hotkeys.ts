@@ -45,3 +45,16 @@ export function hotkeyTogglePrintAfter(): void {
 export function hotkeyRefreshMachine(): void {
   systemUiState.refreshSeq++;
 }
+
+/** Alt+1 / Alt+2 / Alt+3 (только на странице «Система»): вкладки Система / Мониторинг / Хранилище и обновления. */
+export function hotkeyTabOverview(): void {
+  systemUiState.activeTab = 'overview';
+}
+
+export function hotkeyTabMonitoring(): void {
+  systemUiState.activeTab = 'monitoring';
+}
+
+export function hotkeyTabMaintenance(): void {
+  systemUiState.activeTab = 'maintenance';
+}

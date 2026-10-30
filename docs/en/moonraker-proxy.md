@@ -212,10 +212,7 @@ api.moonraker().onNotify('notify_gcode_response', (params) => {
 api.moonraker().onNotify('notify_filelist_changed', () => reload());
 ```
 
-`params` are passed "as is" (usually an array). Many notifications wrap their payload in a
-single-element array: `notify_webcams_changed` delivers `[{ webcams: [...] }]`, not the list
-itself. Unwrap `params[0]` and tolerate an unexpected shape (re-request the data instead of
-treating it as "empty"). Frequently used events:
+`params` are passed "as is" (usually an array). Frequently used events:
 
 | Event | When |
 |---|---|
@@ -225,6 +222,8 @@ treating it as "empty"). Frequently used events:
 | `notify_history_changed` | history changed |
 | `notify_config_changed` | config changed |
 | `notify_active_spool_set` | Spoolman: the active spool changed |
+| `notify_proc_stat_update` | host statistics about once a second: CPU / memory / temperature, network, `websocket_connections` (and `throttled_state` when the host reports it) |
+| `notify_cpu_throttled` | the host's throttling / under-voltage state changed (`[{ bits, flags }]`; Raspberry Pi only) |
 | `notify_status_update` | internal: status-object deltas (use `subscribe` for this) |
 
 Use `subscribe` instead of `notify_status_update` — it filters the objects you need

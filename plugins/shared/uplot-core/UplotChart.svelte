@@ -477,10 +477,10 @@
   }
 
   .tooltip-value {
-    margin-left: auto;
+    margin-inline-start: auto;
     font-weight: 600;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
-    padding-left: var(--space-md);
+    padding-inline-start: var(--space-md);
   }
 </style>

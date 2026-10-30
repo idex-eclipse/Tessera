@@ -18,6 +18,7 @@
     printerManager,
     i18n,
     params = {},
+    narrow = false,
   }: {
     item: DashboardWidgetLayoutItem;
     printerId: string;
@@ -25,6 +26,8 @@
     printerManager: PrinterManager;
     i18n: HostI18n;
     params?: Record<string, string>;
+    /** Dashboard уже брейкпоинта (считает Dashboard). */
+    narrow?: boolean;
   } = $props();
 
   let widget = $derived(
@@ -36,7 +39,7 @@
   let hasMultipleProviders = $derived(registry.hasMultipleProviders(item.type));
   const ctx = getAppContext();
   let gridStyle = $derived(
-    `grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h};`,
+    `grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h}; --h: ${item.h};`,
   );
 
   const pluginApi = $derived(
@@ -70,7 +73,7 @@
 
   <div class="widget-content">
     {#if widget && pluginApi}
-      <PluginWidgetRenderer {widget} {printerId} {params} api={pluginApi} />
+      <PluginWidgetRenderer {widget} {printerId} {params} {narrow} api={pluginApi} />
     {:else}
       <div class="widget-placeholder widget-placeholder-error">
         Widget not found: {item.type} / {item.provider}
@@ -105,7 +108,7 @@
     order: 0;
     flex: 1;
     min-width: 0;
-    text-align: left;      /* убираем центрирование */
+    text-align: start;      /* убираем центрирование */
     font-size: var(--font-size-md);
     font-weight: 600;
     color: var(--text-primary);
@@ -121,7 +124,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-    margin-left: auto;     /* действия всегда справа */
+    margin-inline-start: auto;     /* действия всегда справа */
     flex-shrink: 0;
   }
 

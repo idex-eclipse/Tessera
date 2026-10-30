@@ -57,4 +57,9 @@
   .ctl:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
   .ctl.active { color: var(--accent); background: var(--bg-surface-active); }
   .ctl svg { width: 16px; height: 16px; }
+
+  /* сенсорный указатель: зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .ctl { width: 36px; height: 36px; }
+  }
 </style>

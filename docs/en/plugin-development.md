@@ -301,11 +301,11 @@ The parameters are additionally mirrored into the element's `dataset`
 | Surface | Element | `params` |
 |---|---|---|
 | Page (`pages[].element`) | page | the route's query parameters (`#/p/<printer>/<page>?file=a.gcode` → `{ file: 'a.gcode' }`) |
-| Widget (`widgets[].element`) | widget body | the dashboard route's query parameters (`edit`, `preview`, …) |
+| Widget (`widgets[].element`) | widget body | the dashboard route's query parameters (`edit`, `preview`, …) + `narrow: 'true' \| 'false'` |
 | Widget header (`widgets[].headerElement`) | header buttons | `{}` |
-| Banner (`banners[]`) | banner | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings' }` |
+| Banner (`banners[]`) | banner | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
 | Overlay (`overlays[]`) | overlay | `{}` |
-| Chip (`chips[].element`) | chip | `{ chipId, chipLabel?, edit: '1' \| '0' }` |
+| Chip (`chips[].element`) | chip | `{ chipId, chipLabel?, edit: '1' \| '0', narrow: 'true' \| 'false' }` |
 | Chip picker (`chips[].pickerElement`) | item catalog | `{ edit: '1', placed: '<JSON array of ids>' }` |
 | Fleet panel (`printerPanels[]`) | printer card | `{ printerId }` |
 | Hotkey (`hotkeys[]`) | — (a function, not an element) | see [hotkeys.md](hotkeys.md) |

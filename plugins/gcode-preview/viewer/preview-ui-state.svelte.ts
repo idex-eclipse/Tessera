@@ -1,4 +1,4 @@
-import { untrack } from 'svelte';
+import { onDestroy } from 'svelte';
 
 import type { PluginApi } from '../../../plugin-sdk/src/types';
 
@@ -44,33 +44,44 @@ export type PreviewCommand =
   | { name: 'reload' };
 
 /**
- * Обработчики hotkeys живут в модуле плагина и не видят компоненты, поэтому шлют им
- * команды через это состояние. `dialogOpen` — открыт диалог исключения объекта
- * (модальный): пока он открыт, команды молчат.
+ * Состояние просмотрщика, общее для компонентов и обработчиков hotkeys.
+ * `dialogOpen` — открыт диалог исключения объекта (модальный): пока он открыт,
+ * команды молчат.
  */
 export const previewUi = $state({
-  commandId: 0,
-  command: null as PreviewCommand | null,
   dialogOpen: false,
 });
 
+/**
+ * Обработчики hotkeys живут в модуле плагина и не видят компоненты, поэтому шлют им
+ * команды через реестр слушателей — без $effect и без «счётчика команд» в $state.
+ */
+const listeners = new Set<(command: PreviewCommand) => void>();
+
+/** Подписка на команды; возвращает отписку. Чистая функция — тестируется без компонента. */
+export function onPreviewCommand(handler: (command: PreviewCommand) => void): () => void {
+  listeners.add(handler);
+  return () => listeners.delete(handler);
+}
+
 export function sendPreviewCommand(command: PreviewCommand): void {
   if (previewUi.dialogOpen) return;
-  previewUi.command = command;
-  previewUi.commandId++;
+  // копия: слушатель может отписаться (размонтироваться) прямо во время обработки
+  for (const handler of [...listeners]) {
+    try {
+      handler(command);
+    } catch (e) {
+      // сбой одного подписчика не должен лишать команды остальных
+      console.error('[gcode-preview] command handler failed:', command.name, e);
+    }
+  }
 }
 
 /**
  * Подписка компонента на команды (вызывать при инициализации). Команды, посланные до
- * монтирования, не выполняются; каждая выполняется ровно один раз.
+ * монтирования, не выполняются; каждая выполняется ровно один раз каждым смонтированным
+ * подписчиком. Отписка — при уничтожении компонента.
  */
 export function usePreviewCommands(handle: (command: PreviewCommand) => void): void {
-  let seen = untrack(() => previewUi.commandId);
-  $effect(() => {
-    const id = previewUi.commandId;
-    if (id === seen) return;
-    seen = id;
-    const command = untrack(() => previewUi.command);
-    if (command) untrack(() => handle(command));
-  });
+  onDestroy(onPreviewCommand(handle));
 }

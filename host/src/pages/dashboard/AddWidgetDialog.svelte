@@ -199,7 +199,7 @@
     border-radius: var(--radius-md);
     background: transparent;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     transition: border-color var(--transition-fast), background var(--transition-fast);
   }
 
@@ -251,7 +251,7 @@
     font-family: monospace;
     font-size: var(--font-size-sm);
     color: var(--text-muted);
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .dialog-footer {

@@ -52,4 +52,9 @@
   }
 
   .ctl:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+
+  /* сенсорный указатель: зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .ctl { width: 36px; height: 36px; }
+  }
 </style>

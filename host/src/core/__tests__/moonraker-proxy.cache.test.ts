@@ -363,7 +363,7 @@ describe('MoonrakerProxy / TTL cache', () => {
 
       const secondMessage = ws.lastSentMessage();
 
-      expect(ws.sentMessages.length).toBe(2);
+      expect(ws.sentMessagesExcept('printer.objects.list').length).toBe(2);
       expect(firstMessage!.id).not.toBe(secondMessage!.id);
 
       ws.respond(firstMessage!.id as number, {});

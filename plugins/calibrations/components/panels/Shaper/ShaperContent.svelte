@@ -1,5 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import '../../../../shared/responsive/card-table.css';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
   import {
@@ -373,7 +374,7 @@
       <!-- итоги прогона -->
       {#if store.shaperState.runDone}
         {#if store.shaperState.fitted.length > 0}
-          <table class="table">
+          <table class="table card-table">
             <thead>
               <tr>
                 <th>{i18n.t('calibrations.shaper.table.shaper')}</th>
@@ -385,10 +386,10 @@
             <tbody>
               {#each store.shaperState.fitted as f (`row-${f.name}-${f.freq}`)}
                 <tr class:rec={store.shaperState.recommended?.name === f.name}>
-                  <td>{f.name}</td>
-                  <td class="mono">{f.freq.toFixed(1)}</td>
-                  <td class="mono">{f.vib.toFixed(1)}%</td>
-                  <td class="mono">{f.smooth.toFixed(3)}</td>
+                  <td data-label={i18n.t('calibrations.shaper.table.shaper')}>{f.name}</td>
+                  <td class="mono" data-label={i18n.t('calibrations.shaper.table.freq')}>{f.freq.toFixed(1)}</td>
+                  <td class="mono" data-label={i18n.t('calibrations.shaper.table.vib')}>{f.vib.toFixed(1)}%</td>
+                  <td class="mono" data-label={i18n.t('calibrations.shaper.table.smooth')}>{f.smooth.toFixed(3)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -556,7 +557,7 @@
     border: 1px solid var(--border-color); border-radius: var(--radius-sm);
     font-size: var(--font-size-sm); padding: var(--space-xs) var(--space-sm);
   }
-  .input { width: 92px; }
+  .input { width: min(92px, 100%); }
   .hint { margin: 0; color: var(--text-muted); font-size: var(--font-size-sm); }
   .hint.warn { color: var(--warning); }
 
@@ -635,7 +636,7 @@
   .menu-wrap { position: relative; }
   .menu {
     position: absolute; top: calc(100% + 4px); inset-inline-end: 0; z-index: 10;
-    min-width: 260px; padding: var(--space-xs);
+    min-width: min(260px, calc(100cqw - 32px)); max-width: calc(100cqw - 32px); padding: var(--space-xs);
     background: var(--bg-surface); border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.15));
@@ -658,4 +659,9 @@
   .menu-item.menu-switch input { cursor: pointer; }
 
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .icon-btn { width: 36px; height: 36px; }
+  }
 </style>

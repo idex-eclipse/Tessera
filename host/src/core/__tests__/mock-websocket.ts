@@ -100,6 +100,26 @@ export class MockWebSocket implements WebSocketLike {
     return messages[messages.length - 1];
   }
 
+  /**
+   * Sent messages without the given methods. The proxy sends its own baseline
+   * `printer.objects.list` right after the socket opens; tests that assert on
+   * plugin-driven traffic filter it out with this helper.
+   */
+  sentMessagesExcept(
+    ...methods: string[]
+  ): Array<Record<string, unknown>> {
+    return this.sentMessages.filter(
+      (message) => !methods.includes(message.method as string),
+    );
+  }
+
+  lastSentMessageExcept(
+    ...methods: string[]
+  ): Record<string, unknown> | undefined {
+    const messages = this.sentMessagesExcept(...methods);
+    return messages[messages.length - 1];
+  }
+
   respond(id: number, result: unknown): void {
     this.simulateMessage({
       jsonrpc: '2.0',

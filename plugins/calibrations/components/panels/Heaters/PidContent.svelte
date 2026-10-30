@@ -129,7 +129,7 @@
 <style>
   .pid { display: flex; flex-direction: column; gap: var(--space-sm); }
   .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-md); align-items: start; }
-  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  @container (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
   .controls, .results { display: flex; flex-direction: column; gap: var(--space-sm); }
   .field { display: flex; flex-direction: column; gap: var(--space-xs); }
   .label { font-size: var(--font-size-sm); color: var(--text-secondary); display: flex; align-items: baseline; gap: var(--space-xs); }

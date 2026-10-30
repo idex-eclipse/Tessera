@@ -31,6 +31,7 @@ const en: I18nMessages = {
       collapse: 'Collapse panel',
       collapseMenu: 'Collapse menu',
       expandMenu: 'Expand menu',
+      open: 'Open machine control',
     },
     auth: {
       title: 'Authentication required',
@@ -48,6 +49,14 @@ const en: I18nMessages = {
     settings: 'Settings',
     addPrinter: 'Add printer',
     collapse: 'Collapse menu',
+    menu: 'Menu',
+    openMenu: 'Open menu',
+  },
+
+  banners: {
+    summary: 'Notifications: {count}',
+    show: 'Show notifications',
+    hide: 'Hide notifications',
   },
 
   printer: {
@@ -93,6 +102,7 @@ const en: I18nMessages = {
         printerPrev: 'Previous printer',
         dashboard: 'Open active printer dashboard',
         toggleRightPanel: 'Show / hide the right panel',
+        toggleSidebar: 'Show / hide the left menu',
         pageNext: 'Next page (sidebar order)',
         pagePrev: 'Previous page (sidebar order)',
       },
@@ -190,6 +200,9 @@ const en: I18nMessages = {
   },
 
   quickAccess: {
+    title: 'Quick access',
+    moveBefore: 'Move earlier',
+    moveAfter: 'Move later',
     empty: 'No chip providers available',
     addChip: 'Add chip',
     resetLayout: 'Reset quick chips',
@@ -213,6 +226,14 @@ const en: I18nMessages = {
     editPanelsEmpty: 'No panels available',
     panelPluginUnloaded: 'Unloaded',
     panelHidden: 'Hidden',
+    search: {
+      placeholder: 'Search printer or file',
+      clear: 'Clear search',
+    },
+    filters: 'Filters',
+    count: '{shown} of {total}',
+    noMatches: 'No printers match',
+    resetFilters: 'Reset',
   },
 };
 

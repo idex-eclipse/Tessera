@@ -40,6 +40,33 @@
   /* Transitions */
   --transition-fast: 150ms ease;
   --transition-normal: 250ms ease;
+
+  /* Слои: боковые панели на узком экране ниже fleet/диалогов/оверлеев плагинов */
+  --z-drawer: 40;
+
+  /* +1 для ltr, −1 для rtl: направление въезда панелей */
+  --dir-sign: 1;
+
+  --touch-target: 44px;
+}
+
+[dir='rtl'] {
+  --dir-sign: -1;
+}
+
+/* Появление панелей на узком экране: въезд со стороны их края (inline-start / inline-end) */
+@keyframes drawer-in-start {
+  from {
+    transform: translateX(calc(var(--dir-sign) * -32px));
+    opacity: 0;
+  }
+}
+
+@keyframes drawer-in-end {
+  from {
+    transform: translateX(calc(var(--dir-sign) * 32px));
+    opacity: 0;
+  }
 }
 
 /* Light theme (default) */
@@ -182,7 +209,7 @@ body {
   order: 0;
   flex: 1;
   min-width: 0;
-  text-align: left;
+  text-align: start;
   font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
@@ -193,7 +220,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  margin-left: auto;
+  margin-inline-start: auto;
   flex-shrink: 0;
 }
 

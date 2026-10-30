@@ -33,9 +33,18 @@ interface PluginApi {
   onLocaleChange(cb: (locale: string, dir: 'ltr' | 'rtl') => void): () => void;
   onThemeChange(cb: (theme: 'light' | 'dark') => void): () => void;
 
+  // fleet search and filters
+  readonly fleet: {
+    publish(printerId: string, entry: FleetIndexEntry): void;
+    retract(printerId: string): void;
+  };
+
   // guards
   guards: { resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void };
 }
+
+interface FleetTag { id: string; labelKey: string; icon?: string; order?: number }
+interface FleetIndexEntry { tags: FleetTag[]; searchText: string }
 
 interface PrinterInfo { id: string; name: string; url: string }
 ```
@@ -157,6 +166,37 @@ api.settings.onChange((_key, all) => {
 - Store compact values. Everything sits in `localStorage` (the browser limit is
   about 5 MB per origin).
 - Do not store secrets: settings end up in the Settings → About / Debug export.
+
+---
+
+## Fleet
+
+<a id="fleet"></a>
+
+`api.fleet` lets a **fleet panel** (see [surfaces.md](surfaces.md#6-fleet-panels))
+feed the search box and filter buttons of fleet mode. It is the only plugin → host
+channel; the host stores the values and never interprets them.
+
+```ts
+api.fleet.publish(printerId, {
+  tags: [{ id: 'printing', labelKey: 'acme.filter.printing', icon: 'print', order: 0 }],
+  searchText: 'benchy.gcode',
+});
+api.fleet.retract(printerId);   // when the panel goes away
+```
+
+- `tags` — one filter button per distinct `id` across all printers, with a counter.
+  The label is `i18n.t(labelKey)`; `icon` is a name from the shared icon set (on
+  narrow screens only the icon is shown); `order` sorts the buttons. Selected tags
+  are OR-ed; with the search text they are AND-ed.
+- `searchText` — matched as a case-insensitive substring. The host already matches
+  the printer name itself, so put only extra text here (for example the file being
+  printed).
+- `publish` replaces the previous record of **your plugin** for that printer;
+  identical records are ignored, so it is cheap to call from an effect. Unknown
+  printers are ignored. Limits: 16 tags, 512 characters of text.
+- Do not publish what is not useful for search or filtering — the index is shared,
+  not a storage.
 
 ---
 

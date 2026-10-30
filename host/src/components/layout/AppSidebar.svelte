@@ -17,6 +17,9 @@
     route,
     collapsed,
     onToggleCollapse,
+    narrow = false,
+    open = false,
+    onClose = () => {},
   }: {
     registry: PluginRegistry;
     settings: SettingsStore;
@@ -26,57 +29,101 @@
     route: Route;
     collapsed: boolean;
     onToggleCollapse: () => void;
+    /** Узкий экран: сайдбар становится оверлеем на всю ширину. */
+    narrow?: boolean;
+    /** Только для narrow: панель открыта. */
+    open?: boolean;
+    onClose?: () => void;
   } = $props();
 
   let activePrinterId = $derived(printerManager.activePrinterId);
+
+  // В drawer-режиме сохранённое «свёрнуто» игнорируется: панель всегда полная.
+  let isCollapsed = $derived(collapsed && !narrow);
+
+  let closeBtn = $state<HTMLButtonElement | null>(null);
+
+  $effect(() => {
+    if (narrow && open) closeBtn?.focus();
+  });
+
+  /** Любой переход из drawer закрывает его — в том числе клик по уже активной странице. */
+  function onNavClick(event: MouseEvent) {
+    if (!narrow) return;
+    if ((event.target as HTMLElement).closest('button, a')) onClose();
+  }
 </script>
 
-<aside class="sidebar" class:collapsed>
-  <nav class="sidebar-nav">
-    <button
-      class="nav-item"
-      class:active={route.kind === 'dashboard'}
-      onclick={() => router.navigateToActiveDashboard()}
-    >
-      <span class="nav-icon"><Icon name="dashboard" /></span>
-      {#if !collapsed}
-        <span class="nav-label">{i18n.t('nav.dashboard')}</span>
-      {/if}
-    </button>
-
-    {#if activePrinterId}
-      <PluginSidebar
-        {registry}
-        {settings}
-        printerId={activePrinterId}
-        {i18n}
-        {router}
-        {route}
-        {collapsed}
-      />
+{#if !narrow || open}
+  <aside
+    class="sidebar"
+    class:collapsed={isCollapsed}
+    class:drawer={narrow}
+    aria-label={narrow ? i18n.t('nav.menu') : undefined}
+  >
+    {#if narrow}
+      <header class="drawer-header">
+        <span class="drawer-title">{i18n.t('nav.menu')}</span>
+        <button
+          class="drawer-close"
+          bind:this={closeBtn}
+          onclick={onClose}
+          aria-label={i18n.t('common.close')}
+        >
+          <Icon name="x" />
+        </button>
+      </header>
     {/if}
 
-    <button
-      class="nav-item nav-item-settings"
-      class:active={route.kind === 'settings'}
-      onclick={() => router.navigateToSettings()}
-    >
-      <span class="nav-icon"><Icon name="settings" /></span>
-      {#if !collapsed}
-        <span class="nav-label">{i18n.t('nav.settings')}</span>
-      {/if}
-    </button>
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+    <nav class="sidebar-nav" onclick={onNavClick}>
+      <button
+        class="nav-item"
+        class:active={route.kind === 'dashboard'}
+        onclick={() => router.navigateToActiveDashboard()}
+      >
+        <span class="nav-icon"><Icon name="dashboard" /></span>
+        {#if !isCollapsed}
+          <span class="nav-label">{i18n.t('nav.dashboard')}</span>
+        {/if}
+      </button>
 
-    <button class="nav-item" onclick={onToggleCollapse} title={i18n.t('nav.collapse')}>
-      <span class="nav-icon">
-        <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
-      </span>
-      {#if !collapsed}
-        <span class="nav-label">{i18n.t('nav.collapse')}</span>
+      {#if activePrinterId}
+        <PluginSidebar
+          {registry}
+          {settings}
+          printerId={activePrinterId}
+          {i18n}
+          {router}
+          {route}
+          collapsed={isCollapsed}
+        />
       {/if}
-    </button>
-  </nav>
-</aside>
+
+      <button
+        class="nav-item nav-item-settings"
+        class:active={route.kind === 'settings'}
+        onclick={() => router.navigateToSettings()}
+      >
+        <span class="nav-icon"><Icon name="settings" /></span>
+        {#if !isCollapsed}
+          <span class="nav-label">{i18n.t('nav.settings')}</span>
+        {/if}
+      </button>
+
+      {#if !narrow}
+        <button class="nav-item" onclick={onToggleCollapse} title={i18n.t('nav.collapse')}>
+          <span class="nav-icon">
+            <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} flip />
+          </span>
+          {#if !isCollapsed}
+            <span class="nav-label">{i18n.t('nav.collapse')}</span>
+          {/if}
+        </button>
+      {/if}
+    </nav>
+  </aside>
+{/if}
 
 <style>
   .sidebar {
@@ -84,7 +131,7 @@
     flex-direction: column;
     width: var(--sidebar-w);
     background: var(--bg-sidebar);
-    border-right: 1px solid var(--border-color);
+    border-inline-end: 1px solid var(--border-color);
     overflow-y: auto;
     overflow-x: hidden;
     flex-shrink: 0;
@@ -93,6 +140,58 @@
 
   .sidebar.collapsed {
     width: var(--sidebar-w);
+  }
+
+  /* Узкий экран: оверлей на всю ширину под шапкой */
+  .sidebar.drawer {
+    position: fixed;
+    inset-block: var(--header-height) 0;
+    inset-inline: 0;
+    width: auto;
+    border-inline-end: none;
+    z-index: var(--z-drawer);
+    transition: none;
+    animation: drawer-in-start 200ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar.drawer {
+      animation: none;
+    }
+  }
+
+  .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .drawer-title {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .drawer-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .drawer-close:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
 
   .sidebar-nav {
@@ -113,10 +212,14 @@
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     width: 100%;
     transition: background var(--transition-fast), color var(--transition-fast);
     white-space: nowrap;
+  }
+
+  .sidebar.drawer .nav-item {
+    min-height: var(--touch-target);
   }
 
   .sidebar.collapsed .nav-item {

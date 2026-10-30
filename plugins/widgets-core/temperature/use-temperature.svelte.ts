@@ -46,10 +46,21 @@ const DEFAULT_COLUMNS: TempColumns = {
   hold: false,
 };
 
+/** auto — таблица, пока помещается, иначе карточки; table / cards — принудительно. */
+export type TempViewMode = 'auto' | 'table' | 'cards';
+
+const VIEW_MODES: readonly TempViewMode[] = ['auto', 'table', 'cards'];
+
 const COLUMNS_KEY = 'temperature.columns';
+const VIEW_MODE_KEY = 'temperature.viewMode';
 const HOLD_MINUTES_KEY = 'temperature.holdMinutes';
 
 let columns = $state<TempColumns>({ ...DEFAULT_COLUMNS });
+let viewMode = $state<TempViewMode>('auto');
+
+function parseViewMode(v: unknown): TempViewMode {
+  return VIEW_MODES.includes(v as TempViewMode) ? (v as TempViewMode) : 'auto';
+}
 
 export function useTemperaturePrefs(api: PluginApi) {
   function load(): void {
@@ -57,6 +68,7 @@ export function useTemperaturePrefs(api: PluginApi) {
       ...DEFAULT_COLUMNS,
       ...(api.settings.get<Partial<TempColumns>>(COLUMNS_KEY) ?? {}),
     };
+    viewMode = parseViewMode(api.settings.get(VIEW_MODE_KEY));
   }
 
   load();
@@ -64,6 +76,8 @@ export function useTemperaturePrefs(api: PluginApi) {
   const off = api.settings.onChange((k, v) => {
     if (k === COLUMNS_KEY && v && typeof v === 'object') {
       columns = { ...DEFAULT_COLUMNS, ...(v as Partial<TempColumns>) };
+    } else if (k === VIEW_MODE_KEY) {
+      viewMode = parseViewMode(v);
     }
   });
   const offPrinter = api.onPrinterChange(() => load());
@@ -77,11 +91,20 @@ export function useTemperaturePrefs(api: PluginApi) {
     api.settings.set(COLUMNS_KEY, columns);
   }
 
+  function setViewMode(mode: TempViewMode): void {
+    viewMode = mode;
+    api.settings.set(VIEW_MODE_KEY, mode);
+  }
+
   return {
     get columns() {
       return columns;
     },
+    get viewMode() {
+      return viewMode;
+    },
     setColumn,
+    setViewMode,
   };
 }
 

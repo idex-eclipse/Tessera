@@ -327,4 +327,9 @@
   .fp-ghost { background: transparent; border: 1px solid var(--border-color); }
 
   .fp-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+
+  /* сенсорный указатель: зона нажатия ≥ 36px */
+  @media (pointer: coarse) {
+    .ctl { width: 36px; height: 36px; }
+  }
 </style>

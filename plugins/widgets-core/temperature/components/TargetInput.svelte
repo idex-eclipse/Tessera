@@ -3,9 +3,12 @@
 
   let {
     value = null,
+    block = false,
     onCommit,
   }: {
     value: number | null;
+    /** На всю ширину контейнера (popover), а не 110px колонки таблицы. */
+    block?: boolean;
     onCommit: (v: number) => void;
   } = $props();
 
@@ -50,7 +53,7 @@
   }
 </script>
 
-<label class="mpu-field target-field">
+<label class="mpu-field target-field" class:block>
   <input
     class="mpu-input"
     type="number"
@@ -83,6 +86,8 @@
     margin-top: 0;
     padding: 3px var(--space-xs);
   }
+
+  .target-field.block { width: 100%; flex: 1; }
 
   .target-field .mpu-input {
     text-align: center;

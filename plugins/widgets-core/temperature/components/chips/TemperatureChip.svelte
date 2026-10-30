@@ -1,7 +1,9 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useTemperatureData } from '../../use-temperature.svelte';
-  import { isRtl, shouldAlignToEnd } from '../../../../shared/popover-align';
+  import { useTemperatureData, useTemperaturePrefs } from '../../use-temperature.svelte';
+  import { parseHoldMinutes } from '../../hold-timer';
+  import HoldInput from '../HoldInput.svelte';
+  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
   import TempKindIcon from '../TempKindIcon.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
@@ -11,6 +13,7 @@
   const api = usePluginApi();
   const i18n = api.i18n;
   const temp = useTemperatureData(api);
+  const prefs = useTemperaturePrefs(api);
   const klippy = useKlippyState(api);
 
   let sensorId = $derived(params.chipId ?? '');
@@ -40,16 +43,27 @@
   // popover
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: true, alignRight: false });
+  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
   let inputEl = $state<HTMLInputElement | null>(null);
+
+  // «Время включения» — опциональная функция (колонка в настройках виджета): пока она выключена,
+  // таймер не работает, и строки в поповере нет. Только для нагревателей.
+  let showHold = $derived(prefs.columns.hold && kind === 'heater');
+  let holdDraft = $state<string | number>('');
+  let holdStatus = $derived(sensor ? temp.holdStatus(sensor.name) : { phase: 'off' as const, remainingMs: null });
+
+  // оценка высоты поповера до рендера (форма цели; со строкой «время включения»)
+  const POPOVER_HEIGHT = 140;
+  const POPOVER_HEIGHT_HOLD = 220;
 
   function openPopover(): void {
     if (editMode || !sensor || !controlled || missing) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
       // поповер выравнивается по начальному краю чипа (в RTL — по правому)
+      const need = showHold ? POPOVER_HEIGHT_HOLD : POPOVER_HEIGHT;
       placement = {
-        above: rect.top > 180,
+        above: shouldOpenAbove(rect, need, window.innerHeight),
         alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()),
       };
     }
@@ -72,6 +86,18 @@
     if (!inputEl || !sensor) return;
     const value = parseFloat(inputEl.value);
     if (!Number.isFinite(value) || value < 0) return;
+
+    // невалидное «время» не должно молча теряться: остаёмся в поповере
+    let minutes: number | null = null;
+    if (showHold) {
+      minutes = parseHoldMinutes(holdDraft);
+      if (minutes === null) return;
+    }
+
+    // сначала время, затем цель: цель запускает отсчёт, и он уже должен знать длительность
+    if (minutes !== null && minutes !== (temp.holdMinutes[sensor.name] ?? 0)) {
+      temp.setHoldMinutes(sensor.name, minutes);
+    }
     await temp.setTarget(sensor.name, value);
     closePopover();
   }
@@ -133,6 +159,20 @@
           </span>
           <input bind:this={inputEl} type="number" step="1" min="{minTemp ?? undefined}" max="{maxTemp ?? undefined}" value={sensor.target ?? 0} autofocus />
         </label>
+        {#if showHold}
+          <!-- не <label>: HoldInput сам внутри <label>, вложенные label недопустимы -->
+          <div class="hold-row">
+            <span title={i18n.t('widgets.temperature.holdHint')}>{i18n.t('widgets.temperature.heaterTime')}</span>
+            <HoldInput
+              block
+              deferred
+              bind:draft={holdDraft}
+              value={temp.holdMinutes[sensor.name] ?? 0}
+              phase={holdStatus.phase}
+              remainingMs={holdStatus.remainingMs}
+            />
+          </div>
+        {/if}
         <div class="popover-actions">
           <button type="button" onclick={closePopover}>{i18n.t('common.cancel')}</button>
           <button type="submit">{i18n.t('common.save')}</button>
@@ -285,20 +325,23 @@
     border-radius: var(--radius-md); 
     box-shadow: var(--shadow-md);
     padding: var(--space-sm); 
-    min-width: 180px;
+    min-width: 200px;
   }
 
   .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
 
   .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
-  .chip-popover label {
+  .chip-popover label,
+  .hold-row {
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
     font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
+
+  .hold-row { margin-top: var(--space-sm); }
 
   .chip-popover input {
     padding: var(--space-xs);

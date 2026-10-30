@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const calibrationsManifest = definePlugin({
   id: '@core/calibrations',
   name: 'Calibrations',
-  version: '2.0.0',
+  version: '2.1.0',
   entry: '/plugins/calibrations/index.js',
 
   pages: [

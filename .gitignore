@@ -33,3 +33,7 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .claude/*
+
+#Klipper config reference
+Config_Reference.md
+G-Codes.md

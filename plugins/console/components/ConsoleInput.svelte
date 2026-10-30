@@ -3,8 +3,11 @@
 
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
-  import { matchSuggestions, getMacroParams, isPrinting, type Suggestion } from '../console-session.svelte';
-  import type { BuiltinHelp } from '../gcode-builtins';
+  import { letterSignature, namedParams, paramTypeLabel } from '../../shared/gcode-hints/catalog';
+  import { suggestForLine, type HintSuggestion } from '../../shared/gcode-hints/suggest';
+  import type { Catalog } from '../../shared/gcode-hints/types';
+
+  import { isPrinting } from '../console-session.svelte';
   import { consoleUi } from '../page-ui-state.svelte';
   import { breaksPrint } from '../print-safety';
 
@@ -12,20 +15,18 @@
 
   let {
     disabled,
-    commands,
+    catalog,
     history,
     printerId,
-    builtins,
     placeholder = '',
     above = true,
     onSend,
     fillTrigger = null,
   }: {
     disabled: boolean;
-    commands: Record<string, string>;
+    catalog: Catalog;
     history: string[];
     printerId: string;
-    builtins: Record<string, BuiltinHelp>;
     placeholder?: string;
     above: boolean;
     onSend: (script: string) => void;
@@ -40,17 +41,22 @@
   /** Скрипт, перезапуск которым при печати уже предупредили (нужен повторный Enter). */
   let armed = $state<string | null>(null);
 
-  let suggestions = $derived.by(() => {
-    if (dismissed || disabled) return [];
-    const mp = getMacroParams(printerId);
-    return matchSuggestions(commands, mp, builtins, input);
-  });
+  /** Стрелками выбирали подсказку — тогда Enter принимает и «пассивный» список. */
+  let navigated = $state(false);
+
+  let hint = $derived(
+    dismissed || disabled
+      ? { items: [] as HintSuggestion[], replaceStart: 0, passive: false }
+      : suggestForLine(catalog, input, { substring: true }),
+  );
+  let suggestions = $derived(hint.items);
 
   // сброс выбора при каждом изменении ввода
   $effect(() => {
     void input;
     highlight = 0;
     dismissed = false;
+    navigated = false;
     // правка текста снимает «взвод» подтверждения
     if (untrack(() => armed) !== null && input.trim() !== untrack(() => armed)) armed = null;
   });
@@ -72,14 +78,9 @@
     inputEl?.focus();
   });
 
-  function accept(s: Suggestion): void {
-    if (s.replaceToken) {
-      // заменяем последний токен (то, что пользователь не дописал) на NAME=
-      const sp = input.lastIndexOf(' ');
-      input = (sp === -1 ? '' : input.slice(0, sp + 1)) + s.insert;
-    } else {
-      input = s.insert;
-    }
+  function accept(s: HintSuggestion): void {
+    // токен под кареткой (команда, NAME= или значение) заменяется целиком
+    input = input.slice(0, hint.replaceStart) + s.insert;
     inputEl?.focus();
   }
 
@@ -104,15 +105,20 @@
     if (suggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        navigated = true;
         highlight = (highlight + 1) % suggestions.length;
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
+        navigated = true;
         highlight = (highlight - 1 + suggestions.length) % suggestions.length;
         return;
       }
-      if (e.key === 'Tab' || e.key === 'Enter') {
+      // «Пассивный» список (сразу после пробела или «=») Enter не перехватывает:
+      // иначе нельзя отправить `G28 ` или `START_PRINT `. Tab принимает всегда.
+      const takesEnter = !hint.passive || navigated;
+      if (e.key === 'Tab' || (e.key === 'Enter' && takesEnter)) {
         e.preventDefault();
         const s = suggestions[highlight] ?? suggestions[0];
         if (s) accept(s);
@@ -155,7 +161,7 @@
 <div class="console-input-wrap">
   {#if suggestions.length > 0}
     <ul class="autocomplete" class:below={!above} role="listbox">
-      {#each suggestions as s, i (s.kind + s.name)}
+      {#each suggestions as s, i (s.kind + s.label)}
         <li>
           <button
             type="button"
@@ -164,28 +170,29 @@
             onmouseenter={() => (highlight = i)}
             onclick={() => accept(s)}
           >
-            <span class="ac-cmd">{s.kind === 'param' ? `${s.name}=` : s.name}</span>
-            {#if s.kind === 'command' && s.signature}
-              <span class="ac-sig">({s.signature})</span>
+            <span class="ac-cmd">{s.label}</span>
+            {#if s.kind === 'command' && s.command && letterSignature(s.command)}
+              <span class="ac-sig">({letterSignature(s.command)})</span>
             {/if}
             {#if s.kind === 'param' && s.param}
               <span class="ac-help">
-                {s.param.type}
-                {#if s.param.def !== null}= {s.param.def}{/if}
+                {paramTypeLabel(s.param)}
+                {#if s.param.def != null}= {s.param.def}{/if}
                 {#if s.param.required}<span class="ac-req">*</span>{/if}
+                {#if s.description}— {s.description}{/if}
               </span>
-            {:else if s.help}
-              <span class="ac-help">{s.help}</span>
+            {:else if s.description}
+              <span class="ac-help">{s.description}</span>
             {/if}
           </button>
 
-          {#if s.kind === 'command' && s.params && s.params.length > 0}
+          {#if s.kind === 'command' && s.command && namedParams(s.command).length > 0}
             <div class="ac-params">
-              {#each s.params as p (p.name)}
+              {#each namedParams(s.command) as p (p.name)}
                 <span class="param-chip" class:req={p.required}>
                   <span class="p-name">{p.name}</span>
-                  <span class="p-type">{p.type}</span>
-                  {#if p.def !== null}<span class="p-def">={p.def}</span>{/if}
+                  {#if paramTypeLabel(p)}<span class="p-type">{paramTypeLabel(p)}</span>{/if}
+                  {#if p.def != null}<span class="p-def">={p.def}</span>{/if}
                 </span>
               {/each}
             </div>
@@ -230,7 +237,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
-    max-height: 240px;
+    max-height: min(240px, 35dvh);
     overflow-y: auto;
     z-index: 50;
   }
@@ -342,5 +349,16 @@
 
   .p-def {
     color: var(--accent);
+  }
+
+  /* узкий контейнер (страница или виджет): строки автодополнения переносятся */
+  @container (max-width: 480px) {
+    .ac-item { flex-wrap: wrap; row-gap: 0; }
+    .ac-sig { white-space: normal; }
+    .ac-help { white-space: normal; }
+  }
+
+  @media (pointer: coarse) {
+    .ac-item { min-height: 40px; align-items: center; }
   }
 </style>
