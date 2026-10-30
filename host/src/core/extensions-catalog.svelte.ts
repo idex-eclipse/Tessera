@@ -16,12 +16,20 @@ export interface CatalogEntry {
   version: string;
   manifestUrl: string;  // same-origin: /extensions/<id>/manifest.json
   icon?: string;
+  description?: string;
+  /** 'registry' — установлен tools/tessera-ext.cjs из реестра (sha256 сверен), 'local' — положен вручную. */
+  origin: 'registry' | 'local';
 }
 
 export interface CatalogState {
   loading: boolean;
   error: string | null;
   entries: CatalogEntry[];
+  /**
+   * /extensions/policy.json (пишет deploy/install.sh). Только для UI: реальный запрет —
+   * CSP script-src 'self' в nginx. Нет файла (dev, ручная установка) → разрешено.
+   */
+  allowRemotePlugins: boolean;
 }
 
 export interface CatalogStatus {
@@ -34,6 +42,7 @@ let catalog = $state<CatalogState>({
   loading: false,
   error: null,
   entries: [],
+  allowRemotePlugins: true,
 });
 
 const changeListeners = new Set<() => void>();
@@ -48,11 +57,23 @@ function emitChange(): void {
   }
 }
 
+async function fetchAllowRemotePlugins(): Promise<boolean> {
+  try {
+    const res = await fetch('/extensions/policy.json', { cache: 'no-store' });
+    if (!res.ok) return true;
+    const data = await res.json();
+    return data?.allowRemotePlugins !== false;
+  } catch {
+    return true;
+  }
+}
+
 async function refresh(): Promise<void> {
   if (catalog.loading) return;
-  
+
   catalog = { ...catalog, loading: true, error: null };
-  
+  const allowRemotePlugins = await fetchAllowRemotePlugins();
+
   try {
     const res = await fetch('/extensions/index.json', { cache: 'no-store' });
     if (!res.ok) {
@@ -72,16 +93,19 @@ async function refresh(): Promise<void> {
         version: String(item.version ?? '?'),
         manifestUrl: String(item.manifestUrl ?? ''),
         icon: typeof item.icon === 'string' ? item.icon : undefined,
-      }))
+        description: typeof item.description === 'string' ? item.description : undefined,
+        origin: item.origin === 'registry' ? 'registry' : 'local',
+      } satisfies CatalogEntry))
       .filter((e) => e.id && e.manifestUrl);
     
-    catalog = { loading: false, error: null, entries };
+    catalog = { loading: false, error: null, entries, allowRemotePlugins };
     emitChange();
   } catch (e) {
     catalog = {
       loading: false,
       error: e instanceof Error ? e.message : String(e),
       entries: [],
+      allowRemotePlugins,
     };
     emitChange();
   }

@@ -43,6 +43,38 @@ Rules:
 - The `icon` field in the manifest is optional; the script passes it through to the
   catalog record.
 
+### From the plugin registry (recommended)
+
+Reviewed plugins are published in a separate registry repository. Its CI builds every
+plugin and publishes a `.tar.gz` archive plus `registry.json` with the archive's
+sha256. Nothing is built on the printer: the CLI downloads the archive, checks the
+hash and unpacks it into `extensions/<dir>/`:
+
+```bash
+node tools/tessera-ext.cjs list                 # registry plugins + installed state
+node tools/tessera-ext.cjs install acme/hello   # download → sha256 → extensions/hello/
+node tools/tessera-ext.cjs update --all         # or: update acme/hello
+node tools/tessera-ext.cjs remove acme/hello
+```
+
+The CLI regenerates `index.json` itself. Then use Settings → Plugins → Refresh → Install.
+
+What the CLI checks before anything lands in `extensions/`:
+
+- the archive's sha256 matches `registry.json`;
+- the archive contains only regular files and folders: no symlinks, no absolute
+  paths, no `..`;
+- `manifest.json` from the archive has the same `id`/`version` as the registry entry;
+- `pluginApi` of the entry is not newer than the host supports (now `1`).
+
+A plugin is unpacked into a hidden staging folder and swapped in with `rename`. A
+failed update leaves the previous version in place. Registry plugins get an
+`.tessera-origin.json` file next to the manifest. The CLI refuses to overwrite a
+folder you put there by hand unless you pass `--force`.
+
+`TESSERA_REGISTRY_URL` overrides the registry address (`https://`, `file://` or a
+local path, which is handy for testing a registry before publishing).
+
 Serving on the server:
 
 - **dev** (`npm run dev`): a middleware in `vite.config.ts` serves `extensions/` at
@@ -76,10 +108,17 @@ The script walks `extensions/*/manifest.json` and writes:
     "name": "Hello",
     "version": "1.0.0",
     "manifestUrl": "/extensions/hello/manifest.json",
-    "icon": "optional"
+    "icon": "optional",
+    "description": "optional",
+    "origin": "registry",
+    "sha256": "…"
   }
 ]
 ```
+
+`origin` is `registry` for plugins installed by `tools/tessera-ext.cjs` (they show a
+*Verified* badge in the catalog) and `local` for folders put in place by hand.
+Folders whose names start with `.` are ignored.
 
 Folders without `manifest.json` are skipped with a warning; manifest parse errors
 are logged and the other plugins still make it into the catalog.
@@ -118,12 +157,19 @@ For an address on a different origin, the plugin's server must send **CORS** (fo
 both the manifest and the module). Plugins from `extensions/` (same origin) need no
 CORS.
 
+By default `deploy/install.sh` **blocks** this mode on the server. nginx sends
+`Content-Security-Policy: script-src 'self'`, so the browser refuses to import a
+module from another origin. The installer also writes `/extensions/policy.json`
+(`{ "allowRemotePlugins": false }`), and the UI hides the button. To allow the mode,
+re-run the installer with `TESSERA_ALLOW_REMOTE_PLUGINS=1`. Without `policy.json`
+(dev server, manual setup) the button is shown.
+
 ### Updating
 
 The **Update** button is a hot manifest reload without F5. What it does *not* do: it
 does not reload an already imported module (the browser caches `import()` by URL)
 and does not redefine Custom Elements. If the code changed, you need **F5** (or a new
-file name with a hash). Details in
+file name with a hash), and after an update the UI shows a **Reload** notice. Details in
 [plugin-development.md](plugin-development.md#what-does-not-happen-on-update).
 
 ### Disabling and removal
@@ -142,7 +188,12 @@ plugin `@core/system` is *pinned*: it cannot be disabled or removed.
 - A plugin runs in the context of the host page: it sees its origin's `localStorage`
   (including Moonraker authorization tokens). Install plugins only from trusted
   sources.
-- Integrity (a hash of `entry`) is not verified yet.
+- Integrity is verified **at delivery**: `tools/tessera-ext.cjs` checks each archive
+  against the sha256 in `registry.json`. Trust in a registry plugin rests on review
+  of its source in the registry repository and on CI building it. The browser does
+  not re-check hashes, and plugins installed by URL are not verified at all.
+- The CSP set by `install.sh` (see "By URL") is the server-side barrier against
+  foreign scripts. The confirmation dialog in the UI is not a barrier.
 - Guards are a convenience and protection against user mistakes in the UI, not a
   security boundary.
 
@@ -161,8 +212,10 @@ configs. Running it again = updating (idempotent). Main environment variables:
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker address |
 | `TESSERA_SKIP_NGINX` | `0` | do not configure nginx |
 | `TESSERA_NO_PROMPT` | `0` | non-interactive mode |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` = allow install by URL (no CSP); `0` = only `/extensions/` |
 
-The script does not run as root. Details are in `deploy/install.sh` itself.
+The script does not run as root. It regenerates `extensions/index.json` on every
+run. Details are in `deploy/install.sh` itself.
 
 ---
 
@@ -176,3 +229,33 @@ The script does not run as root. Details are in `deploy/install.sh` itself.
 5. Settings → Plugins → Refresh → Install / Update.
 6. F5 if the code changed.
 7. Check both themes, both languages, offline, *Klippy not ready*.
+
+### Publishing to the registry
+
+The registry's CI (or an author, locally) packs the built plugin folder:
+
+```bash
+node tools/registry-pack.cjs path/to/built-plugin --dir hello \
+  --url-base https://github.com/<org>/tessera-plugins/releases/download/hello-1.2.0 \
+  --out registry/
+```
+
+It writes `registry/hello-<version>.tar.gz` and adds or replaces the plugin's entry
+in `registry/registry.json`:
+
+```json
+{ "schema": 1, "plugins": [ {
+  "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
+  "pluginApi": 1, "url": "https://…/hello-1.2.0.tar.gz",
+  "sha256": "…", "size": 12345, "description": "…" } ] }
+```
+
+The archive is reproducible: entries are sorted, timestamps and owners are zeroed,
+and the gzip header has no timestamp. Anyone can rebuild a plugin from the reviewed
+commit and get the same sha256. `--url-base .` keeps archive URLs relative to
+`registry.json`.
+
+Suggested registry workflow: an author opens a PR that pins their plugin's source
+commit; a reviewer reads the diff; after merge, CI checks out that commit, builds it,
+runs `registry-pack.cjs`, uploads the archive as a release asset and commits
+`registry.json`.

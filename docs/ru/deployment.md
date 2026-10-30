@@ -41,6 +41,37 @@ extensions/
   `/extensions/hello/index.js`. Абсолютный URL и путь от корня тоже допустимы.
 - Поле `icon` в манифесте необязательно; скрипт пробрасывает его в запись каталога.
 
+### Из реестра плагинов (рекомендуемый путь)
+
+Проверенные плагины публикуются в отдельном репозитории-реестре. Его CI собирает
+каждый плагин и выкладывает архив `.tar.gz` и `registry.json` с sha256 архива. На
+принтере ничего не собирается: CLI скачивает архив, сверяет хеш и распаковывает его
+в `extensions/<dir>/`:
+
+```bash
+node tools/tessera-ext.cjs list                 # плагины реестра + что установлено
+node tools/tessera-ext.cjs install acme/hello   # скачать → sha256 → extensions/hello/
+node tools/tessera-ext.cjs update --all         # или: update acme/hello
+node tools/tessera-ext.cjs remove acme/hello
+```
+
+`index.json` CLI пересобирает сам. Дальше — Settings → Plugins → Refresh → Install.
+
+Что CLI проверяет, прежде чем что-то попадёт в `extensions/`:
+
+- sha256 архива совпадает с `registry.json`;
+- в архиве только обычные файлы и папки: без симлинков, абсолютных путей и `..`;
+- `manifest.json` из архива совпадает с записью реестра по `id` и `version`;
+- `pluginApi` записи не новее, чем поддерживает хост (сейчас `1`).
+
+Плагин распаковывается в скрытую staging-папку и подменяется через `rename`. Если
+обновление не удалось, остаётся прежняя версия. Рядом с манифестом плагина из
+реестра появляется файл `.tessera-origin.json`. Папку, положенную вручную, CLI без
+`--force` не перезапишет.
+
+`TESSERA_REGISTRY_URL` переопределяет адрес реестра: `https://`, `file://` или
+локальный путь. Локальный путь удобен, чтобы проверить реестр до публикации.
+
 Раздача на сервере:
 
 - **dev** (`npm run dev`): middleware в `vite.config.ts` отдаёт `extensions/` на
@@ -73,10 +104,17 @@ node tools/extensions-sync.cjs
     "name": "Hello",
     "version": "1.0.0",
     "manifestUrl": "/extensions/hello/manifest.json",
-    "icon": "optional"
+    "icon": "optional",
+    "description": "optional",
+    "origin": "registry",
+    "sha256": "…"
   }
 ]
 ```
+
+`origin` равен `registry` у плагинов, установленных через `tools/tessera-ext.cjs`
+(в каталоге у них бейдж *Проверен*), и `local` у папок, положенных вручную. Папки,
+имя которых начинается с `.`, пропускаются.
 
 Папки без `manifest.json` пропускаются с предупреждением; ошибки разбора
 манифеста логируются, остальные плагины всё равно попадают в каталог.
@@ -115,12 +153,20 @@ Settings → Plugins → **Add by URL (advanced)**: хост загружает 
 манифеста, и для модуля). Для плагинов из `extensions/` (тот же origin) CORS не
 нужен.
 
+По умолчанию `deploy/install.sh` **запрещает** этот режим на сервере. nginx отдаёт
+`Content-Security-Policy: script-src 'self'`, и браузер не импортирует модуль с
+чужого origin. Ещё установщик пишет `/extensions/policy.json`
+(`{ "allowRemotePlugins": false }`), и UI прячет кнопку. Чтобы разрешить режим,
+перезапустите установщик с `TESSERA_ALLOW_REMOTE_PLUGINS=1`. Если `policy.json` нет
+(dev-сервер, ручная настройка), кнопка видна.
+
 ### Обновление
 
 Кнопка **Update** — горячая перезагрузка манифеста без F5. Что она *не* делает:
 не перезагружает уже импортированный модуль (браузер кэширует `import()`
 по URL) и не переопределяет Custom Elements. Если изменился код, нужен **F5**
-(или новое имя файла с хешем). Подробнее — в
+(или новое имя файла с хешем); после обновления UI показывает плашку
+**Перезагрузить**. Подробнее — в
 [plugin-development.md](plugin-development.md#чего-не-происходит-при-update).
 
 ### Выключение и удаление
@@ -140,7 +186,12 @@ Settings → Plugins → **Add by URL (advanced)**: хост загружает 
 - Плагин исполняется в контексте страницы хоста: он видит `localStorage` своего
   origin (включая токены авторизации Moonraker). Ставьте плагины только из
   доверенных источников.
-- Целостность (хеш `entry`) пока не проверяется.
+- Целостность проверяется **при доставке**: `tools/tessera-ext.cjs` сверяет каждый
+  архив с sha256 из `registry.json`. Доверие к плагину из реестра держится на ревью
+  его исходников в репозитории-реестре и на сборке в CI. Браузер хеши повторно не
+  проверяет, а плагины, установленные по URL, не проверяются вовсе.
+- CSP, который выставляет `install.sh` (см. «По URL»), — серверный барьер против
+  чужих скриптов. Диалог подтверждения в UI барьером не является.
 - Гарды — удобство и защита от ошибок пользователя в UI, а не граница безопасности.
 
 ---
@@ -159,8 +210,10 @@ nginx (включая `/extensions/` и проксирование WebSocket) и
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | адрес Moonraker |
 | `TESSERA_SKIP_NGINX` | `0` | не настраивать nginx |
 | `TESSERA_NO_PROMPT` | `0` | неинтерактивный режим |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/` |
 
-Скрипт не запускается от root. Подробности — в самом `deploy/install.sh`.
+Скрипт не запускается от root. При каждом запуске он пересобирает
+`extensions/index.json`. Подробности — в самом `deploy/install.sh`.
 
 ---
 
@@ -174,3 +227,33 @@ nginx (включая `/extensions/` и проксирование WebSocket) и
 5. Settings → Plugins → Refresh → Install / Update.
 6. F5, если менялся код.
 7. Проверить обе темы, оба языка, offline, *Klippy not ready*.
+
+### Публикация в реестр
+
+CI реестра (или автор локально) упаковывает папку собранного плагина:
+
+```bash
+node tools/registry-pack.cjs path/to/built-plugin --dir hello \
+  --url-base https://github.com/<org>/tessera-plugins/releases/download/hello-1.2.0 \
+  --out registry/
+```
+
+Скрипт кладёт `registry/hello-<version>.tar.gz` и добавляет или заменяет запись
+плагина в `registry/registry.json`:
+
+```json
+{ "schema": 1, "plugins": [ {
+  "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
+  "pluginApi": 1, "url": "https://…/hello-1.2.0.tar.gz",
+  "sha256": "…", "size": 12345, "description": "…" } ] }
+```
+
+Архив воспроизводим: записи отсортированы, время и владелец обнулены, в заголовке
+gzip нет времени. Любой может пересобрать плагин из проверенного коммита и получить
+тот же sha256. `--url-base .` оставляет URL архивов относительными к
+`registry.json`.
+
+Рекомендуемый процесс в реестре: автор присылает PR, в котором закреплён коммит его
+исходников; ревьюер читает diff; после merge CI делает checkout этого коммита,
+собирает, запускает `registry-pack.cjs`, выкладывает архив как release asset и
+коммитит `registry.json`.

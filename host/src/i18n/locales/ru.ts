@@ -154,6 +154,9 @@ const ru: I18nMessages = {
     installed: 'Установлен',
     update: 'Обновить',
     external: 'Внешний',
+    verified: 'Проверен',
+    reloadRequired: 'Плагин обновлён. Перезагрузите страницу, чтобы применить новый код.',
+    reloadPage: 'Перезагрузить',
 
     syncSettings: 'Синхронизировать настройки',
 

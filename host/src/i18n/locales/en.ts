@@ -157,6 +157,9 @@ const en: I18nMessages = {
     installed: 'Installed',
     update: 'Update',
     external: 'External',
+    verified: 'Verified',
+    reloadRequired: 'Plugin updated. Reload the page to apply the new code.',
+    reloadPage: 'Reload',
 
     syncSettings: 'Sync settigns',
 

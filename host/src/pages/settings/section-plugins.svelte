@@ -3,57 +3,13 @@
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
   import { useExtensionsCatalog } from '../../core/extensions-catalog.svelte.ts';
   import { absoluteManifestUrl } from '../../core/extensions-catalog.svelte.ts';
+  import type { CatalogEntry } from '../../core/extensions-catalog.svelte.ts';
 
   const { settings, loader, printerManager, i18n } = getAppContext();
 
   let remotePlugins = $derived(settings.plugins);
   let loaded = $derived(loader.getLoadedPlugins());
   let printers = $derived(printerManager.printers);
-
-  let addOpen = $state(false);
-  let url = $state('');
-  let scope = $state<string[]>([]);
-  let preview = $state<{ id: string; name: string; version: string } | null>(null);
-  let fetching = $state(false);
-  let error = $state<string | null>(null);
-
-  function loadedByUrl(u: string) {
-    return loaded.find((p) => p.manifestUrl === u);
-  }
-
-  async function fetchManifest(): Promise<void> {
-    const u = url.trim();
-    if (!u) return;
-    fetching = true;
-    error = null;
-    preview = null;
-    try {
-      const res = await fetch(u);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const m = await res.json(); // ← упадёт, если сервер отдаёт HTML
-      if (!m || typeof m.id !== 'string' || typeof m.entry !== 'string') {
-        throw new Error('invalid manifest');
-      }
-      preview = { id: m.id, name: m.name ?? m.id, version: m.version ?? '?' };
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      fetching = false;
-    }
-  }
-
-  async function handleAdd(): Promise<void> {
-    if (!preview) return;
-    settings.addPlugin(url.trim(), scope);
-    await loader.loadEnabledPlugins();
-    addOpen = false;
-    url = ''; scope = []; preview = null; error = null;
-  }
-
-  function openAdd(): void {
-    addOpen = true;
-    url = ''; scope = []; preview = null; error = null;
-  }
 
   async function toggle(u: string, enabled: boolean): Promise<void> {
     settings.setPluginEnabled(u, enabled);
@@ -71,17 +27,6 @@
     await loader.loadEnabledPlugins();
   }
 
-  function scopeLabel(entry: { printerIds: string[] }): string {
-    if (!entry.printerIds || entry.printerIds.length === 0) return i18n.t('settings.allPrinters');
-    return entry.printerIds
-      .map((id) => printers.find((p) => p.id === id)?.name ?? id)
-      .join(', ');
-  }
-
-  function toggleScope(id: string): void {
-    scope = scope.includes(id) ? scope.filter((s) => s !== id) : [...scope, id];
-  }
-
 //catalog
 
   const catalog = useExtensionsCatalog();
@@ -89,17 +34,24 @@
   let catalogLoading = $derived(catalog.catalog.loading);
   let catalogError = $derived(catalog.catalog.error);
 
-  function catalogStatus(entry: any) {
+  function catalogStatus(entry: CatalogEntry) {
     return catalog.getStatus(entry, remotePlugins);
   }
 
-  async function installFromCatalog(manifestUrl: string, printerIds: string[] = []): Promise<void> {
-    settings.addPlugin(absoluteManifestUrl(manifestUrl), printerIds, 'catalog');
+  async function installFromCatalog(entry: CatalogEntry, printerIds: string[] = []): Promise<void> {
+    // версия обязательна: без неё getStatus никогда не покажет update-available
+    settings.addPlugin(absoluteManifestUrl(entry.manifestUrl), printerIds, 'catalog', entry.version);
     await loader.loadEnabledPlugins();
   }
 
-  async function updateFromCatalog(manifestUrl: string): Promise<void> {
-    await loader.reloadRemotePlugin(manifestUrl);
+  // import() кэшируется по URL, а CE нельзя переопределить → новый код плагина
+  // подхватывается только перезагрузкой страницы.
+  let reloadRequired = $state(false);
+
+  async function updateFromCatalog(entry: CatalogEntry): Promise<void> {
+    // записи settings хранят абсолютный URL, каталог — относительный
+    await loader.reloadRemotePlugin(absoluteManifestUrl(entry.manifestUrl));
+    reloadRequired = true;
   }
 
   let addAdvancedOpen = $state(false);
@@ -172,18 +124,26 @@
         <div class="plugin-row">
           <div class="plugin-info">
             <span class="plugin-name">{entry.name}</span>
-            <span class="plugin-meta">{entry.id} · v{entry.version}</span>
+            <span class="plugin-meta">
+              {entry.id} · v{entry.version}
+              {#if entry.origin === 'registry'}
+                <span class="badge verified">{i18n.t('settings.verified')}</span>
+              {/if}
+            </span>
+            {#if entry.description}
+              <span class="plugin-description">{entry.description}</span>
+            {/if}
           </div>
           <div class="plugin-actions">
             {#if status.status === 'not-installed'}
-              <button class="btn btn-primary" onclick={() => installFromCatalog(entry.manifestUrl)}>
+              <button class="btn btn-primary" onclick={() => installFromCatalog(entry)}>
                 {i18n.t('common.install')}
               </button>
             {:else if status.status === 'installed'}
               <span class="badge installed">{i18n.t('settings.installed')}</span>
             {:else if status.status === 'update-available'}
               <span class="badge update">v{status.installedVersion} → v{status.catalogVersion}</span>
-              <button class="btn btn-primary" onclick={() => updateFromCatalog(entry.manifestUrl)}>
+              <button class="btn btn-primary" onclick={() => updateFromCatalog(entry)}>
                 {i18n.t('settings.update')}
               </button>
             {/if}
@@ -193,12 +153,23 @@
     </div>
   {/if}
 
+  {#if reloadRequired}
+    <div class="reload-notice">
+      <span class="warning">{i18n.t('settings.reloadRequired')}</span>
+      <button class="btn btn-primary" onclick={() => location.reload()}>
+        {i18n.t('settings.reloadPage')}
+      </button>
+    </div>
+  {/if}
+
   <!-- Installed plugins -->
   <div class="section-header">
     <h3>{i18n.t('settings.installedPlugins')}</h3>
-    <button class="btn btn-secondary" onclick={() => (addAdvancedOpen = true)}>
-      + {i18n.t('settings.addPluginAdvanced')}
-    </button>
+    {#if catalog.catalog.allowRemotePlugins}
+      <button class="btn btn-secondary" onclick={() => (addAdvancedOpen = true)}>
+        + {i18n.t('settings.addPluginAdvanced')}
+      </button>
+    {/if}
   </div>
 
   <div class="plugin-list">
@@ -285,48 +256,6 @@
   </div>
 {/if}
 
-{#if addOpen}
-  <div class="dialog-backdrop" onclick={() => (addOpen = false)} role="presentation"></div>
-  <div class="dialog" role="dialog" aria-modal="true">
-    <div class="dialog-header"><h3>{i18n.t('settings.addPlugin')}</h3></div>
-    <div class="dialog-body">
-      <label class="field">
-        <span>Manifest URL</span>
-        <input bind:value={url} placeholder="http://192.168.0.10:8080/manifest.json" />
-      </label>
-
-      <div class="field">
-        <span>{i18n.t('settings.printers')}</span>
-        <div class="scope-list">
-          {#each printers as p (p.id)}
-            <label class="scope-item">
-              <input type="checkbox" checked={scope.includes(p.id)} onchange={() => toggleScope(p.id)} />
-              {p.name}
-            </label>
-          {/each}
-        </div>
-        <span class="field-hint">{i18n.t('settings.scopeHint')}</span>
-      </div>
-
-      {#if preview}
-        <p class="preview">✓ {preview.name} · v{preview.version} ({preview.id})</p>
-      {/if}
-      {#if error}
-        <p class="test-result fail">{error}</p>
-      {/if}
-    </div>
-    <div class="dialog-footer">
-      <button class="btn btn-secondary" onclick={fetchManifest} disabled={fetching || !url.trim()}>
-        {i18n.t('settings.testConnection')}
-      </button>
-      <button class="btn btn-secondary" onclick={() => (addOpen = false)}>{i18n.t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick={handleAdd} disabled={!preview}>
-        {i18n.t('common.add')}
-      </button>
-    </div>
-  </div>
-{/if}
-
 <style>
   .section { display: flex; flex-direction: column; gap: var(--space-md); }
   .section-actions { display: flex; justify-content: flex-end; }
@@ -374,7 +303,10 @@
 .badge.installed { background: var(--success); color: #fff; }
 .badge.update { background: var(--warning); color: #fff; }
 .badge.external { background: var(--text-muted); color: #fff; font-size: 10px; }
+.badge.verified { background: var(--success); color: #fff; font-size: 10px; }
+.plugin-description { color: var(--text-secondary); font-size: var(--font-size-sm); }
 .warning { color: var(--warning); font-size: var(--font-size-sm); }
+.reload-notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border: 1px solid var(--warning); border-radius: var(--radius-md); }
 .btn-danger { background: var(--danger); color: #fff; }
 
 </style>

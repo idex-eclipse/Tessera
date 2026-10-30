@@ -462,6 +462,24 @@ describe('plugin-loader / reload', () => {
 
     expect(settings.plugins[0]!.printerIds).toEqual(['printer-1', 'printer-2']);
   });
+
+  it('updates installedVersion and keeps source after reload', async () => {
+    let version = '1.0.0';
+
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => createTestManifest({ id: '@third/graph', version })),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json', [], 'catalog');
+    expect(settings.plugins[0]!.installedVersion).toBe('1.0.0');
+
+    version = '1.1.0';
+    await loader.reloadRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(settings.plugins).toHaveLength(1);
+    expect(settings.plugins[0]!.installedVersion).toBe('1.1.0');
+    expect(settings.plugins[0]!.source).toBe('catalog');
+  });
 });
 
 // ------------------------------------------------------------------
