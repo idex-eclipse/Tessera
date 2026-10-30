@@ -156,9 +156,19 @@ Settings → Plugins → **Add by URL (advanced)**: хост загружает 
 По умолчанию `deploy/install.sh` **запрещает** этот режим на сервере. nginx отдаёт
 `Content-Security-Policy: script-src 'self'`, и браузер не импортирует модуль с
 чужого origin. Ещё установщик пишет `/extensions/policy.json`
-(`{ "allowRemotePlugins": false }`), и UI прячет кнопку. Чтобы разрешить режим,
-перезапустите установщик с `TESSERA_ALLOW_REMOTE_PLUGINS=1`. Если `policy.json` нет
+(`{ "allowRemotePlugins": false }`), и UI прячет кнопку. Если `policy.json` нет
 (dev-сервер, ручная настройка), кнопка видна.
+
+Установщик задаёт этот вопрос вместе с остальными параметрами установки и
+запоминает ответ: при следующем запуске по умолчанию предлагается прежний выбор.
+Чтобы поменять только эту настройку, без пересборки, запустите:
+
+```bash
+bash /tmp/tessera-install.sh --plugins-policy
+```
+
+Скрипт задаст один вопрос, перепишет `policy.json`, переключит CSP в конфиге nginx и
+перезагрузит nginx. После этого обновите страницу UI.
 
 ### Обновление
 
@@ -210,7 +220,7 @@ nginx (включая `/extensions/` и проксирование WebSocket) и
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | адрес Moonraker |
 | `TESSERA_SKIP_NGINX` | `0` | не настраивать nginx |
 | `TESSERA_NO_PROMPT` | `0` | неинтерактивный режим |
-| `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/` |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | прежний выбор (при первой установке `0`) | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/`. Без переменной установщик спрашивает |
 
 Скрипт не запускается от root. При каждом запуске он пересобирает
 `extensions/index.json`. Подробности — в самом `deploy/install.sh`.

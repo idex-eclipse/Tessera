@@ -7,6 +7,8 @@
 # Non-interactive:
 #   TESSERA_NO_PROMPT=1 TESSERA_PORT=8080 bash /tmp/tessera-install.sh
 # Update = re-run the same script (idempotent).
+# Change only "plugins by URL" (no rebuild, just policy + nginx reload):
+#   bash /tmp/tessera-install.sh --plugins-policy
 set -euo pipefail
 
 # ---------------------------------------------------------------- configuration
@@ -18,7 +20,8 @@ SKIP_NGINX="${TESSERA_SKIP_NGINX:-0}"
 SKIP_KLIPPER="${TESSERA_SKIP_KLIPPER_CFG:-0}"
 NO_PROMPT="${TESSERA_NO_PROMPT:-0}"
 # 1 = UI may load plugins by URL from other servers (no CSP); 0 = only /extensions/
-ALLOW_REMOTE="${TESSERA_ALLOW_REMOTE_PLUGINS:-0}"
+# empty = ask, defaulting to the previous choice (extensions/policy.json)
+ALLOW_REMOTE="${TESSERA_ALLOW_REMOTE_PLUGINS:-}"
 
 log()  { printf '\033[1;34m[tessera]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[tessera]\033[0m %s\n' "$*"; }
@@ -35,6 +38,41 @@ yesno() { # yesno VAR "question" default(0|1)
   case "${r:-$3}" in 1|y|Y|yes|YES) eval "$1=1";; *) eval "$1=0";; esac
 }
 
+# ---------------------------------------------------------------- plugins by URL policy
+# CSP on the UI document: browser refuses scripts from other origins,
+# so only same-origin /extensions/ plugins can be loaded. The comment marks
+# the spot so --plugins-policy can toggle it in an existing nginx config.
+CSP_ON="add_header Content-Security-Policy \"script-src 'self'\" always;"
+CSP_OFF="# tessera: plugins by URL allowed, no CSP"
+
+nginx_paths() {
+  NGINX_AV=/etc/nginx/sites-available; NGINX_EN=/etc/nginx/sites-enabled
+  [ -d /etc/nginx/sites-enabled ] || { NGINX_AV=/etc/nginx/conf.d; NGINX_EN=""; }
+}
+
+ask_allow_remote() {
+  if [ -z "$ALLOW_REMOTE" ]; then
+    ALLOW_REMOTE=0
+    grep -qs '"allowRemotePlugins": *true' "$INSTALL_DIR/extensions/policy.json" && ALLOW_REMOTE=1
+  fi
+  if [ -t 0 ] && [ "$NO_PROMPT" != 1 ]; then
+    log "Plugins by URL: Settings → Plugins → 'Add by URL' loads plugin code from any server."
+    log "That code gets full access to the printer. Registry plugins (extensions/) work either way."
+    yesno ALLOW_REMOTE "Allow installing UI plugins by URL (unsafe)?" "$ALLOW_REMOTE"
+  fi
+}
+
+# policy.json only tells the UI whether to offer "Add by URL"; enforcement is the nginx CSP.
+write_policy() {
+  local v=false; [ "$ALLOW_REMOTE" = 1 ] && v=true
+  mkdir -p "$INSTALL_DIR/extensions"
+  printf '{ "allowRemotePlugins": %s }\n' "$v" > "$INSTALL_DIR/extensions/policy.json"
+}
+
+remote_summary() {
+  if [ "$ALLOW_REMOTE" = 1 ]; then echo "allowed (no CSP)"; else echo "blocked by CSP"; fi
+}
+
 # ---------------------------------------------------------------- privileges/home
 if [ "$(id -u)" -eq 0 ]; then
     die "Do not run this script directly as root. Run it as a regular user with sudo privileges."
@@ -49,14 +87,35 @@ INSTALL_DIR="${TESSERA_DIR:-$REAL_HOME/tessera}"
 KLIPPER_CFG_DIR="${TESSERA_KLIPPER_CFG:-$REAL_HOME/printer_data/config}"
 KLIPPER_DIR="${TESSERA_KLIPPER_DIR:-$REAL_HOME/klipper}"
 
+# ---------------------------------------------------------------- --plugins-policy (quick mode)
+if [ "${1:-}" = "--plugins-policy" ]; then
+  [ -t 0 ] && [ "$NO_PROMPT" != 1 ] && ask INSTALL_DIR "Installation directory" "$INSTALL_DIR"
+  [ -d "$INSTALL_DIR/.git" ] || die "Tessera not found in $INSTALL_DIR — run the full installer first"
+  ask_allow_remote
+  write_policy
+
+  nginx_paths
+  CONF="$NGINX_AV/tessera"
+  if [ -f "$CONF" ] && $SUDO grep -qF -e "$CSP_ON" -e "$CSP_OFF" "$CONF"; then
+    if [ "$ALLOW_REMOTE" = 1 ]; then FROM="$CSP_ON"; TO="$CSP_OFF"; else FROM="$CSP_OFF"; TO="$CSP_ON"; fi
+    $SUDO sed -i "s|$FROM|$TO|g" "$CONF"
+    $SUDO nginx -t || die "nginx -t failed — edit $CONF manually"
+    $SUDO systemctl reload nginx
+  else
+    warn "no Tessera CSP marker in $CONF — re-run the full installer to apply nginx part"
+  fi
+  log "plugins by URL: $(remote_summary). Reload the UI page."
+  exit 0
+fi
+
 if [ -t 0 ] && [ "$NO_PROMPT" != 1 ]; then
   ask INSTALL_DIR "Installation directory" "$INSTALL_DIR"
   ask BRANCH      "Git branch to install"  "$BRANCH"
   ask PORT        "nginx port for UI"      "$PORT"
   ask MOONRAKER   "Moonraker host:port"    "$MOONRAKER"
   ask KLIPPER_CFG_DIR "Klipper config directory" "$KLIPPER_CFG_DIR"
-  yesno ALLOW_REMOTE "Allow installing UI plugins by URL from other servers (unsafe)?" "$ALLOW_REMOTE"
 fi
+ask_allow_remote
 
 as_user() { # as_user "cmd" — always run as the printer owner
   # Since running as root is forbidden, we are always the target user
@@ -123,10 +182,7 @@ case "$BUILD_DIR" in
 esac
 
 # ---------------------------------------------------------------- extensions
-# policy.json only tells the UI whether to offer "Add by URL"; enforcement is the nginx CSP below.
-mkdir -p "$INSTALL_DIR/extensions"
-if [ "$ALLOW_REMOTE" = 1 ]; then REMOTE_JSON=true; else REMOTE_JSON=false; fi
-printf '{ "allowRemotePlugins": %s }\n' "$REMOTE_JSON" > "$INSTALL_DIR/extensions/policy.json"
+write_policy
 as_user "cd '$INSTALL_DIR' && node tools/extensions-sync.cjs" || warn "extensions index not generated"
 
 # ---------------------------------------------------------------- nginx
@@ -216,15 +272,11 @@ server {
     #                      proxy_pass http://127.0.0.1:8080/; }
 }
 NGINX
-  # CSP on the UI document: browser refuses scripts from other origins,
-  # so only same-origin /extensions/ plugins can be loaded.
-  CSP_LINE=""
-  [ "$ALLOW_REMOTE" = 1 ] || CSP_LINE="add_header Content-Security-Policy \"script-src 'self'\" always;"
+  CSP_LINE="$CSP_ON"; [ "$ALLOW_REMOTE" = 1 ] && CSP_LINE="$CSP_OFF"
   sed -i "s|@PORT@|$PORT|g; s|@MOONRAKER@|$MOONRAKER|g; s|@BUILD_DIR@|$BUILD_DIR|g; s|@INSTALL_DIR@|$INSTALL_DIR|g; s|@CSP@|$CSP_LINE|g" \
     /tmp/tessera-nginx.conf
 
-  NGINX_AV=/etc/nginx/sites-available; NGINX_EN=/etc/nginx/sites-enabled
-  [ -d /etc/nginx/sites-enabled ] || { NGINX_AV=/etc/nginx/conf.d; NGINX_EN=""; }
+  nginx_paths
   $SUDO install -m 644 /tmp/tessera-nginx.conf "$NGINX_AV/tessera"
   [ -n "$NGINX_EN" ] && $SUDO ln -sf "$NGINX_AV/tessera" "$NGINX_EN/tessera"
   $SUDO nginx -t || die "nginx -t failed — edit $NGINX_AV/tessera manually"
@@ -294,7 +346,7 @@ cat <<SUMMARY
 │ dist:       $BUILD_DIR
 │ extensions: $INSTALL_DIR/extensions/
 │ Plugins:    node $INSTALL_DIR/tools/tessera-ext.cjs list|install <id>|update --all|remove <id>
-│ By URL:     $([ "$ALLOW_REMOTE" = 1 ] && echo "allowed (no CSP)" || echo "blocked by CSP (TESSERA_ALLOW_REMOTE_PLUGINS=1 to allow)")
+│ By URL:     $(remote_summary) — change: bash /tmp/tessera-install.sh --plugins-policy
 │ Update:     bash /tmp/tessera-install.sh (or re-download) — idempotent
 │ Uninstall:  remove sites-enabled/tessera symlink, '[include tessera*.cfg]'
 │             lines from printer.cfg, and directory $INSTALL_DIR

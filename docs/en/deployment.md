@@ -160,9 +160,19 @@ CORS.
 By default `deploy/install.sh` **blocks** this mode on the server. nginx sends
 `Content-Security-Policy: script-src 'self'`, so the browser refuses to import a
 module from another origin. The installer also writes `/extensions/policy.json`
-(`{ "allowRemotePlugins": false }`), and the UI hides the button. To allow the mode,
-re-run the installer with `TESSERA_ALLOW_REMOTE_PLUGINS=1`. Without `policy.json`
-(dev server, manual setup) the button is shown.
+(`{ "allowRemotePlugins": false }`), and the UI hides the button. Without
+`policy.json` (dev server, manual setup) the button is shown.
+
+The installer asks this question along with the other installation settings and
+remembers the answer: the next run offers the previous choice as the default. To
+change only this setting, without a rebuild, run:
+
+```bash
+bash /tmp/tessera-install.sh --plugins-policy
+```
+
+It asks one question, rewrites `policy.json`, toggles the CSP in the nginx config and
+reloads nginx. Reload the UI page afterwards.
 
 ### Updating
 
@@ -212,7 +222,7 @@ configs. Running it again = updating (idempotent). Main environment variables:
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker address |
 | `TESSERA_SKIP_NGINX` | `0` | do not configure nginx |
 | `TESSERA_NO_PROMPT` | `0` | non-interactive mode |
-| `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` = allow install by URL (no CSP); `0` = only `/extensions/` |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | previous choice (`0` on first install) | `1` = allow install by URL (no CSP); `0` = only `/extensions/`. Without it the installer asks |
 
 The script does not run as root. It regenerates `extensions/index.json` on every
 run. Details are in `deploy/install.sh` itself.
