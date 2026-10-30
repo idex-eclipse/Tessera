@@ -10,7 +10,7 @@ TypeScript application that talks straight to Moonraker and keeps its settings i
 
 | Component | Role | What it does NOT do |
 |---|---|---|
-| **Host** | printer tabs, sidebar, plugin slot, dashboard grid, Settings, theme, language, persistent surfaces (banners, overlays, chips, right panel, fleet) | does not read temperatures/status for its own UI, does not parse the Moonraker protocol, does not store printer business data |
+| **Host** | printer tabs, sidebar, plugin slot, dashboard grid, Settings, theme, language, persistent surfaces (banners, overlays, chips, right panel, fleet) | does not read temperatures/status for its own UI, does not parse the Moonraker protocol, does not store printer business data. The one exception is the opaque [fleet index](#fleet-index) |
 | **MoonrakerProxy** | the connection pool (one WebSocket per printer), snapshot/TTL cache, pub/sub, subscription dedup, poll | is not read by the host to render its own UI |
 | **GuardAgent** | the preflight pipeline of `request()`: polls plugin guards | is not a bus; plugins do not talk to each other |
 | **HotkeyManager** | listens to `keydown`, matches plugin and host hotkeys, resolves conflicts | does not make decisions for a plugin |
@@ -176,9 +176,34 @@ tab leads to that printer's dashboard.
 - The Klipper banner (in `@core/system`) is a separate thing: firmware state, not
   connection state.
 
+## Fleet index
+
+Search and filters in fleet mode (by printer name, by the file being printed, by
+"printing / idle / Klipper error") need data the host does not have. This is the
+**only** channel from plugin to host, and it is deliberately narrow:
+
+- A fleet panel publishes `api.fleet.publish(printerId, { tags, searchText })`
+  and withdraws it with `api.fleet.retract(printerId)`.
+- `tags` are `{ id, labelKey, icon?, order? }`; `searchText` is a plain string.
+- The host **stores and compares strings only**. It does not know what `printing`
+  or a file name means: it builds filter buttons from the published tags (label via
+  `i18n.t(labelKey)`) and matches the search query against the printer name and
+  `searchText`.
+- Records are keyed by (plugin, printer); several plugins can publish for one
+  printer and the host merges them. Unchanged records are deduplicated, and records
+  of removed printers are dropped.
+- Filtered-out cards are hidden with CSS, never unmounted, so panels keep their
+  subscriptions.
+
+The system plugin publishes the tags `printing`, `idle` and `klippy-error` and the
+name of the file being printed from its fleet status panel. See
+[plugin-api.md](plugin-api.md#fleet).
+
 ## What is deliberately not in the host
 
-- a shared bus between plugins, shared state, `emit/on`;
+- a shared bus between plugins, shared state, `emit/on` (the fleet index above is a
+  one-way plugin → host publication of opaque strings, not a bus: plugins do not
+  read each other's records);
 - granular permissions, capabilities, priority, "best provider";
 - request mutation by guards and guard priorities;
 - auto-updating remote plugins from the network;

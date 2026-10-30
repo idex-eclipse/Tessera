@@ -141,4 +141,6 @@ get old plugin settings back without configuring them again.
 ## What the host does not keep in localStorage
 
 Nothing. Printer data (files, history, temperatures) lives in Moonraker/Klipper; the
-host does not duplicate it and does not read it for its own UI.
+host does not duplicate it and does not read it for its own UI. The fleet search
+index (tags and the name of the file being printed, published by fleet panels) is
+kept in memory only and is never persisted.

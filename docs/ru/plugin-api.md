@@ -33,9 +33,18 @@ interface PluginApi {
   onLocaleChange(cb: (locale: string, dir: 'ltr' | 'rtl') => void): () => void;
   onThemeChange(cb: (theme: 'light' | 'dark') => void): () => void;
 
+  // поиск и фильтры fleet
+  readonly fleet: {
+    publish(printerId: string, entry: FleetIndexEntry): void;
+    retract(printerId: string): void;
+  };
+
   // гарды
   guards: { resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void };
 }
+
+interface FleetTag { id: string; labelKey: string; icon?: string; order?: number }
+interface FleetIndexEntry { tags: FleetTag[]; searchText: string }
 
 interface PrinterInfo { id: string; name: string; url: string }
 ```
@@ -158,6 +167,37 @@ api.settings.onChange((_key, all) => {
 - Храните компактные значения. Всё лежит в `localStorage` (лимит браузера
   ~5 МБ на origin).
 - Не храните секреты: настройки попадают в экспорт Settings → About / Debug.
+
+---
+
+## Fleet
+
+<a id="fleet"></a>
+
+`api.fleet` позволяет **fleet-панели** (см. [surfaces.md](surfaces.md#6-fleet-панели))
+наполнять строку поиска и кнопки фильтров fleet-режима. Это единственный канал
+плагин → хост; хост хранит значения и никогда их не интерпретирует.
+
+```ts
+api.fleet.publish(printerId, {
+  tags: [{ id: 'printing', labelKey: 'acme.filter.printing', icon: 'print', order: 0 }],
+  searchText: 'benchy.gcode',
+});
+api.fleet.retract(printerId);   // когда панель убирается
+```
+
+- `tags` — одна кнопка фильтра на каждый уникальный `id` среди всех принтеров, со
+  счётчиком. Подпись — `i18n.t(labelKey)`; `icon` — имя из общего набора иконок (на
+  узких экранах показывается только иконка); `order` сортирует кнопки. Выбранные
+  теги объединяются по OR; с текстом поиска — по AND.
+- `searchText` — сопоставляется как подстрока без учёта регистра. Имя принтера хост
+  сопоставляет сам, поэтому кладите сюда только дополнительный текст (например,
+  печатаемый файл).
+- `publish` заменяет прежнюю запись **вашего плагина** для этого принтера;
+  одинаковые записи игнорируются, так что вызывать из эффекта дёшево. Неизвестные
+  принтеры игнорируются. Лимиты: 16 тегов, 512 символов текста.
+- Не публикуйте то, что бесполезно для поиска и фильтров: индекс общий, это не
+  хранилище.
 
 ---
 

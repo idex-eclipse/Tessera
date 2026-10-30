@@ -33,7 +33,9 @@ main content          — dashboard / plugin page / Settings
 2. **The host passes `api` and `params`** as properties (see
    [plugin-development.md](plugin-development.md#4-the-custom-element-contract)).
 3. **The host does not read business data.** Everything a surface shows, it gets
-   from Moonraker itself.
+   from Moonraker itself. The only exception is the opaque fleet index (tags and
+   search text that fleet panels publish; the host never interprets them — see
+   [architecture.md](architecture.md#fleet-index)).
 4. **A single visual language** — the panel (see
    [i18n-and-theming.md](i18n-and-theming.md#panel-language)).
 5. The host mounts the element when the surface appears on screen and unmounts it
@@ -341,6 +343,10 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   not recommended yet (guards of plugins unaware of the target printer would
   decide based on the active one — see
   [guards.md](guards.md#target-scoped-guards)).
+- To take part in the fleet **search and filters**, publish an index from the panel
+  with `api.fleet.publish(params.printerId, { tags, searchText })` (in an
+  `$effect`/`connectedCallback`) and call `api.fleet.retract(params.printerId)` when
+  the panel is removed. See [plugin-api.md](plugin-api.md#fleet).
 - Closing fleet = unmounting: subscriptions and streams are released. Cache what is
   expensive to re-create (at module level).
 - The panel height follows its content; the host draws the card header (printer
