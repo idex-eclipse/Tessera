@@ -374,68 +374,271 @@ function createPrompter() {
   };
 }
 
+// --- TUI (kiauh-style boxes) ---------------------------------------
+
+/** Inner width of every box: 57 columns with the borders, like kiauh. */
+const BOX = 55;
+/** Two-column layout of the main menu: actions | status. */
+const MAIN_COLS = [18, 36];
+
+const useColor = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+const paint = (code) => (s) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
+const c = { green: paint(32), red: paint(31), yellow: paint(33), cyan: paint(36), dim: paint(2) };
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+const visible = (s) => s.replace(ANSI_RE, '').length;
+
+/** Pads to `width` visible columns; too long → plain text cut with '…'. */
+function fit(s, width) {
+  if (visible(s) > width) s = s.replace(ANSI_RE, '').slice(0, width - 1) + '…';
+  return s + ' '.repeat(width - visible(s));
+}
+
+/** Word-wraps plain text into at most `maxLines` lines; the rest is cut by row(). */
+function wrap(text, width, maxLines) {
+  const out = [];
+  let line = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (line && line.length + 1 + word.length > width) {
+      if (out.length === maxLines - 1) {
+        out.push(`${line} ${word}`);
+        return out;
+      }
+      out.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+function center(s, width = BOX) {
+  const left = Math.max(0, Math.floor((width - visible(s)) / 2));
+  return fit(' '.repeat(left) + s, width);
+}
+
+const boxTop = () => `╔${'═'.repeat(BOX)}╗`;
+const boxBottom = () => `╚${'═'.repeat(BOX)}╝`;
+const rule = (cols = [BOX], joint = '') => `╟${cols.map((w) => '─'.repeat(w)).join(joint)}╢`;
+// Text cut with '…' keeps one space before the border, like kiauh.
+const cell = (s, width) => (visible(s) > width ? `${fit(s, width - 1)} ` : fit(s, width));
+const row = (cells, cols = [BOX]) => `║${cells.map((s, i) => cell(s, cols[i])).join('│')}║`;
+
+/** "║ ~~~~~~ [ Text ] ~~~~~~ ║" */
+function title(text) {
+  const mid = ` [ ${text} ] `;
+  const rest = BOX - 2 - mid.length;
+  const left = Math.floor(rest / 2);
+  return row([` ${'~'.repeat(left)} [ ${c.cyan(text)} ] ${'~'.repeat(rest - left)} `]);
+}
+
+function renderHeader() {
+  return [
+    boxTop(),
+    title('TESSERA'),
+    row([center('Tessera Extensions Manager')]),
+    row([` ${'~'.repeat(BOX - 2)} `]),
+    boxBottom(),
+  ];
+}
+
+/** "idex-eclipse/Tessera-Ext" for GitHub raw URLs, a short form otherwise. */
+function registryLabel(url) {
+  if (!url) return 'unreachable';
+  if (url.protocol === 'file:') return 'local file';
+  if (url.hostname === 'raw.githubusercontent.com') return url.pathname.split('/').slice(1, 3).join('/');
+  return url.host;
+}
+
+function statusText(r) {
+  if (r.state === 'installed') return c.green(`Installed ${r.version}`);
+  if (r.state === 'update') return c.yellow(`Update ${r.installedVersion} → ${r.version}`);
+  if (r.state === 'local') return c.dim(`Local ${r.installedVersion}`);
+  return c.red('Not installed');
+}
+
+function renderMain(rows, registryUrl) {
+  const left = ['', '  1) [Install]', '  2) [Update]', '  3) [Remove]', '', '  R) [Refresh]'];
+  const nameWidth = Math.min(14, Math.max(0, ...rows.map((r) => r.name.length)));
+  const right = [''];
+  for (const r of rows.slice(0, 8)) right.push(` ${r.name.slice(0, nameWidth).padStart(nameWidth)}: ${statusText(r)}`);
+  if (rows.length > 8) right.push(c.dim(` … ${rows.length - 8} more`));
+  if (rows.length === 0) right.push(c.dim(registryUrl ? ' Registry is empty' : ' No plugins installed'));
+
+  const lines = [boxTop(), title('Main Menu'), rule(MAIN_COLS, '┬')];
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    lines.push(row([left[i] ?? '', right[i] ?? ''], MAIN_COLS));
+  }
+  lines.push(
+    rule(MAIN_COLS, '┼'),
+    row([` Plugin API v${HOST_PLUGIN_API}`, ` Registry: ${registryUrl ? registryLabel(registryUrl) : c.red('unreachable')}`], MAIN_COLS),
+    rule(MAIN_COLS, '┴'),
+    row([center('Q) Quit')]),
+    boxBottom(),
+  );
+  return lines;
+}
+
+/** Submenu: numbered plugin list + extra actions + "B) « Back". */
+function renderList(heading, items, emptyText, extra = []) {
+  const lines = [boxTop(), title(heading), rule(), row([''])];
+  if (items.length === 0) lines.push(row([c.dim(`  ${emptyText}`)]));
+  items.forEach((item, i) => {
+    lines.push(row([`  ${i + 1}) [${item.label}]${item.note ? ` ${item.note}` : ''}`]));
+    for (const part of wrap(item.description ?? '', BOX - 7, 2)) lines.push(row([c.dim(`      ${part}`)]));
+  });
+  if (extra.length) lines.push(row(['']), ...extra.map((e) => row([`  ${e}`])));
+  lines.push(row(['']), rule(), row([center('B) « Back')]), boxBottom());
+  return lines;
+}
+
+const installItems = (rows) =>
+  rows.filter((r) => r.entry).map((r) => ({
+    row: r,
+    label: r.name,
+    note: r.state === 'available' ? c.dim(r.version) : c.green(`(installed ${r.installedVersion})`),
+    description: r.description,
+  }));
+
+const updateItems = (rows) =>
+  rows.filter((r) => r.entry && (r.state === 'installed' || r.state === 'update')).map((r) => ({
+    row: r,
+    label: r.name,
+    note: r.state === 'update' ? c.yellow(`${r.installedVersion} → ${r.version}`) : c.green(`${r.version} up to date`),
+  }));
+
+const removeItems = (rows) =>
+  rows.filter((r) => r.state !== 'available').map((r) => ({
+    row: r,
+    label: r.name,
+    note: c.dim(r.state === 'local' ? `${r.installedVersion} (local)` : r.installedVersion),
+  }));
+
+// --- Menu loop -----------------------------------------------------
+
+/**
+ * kiauh-like navigation: type a letter or number, press Enter.
+ * Screens: main → install | update | remove → back to main.
+ * The screen is not cleared, so install output stays visible above the
+ * redrawn menu.
+ */
 async function cmdMenu() {
   const prompt = createPrompter();
+  const print = (lines) => console.log(lines.join('\n'));
+  const ask = async () => {
+    const answer = await prompt.ask('###### Perform action: ');
+    // A terminal echoes the typed line; piped input does not — echo it so
+    // logs read like an interactive session.
+    if (!process.stdin.isTTY) console.log(answer ?? '');
+    return answer?.trim().toLowerCase() ?? null;
+  };
+  const invalid = () => console.log('###### Invalid input!');
+
+  // The registry is fetched once and on R) Refresh, not on every redraw.
+  let registry = null;
+  async function refresh() {
+    try {
+      registry = await loadRegistry();
+    } catch (e) {
+      registry = null;
+      console.error(`[tessera-ext] registry: ${e.message}`);
+    }
+  }
+  const status = () => collectStatus(registry?.plugins ?? [], scanInstalled());
+  const needRegistry = () => {
+    if (!registry) console.error('[tessera-ext] registry is unreachable — press R in the main menu to retry');
+    return Boolean(registry);
+  };
+
   let changed = false;
+  /** Runs one action; a failure (bad hash, network) must not close the menu. */
+  async function act(fn) {
+    try {
+      if (await fn()) changed = true;
+    } catch (e) {
+      console.error(`[tessera-ext] ${e.message}`);
+    }
+  }
+  const installEntry = async (entry, opts) => {
+    const done = await install(entry, registry.url, opts);
+    if (done) scanExtensions();
+    return done;
+  };
+  const confirm = async (question) => {
+    const raw = await prompt.ask(`###### ${question} (y/N): `);
+    if (!process.stdin.isTTY) console.log(raw ?? '');
+    const a = raw?.trim().toLowerCase();
+    return a === 'y' || a === 'yes';
+  };
+
+  await refresh();
+  let screen = 'main';
+  print(renderHeader());
+
   try {
     for (;;) {
-      const { url, plugins } = await loadRegistry();
-      const rows = collectStatus(plugins, scanInstalled());
+      const rows = status();
 
-      console.log(`\nTessera plugins — registry: ${url.href}`);
-      if (rows.length === 0) console.log('  (registry is empty)');
-      const nameWidth = Math.max(4, ...rows.map((r) => r.name.length));
-      const stateWidth = Math.max(9, ...rows.map((r) => stateLabel(r).length));
-      rows.forEach((r, i) => {
-        const state = stateLabel(r).padEnd(stateWidth);
-        console.log(`  ${String(i + 1).padStart(2)}) ${r.name.padEnd(nameWidth)}  ${r.version.padEnd(8)} ${state} ${r.description}`);
-      });
+      if (screen === 'main') {
+        print(renderMain(rows, registry?.url));
+        const a = await ask();
+        if (a === null || a === 'q') break;
+        if (a === '1') screen = 'install';
+        else if (a === '2') screen = 'update';
+        else if (a === '3') screen = 'remove';
+        else if (a === 'r') await refresh();
+        else invalid();
+        continue;
+      }
 
-      const answer = (await prompt.ask('\nNumber = install / update / remove, a = update all, q = quit: '))?.trim().toLowerCase();
-      if (answer == null || answer === '' || answer === 'q') break;
+      const items = screen === 'install' ? installItems(rows)
+        : screen === 'update' ? updateItems(rows)
+          : removeItems(rows);
+      const heading = { install: 'Installation Menu', update: 'Update Menu', remove: 'Remove Menu' }[screen];
+      const empty = screen === 'install'
+        ? (registry ? 'Registry is empty' : 'Registry is unreachable')
+        : 'No plugins installed';
+      print(renderList(heading, items, empty, screen === 'update' && items.length ? ['A) [Update all]'] : []));
 
-      try {
-        if (answer === 'a') {
-          changed = (await cmdUpdate(null, { all: true, quiet: true })) || changed;
-          continue;
-        }
-        const row = rows[Number(answer) - 1];
-        if (!/^\d+$/.test(answer) || !row) {
-          console.log(`Unknown choice "${answer}"`);
-          continue;
-        }
+      const a = await ask();
+      if (a === null) break;
+      if (a === 'b') {
+        screen = 'main';
+        continue;
+      }
+      if (screen === 'update' && a === 'a' && items.length) {
+        if (needRegistry()) await act(() => cmdUpdate(null, { all: true, quiet: true }));
+        continue;
+      }
+      const item = /^\d+$/.test(a) ? items[Number(a) - 1] : undefined;
+      if (!item) {
+        invalid();
+        continue;
+      }
+      const r = item.row;
 
-        if (row.state === 'available') {
-          if (await install(row.entry, url)) {
-            scanExtensions();
-            changed = true;
-          }
-          continue;
-        }
-
-        const options = row.state === 'update' ? 'u = update, r = remove' : 'r = remove';
-        const action = (await prompt.ask(`${row.name}: ${options}, Enter = back: `))?.trim().toLowerCase();
-        if (action === 'u' && row.state === 'update') {
-          if (await install(row.entry, url)) {
-            scanExtensions();
-            changed = true;
-          }
-        } else if (action === 'r') {
-          const sure = (await prompt.ask(`Remove ${row.id}? [y/N]: `))?.trim().toLowerCase();
-          if (sure === 'y' || sure === 'yes') {
-            removeInstalled(row.id);
-            changed = true;
-          }
-        }
-      } catch (e) {
-        // One failed action (bad hash, network) must not close the menu.
-        console.error(`[tessera-ext] ${e.message}`);
+      if (screen === 'install') {
+        if (!needRegistry()) continue;
+        if (r.state === 'available') await act(() => installEntry(r.entry));
+        else if (await confirm(`${r.name} is installed. Reinstall?`)) await act(() => installEntry(r.entry, { force: true }));
+      } else if (screen === 'update') {
+        if (!needRegistry()) continue;
+        if (r.state === 'installed') console.log(`###### ${r.name} is up to date`);
+        else await act(() => installEntry(r.entry));
+      } else if (await confirm(`Remove ${r.name}?`)) {
+        await act(() => {
+          removeInstalled(r.id);
+          return true;
+        });
       }
     }
   } finally {
     prompt.close();
   }
-  if (changed) console.log(`\n${UI_HINT}`);
+  if (changed) console.log(UI_HINT);
+  console.log('###### Happy printing!');
 }
 
 const USAGE = `Usage: tessera-ext [command]
