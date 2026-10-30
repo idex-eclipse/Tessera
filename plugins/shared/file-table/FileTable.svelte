@@ -578,7 +578,10 @@ let {
                     {@const arr = asStrings((f.raw ?? f)[col.key])}
                     <td>{#if arr.length}<span class="dots">{#each arr as c, i (`${col.key}-${i}`)}<span class="dot" style="background: {safeColor(c)}"></span>{/each}</span>{:else}—{/if}</td>
                   {:else if col.key === 'filament_weight' || col.key === 'filament_length'}
-                    {@const arr = asNumbers((f.raw ?? f).filament_length ?? (Array.isArray((f.raw ?? f).filament_total) ? (f.raw ?? f).filament_total : undefined))}
+                    {@const m = f.raw ?? f}
+                    {@const arr = asNumbers(col.key === 'filament_weight'
+                      ? m.filament_weight
+                      : m.filament_length ?? (Array.isArray(m.filament_total) ? m.filament_total : undefined))}
                     <td>{#if arr.length}<span class="chips">{#each arr as n, i (`w-${i}`)}<span class="chip">{col.key==='filament_weight'?`${n.toFixed(2)} g`:`${(n/1000).toFixed(2)} m`}</span>{/each}</span>{:else}—{/if}</td>
                   {:else if col.key === 'filament_total'}
                     {@const arr = asNumbers((f.raw ?? f).filament_total)}
