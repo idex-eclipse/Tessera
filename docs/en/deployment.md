@@ -246,7 +246,7 @@ The registry's CI (or an author, locally) packs the built plugin folder:
 
 ```bash
 node tools/registry-pack.cjs path/to/built-plugin --dir hello \
-  --url-base https://github.com/<org>/tessera-plugins/releases/download/hello-1.2.0 \
+  --url-base https://github.com/<org>/tessera-ext/releases/download/hello-1.2.0 \
   --out registry/
 ```
 

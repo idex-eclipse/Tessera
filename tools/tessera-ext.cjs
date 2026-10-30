@@ -30,7 +30,7 @@ const { scanExtensions, EXTENSIONS_DIR, ORIGIN_FILE } = require('./extensions-sy
 
 const REGISTRY_URL =
   process.env.TESSERA_REGISTRY_URL ||
-  'https://raw.githubusercontent.com/idex-eclipse/tessera-plugins/main/registry/registry.json';
+  'https://raw.githubusercontent.com/idex-eclipse/Tessera-Ext/main/registry/registry.json';
 
 /** Major version of the plugin contract (PluginApi + CE contract) this host implements. */
 const HOST_PLUGIN_API = 1;
