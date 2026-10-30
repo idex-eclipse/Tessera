@@ -226,6 +226,14 @@ const en: I18nMessages = {
     editPanelsEmpty: 'No panels available',
     panelPluginUnloaded: 'Unloaded',
     panelHidden: 'Hidden',
+    search: {
+      placeholder: 'Search printer or file',
+      clear: 'Clear search',
+    },
+    filters: 'Filters',
+    count: '{shown} of {total}',
+    noMatches: 'No printers match',
+    resetFilters: 'Reset',
   },
 };
 

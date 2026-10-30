@@ -12,6 +12,7 @@
 
   import type { AppContext } from './app-context.ts';
   import { provideAppContext } from './app-context.ts';
+  import { createFleetIndex } from './core/fleet-index.svelte.ts';
   import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
   import { createHostHotkeys } from './core/host-hotkeys.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
@@ -64,10 +65,19 @@
     hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route }),
   });
 
-  const ctx: AppContext = { settings, printerManager, registry, ui, i18n, loader, router, hotkeys };
+  const fleetIndex = createFleetIndex();
+
+  const ctx: AppContext = {
+    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex,
+  };
   provideAppContext(ctx);
 
   onMount(() => hotkeys.start());
+
+  // Записи удалённых принтеров не должны оставаться в fleet-индексе.
+  $effect(() =>
+    printerManager.onPrintersChange((printers) => fleetIndex.prune(printers.map((p) => p.id))),
+  );
 
   // Любая смена маршрута (hotkey «открыть страницу», кнопка «назад» и т.п.) выводит из
   // fleet-режима: он перекрывает страницу, и переход иначе остался бы незамеченным.

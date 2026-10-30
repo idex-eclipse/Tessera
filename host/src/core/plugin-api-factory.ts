@@ -1,4 +1,5 @@
 import type {
+  FleetIndexEntry,
   MoonrakerProxyHandle,
   PluginApi,
   PluginManifest,
@@ -347,6 +348,18 @@ export function createPluginApi(
 
     get theme() {
       return { current: ui.theme };
+    },
+
+    fleet: {
+      publish(printerId: string, entry: FleetIndexEntry): void {
+        // принтер мог быть удалён между рендером панели и публикацией
+        if (!printerManager.printers.some((p) => p.id === printerId)) return;
+        ctx.fleetIndex.publish(pluginId, printerId, entry);
+      },
+
+      retract(printerId: string): void {
+        ctx.fleetIndex.retract(pluginId, printerId);
+      },
     },
 
     guards: {

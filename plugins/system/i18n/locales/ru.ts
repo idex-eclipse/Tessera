@@ -382,6 +382,11 @@ export const ru = {
       klippyDisconnected: 'Klipper отключён',
       klippyUnknown: 'Состояние Klipper неизвестно',
     },
+    filter: {
+      printing: 'Печатает',
+      idle: 'Простаивает',
+      klippyError: 'Ошибка Klipper',
+    },
   },
 
   tmf: {

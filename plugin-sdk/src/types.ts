@@ -7,6 +7,9 @@
  * Important:
  * - No plugin-to-plugin bus
  * - No shared state
+ *   (the only plugin → host channel is the opaque fleet index, api.fleet:
+ *   the host stores tags/searchText for fleet search and filters and never
+ *   interprets them)
  * - No permissions
  * - No capabilities/priority
  * - Widgets are described only by type + provider
@@ -366,6 +369,40 @@ export interface MoonrakerProxyHandle {
 }
 
 /**
+ * Фильтр-тег fleet-индекса. Хост не знает смысла `id`: он только строит из
+ * тегов кнопки фильтров (подпись — i18n.t(labelKey), иконка — из набора
+ * plugins/shared/icons по имени `icon`) и сравнивает id.
+ */
+export interface FleetTag {
+  id: string;
+  labelKey: string;
+  icon?: string;
+  /** Порядок кнопки среди остальных тегов (меньше — левее). По умолчанию 0. */
+  order?: number;
+}
+
+/**
+ * Запись fleet-индекса принтера: непрозрачные данные для поиска и фильтров.
+ * Хост хранит и сопоставляет их, но не интерпретирует (это единственный
+ * канал плагин → хост, см. docs/architecture.md).
+ */
+export interface FleetIndexEntry {
+  tags: FleetTag[];
+  /** Текст для поиска (подстрока без учёта регистра). Пустая строка — нет. */
+  searchText: string;
+}
+
+/**
+ * Публикация индекса для fleet-режима. Запись привязана к паре
+ * (плагин, принтер): publish заменяет прежнюю запись целиком,
+ * retract снимает её (вызывать при размонтировании панели).
+ */
+export interface PluginFleetApi {
+  publish(printerId: string, entry: FleetIndexEntry): void;
+  retract(printerId: string): void;
+}
+
+/**
  * Runtime API handed to a plugin.
  */
 export interface PluginApi {
@@ -401,6 +438,8 @@ export interface PluginApi {
   settingsFor(printerId: string): PluginSettingsApi;
 
   i18n: PluginI18nApi;
+  /** Fleet-индекс: публикация тегов и текста для поиска/фильтров fleet-режима. */
+  readonly fleet: PluginFleetApi;
   guards: {
     resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void;
   };

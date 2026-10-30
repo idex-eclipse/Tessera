@@ -390,6 +390,11 @@ export const en = {
       klippyDisconnected: 'Klipper disconnected',
       klippyUnknown: 'Klipper state unknown',
     },
+    filter: {
+      printing: 'Printing',
+      idle: 'Idle',
+      klippyError: 'Klipper error',
+    },
   },
 
   tmf: {

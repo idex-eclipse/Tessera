@@ -223,6 +223,14 @@ const ru: I18nMessages = {
     editPanelsEmpty: 'Нет доступных панелей',
     panelPluginUnloaded: 'Не загружен',
     panelHidden: 'Скрыт',
+    search: {
+      placeholder: 'Поиск принтера или файла',
+      clear: 'Очистить поиск',
+    },
+    filters: 'Фильтры',
+    count: '{shown} из {total}',
+    noMatches: 'Нет подходящих принтеров',
+    resetFilters: 'Сбросить',
   },
 };
 

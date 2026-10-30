@@ -8,6 +8,8 @@
 
   import { getAppContext } from '../../app-context.ts';
   import { getPluginApi } from '../../core/plugin-api-cache.ts';
+  import { collectTags, matchPrinter } from '../../core/fleet-filter.ts';
+  import type { FleetTag } from '../../../../plugin-sdk/src/types.ts';
 
   import Icon from '../../../../plugins/shared/icons/Icon.svelte';
   import ConnectionStatus from '../connection-status/ConnectionStatus.svelte';
@@ -47,6 +49,58 @@
       connections = states;
     });
   });
+
+  // ---------- Search & filters (in-memory, сбрасываются при закрытии drawer) ----------
+  //
+  // Хост не знает смысла тегов и searchText: их публикуют панели плагинов
+  // (api.fleet.publish), здесь они только сопоставляются как строки.
+
+  let query = $state('');
+  let activeTags = $state<ReadonlySet<string>>(new Set());
+  let searchEl = $state<HTMLInputElement | null>(null);
+
+  let entries = $derived(printers.map((p) => ctx.fleetIndex.forPrinter(p.id)));
+  let tagCounts = $derived(collectTags(entries));
+
+  // Тег, который был виден, но у которого сейчас 0 принтеров, остаётся кнопкой
+  // (пока он активен), иначе фильтр «пропал бы» вместе с последним совпадением.
+  let seenTags = $state<Record<string, FleetTag>>({});
+  $effect(() => {
+    const fresh = tagCounts.filter(({ tag }) => seenTags[tag.id]?.labelKey !== tag.labelKey);
+    if (fresh.length === 0) return;
+    const next = { ...seenTags };
+    for (const { tag } of fresh) next[tag.id] = tag;
+    seenTags = next;
+  });
+
+  let filterButtons = $derived.by(() => {
+    const live = new Set(tagCounts.map(({ tag }) => tag.id));
+    const kept = [...activeTags]
+      .filter((id) => !live.has(id) && seenTags[id])
+      .map((id) => ({ tag: seenTags[id]!, count: 0 }));
+    return [...tagCounts, ...kept];
+  });
+
+  let visibleIds = $derived(
+    new Set(
+      printers
+        .filter((p, i) => matchPrinter(p, entries[i] ?? null, query, activeTags))
+        .map((p) => p.id),
+    ),
+  );
+  let filtering = $derived(query.trim() !== '' || activeTags.size > 0);
+
+  function toggleTag(id: string): void {
+    const next = new Set(activeTags);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    activeTags = next;
+  }
+
+  function clearQuery(): void {
+    query = '';
+    searchEl?.focus();
+  }
 
   // ---------- Fleet panel layout (device-global, in UiState) ----------
 
@@ -160,6 +214,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       if (editorOpen) editorOpen = false;
+      else if (query && document.activeElement === searchEl) query = '';
       else handleClose();
     }
   }
@@ -267,7 +322,53 @@
 <div class="fleet-drawer">
   <div class="fleet-header">
     <h2 class="fleet-title">{i18n.t('fleet.title')}</h2>
+    {#if printers.length > 0}
+      <div class="fleet-search">
+        <span class="fleet-search-icon"><Icon name="search" size={16} /></span>
+        <input
+          class="fleet-search-input"
+          type="text"
+          dir="auto"
+          enterkeyhint="search"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder={i18n.t('fleet.search.placeholder')}
+          aria-label={i18n.t('fleet.search.placeholder')}
+          bind:this={searchEl}
+          bind:value={query}
+        />
+        {#if query}
+          <button
+            class="fleet-search-clear"
+            onclick={clearQuery}
+            title={i18n.t('fleet.search.clear')}
+            aria-label={i18n.t('fleet.search.clear')}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        {/if}
+      </div>
+    {/if}
     <div class="fleet-header-actions">
+      {#if filterButtons.length > 0}
+        <div class="fleet-filters" role="group" aria-label={i18n.t('fleet.filters')}>
+          {#each filterButtons as { tag, count } (tag.id)}
+            {@const label = i18n.t(tag.labelKey)}
+            <button
+              class="fleet-edit-btn fleet-filter-btn"
+              class:on={activeTags.has(tag.id)}
+              aria-pressed={activeTags.has(tag.id)}
+              onclick={() => toggleTag(tag.id)}
+              title={label}
+              aria-label={label}
+            >
+              {#if tag.icon}<Icon name={tag.icon} size={16} />{/if}
+              <span class="btn-label">{label}</span>
+              <span class="fleet-filter-count">{count}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       {#if registryPanels.length > 0}
         <button
           class="fleet-edit-btn"
@@ -276,7 +377,7 @@
           aria-label={i18n.t('fleet.editPanels')}
         >
           <Icon name="settings" size={16} />
-          <span>{i18n.t('fleet.editPanels')}</span>
+          <span class="btn-label">{i18n.t('fleet.editPanels')}</span>
         </button>
       {/if}
       <button class="fleet-close" onclick={handleClose} aria-label={i18n.t('fleet.close')}>
@@ -290,12 +391,39 @@
       <p>{i18n.t('fleet.empty')}</p>
     </div>
   {:else}
+    {#if filtering}
+      <div class="fleet-result" role="status">
+        <span>
+          {visibleIds.size === 0
+            ? i18n.t('fleet.noMatches')
+            : i18n.t('fleet.count', { shown: visibleIds.size, total: printers.length })}
+        </span>
+        <button
+          class="fleet-result-reset"
+          onclick={() => {
+            query = '';
+            activeTags = new Set();
+          }}
+        >
+          {i18n.t('fleet.resetFilters')}
+        </button>
+      </div>
+    {/if}
     <div class="fleet-grid">
       {#each printers as printer (printer.id)}
         {@const connection = connections[printer.id] ?? null}
         {@const isActive = printer.id === activePrinterId}
 
-        <div class="fleet-card" class:active={isActive}>
+        <!--
+          Отфильтрованные карточки скрываются ТОЛЬКО через CSS (display:none),
+          без {#if}: панели остаются смонтированными и держат подписки
+          (core-keeper хранит ядра лишь для 4 принтеров).
+        -->
+        <div
+          class="fleet-card"
+          class:active={isActive}
+          class:filtered-out={!visibleIds.has(printer.id)}
+        >
           <div
             class="fleet-card-header"
             onclick={() => handleActivate(printer.id)}
@@ -512,6 +640,99 @@
   }
   .fleet-close:hover { background: var(--bg-surface-hover); }
 
+  /* Search + filters live in the header. Logical properties only: RTL mirrors for free. */
+  .fleet-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 0 1 280px;
+    min-width: 140px;
+  }
+  .fleet-search-icon {
+    position: absolute;
+    inset-inline-start: var(--space-sm);
+    display: flex;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+  .fleet-search-input {
+    width: 100%;
+    min-height: 36px;
+    padding-block: var(--space-xs);
+    padding-inline: calc(var(--space-sm) + 22px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+  }
+  .fleet-search-input:focus { outline: none; border-color: var(--border-focus); }
+  .fleet-search-clear {
+    position: absolute;
+    inset-inline-end: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .fleet-search-clear:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+
+  .fleet-filters {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  .fleet-filter-btn.on {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+  .fleet-filter-count {
+    min-width: 18px;
+    padding-inline: 5px;
+    border-radius: 999px;
+    background: var(--bg-surface-hover);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  .fleet-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-lg) 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .fleet-result-reset {
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .fleet-result-reset:hover { text-decoration: underline; }
+
+  /* Narrow screens: header buttons collapse to icons, search takes its own row. */
+  @media (max-width: 768px) {
+    .fleet-header { flex-wrap: wrap; }
+    .fleet-search { order: 3; flex: 1 1 100%; }
+    .fleet-edit-btn {
+      min-width: 36px;
+      min-height: 36px;
+      justify-content: center;
+    }
+    .fleet-edit-btn .btn-label { display: none; }
+  }
+
   .fleet-empty {
     display: flex;
     align-items: center;
@@ -544,6 +765,7 @@
     transition: border-color var(--transition-fast);
   }
   .fleet-card.active { border-color: var(--accent); }
+  .fleet-card.filtered-out { display: none; }
   .fleet-card-header {
     display: flex;
     align-items: center;
