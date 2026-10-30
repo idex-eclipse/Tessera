@@ -210,7 +210,7 @@ regex-фильтры сообщений и настройки reverse/autoscroll
 curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
   -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
 ```
-
+Установщик открывает меню в стиле kiauh — **Install / Update / Remove / Settings** (ветка, плагины по URL) **/ Extensions**; после установки это команда `tessera` (подробнее: [docs/ru/deployment.md](docs/ru/deployment.md)). Install и Update **идемпотентны**. При установке и обновлении установщик:
 Установщик **идемпотентен** — повторный запуск обновляет всё на месте. Он:
 
 1. ставит системные зависимости (`git`, `curl`, `nginx`) и Node.js 20, если их нет;

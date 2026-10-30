@@ -210,7 +210,7 @@ Optional companions:
 curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
   -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
 ```
-
+The installer opens a kiauh-style menu — **Install / Update / Remove / Settings** (branch, plugins by URL) **/ Extensions**; after installation it is the `tessera` command (details: [docs/en/deployment.md](docs/en/deployment.md)). Install and Update are **idempotent**. On install and update the installer will:
 The installer is **idempotent** — re-running it updates everything in place. It will:
 
 1. install system dependencies (`git`, `curl`, `nginx`) and Node.js 20 if missing;

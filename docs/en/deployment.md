@@ -172,16 +172,10 @@ module from another origin. The installer also writes `/extensions/policy.json`
 (`{ "allowRemotePlugins": false }`), and the UI hides the button. Without
 `policy.json` (dev server, manual setup) the button is shown.
 
-The installer asks this question along with the other installation settings and
-remembers the answer: the next run offers the previous choice as the default. To
-change only this setting, without a rebuild, run:
-
-```bash
-bash /tmp/tessera-install.sh --plugins-policy
-```
-
-It asks one question, rewrites `policy.json`, toggles the CSP in the nginx config and
-reloads nginx. Reload the UI page afterwards.
+The setting is changed in the installer menu: `tessera` → **S) Settings** →
+**2) Plugins by URL**. No rebuild is needed: the installer rewrites `policy.json`,
+toggles the CSP in the nginx config and reloads nginx. Reload the UI page afterwards.
+Without the menu: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/install.sh --plugins-policy`.
 
 ### Updating
 
@@ -222,19 +216,53 @@ plugin `@core/system` is *pinned*: it cannot be disabled or removed.
 
 A script for Armbian/Debian: clones the repository, builds the host, configures
 nginx (including `/extensions/` and WebSocket proxying) and, optionally, the Klipper
-configs. Running it again = updating (idempotent). Main environment variables:
+configs. It runs as a kiauh-style menu:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+  -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
+```
+
+After installation the `tessera` command opens the same menu.
+
+| Item | What it does |
+|---|---|
+| **1) Install** | asks the directory, nginx port, Moonraker address and Klipper config directory; installs dependencies, clones, builds, configures nginx and Klipper, creates the `tessera` and `tessera-ext` commands |
+| **2) Update** | shows the installed commit and the branch's latest commit on GitHub. *Update Tessera* — fetch → build → nginx → Klipper config, no questions. *Rebuild only* — rebuild without fetching |
+| **3) Remove** | lists what will be removed and asks for confirmation: the nginx site and its logs, `[include tessera-shell.cfg]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`) and `tessera-shell.cfg`, the `tessera`/`tessera-ext` commands, the installation directory, `install.conf`. Installed extensions can be kept: they are moved to `~/tessera-extensions-backup`. nginx, Node.js, git and the `shapers/` graphs stay |
+| **S) Settings** | branch (list of branches on GitHub; Update is offered after a change) and plugins by URL (applied at once, no rebuild) |
+| **E) Extensions** | the `tessera-ext` plugin manager |
+
+Navigation works like kiauh: type a letter or number, then press Enter. Each action
+runs on its own: an error ends the action and returns to the menu.
+
+Settings are stored in `~/.config/tessera/install.conf` (`KEY=value`). Update reads
+them and asks nothing. Without the file (an installation made before the menu
+existed), values are detected from the system: branch from git, port and Moonraker
+from the nginx config, plugins by URL from `policy.json`.
+
+Without the menu (scripts, CI):
+
+```bash
+bash install.sh install | update | rebuild | remove | extensions
+TESSERA_NO_PROMPT=1 bash install.sh      # no terminal, no questions: install or update
+```
+
+Environment variables override `install.conf`:
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `TESSERA_DIR` | `~/tessera` | installation directory (`extensions/` is inside) |
+| `TESSERA_BRANCH` | `main` | branch |
 | `TESSERA_PORT` | `8000` | nginx port |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker address |
+| `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | Klipper config directory |
 | `TESSERA_SKIP_NGINX` | `0` | do not configure nginx |
-| `TESSERA_NO_PROMPT` | `0` | non-interactive mode |
-| `TESSERA_ALLOW_REMOTE_PLUGINS` | previous choice (`0` on first install) | `1` = allow install by URL (no CSP); `0` = only `/extensions/`. Without it the installer asks |
+| `TESSERA_NO_PROMPT` | `0` | ask no questions |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | previous choice (`0` on first install) | `1` = allow install by URL (no CSP); `0` = only `/extensions/` |
 
-The script does not run as root. It regenerates `extensions/index.json` on every
-run. Details are in `deploy/install.sh` itself.
+The script does not run as root. Every install and update regenerates
+`extensions/index.json`. Details are in `deploy/install.sh` itself.
 
 ---
 

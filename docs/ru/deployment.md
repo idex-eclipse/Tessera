@@ -168,16 +168,10 @@ Settings → Plugins → **Add by URL (advanced)**: хост загружает 
 (`{ "allowRemotePlugins": false }`), и UI прячет кнопку. Если `policy.json` нет
 (dev-сервер, ручная настройка), кнопка видна.
 
-Установщик задаёт этот вопрос вместе с остальными параметрами установки и
-запоминает ответ: при следующем запуске по умолчанию предлагается прежний выбор.
-Чтобы поменять только эту настройку, без пересборки, запустите:
-
-```bash
-bash /tmp/tessera-install.sh --plugins-policy
-```
-
-Скрипт задаст один вопрос, перепишет `policy.json`, переключит CSP в конфиге nginx и
-перезагрузит nginx. После этого обновите страницу UI.
+Настройка меняется в меню установщика: `tessera` → **S) Settings** →
+**2) Plugins by URL**. Пересборка не нужна: установщик перепишет `policy.json`,
+переключит CSP в конфиге nginx и перезагрузит nginx. После этого обновите страницу
+UI. Без меню: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/install.sh --plugins-policy`.
 
 ### Обновление
 
@@ -219,19 +213,52 @@ bash /tmp/tessera-install.sh --plugins-policy
 
 Скрипт для Armbian/Debian: клонирует репозиторий, собирает хост, настраивает
 nginx (включая `/extensions/` и проксирование WebSocket) и, при желании,
-конфиги Klipper. Повторный запуск = обновление (идемпотентно). Основные
-переменные окружения:
+конфиги Klipper. Он запускается как меню в стиле kiauh:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+  -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
+```
+
+После установки то же меню открывает команда `tessera`.
+
+| Пункт | Что делает |
+|---|---|
+| **1) Install** | спрашивает каталог, порт nginx, адрес Moonraker, каталог конфигов Klipper; ставит зависимости, клонирует, собирает, настраивает nginx и Klipper, создаёт команды `tessera` и `tessera-ext` |
+| **2) Update** | показывает установленный коммит и последний коммит ветки на GitHub. *Update Tessera* — fetch → сборка → nginx → конфиг Klipper, без вопросов. *Rebuild only* — пересборка без обновления исходников |
+| **3) Remove** | показывает, что будет удалено, и просит подтверждения: сайт nginx и его логи, `[include tessera-shell.cfg]` из `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`) и `tessera-shell.cfg`, команды `tessera`/`tessera-ext`, каталог установки, `install.conf`. Установленные расширения можно сохранить — они переносятся в `~/tessera-extensions-backup`. nginx, Node.js, git и графики `shapers/` не удаляются |
+| **S) Settings** | ветка (список веток с GitHub; после смены предлагается Update) и плагины по URL (применяется сразу, без пересборки) |
+| **E) Extensions** | менеджер расширений `tessera-ext` |
+
+Навигация как в kiauh: буква или цифра, затем Enter. Каждое действие выполняется
+отдельно: ошибка завершает действие и возвращает в меню.
+
+Настройки хранятся в `~/.config/tessera/install.conf` (`KEY=value`). Update берёт
+их оттуда и ничего не спрашивает. Если файла нет (установка, сделанная до появления
+меню), значения определяются по системе: ветка — по git, порт и Moonraker — по
+конфигу nginx, плагины по URL — по `policy.json`.
+
+Без меню (скрипты, CI):
+
+```bash
+bash install.sh install | update | rebuild | remove | extensions
+TESSERA_NO_PROMPT=1 bash install.sh      # без терминала и вопросов: установка или обновление
+```
+
+Переменные окружения имеют приоритет над `install.conf`:
 
 | Переменная | По умолчанию | Смысл |
 |---|---|---|
 | `TESSERA_DIR` | `~/tessera` | каталог установки (внутри — `extensions/`) |
+| `TESSERA_BRANCH` | `main` | ветка |
 | `TESSERA_PORT` | `8000` | порт nginx |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | адрес Moonraker |
+| `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | каталог конфигов Klipper |
 | `TESSERA_SKIP_NGINX` | `0` | не настраивать nginx |
-| `TESSERA_NO_PROMPT` | `0` | неинтерактивный режим |
-| `TESSERA_ALLOW_REMOTE_PLUGINS` | прежний выбор (при первой установке `0`) | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/`. Без переменной установщик спрашивает |
+| `TESSERA_NO_PROMPT` | `0` | не задавать вопросов |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | прежний выбор (при первой установке `0`) | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/` |
 
-Скрипт не запускается от root. При каждом запуске он пересобирает
+Скрипт не запускается от root. При каждой установке и обновлении он пересобирает
 `extensions/index.json`. Подробности — в самом `deploy/install.sh`.
 
 ---
