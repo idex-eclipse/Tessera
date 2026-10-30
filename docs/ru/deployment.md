@@ -49,11 +49,20 @@ extensions/
 в `extensions/<dir>/`:
 
 ```bash
-node tools/tessera-ext.cjs list                 # плагины реестра + что установлено
-node tools/tessera-ext.cjs install acme/hello   # скачать → sha256 → extensions/hello/
-node tools/tessera-ext.cjs update --all         # или: update acme/hello
-node tools/tessera-ext.cjs remove acme/hello
+tessera-ext                     # интерактивное меню: номер = установить / обновить / удалить
+tessera-ext list                # плагины реестра + что установлено
+tessera-ext install hello       # скачать → sha256 → extensions/hello/
+tessera-ext update --all        # или: update hello
+tessera-ext remove hello
 ```
+
+Команду `tessera-ext` (`/usr/local/bin/tessera-ext`) создаёт `deploy/install.sh`.
+Она запускает [`deploy/install-ext.sh`](../../deploy/install-ext.sh), а тот —
+`tools/tessera-ext.cjs` из каталога установки. Плагин можно назвать полным id
+(`acme/hello`) или коротким именем (`hello`); неоднозначное имя — ошибка. Без
+команды `tessera-ext` (например, до обновления Tessera) работает
+`bash ~/tessera/deploy/install-ext.sh`. В конце `install.sh` предлагает сразу
+открыть меню.
 
 `index.json` CLI пересобирает сам. Дальше — Settings → Plugins → Refresh → Install.
 

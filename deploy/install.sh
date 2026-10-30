@@ -185,6 +185,21 @@ esac
 write_policy
 as_user "cd '$INSTALL_DIR' && node tools/extensions-sync.cjs" || warn "extensions index not generated"
 
+# `tessera-ext` command: plugin manager (deploy/install-ext.sh) bound to this installation.
+EXT_CMD=/usr/local/bin/tessera-ext
+{
+  printf '#!/usr/bin/env bash\n'
+  printf '# Installed by Tessera deploy/install.sh — plugin manager for %s\n' "$INSTALL_DIR"
+  printf 'export TESSERA_DIR="${TESSERA_DIR:-%s}"\n' "$INSTALL_DIR"
+  printf 'exec bash %q "$@"\n' "$INSTALL_DIR/deploy/install-ext.sh"
+} > /tmp/tessera-ext-cmd
+if $SUDO install -m 755 /tmp/tessera-ext-cmd "$EXT_CMD"; then
+  log "plugin manager: tessera-ext"
+else
+  warn "could not create $EXT_CMD — use: bash $INSTALL_DIR/deploy/install-ext.sh"
+fi
+rm -f /tmp/tessera-ext-cmd
+
 # ---------------------------------------------------------------- nginx
 if [ "$SKIP_NGINX" != 1 ]; then
   if command -v ss >/dev/null 2>&1 && ss -ltn | awk '{print $4}' | grep -qE "[:.]${PORT}$"; then
@@ -345,10 +360,17 @@ cat <<SUMMARY
 │ UI:         http://$HOST_IP:$PORT/
 │ dist:       $BUILD_DIR
 │ extensions: $INSTALL_DIR/extensions/
-│ Plugins:    node $INSTALL_DIR/tools/tessera-ext.cjs list|install <id>|update --all|remove <id>
+│ Plugins:    tessera-ext   (menu; or: tessera-ext install <name> | update --all | remove <name>)
 │ By URL:     $(remote_summary) — change: bash /tmp/tessera-install.sh --plugins-policy
 │ Update:     bash /tmp/tessera-install.sh (or re-download) — idempotent
 │ Uninstall:  remove sites-enabled/tessera symlink, '[include tessera*.cfg]'
-│             lines from printer.cfg, and directory $INSTALL_DIR
+│             lines from printer.cfg, /usr/local/bin/tessera-ext and directory $INSTALL_DIR
 ╰───────────────────────────────────────────────────────
 SUMMARY
+
+if [ -t 0 ] && [ "$NO_PROMPT" != 1 ]; then
+  yesno OPEN_EXT "Open the plugin manager now?" 0
+  if [ "$OPEN_EXT" = 1 ]; then
+    bash "$INSTALL_DIR/deploy/install-ext.sh" menu || warn "plugin manager exited with an error (Tessera itself is installed)"
+  fi
+fi

@@ -4,12 +4,14 @@
  * Tessera extensions CLI: installs prebuilt plugins from the plugin registry
  * into ~/extensions/ and regenerates ~/extensions/index.json.
  *
- * Usage:
+ * Usage (on the printer usually via the `tessera-ext` command, deploy/install-ext.sh):
+ *   node tools/tessera-ext.cjs              interactive menu (in a terminal)
  *   node tools/tessera-ext.cjs list
- *   node tools/tessera-ext.cjs install <id> [--force]
- *   node tools/tessera-ext.cjs update [<id> | --all]
- *   node tools/tessera-ext.cjs remove <id>
+ *   node tools/tessera-ext.cjs install <name> [--force]
+ *   node tools/tessera-ext.cjs update [<name> | --all]
+ *   node tools/tessera-ext.cjs remove <name>
  *   node tools/tessera-ext.cjs sync
+ * <name> is the plugin id ("tessera/spoolman") or its short name ("spoolman").
  *
  * Env:
  *   TESSERA_REGISTRY_URL — registry.json (https://, file:// or local path)
@@ -220,36 +222,91 @@ async function install(entry, registryUrl, { force = false } = {}) {
   return true;
 }
 
+/**
+ * One row per known plugin: registry entries first, then installed plugins
+ * the registry does not know (put there by hand, or dropped from the registry).
+ * state: 'available' | 'installed' | 'update' | 'local'
+ */
+function collectStatus(plugins, installed) {
+  const rows = plugins.map((p) => {
+    const cur = installed.get(p.id);
+    return {
+      id: p.id,
+      name: p.name || p.id,
+      version: p.version,
+      installedVersion: cur?.version,
+      state: !cur ? 'available' : cur.version === p.version ? 'installed' : 'update',
+      description: p.description || '',
+      entry: p,
+    };
+  });
+  for (const [id, cur] of installed) {
+    if (plugins.some((p) => p.id === id)) continue;
+    rows.push({
+      id, name: id, version: cur.version, installedVersion: cur.version,
+      state: 'local', description: cur.origin ? 'not in registry any more' : 'installed by hand', entry: null,
+    });
+  }
+  return rows;
+}
+
+function stateLabel(row) {
+  if (row.state === 'installed') return 'installed';
+  if (row.state === 'update') return `update ${row.installedVersion} → ${row.version}`;
+  if (row.state === 'local') return 'local';
+  return '';
+}
+
+/**
+ * Accepts the full id ("tessera/spoolman"), the folder name ("spoolman") or
+ * the last id segment, case-insensitive. Ambiguity is an error, not a guess.
+ */
+function resolveId(query, plugins, installed) {
+  if (!query) return null;
+  const known = new Map(); // id → dir
+  for (const p of plugins) known.set(p.id, p.dir);
+  for (const [id, cur] of installed) if (!known.has(id)) known.set(id, cur.dir);
+  if (known.has(query)) return query;
+
+  const q = query.toLowerCase();
+  const matches = [...known].filter(([id, dir]) =>
+    id.toLowerCase() === q || dir.toLowerCase() === q || id.split('/').pop().toLowerCase() === q);
+  if (matches.length === 1) return matches[0][0];
+  if (matches.length > 1) {
+    throw new Error(`"${query}" is ambiguous: ${matches.map(([id]) => id).join(', ')}`);
+  }
+  throw new Error(`"${query}" not found. Known: ${[...known.keys()].join(', ') || 'none'}`);
+}
+
+const UI_HINT = 'Open the UI: Settings → Plugins → Refresh, then Install / Update (F5 if the plugin was updated).';
+
 async function cmdList() {
   const { plugins } = await loadRegistry();
-  const installed = scanInstalled();
-  for (const p of plugins) {
-    const cur = installed.get(p.id);
-    const state = !cur ? '' : cur.version === p.version ? '[installed]' : `[update: ${cur.version} → ${p.version}]`;
-    console.log(`${p.id}@${p.version}  ${p.name ?? ''} ${state}`.trimEnd());
-    if (p.description) console.log(`    ${p.description}`);
-  }
-  for (const [id, cur] of installed) {
-    if (!plugins.some((p) => p.id === id)) {
-      console.log(`${id}@${cur.version}  [${cur.origin ? 'not in registry' : 'local'}]`);
-    }
+  for (const row of collectStatus(plugins, scanInstalled())) {
+    const state = stateLabel(row);
+    console.log(`${row.id}@${row.version}  ${row.name}${state ? `  [${state}]` : ''}`);
+    if (row.description) console.log(`    ${row.description}`);
   }
 }
 
-async function cmdInstall(id, opts) {
-  if (!id) throw new Error('Usage: install <id> [--force]');
+async function cmdInstall(query, opts) {
+  if (!query) throw new Error('Usage: install <id> [--force]');
   const { url, plugins } = await loadRegistry();
+  const id = resolveId(query, plugins, scanInstalled());
   const entry = plugins.find((p) => p.id === id);
-  if (!entry) throw new Error(`${id} not found in registry ${url.href}`);
-  if (await install(entry, url, opts)) scanExtensions();
+  if (!entry) throw new Error(`${id} is not in registry ${url.href}`);
+  if (await install(entry, url, opts)) {
+    scanExtensions();
+    console.log(UI_HINT);
+  }
 }
 
-async function cmdUpdate(id, opts) {
+async function cmdUpdate(query, opts) {
   const { url, plugins } = await loadRegistry();
   const installed = scanInstalled();
-  const ids = opts.all || !id
+  const ids = opts.all || !query
     ? [...installed].filter(([, cur]) => cur.origin).map(([pid]) => pid)
-    : [id];
+    : [resolveId(query, plugins, installed)];
 
   let changed = false;
   for (const pid of ids) {
@@ -264,17 +321,131 @@ async function cmdUpdate(id, opts) {
     }
     changed = (await install(entry, url, { force: opts.force })) || changed;
   }
-  if (changed) scanExtensions();
+  if (changed) {
+    scanExtensions();
+    if (!opts.quiet) console.log(UI_HINT);
+  }
+  return changed;
 }
 
-function cmdRemove(id) {
-  if (!id) throw new Error('Usage: remove <id>');
+function removeInstalled(id) {
   const cur = scanInstalled().get(id);
   if (!cur) throw new Error(`${id} is not installed`);
   rmrf(path.join(EXTENSIONS_DIR, cur.dir));
   console.log(`Removed ${id} (extensions/${cur.dir})`);
   scanExtensions();
 }
+
+async function cmdRemove(query) {
+  if (!query) throw new Error('Usage: remove <id>');
+  const installed = scanInstalled();
+  // Removal must work offline: fall back to installed plugins only.
+  const plugins = await loadRegistry().then((r) => r.plugins).catch(() => []);
+  removeInstalled(resolveId(query, plugins, installed));
+}
+
+// ------------------------------------------------------------------
+// Interactive menu
+// ------------------------------------------------------------------
+
+/**
+ * Line reader that also works with piped input (tests, scripts): queued
+ * lines are consumed in order, end of input answers null (= quit).
+ */
+function createPrompter() {
+  const readline = require('readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
+  const lines = [];
+  const waiters = [];
+  let closed = false;
+  rl.on('line', (line) => (waiters.length ? waiters.shift()(line) : lines.push(line)));
+  rl.on('close', () => {
+    closed = true;
+    while (waiters.length) waiters.shift()(null);
+  });
+  return {
+    ask(question) {
+      process.stdout.write(question);
+      if (lines.length) return Promise.resolve(lines.shift());
+      if (closed) return Promise.resolve(null);
+      return new Promise((resolve) => waiters.push(resolve));
+    },
+    close: () => rl.close(),
+  };
+}
+
+async function cmdMenu() {
+  const prompt = createPrompter();
+  let changed = false;
+  try {
+    for (;;) {
+      const { url, plugins } = await loadRegistry();
+      const rows = collectStatus(plugins, scanInstalled());
+
+      console.log(`\nTessera plugins — registry: ${url.href}`);
+      if (rows.length === 0) console.log('  (registry is empty)');
+      const nameWidth = Math.max(4, ...rows.map((r) => r.name.length));
+      const stateWidth = Math.max(9, ...rows.map((r) => stateLabel(r).length));
+      rows.forEach((r, i) => {
+        const state = stateLabel(r).padEnd(stateWidth);
+        console.log(`  ${String(i + 1).padStart(2)}) ${r.name.padEnd(nameWidth)}  ${r.version.padEnd(8)} ${state} ${r.description}`);
+      });
+
+      const answer = (await prompt.ask('\nNumber = install / update / remove, a = update all, q = quit: '))?.trim().toLowerCase();
+      if (answer == null || answer === '' || answer === 'q') break;
+
+      try {
+        if (answer === 'a') {
+          changed = (await cmdUpdate(null, { all: true, quiet: true })) || changed;
+          continue;
+        }
+        const row = rows[Number(answer) - 1];
+        if (!/^\d+$/.test(answer) || !row) {
+          console.log(`Unknown choice "${answer}"`);
+          continue;
+        }
+
+        if (row.state === 'available') {
+          if (await install(row.entry, url)) {
+            scanExtensions();
+            changed = true;
+          }
+          continue;
+        }
+
+        const options = row.state === 'update' ? 'u = update, r = remove' : 'r = remove';
+        const action = (await prompt.ask(`${row.name}: ${options}, Enter = back: `))?.trim().toLowerCase();
+        if (action === 'u' && row.state === 'update') {
+          if (await install(row.entry, url)) {
+            scanExtensions();
+            changed = true;
+          }
+        } else if (action === 'r') {
+          const sure = (await prompt.ask(`Remove ${row.id}? [y/N]: `))?.trim().toLowerCase();
+          if (sure === 'y' || sure === 'yes') {
+            removeInstalled(row.id);
+            changed = true;
+          }
+        }
+      } catch (e) {
+        // One failed action (bad hash, network) must not close the menu.
+        console.error(`[tessera-ext] ${e.message}`);
+      }
+    }
+  } finally {
+    prompt.close();
+  }
+  if (changed) console.log(`\n${UI_HINT}`);
+}
+
+const USAGE = `Usage: tessera-ext [command]
+  (no command)          interactive menu
+  list                  registry plugins and installed state
+  install <name>        install from the registry ("spoolman" or "tessera/spoolman")
+  update [<name>|--all] update one or all registry plugins
+  remove <name>         delete an installed plugin
+  sync                  rebuild extensions/index.json
+Options: --force (replace a hand-installed plugin / reinstall the same version)`;
 
 async function main(argv) {
   const [cmd, ...rest] = argv;
@@ -283,14 +454,19 @@ async function main(argv) {
   const opts = { force: flags.has('--force'), all: flags.has('--all') };
 
   switch (cmd) {
+    case 'menu': return cmdMenu();
     case 'list': return cmdList();
     case 'install': return cmdInstall(arg, opts);
-    case 'update': return cmdUpdate(arg, opts);
+    case 'update': return void (await cmdUpdate(arg, opts));
     case 'remove': return cmdRemove(arg);
     case 'sync': return scanExtensions();
+    case undefined:
+      if (process.stdin.isTTY) return cmdMenu();
+      console.log(USAGE);
+      return;
     default:
-      console.log('Usage: tessera-ext.cjs <list|install <id>|update [<id>|--all]|remove <id>|sync> [--force]');
-      process.exitCode = cmd ? 1 : 0;
+      console.log(USAGE);
+      process.exitCode = cmd === 'help' || cmd === '--help' ? 0 : 1;
   }
 }
 

@@ -51,11 +51,20 @@ sha256. Nothing is built on the printer: the CLI downloads the archive, checks t
 hash and unpacks it into `extensions/<dir>/`:
 
 ```bash
-node tools/tessera-ext.cjs list                 # registry plugins + installed state
-node tools/tessera-ext.cjs install acme/hello   # download → sha256 → extensions/hello/
-node tools/tessera-ext.cjs update --all         # or: update acme/hello
-node tools/tessera-ext.cjs remove acme/hello
+tessera-ext                     # interactive menu: number = install / update / remove
+tessera-ext list                # registry plugins + installed state
+tessera-ext install hello       # download → sha256 → extensions/hello/
+tessera-ext update --all        # or: update hello
+tessera-ext remove hello
 ```
+
+`deploy/install.sh` creates the `tessera-ext` command (`/usr/local/bin/tessera-ext`).
+It runs [`deploy/install-ext.sh`](../../deploy/install-ext.sh), which runs
+`tools/tessera-ext.cjs` from the installation directory. A plugin can be named by its
+full id (`acme/hello`) or its short name (`hello`); an ambiguous name is an error.
+Without the command (for example, before updating Tessera) use
+`bash ~/tessera/deploy/install-ext.sh`. At the end, `install.sh` offers to open the
+menu right away.
 
 The CLI regenerates `index.json` itself. Then use Settings → Plugins → Refresh → Install.
 
