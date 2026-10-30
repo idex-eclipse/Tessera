@@ -10,7 +10,7 @@
 #   tessera-ext list
 # Env:
 #   TESSERA_DIR           Tessera installation (default: this checkout, then ~/tessera)
-#   TESSERA_REGISTRY_URL  plugin registry (default: idex-eclipse/tessera-ext)
+#   TESSERA_REGISTRY_URL  plugin registry (default: idex-eclipse/Tessera-Ext)
 set -euo pipefail
 
 die() { printf '\033[1;31m[tessera-ext]\033[0m %s\n' "$*" >&2; exit 1; }
