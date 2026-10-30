@@ -6,7 +6,45 @@
   import { editorUi } from './editor-state.svelte.ts';
 
   import Icon from '../icons/Icon.svelte';
+  import ColorPickerMenu from '../color-picker/ColorPickerMenu.svelte';
   import { highlightKlipperLines, highlightPlainLines, toRenderLines } from './highlight';
+  import {
+    TOKEN_KEYS,
+    effectiveColor,
+    toStyle,
+    type ThemeName,
+    type TokKey,
+  } from './highlight-colors';
+  import {
+    getOverrides,
+    reloadColors,
+    resetTheme,
+    setColor,
+  } from './highlight-colors.svelte.ts';
+  import {
+    DEFAULT_CAN_INTERFACE,
+    DEVICE_KINDS,
+    classifyError,
+    isValidCanInterface,
+    loadDevices,
+    type DeviceCard,
+    type DeviceErrorStatus,
+    type DeviceKind,
+  } from './peripherals';
+  import { copyText } from './clipboard';
+  import { useNarrow } from '../responsive/use-narrow.svelte.ts';
+  import ConfigHelpPopover from './ConfigHelpPopover.svelte';
+  import {
+    pointToCell,
+    resolveSection,
+    sectionAbove,
+    sectionAtCell,
+    sectionInsideAt,
+    type HelpView,
+  } from './config-reference';
+  import { parseBlocks } from './mini-markdown';
+  import { classifyReferenceError, loadReference } from './reference-store';
+  import { HELP_WIDTH, type Anchor } from './help-position';
   import { caretLineCol } from './caret';
 
   import {
@@ -247,7 +285,222 @@
   // Оглавление секций (только lang=klipper)
   // ------------------------------------------------------------------
 
+  // Десктоп: колонка сбоку (tocOpen). Узкий экран: шторка поверх редактора (tocSheetOpen) —
+  // состояния раздельные, поэтому шторка не меняет выбор пользователя для десктопа.
   let tocOpen = $state(true);
+  let tocSheetOpen = $state(false);
+
+  const narrowState = useNarrow();
+  let narrow = $derived(narrowState.value);
+  let tocVisible = $derived(narrow ? tocSheetOpen : tocOpen);
+
+  function toggleToc(): void {
+    if (narrow) {
+      tocSheetOpen = !tocSheetOpen;
+      if (tocSheetOpen) {
+        colorsOpen = false;
+        closeDevices();
+        closeHelp();
+      }
+    } else {
+      tocOpen = !tocOpen;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Справка по секции (Klipper Config_Reference.md через Moonraker, root docs)
+  // ------------------------------------------------------------------
+
+  // у moonraker.conf другие секции — Klipper-справка к ним не относится
+  let helpEnabled = $derived(lang === 'klipper' && restartKind !== 'moonraker');
+  let helpTarget = $state<{ section: string; anchor: Anchor } | null>(null);
+  let helpView = $state<HelpView>({ status: 'loading' });
+  let helpSeq = 0; // устаревший ответ (закрыли / открыли другую секцию) отбрасывается
+
+  async function openHelp(section: string, anchor: Anchor): Promise<void> {
+    if (!helpEnabled) return;
+    const seq = ++helpSeq;
+    colorsOpen = false;
+    closeDevices();
+    helpTarget = { section, anchor };
+    helpView = { status: 'loading' };
+    try {
+      const index = await loadReference(api);
+      if (seq !== helpSeq) return;
+      const fragment = resolveSection(index, section);
+      helpView = fragment
+        ? { status: 'ready', fragment, blocks: parseBlocks(fragment.body) }
+        : { status: 'notFound' };
+    } catch (e) {
+      if (seq !== helpSeq) return;
+      const { kind, message } = classifyReferenceError(e);
+      helpView = kind === 'unavailable' ? { status: 'unavailable' } : { status: 'error', message };
+    }
+  }
+
+  function closeHelp(): void {
+    helpSeq++;
+    helpTarget = null;
+  }
+
+  function onTocHelp(e: MouseEvent, name: string): void {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (narrow) tocSheetOpen = false;
+    // оглавление справа — раскрываем справку влево от него, на уровне пункта
+    void openHelp(name, { left: r.left - HELP_WIDTH - 8, top: r.top, bottom: r.bottom });
+  }
+
+  function onTocPick(line: number): void {
+    // на узком экране без фокуса: иначе jumpToIndex поднимет экранную клавиатуру
+    jumpToLine(line, !narrow);
+    if (narrow) tocSheetOpen = false;
+  }
+
+  // шторка живёт только на узком экране и только пока открыт диалог
+  $effect(() => {
+    if (!narrow || !open) tocSheetOpen = false;
+  });
+
+  // ------------------------------------------------------------------
+  // Цвета подсветки (только lang=klipper): CSS-переменные --tok-* на оверлее
+  // ------------------------------------------------------------------
+
+  let hostTheme = $state<ThemeName>(api.theme.current);
+  $effect(() => api.onThemeChange((t) => { hostTheme = t; }));
+
+  let colorsOpen = $state(false);
+  let overrides = $derived(getOverrides(hostTheme));
+  let colorStyle = $derived(toStyle(hostTheme, overrides));
+
+  // ColorPickerMenu ждёт ключи cp.*, которых в ft-пространстве имён нет
+  const pickerI18n = {
+    t: (key: string) => i18n.t(key.startsWith('cp.') ? `ft.hl.${key.slice(3)}` : key),
+  };
+
+  // значения могли измениться из другой копии модуля (другой плагин) — перечитываем
+  $effect(() => {
+    if (open) reloadColors();
+    else {
+      colorsOpen = false;
+      closeDevices();
+      closeHelp();
+    }
+  });
+
+  function pickColor(key: TokKey, hex: string | null): void {
+    setColor(hostTheme, key, hex);
+  }
+
+  // ------------------------------------------------------------------
+  // Подключённые устройства (только lang=klipper): machine.peripherals.*
+  // ------------------------------------------------------------------
+
+  type DevStatus = 'idle' | 'loading' | 'ready' | DeviceErrorStatus;
+  interface DevState {
+    status: DevStatus;
+    cards: DeviceCard[];
+    error: string;
+  }
+
+  const freshDevState = (): Record<DeviceKind, DevState> => ({
+    serial: { status: 'idle', cards: [], error: '' },
+    canbus: { status: 'idle', cards: [], error: '' },
+    usb: { status: 'idle', cards: [], error: '' },
+    video: { status: 'idle', cards: [], error: '' },
+  });
+
+  let devicesOpen = $state(false);
+  let devTab = $state<DeviceKind>('serial');
+  let devState = $state<Record<DeviceKind, DevState>>(freshDevState());
+  let canInterface = $state(DEFAULT_CAN_INTERFACE);
+  let canInterfaceOk = $derived(isValidCanInterface(canInterface));
+  let copiedKey = $state<string | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // номер последнего запроса по вкладке: устаревший ответ (панель закрыли, нажали
+  // «Обновить» ещё раз) отбрасывается
+  const devSeq: Record<DeviceKind, number> = { serial: 0, canbus: 0, usb: 0, video: 0 };
+
+  // вставка возможна, только пока в DOM есть textarea (нет readonly и загрузки)
+  let canInsert = $derived(!readonly && !loading && inputEl !== null);
+
+  $effect(() => () => {
+    if (copiedTimer) clearTimeout(copiedTimer);
+  });
+
+  async function loadTab(kind: DeviceKind): Promise<void> {
+    const seq = ++devSeq[kind];
+    devState[kind] = { status: 'loading', cards: [], error: '' };
+    try {
+      // moonraker() бросает синхронно, если нет активного принтера — ловим вместе с запросом
+      const handle = api.moonraker();
+      const cards = await loadDevices((m, p) => handle.request(m, p), kind, { canInterface });
+      if (seq !== devSeq[kind]) return;
+      devState[kind] = { status: 'ready', cards, error: '' };
+    } catch (e) {
+      if (seq !== devSeq[kind]) return;
+      const { status, message } = classifyError(e);
+      devState[kind] = { status, cards: [], error: message };
+    }
+  }
+
+  function closeDevices(): void {
+    devicesOpen = false;
+    for (const k of DEVICE_KINDS) devSeq[k]++;
+    devState = freshDevState();
+  }
+
+  function toggleDevices(): void {
+    if (devicesOpen) {
+      closeDevices();
+      return;
+    }
+    colorsOpen = false;
+    tocSheetOpen = false;
+    closeHelp();
+    devicesOpen = true;
+    // CAN-опрос сканирует шину и может быть долгим — только по кнопке
+    if (devTab !== 'canbus') void loadTab(devTab);
+  }
+
+  function toggleColors(): void {
+    colorsOpen = !colorsOpen;
+    if (colorsOpen) {
+      closeDevices();
+      tocSheetOpen = false;
+      closeHelp();
+    }
+  }
+
+  function selectDevTab(kind: DeviceKind): void {
+    devTab = kind;
+    if (kind !== 'canbus' && devState[kind].status === 'idle') void loadTab(kind);
+  }
+
+  async function copyValue(key: string, value: string): Promise<void> {
+    if (!(await copyText(value))) return;
+    copiedKey = key;
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      copiedKey = null;
+      copiedTimer = null;
+    }, 1500);
+  }
+
+  function insertDeviceValue(value: string): void {
+    const ta = inputEl;
+    if (!ta) return;
+    // позицию читаем до закрытия панели; у textarea она сохраняется и без фокуса
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? start;
+    closeDevices();
+    replaceRange(start, end, value);
+    requestAnimationFrame(() => {
+      if (!inputEl) return;
+      inputEl.selectionStart = inputEl.selectionEnd = start + value.length;
+      inputEl.focus();
+    });
+  }
 
   // направление интерфейса для локализованных элементов внутри LTR-области кода
   let uiDir = $state<'ltr' | 'rtl'>(document.documentElement.getAttribute('dir') === 'rtl' ? 'rtl' : 'ltr');
@@ -272,11 +525,11 @@
     return items;
   });
 
-  function jumpToLine(line: number): void {
+  function jumpToLine(line: number, focus = true): void {
     const lines = text.split('\n');
     let idx = 0;
     for (let i = 0; i < line && i < lines.length; i++) idx += (lines[i] ?? '').length + 1;
-    jumpToIndex(idx);
+    jumpToIndex(idx, focus);
   }
 
   // ------------------------------------------------------------------
@@ -473,9 +726,36 @@
       return;
     }
 
+    // F1 — справка по секции, в которой стоит каретка (из любого места её тела)
+    if (e.key === 'F1' && helpEnabled) {
+      e.preventDefault();
+      if (inputEl) {
+        const idx = inputEl.selectionStart ?? 0;
+        const hit = sectionAbove(text, idx);
+        if (hit) void openHelp(hit.name, caretAnchor(inputEl, idx));
+      }
+      return;
+    }
+
     if (e.key === 'Escape') {
       e.stopPropagation();
-      // первый Escape закрывает поиск, второй — редактор
+      // порядок закрытия: справка, цвета, устройства, оглавление, поиск, затем редактор
+      if (helpTarget) {
+        closeHelp();
+        return;
+      }
+      if (colorsOpen) {
+        colorsOpen = false;
+        return;
+      }
+      if (devicesOpen) {
+        closeDevices();
+        return;
+      }
+      if (tocSheetOpen) {
+        tocSheetOpen = false;
+        return;
+      }
       if (searchOpen) {
         closeSearch();
         return;
@@ -633,7 +913,8 @@
   let caretMetrics: CaretMetrics | null = null;
   let measureCanvas: HTMLCanvasElement | null = null;
 
-  function readCaretMetrics(ta: HTMLTextAreaElement): CaretMetrics {
+  // у слоя подсветки (<pre>) и textarea одинаковые шрифт и отступы — метрики общие
+  function readCaretMetrics(ta: HTMLElement): CaretMetrics {
     if (caretMetrics) return caretMetrics;
     const cs = getComputedStyle(ta);
     measureCanvas ??= document.createElement('canvas');
@@ -687,6 +968,15 @@
     left = Math.max(4, Math.min(left, window.innerWidth - 424));
 
     return { top, left };
+  }
+
+  /** Экранные координаты строки с кареткой — якорь для popover справки. */
+  function caretAnchor(ta: HTMLTextAreaElement, cursor: number): Anchor {
+    const m = readCaretMetrics(ta);
+    const { line, col } = caretLineCol(text, cursor, m.tab);
+    const rect = ta.getBoundingClientRect();
+    const top = rect.top + m.padT + line * m.lineH - ta.scrollTop;
+    return { left: rect.left + m.padL + col * m.charW - ta.scrollLeft, top, bottom: top + m.lineH };
   }
 
   function acceptSuggestion(s: Suggestion): void {
@@ -758,19 +1048,32 @@
     return m ? m.index : null;
   }
 
-  function jumpToIndex(idx: number): void {
+  function jumpToIndex(idx: number, focus = true): void {
     const line = text.slice(0, idx).split('\n').length - 1;
     const top = Math.max(0, line * lineHeightPx() - lineHeightPx() * 3);
     setScrollTop(top);
     if (inputEl) {
-      inputEl.focus();
+      if (focus) inputEl.focus();
       inputEl.setSelectionRange(idx, idx);
     }
   }
 
   function onEditorClick(e: MouseEvent): void {
     if (!(e.ctrlKey || e.metaKey)) return;
-    const word = wordAt((e.currentTarget as HTMLTextAreaElement).selectionStart ?? 0);
+    const ta = e.currentTarget as HTMLTextAreaElement;
+    const caret = ta.selectionStart ?? 0;
+
+    // Ctrl+клик по названию секции — справка (заголовок не содержит jinja, конфликта нет)
+    if (helpEnabled) {
+      const hit = sectionInsideAt(text, caret);
+      if (hit) {
+        e.preventDefault();
+        void openHelp(hit.name, caretAnchor(ta, caret));
+        return;
+      }
+    }
+
+    const word = wordAt(caret);
     if (!word) return;
     const idx = findDeclaration(word);
     if (idx != null) {
@@ -780,6 +1083,28 @@
   }
 
   function onPreClick(e: MouseEvent): void {
+    // read-only: textarea нет, редактировать нечего — справка открывается обычным кликом
+    if (helpEnabled && readonly && !(window.getSelection()?.toString())) {
+      const pre = e.currentTarget as HTMLElement;
+      const m = readCaretMetrics(pre);
+      const rect = pre.getBoundingClientRect();
+      const { line, col } = pointToCell(e.clientX, e.clientY, {
+        left: rect.left,
+        top: rect.top,
+        scrollLeft: pre.scrollLeft,
+        scrollTop: pre.scrollTop,
+        padL: m.padL,
+        padT: m.padT,
+        charW: m.charW,
+        lineH: m.lineH,
+      });
+      const hit = sectionAtCell(text, line, col);
+      if (hit) {
+        void openHelp(hit.name, { left: e.clientX, top: e.clientY, bottom: e.clientY + m.lineH });
+        return;
+      }
+    }
+
     if (!(e.ctrlKey || e.metaKey)) return;
     const v = (e.target as HTMLElement).dataset?.var;
     if (!v) return;
@@ -789,47 +1114,252 @@
 </script>
 
 {#if open}
-  <div class="editor-overlay" onkeydown={onKeydown} role="dialog" aria-modal="true">
+  <div
+    class="editor-overlay"
+    class:narrow
+    style={lang === 'klipper' ? colorStyle : undefined}
+    onkeydown={onKeydown}
+    role="dialog"
+    aria-modal="true"
+  >
     <div class="editor-header">
       <span class="editor-title">{title}</span>
       {#if readonly}<span class="ro-badge">{i18n.t('ft.readonly')}</span>{/if}
       <span class="spacer"></span>
 
       {#if lang === 'klipper'}
+        <div class="hl-wrap">
+          <button
+            class="btn icon"
+            class:active={colorsOpen}
+            title={i18n.t('ft.hl.title')}
+            aria-label={i18n.t('ft.hl.title')}
+            onclick={toggleColors}
+          >
+            <Icon name="settings" size={15} />
+            {#if !narrow}<span class="btn-label">{i18n.t('ft.lbl.colors')}</span>{/if}
+          </button>
+
+          {#if colorsOpen}
+            <div class="hl-backdrop" onclick={() => (colorsOpen = false)} role="presentation"></div>
+            <div class="hl-popover" dir={uiDir}>
+              <div class="hl-head">
+                <span class="hl-title">
+                  {i18n.t('ft.hl.title')} · {i18n.t(hostTheme === 'dark' ? 'ft.hl.themeDark' : 'ft.hl.themeLight')}
+                </span>
+                <button class="sb-btn text" onclick={() => resetTheme(hostTheme)}>
+                  {i18n.t('ft.hl.resetAll')}
+                </button>
+              </div>
+              <div class="hl-list">
+                {#each TOKEN_KEYS as key (key)}
+                  <div class="hl-row">
+                    <span class="hl-name" style:color={effectiveColor(hostTheme, overrides, key)}>
+                      {i18n.t(`ft.hl.tok.${key}`)}
+                    </span>
+                    <span class="hl-hex">{effectiveColor(hostTheme, overrides, key)}</span>
+                    <ColorPickerMenu
+                      value={effectiveColor(hostTheme, overrides, key)}
+                      onPick={(hex) => pickColor(key, hex)}
+                      i18n={pickerI18n}
+                    />
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <div class="hl-wrap">
+          <button
+            class="btn icon"
+            class:active={devicesOpen}
+            title={i18n.t('ft.dev.title')}
+            aria-label={i18n.t('ft.dev.title')}
+            onclick={toggleDevices}
+          >
+            <Icon name="plug" size={15} />
+            {#if !narrow}<span class="btn-label">{i18n.t('ft.lbl.devices')}</span>{/if}
+          </button>
+
+          {#if devicesOpen}
+            <div class="hl-backdrop" onclick={closeDevices} role="presentation"></div>
+            <div class="hl-popover dev-popover" dir={uiDir}>
+              <div class="hl-head">
+                <span class="hl-title">{i18n.t('ft.dev.title')}</span>
+                <button
+                  class="sb-btn"
+                  title={i18n.t('ft.dev.refresh')}
+                  disabled={devTab === 'canbus' && !canInterfaceOk}
+                  onclick={() => loadTab(devTab)}
+                >
+                  <Icon name="refresh" size={14} />
+                </button>
+              </div>
+
+              <div class="dev-tabs" role="tablist">
+                {#each DEVICE_KINDS as kind (kind)}
+                  <button
+                    class="dev-tab"
+                    class:active={devTab === kind}
+                    role="tab"
+                    aria-selected={devTab === kind}
+                    onclick={() => selectDevTab(kind)}
+                  >
+                    {i18n.t(`ft.dev.tab.${kind}`)}{devState[kind].status === 'ready'
+                      ? ` (${devState[kind].cards.length})`
+                      : ''}
+                  </button>
+                {/each}
+              </div>
+
+              {#if devTab === 'canbus'}
+                <div class="dev-can">
+                  <label class="dev-can-label" for="dev-can-if">{i18n.t('ft.dev.interface')}</label>
+                  <input
+                    id="dev-can-if"
+                    class="sb-input dev-can-input"
+                    class:invalid={!canInterfaceOk}
+                    bind:value={canInterface}
+                    spellcheck="false"
+                    onkeydown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Escape') closeDevices();
+                      else if (e.key === 'Enter' && canInterfaceOk) loadTab('canbus');
+                    }}
+                  />
+                  <button
+                    class="btn"
+                    disabled={!canInterfaceOk || devState.canbus.status === 'loading'}
+                    onclick={() => loadTab('canbus')}
+                  >
+                    {i18n.t('ft.dev.scan')}
+                  </button>
+                </div>
+              {/if}
+
+              <div class="hl-list dev-list">
+                {#if devState[devTab].status === 'loading'}
+                  <div class="dev-state">
+                    <span class="spinner"></span>
+                    <span>{i18n.t('ft.loading')}</span>
+                  </div>
+                {:else if devState[devTab].status === 'idle'}
+                  <div class="dev-state">{i18n.t('ft.dev.canHint')}</div>
+                {:else if devState[devTab].status === 'ready'}
+                  {#each devState[devTab].cards as card (card.id)}
+                    <div class="dev-card">
+                      <div class="dev-card-title" dir="ltr">{card.title}</div>
+                      {#if card.subtitle}
+                        <div class="dev-card-sub" dir="ltr">{card.subtitle}</div>
+                      {/if}
+                      {#each card.fields as f (f.key)}
+                        {@const fk = `${card.id}:${f.key}`}
+                        <div class="dev-field">
+                          <span class="dev-key">{f.key}</span>
+                          <span class="dev-val" dir="ltr">{f.value}</span>
+                          {#if f.copyable}
+                            <button
+                              class="sb-btn"
+                              class:ok={copiedKey === fk}
+                              title={i18n.t(copiedKey === fk ? 'ft.dev.copied' : 'ft.dev.copy')}
+                              onclick={() => copyValue(fk, f.value)}
+                            >
+                              {#if copiedKey === fk}✓{:else}<Icon name="copy" size={13} />{/if}
+                            </button>
+                            {#if canInsert}
+                              <button
+                                class="sb-btn"
+                                title={i18n.t('ft.dev.insert')}
+                                onclick={() => insertDeviceValue(f.value)}
+                              >
+                                <Icon name="playlist-plus" size={13} />
+                              </button>
+                            {/if}
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {:else}
+                    <div class="dev-state">{i18n.t('ft.dev.empty')}</div>
+                  {/each}
+                {:else if devState[devTab].status === 'unsupported'}
+                  <div class="dev-state">{i18n.t('ft.dev.unsupported')}</div>
+                {:else}
+                  <div class="dev-state">
+                    <span>
+                      {devState[devTab].status === 'offline'
+                        ? i18n.t('ft.dev.offline')
+                        : i18n.t('ft.dev.error')}
+                    </span>
+                    {#if devState[devTab].status === 'error' && devState[devTab].error}
+                      <span class="dev-err" dir="ltr">{devState[devTab].error}</span>
+                    {/if}
+                    <button class="btn" onclick={() => loadTab(devTab)}>{i18n.t('ft.dev.retry')}</button>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+
         <button
           class="btn icon"
-          class:active={tocOpen}
+          class:active={tocVisible}
           title={i18n.t('ft.toc')}
-          onclick={() => (tocOpen = !tocOpen)}
+          aria-label={i18n.t('ft.toc')}
+          onclick={toggleToc}
         >
           <Icon name="rows" size={15} />
+          {#if !narrow}<span class="btn-label">{i18n.t('ft.toc')}</span>{/if}
         </button>
       {/if}
 
       <button
         class="btn icon"
         class:active={searchOpen}
-        title={i18n.t('ft.search')}
+        title={i18n.t('ft.lbl.search')}
+        aria-label={i18n.t('ft.lbl.search')}
         onclick={() => (searchOpen ? closeSearch() : openSearch(false))}
       >
         <Icon name="search" size={15} />
+        {#if !narrow}<span class="btn-label">{i18n.t('ft.lbl.search')}</span>{/if}
       </button>
 
       {#if !readonly}
-        <button class="btn primary" disabled={loading || !dirty} onclick={save}>
+        <button
+          class="btn primary"
+          title={i18n.t('ft.save')}
+          aria-label={i18n.t('ft.save')}
+          disabled={loading || !dirty}
+          onclick={save}
+        >
           <Icon name="save" size={15} />
-          {i18n.t('ft.save')}
+          {#if !narrow}<span class="btn-label">{i18n.t('ft.save')}</span>{/if}
         </button>
         {#if canRestart && !readonly && !restartHidden}
-          <button class="btn primary" disabled={loading || !dirty} onclick={saveRestart}>
+          {@const restartLabel =
+            restartKind === 'moonraker' ? i18n.t('ft.saveRestartMk') : i18n.t('ft.saveRestart')}
+          <button
+            class="btn primary"
+            title={restartLabel}
+            aria-label={restartLabel}
+            disabled={loading || !dirty}
+            onclick={saveRestart}
+          >
             <Icon name="refresh" size={15} />
-            {restartKind === 'moonraker' ? i18n.t('ft.saveRestartMk') : i18n.t('ft.saveRestart')}
+            {#if !narrow}<span class="btn-label">{restartLabel}</span>{/if}
           </button>
         {/if}
       {/if}
-      <button class="btn" onclick={onClose}>
+      <button
+        class="btn"
+        title={i18n.t('ft.close')}
+        aria-label={i18n.t('ft.close')}
+        onclick={onClose}
+      >
         <Icon name="x" size={15} />
-        {i18n.t('ft.close')}
+        {#if !narrow}<span class="btn-label">{i18n.t('ft.close')}</span>{/if}
       </button>
     </div>
 
@@ -964,13 +1494,28 @@
           </div>
 
           <!-- оглавление секций конфига -->
-          {#if tocOpen && lang === 'klipper'}
-            <nav class="toc" dir={uiDir}>
+          {#if tocVisible && lang === 'klipper'}
+            {#if narrow}
+              <div class="toc-backdrop" onclick={() => (tocSheetOpen = false)} role="presentation"></div>
+            {/if}
+            <nav class="toc" class:sheet={narrow} dir={uiDir}>
               <div class="toc-title">{i18n.t('ft.toc')}</div>
               {#each toc as item, i (i)}
-                <button class="toc-item" title={item.name} onclick={() => jumpToLine(item.line)}>
-                  {item.name}
-                </button>
+                <div class="toc-row">
+                  <button class="toc-item" title={item.name} onclick={() => onTocPick(item.line)}>
+                    {item.name}
+                  </button>
+                  {#if helpEnabled}
+                    <button
+                      class="toc-help"
+                      title={i18n.t('ft.help.open')}
+                      aria-label={i18n.t('ft.help.open')}
+                      onclick={(e) => onTocHelp(e, item.name)}
+                    >
+                      ?
+                    </button>
+                  {/if}
+                </div>
               {/each}
             </nav>
           {/if}
@@ -995,6 +1540,19 @@
         </div>
       {/if}
     </div>
+
+    {#if helpTarget}
+      <ConfigHelpPopover
+        section={helpTarget.section}
+        view={helpView}
+        anchor={helpTarget.anchor}
+        {narrow}
+        dir={uiDir}
+        {i18n}
+        onClose={closeHelp}
+        onRetry={() => helpTarget && openHelp(helpTarget.section, helpTarget.anchor)}
+      />
+    {/if}
   </div>
 {/if}
 
@@ -1015,9 +1573,12 @@
     padding: var(--space-sm) var(--space-md);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+    position: relative;
   }
 
   .editor-title {
+    flex: 0 1 auto;
+    min-width: 0;
     font-family: monospace;
     font-size: var(--font-size-md);
     color: var(--text-primary);
@@ -1051,8 +1612,8 @@
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn.primary:hover:not(:disabled) { filter: brightness(1.1); }
-  .btn.icon { padding: var(--space-xs); }
   .btn.icon.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-label { white-space: nowrap; }
 
   .editor-body { flex: 1; min-height: 0; position: relative; }
 
@@ -1139,6 +1700,24 @@
     background: var(--bg-surface-hover);
     color: var(--text-primary);
   }
+
+  /* пункт оглавления + кнопка справки «?» справа */
+  .toc-row { display: flex; align-items: center; gap: 2px; }
+  .toc-row .toc-item { flex: 1; min-width: 0; }
+
+  .toc-help {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .toc-help:hover { background: var(--bg-surface-hover); color: var(--accent); }
 
   .code-area {
     position: relative;
@@ -1316,19 +1895,225 @@
     white-space: nowrap;
   }
 
-  :global(.tok-section) { color: #e8a15c; }
-  :global(.tok-driver) { color: #56b6c2; }
-  :global(.tok-pin) { color: #61afef; }
-  :global(.tok-num) { color: #d19a66; }
-  :global(.tok-comment) { color: #7f848e; font-style: italic; }
-  :global(.tok-save-mark) { color: #c678dd; font-weight: 600; }
-  :global(.tok-cmd) { color: #e06c75; }
-  :global(.tok-ext) { color: #e8a15c; }
-  :global(.tok-axis) { color: #e06c75; }
-  :global(.tok-param) { color: #c850d8; }
-  :global(.tok-str) { color: #c678dd; }
-  :global(.tok-jinja) { color: #56b6c2; }
-  :global(.tok-jinja-kw) { color: #c678dd; }
-  :global(.tok-jinja-var) { color: #91df6d; }
-  :global(.tok-filter) { color: #98c379; }
+  /* -------- настройка цветов подсветки -------- */
+  .hl-wrap { position: relative; display: flex; }
+
+  .hl-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: transparent;
+  }
+
+  .hl-popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    inset-inline-end: 0;
+    z-index: 30;
+    width: 300px;
+    max-height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .hl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .hl-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .hl-list { overflow-y: auto; padding: var(--space-xs); }
+
+  .hl-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 0 var(--space-xs);
+    border-radius: var(--radius-sm);
+  }
+  .hl-row:hover { background: var(--bg-surface-hover); }
+
+  .hl-name {
+    flex: 1;
+    min-width: 0;
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hl-hex {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* -------- подключённые устройства -------- */
+  .dev-popover { width: 460px; max-width: calc(100vw - 16px); }
+
+  .dev-tabs {
+    display: flex;
+    gap: 2px;
+    padding: var(--space-xs) var(--space-xs) 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .dev-tab {
+    padding: var(--space-xs) var(--space-sm);
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .dev-tab:hover { color: var(--text-primary); }
+  .dev-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .dev-can {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .dev-can-label { font-size: var(--font-size-sm); color: var(--text-muted); }
+  .dev-can-input { width: 110px; }
+  .dev-can-input.invalid { border-color: var(--danger); }
+
+  .dev-list { display: flex; flex-direction: column; gap: var(--space-xs); }
+
+  .dev-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-lg, 24px) var(--space-md);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
+  }
+  .dev-err { font-family: monospace; font-size: 11px; word-break: break-word; }
+
+  .dev-card {
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+  }
+  .dev-card-title {
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-all;
+  }
+  .dev-card-sub {
+    margin-bottom: var(--space-xs);
+    font-size: 11px;
+    color: var(--text-muted);
+    word-break: break-word;
+  }
+
+  .dev-field {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    padding: 1px 0;
+  }
+  .dev-field:hover { background: var(--bg-surface-hover); }
+  .dev-key {
+    flex: 0 0 110px;
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .dev-val {
+    flex: 1;
+    min-width: 0;
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    word-break: break-all;
+  }
+  .dev-field .sb-btn { width: 22px; height: 22px; }
+  .sb-btn.ok { color: var(--success, var(--accent)); }
+
+  /* -------- оглавление шторкой поверх редактора (узкий экран) -------- */
+  .toc-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 21;
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .toc.sheet {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    z-index: 22;
+    width: min(86vw, 320px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* -------- узкий экран: кнопки только с иконками, поповеры на всю ширину -------- */
+  .editor-overlay.narrow .editor-header {
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-sm);
+  }
+  .editor-overlay.narrow .btn { padding: var(--space-xs); }
+
+  .editor-overlay.narrow .hl-wrap { position: static; }
+  .editor-overlay.narrow .hl-popover {
+    inset-inline: var(--space-sm);
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 100px);
+  }
+  .editor-overlay.narrow .dev-key { flex-basis: 84px; }
+
+  .editor-overlay.narrow .search-bar {
+    left: var(--space-sm);
+    right: var(--space-sm);
+  }
+  .editor-overlay.narrow .sb-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .editor-overlay.narrow .sb-count { min-width: 40px; }
+
+  /* цвета приходят из --tok-*, которые диалог выставляет на .editor-overlay */
+  :global(.tok-section) { color: var(--tok-section); }
+  :global(.tok-driver) { color: var(--tok-driver); }
+  :global(.tok-pin) { color: var(--tok-pin); }
+  :global(.tok-num) { color: var(--tok-num); }
+  :global(.tok-comment) { color: var(--tok-comment); font-style: italic; }
+  :global(.tok-save-mark) { color: var(--tok-save-mark); font-weight: 600; }
+  :global(.tok-cmd) { color: var(--tok-cmd); }
+  :global(.tok-ext) { color: var(--tok-ext); }
+  :global(.tok-axis) { color: var(--tok-axis); }
+  :global(.tok-param) { color: var(--tok-param); }
+  :global(.tok-str) { color: var(--tok-str); }
+  :global(.tok-jinja) { color: var(--tok-jinja); }
+  :global(.tok-jinja-kw) { color: var(--tok-jinja-kw); }
+  :global(.tok-jinja-var) { color: var(--tok-jinja-var); }
+  :global(.tok-filter) { color: var(--tok-filter); }
 </style>

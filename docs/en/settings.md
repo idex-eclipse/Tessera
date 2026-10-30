@@ -11,6 +11,7 @@ tied to the origin and the device. The schema is versioned with the `mpu:v2:` pr
 | `mpu:v2:activePrinter` | the active printer's `id` |
 | `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
 | `mpu:v2:ui` | device UI: theme, language, `dir`, panel sizes, background, accent, fleet, hotkey overrides |
+| `mpu:v2:editor-colors` | config editor syntax colors: `{ v: 1, light: { <token>: '#rrggbb' }, dark: { … } }` — only the tokens the user changed; applied as CSS variables `--tok-<token>` (editor header → settings button) |
 | `mpu:v2:settings:<printerId>` | printer settings: page visibility, widget providers, dashboard layout, chips |
 | `mpu:v2:settings:GLOBAL` | the same, shared by all printers (if dashboard sync is on) |
 | `mpu:v2:plugin-settings:<printerId>:<pluginId>` | a plugin's settings for a printer (`api.settings`) |
