@@ -459,7 +459,7 @@ describe('MoonrakerProxy / subscribe', () => {
 
       ws.simulateOpen();
 
-      const message = ws.lastSentMessage();
+      const message = ws.lastSentMessageExcept('printer.objects.list');
 
       expect(message?.method).toBe('printer.objects.subscribe');
 
@@ -529,7 +529,7 @@ describe('MoonrakerProxy / subscribe', () => {
       const ws1 = await waitForSocket(instances, 1);
       ws1.simulateOpen();
 
-      const restoredMessage = ws1.lastSentMessage();
+      const restoredMessage = ws1.lastSentMessageExcept('printer.objects.list');
 
       expect(restoredMessage?.method).toBe('printer.objects.subscribe');
       expect(restoredMessage?.params).toEqual({
@@ -766,6 +766,144 @@ describe('MoonrakerProxy / notify_status_update robustness', () => {
       ]);
 
       expect(notifyCb).toHaveBeenCalled();
+    } finally {
+      proxy.dispose();
+    }
+  });
+});
+
+describe('MoonrakerProxy / baseline subscription', () => {
+  function lastMessageOf(
+    ws: MockWebSocket,
+    method: string,
+  ): Record<string, unknown> | undefined {
+    return ws.sentMessages.filter((m) => m.method === method).pop();
+  }
+
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+  }
+
+  async function openWithBaseline(
+    instances: MockWebSocket[],
+    factory: WebSocketFactory,
+    objects: string[],
+  ): Promise<{ proxy: MoonrakerProxy; ws: MockWebSocket }> {
+    const proxy = await openProxy(instances, factory);
+    const ws = last(instances);
+
+    const list = lastMessageOf(ws, 'printer.objects.list');
+    ws.respond(list!.id as number, { objects });
+    await settle();
+
+    return { proxy, ws };
+  }
+
+  it('MP-BASE-01: socket open requests printer.objects.list and subscribes to existing core objects only', async () => {
+    const { factory, instances } = createWsFactory();
+    const proxy = await openProxy(instances, factory);
+    const ws = last(instances);
+
+    try {
+      const list = lastMessageOf(ws, 'printer.objects.list');
+      expect(list).toBeDefined();
+
+      ws.respond(list!.id as number, {
+        objects: [
+          'extruder',
+          'extruder1',
+          'heater_bed',
+          'heater_generic chamber',
+          'toolhead',
+          'print_stats',
+          'fan',
+        ],
+      });
+      await settle();
+
+      const subscribe = lastMessageOf(ws, 'printer.objects.subscribe');
+      const objects = (subscribe?.params as { objects: Record<string, string[]> })
+        .objects;
+
+      expect(Object.keys(objects).sort()).toEqual([
+        'extruder',
+        'extruder1',
+        'heater_bed',
+        'heater_generic chamber',
+        'print_stats',
+        'toolhead',
+      ]);
+      expect(objects.extruder).toEqual(['temperature', 'target', 'power']);
+      expect(objects).not.toHaveProperty('fan');
+    } finally {
+      proxy.dispose();
+    }
+  });
+
+  it('MP-BASE-02: unsubscribing a plugin subscription does not drop baseline fields', async () => {
+    const { factory, instances } = createWsFactory();
+    const { proxy, ws } = await openWithBaseline(instances, factory, [
+      'extruder',
+      'toolhead',
+    ]);
+
+    try {
+      const unsubscribe = proxy.handle.subscribe(
+        { extruder: ['temperature'], toolhead: ['custom_field'] },
+        vi.fn(),
+      );
+      await settle();
+
+      unsubscribe();
+      await settle();
+
+      const removed = lastMessageOf(ws, 'printer.objects.unsubscribe');
+      const objects = (removed?.params as { objects: Record<string, string[]> })
+        .objects;
+
+      // only the plugin-exclusive field goes away; baseline-covered fields stay
+      expect(objects).toEqual({ toolhead: ['custom_field'] });
+    } finally {
+      proxy.dispose();
+    }
+  });
+
+  it('MP-BASE-03: klippy ready and config change re-discover baseline objects', async () => {
+    const { factory, instances } = createWsFactory();
+    const { proxy, ws } = await openWithBaseline(instances, factory, ['extruder']);
+
+    try {
+      const countLists = () =>
+        ws.sentMessages.filter((m) => m.method === 'printer.objects.list').length;
+
+      expect(countLists()).toBe(1);
+
+      ws.notify('notify_klippy_ready');
+      await settle();
+      expect(countLists()).toBe(2);
+
+      // answer the pending list so the next refresh is not skipped as in-flight
+      ws.respond(lastMessageOf(ws, 'printer.objects.list')!.id as number, {
+        objects: ['extruder', 'heater_bed'],
+      });
+      await settle();
+
+      ws.notify('notify_config_changed');
+      await settle();
+      expect(countLists()).toBe(3);
+
+      ws.respond(lastMessageOf(ws, 'printer.objects.list')!.id as number, {
+        objects: ['extruder', 'heater_bed'],
+      });
+      await settle();
+
+      const subscribe = lastMessageOf(ws, 'printer.objects.subscribe');
+      const objects = (subscribe?.params as { objects: Record<string, string[]> })
+        .objects;
+
+      expect(Object.keys(objects).sort()).toEqual(['extruder', 'heater_bed']);
     } finally {
       proxy.dispose();
     }

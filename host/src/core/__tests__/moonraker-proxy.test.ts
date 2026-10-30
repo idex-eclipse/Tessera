@@ -368,7 +368,9 @@ describe('MoonrakerProxy / request', () => {
       const p1 = proxy.handle.request('method.one');
       const p2 = proxy.handle.request('method.two');
 
-      const messages = ws.sentMessages;
+      const messages = ws.sentMessagesExcept('printer.objects.list');
+
+      expect(messages.map((m) => m.method)).toEqual(['method.one', 'method.two']);
 
       const id1 = messages[0]!.id as number;
       const id2 = messages[1]!.id as number;

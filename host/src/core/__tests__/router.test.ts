@@ -73,9 +73,9 @@ function setup(initialHash = '#/') {
 
 describe('router / parseRoute', () => {
   it('parses empty hash as dashboard', () => {
-    expect(parseRoute('')).toEqual({ kind: 'dashboard', printerId: null });
-    expect(parseRoute('#')).toEqual({ kind: 'dashboard', printerId: null });
-    expect(parseRoute('#/')).toEqual({ kind: 'dashboard', printerId: null });
+    expect(parseRoute('')).toEqual({ kind: 'dashboard', printerId: null, query: {} });
+    expect(parseRoute('#')).toEqual({ kind: 'dashboard', printerId: null, query: {} });
+    expect(parseRoute('#/')).toEqual({ kind: 'dashboard', printerId: null, query: {} });
   });
 
   it('parses settings route', () => {
@@ -98,6 +98,7 @@ describe('router / parseRoute', () => {
     expect(parseRoute('#/p/abc123')).toEqual({
       kind: 'dashboard',
       printerId: 'abc123',
+      query: {},
     });
   });
 
@@ -106,6 +107,7 @@ describe('router / parseRoute', () => {
       kind: 'plugin-page',
       printerId: 'abc123',
       pageId: 'console',
+      query: {},
     });
   });
 
@@ -114,6 +116,28 @@ describe('router / parseRoute', () => {
       kind: 'plugin-page',
       printerId: 'my printer',
       pageId: 'my page',
+      query: {},
+    });
+  });
+
+  it('parses query string for plugin page and dashboard', () => {
+    expect(parseRoute('#/p/abc/console?x=1&y=a%20b')).toEqual({
+      kind: 'plugin-page',
+      printerId: 'abc',
+      pageId: 'console',
+      query: { x: '1', y: 'a b' },
+    });
+
+    expect(parseRoute('#/?edit=1')).toEqual({
+      kind: 'dashboard',
+      printerId: null,
+      query: { edit: '1' },
+    });
+
+    expect(parseRoute('#/p/abc?edit=1')).toEqual({
+      kind: 'dashboard',
+      printerId: 'abc',
+      query: { edit: '1' },
     });
   });
 
@@ -121,6 +145,7 @@ describe('router / parseRoute', () => {
     expect(parseRoute('#/unknown/path')).toEqual({
       kind: 'dashboard',
       printerId: null,
+      query: {},
     });
   });
 });
@@ -129,13 +154,13 @@ describe('router / parseRoute', () => {
 // buildHash
 // ------------------------------------------------------------------
 
-/* describe('router / buildHash', () => {
+describe('router / buildHash', () => {
   it('builds dashboard hash without printer', () => {
-    expect(buildHash({ kind: 'dashboard', printerId: null })).toBe('#/');
+    expect(buildHash({ kind: 'dashboard', printerId: null, query: {} })).toBe('#/');
   });
 
   it('builds dashboard hash with printer', () => {
-    expect(buildHash({ kind: 'dashboard', printerId: 'abc' })).toBe('#/p/abc');
+    expect(buildHash({ kind: 'dashboard', printerId: 'abc', query: {} })).toBe('#/p/abc');
   });
 
   it('builds settings hash', () => {
@@ -144,8 +169,19 @@ describe('router / parseRoute', () => {
 
   it('builds plugin page hash', () => {
     expect(
-      buildHash({ kind: 'plugin-page', printerId: 'abc', pageId: 'console' }),
+      buildHash({ kind: 'plugin-page', printerId: 'abc', pageId: 'console', query: {} }),
     ).toBe('#/p/abc/console');
+  });
+
+  it('builds plugin page hash with query', () => {
+    expect(
+      buildHash({
+        kind: 'plugin-page',
+        printerId: 'abc',
+        pageId: 'console',
+        query: { x: '1', y: 'a b' },
+      }),
+    ).toBe('#/p/abc/console?x=1&y=a%20b');
   });
 
   it('encodes URI components', () => {
@@ -154,23 +190,25 @@ describe('router / parseRoute', () => {
         kind: 'plugin-page',
         printerId: 'my printer',
         pageId: 'my page',
+        query: {},
       }),
     ).toBe('#/p/my%20printer/my%20page');
   });
 
   it('roundtrips with parseRoute', () => {
     const routes: Route[] = [
-      { kind: 'dashboard', printerId: null },
-      { kind: 'dashboard', printerId: 'abc' },
+      { kind: 'dashboard', printerId: null, query: {} },
+      { kind: 'dashboard', printerId: 'abc', query: {} },
       { kind: 'settings', section: null },
-      { kind: 'plugin-page', printerId: 'abc', pageId: 'console' },
+      { kind: 'plugin-page', printerId: 'abc', pageId: 'console', query: {} },
+      { kind: 'plugin-page', printerId: 'abc', pageId: 'console', query: { x: '1' } },
     ];
 
     for (const route of routes) {
       expect(parseRoute(buildHash(route))).toEqual(route);
     }
   });
-}); */
+});
 
 // ------------------------------------------------------------------
 // Router integration
@@ -204,6 +242,7 @@ describe('router / integration', () => {
     expect(router.route).toEqual({
       kind: 'dashboard',
       printerId: printer.id,
+      query: {},
     });
 
     expect(printerManager.activePrinterId).toBe(printer.id);
@@ -223,6 +262,7 @@ describe('router / integration', () => {
       kind: 'plugin-page',
       printerId: printer.id,
       pageId: 'console',
+      query: {},
     });
 
     expect(printerManager.activePrinterId).toBe(printer.id);
@@ -251,6 +291,7 @@ describe('router / integration', () => {
       kind: 'plugin-page',
       printerId: printer.id,
       pageId: 'console',
+      query: {},
     });
   });
 
@@ -279,6 +320,7 @@ describe('router / integration', () => {
       kind: 'plugin-page',
       printerId: printer.id,
       pageId: 'console',
+      query: {},
     });
   });
 });
