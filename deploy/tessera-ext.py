@@ -419,6 +419,11 @@ def extract_archive(data, dest):
         except (tarfile.TarError, EOFError) as e:
             raise ExtError(f'Archive is not a valid tar file: {e}') from e
 
+    # makedirs obeys the umask, and nginx has to read these folders under any umask.
+    for root, dirs, _ in os.walk(dest):
+        for name in dirs:
+            os.chmod(os.path.join(root, name), 0o755)
+
 
 # ------------------------------------------------------------------
 # Commands

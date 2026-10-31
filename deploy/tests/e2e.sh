@@ -15,8 +15,18 @@ INSTALLER="$REPO/deploy/install.sh"
 
 export TESSERA_NO_PROMPT=1 TESSERA_PORT="$PORT" TESSERA_DIR="$DIR" TESSERA_ARCHIVE="$ARCHIVE"
 
-step() { printf '\n=== %s\n' "$*"; }
-fail() { printf 'FAILED: %s\n' "$*" >&2; sudo journalctl -u tessera-ext --no-pager -n 30 || true; exit 1; }
+LOG="$(mktemp)"
+
+step() { printf '\n=== %s\n' "$*" | tee -a "$LOG"; }
+
+# A GitHub annotation: readable without the job log. Newlines must be %0A there.
+annotate() { printf '::error::%s\n' "$(printf '%s\n--- last output:\n%s\n--- journal:\n%s' "$1" "$(tail -n 25 "$LOG")" \
+  "$(sudo journalctl -u tessera-ext --no-pager -n 10 2>&1 || true)" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"; }
+fail() { printf 'FAILED: %s\n' "$*" >&2; annotate "$*"; trap - ERR; exit 1; }
+trap 'fail "line $LINENO: $BASH_COMMAND"' ERR
+
+installer() { bash "$INSTALLER" "$@" 2>&1 | tee -a "$LOG"; }
+
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 expect() { # expect WHAT WANT GOT
   [ "$2" = "$3" ] || fail "$1: expected $2, got $3"
@@ -40,12 +50,13 @@ done
 export PATH="$SHIMS:$PATH"
 
 step "clean install"
-bash "$INSTALLER" install
+installer install
 [ ! -e "$DIR/node_modules" ] && [ ! -e "$DIR/.git" ] || fail "sources in the installation"
 [ -f "$DIR/build-info" ] || fail "no build-info"
 
 expect "UI" 200 "$(code "$UI/")"
-curl -sI "$UI/" | grep -qi "content-security-policy: script-src 'self'" || fail "no CSP on the UI"
+headers="$(curl -sI "$UI/")"
+grep -qi "content-security-policy: script-src 'self'" <<<"$headers" || fail "no CSP on the UI: $headers"
 echo "ok: CSP"
 expect "policy.json" 200 "$(code "$UI/extensions/policy.json")"
 expect "index.json" 200 "$(code "$UI/extensions/index.json")"
@@ -54,11 +65,12 @@ step "plugin files are served, an update does not touch them"
 put_plugin
 tessera_ext="$DIR/deploy/install-ext.sh"
 bash "$tessera_ext" sync
-curl -s "$UI/extensions/index.json" | grep -q '"acme/hello"' || fail "plugin not in the catalog"
+index="$(curl -s "$UI/extensions/index.json")"
+grep -q '"acme/hello"' <<<"$index" || fail "plugin not in the catalog: $index"
 expect "manifest" 200 "$(code "$UI/extensions/hello/manifest.json")"
 expect "entry" 200 "$(code "$UI/extensions/hello/index.js")"
 before="$(plugin_hash)"
-bash "$INSTALLER" reinstall
+installer reinstall
 expect "plugin files after reinstall" "$before" "$(plugin_hash)"
 expect "entry after reinstall" 200 "$(code "$UI/extensions/hello/index.js")"
 
@@ -84,13 +96,13 @@ sudo systemd-run --wait --pipe --quiet \
 echo "ok: sandbox"
 
 step "service off: nginx answers 502, the UI keeps working"
-TESSERA_UI_INSTALL=0 bash "$INSTALLER" reinstall
+TESSERA_UI_INSTALL=0 installer reinstall
 [ ! -e /etc/systemd/system/tessera-ext.socket ] || fail "units are still there"
 expect "API with the service off" 502 "$(code "$UI/tessera-api/v1/status")"
 expect "UI with the service off" 200 "$(code "$UI/")"
 
 step "remove"
-printf 'y\ny\n' | TESSERA_NO_PROMPT=0 bash "$INSTALLER" remove
+printf 'y\ny\n' | TESSERA_NO_PROMPT=0 installer remove
 [ ! -e "$DIR" ] || fail "$DIR is still there"
 
 step "migration of a source checkout"
@@ -99,7 +111,7 @@ git -C "$DIR" checkout -q v0.5.0-beta
 mkdir -p "$DIR/node_modules/x"
 put_plugin
 before="$(plugin_hash)"
-TESSERA_ALLOW_REMOTE_PLUGINS=1 bash "$INSTALLER" update
+TESSERA_ALLOW_REMOTE_PLUGINS=1 installer update
 [ ! -e "$DIR/.git" ] && [ ! -e "$DIR/node_modules" ] && [ ! -e "$DIR/plugins" ] || fail "checkout not removed"
 [ -f "$DIR/build-info" ] || fail "no build-info after migration"
 expect "plugin files after migration" "$before" "$(plugin_hash)"

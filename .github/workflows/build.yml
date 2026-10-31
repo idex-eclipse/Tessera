@@ -43,11 +43,14 @@ jobs:
           retention-days: 7
 
   installers:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.8', '3.x']
+        include:
+          # The oldest Python the runners still offer; printers may have 3.7.
+          - { os: ubuntu-22.04, python: '3.8' }
+          - { os: ubuntu-latest, python: '3.x' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,7 +62,16 @@ jobs:
       # Advice, not a gate: install.sh predates this check.
       - run: shellcheck --severity=warning deploy/install.sh deploy/install-ext.sh tools/pack-release.sh deploy/tests/e2e.sh
         continue-on-error: true
-      - run: python -m unittest discover -s deploy/tests -v
+      - name: Python tests
+        run: |
+          status=0
+          python -m unittest discover -s deploy/tests -v > test.log 2>&1 || status=$?
+          cat test.log
+          if [ "$status" != 0 ]; then
+            # An annotation is readable without the job log. Newlines must be %0A there.
+            printf '::error::%s\n' "$(grep -A22 -E '^(FAIL|ERROR):' test.log | head -n 90 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
+            exit 1
+          fi
       - name: Dry run
         run: TESSERA_DRY_RUN=1 TESSERA_NO_PROMPT=1 TESSERA_DIR="$RUNNER_TEMP/dry" bash deploy/install.sh install
 
