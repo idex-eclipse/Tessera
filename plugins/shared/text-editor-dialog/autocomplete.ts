@@ -13,12 +13,26 @@
  *  - подсказки появляются при непустом префиксе; единственное исключение — gcode-строка
  *    после пробела или «=» (список параметров / значений команды), см. CompletionContext;
  *  - специализированные источники имеют приоритет над «всеми словами»;
- *  - список ограничен limit (по умолчанию 12), чтобы dropdown не был бесконечным.
+ *  - список ограничен limit (по умолчанию MAX_SUGGESTIONS = 100); dropdown прокручивается.
  */
 
 import { paramTypeLabel } from '../gcode-hints/catalog';
+import {
+  jinjaObjectNames,
+  macroVariables,
+  makeNameResolver,
+  printerRef,
+  type ObjectIndex,
+} from '../gcode-hints/object-names';
 import { completionTokenStart, suggestForLine, type HintSuggestion } from '../gcode-hints/suggest';
 import type { Catalog } from '../gcode-hints/types';
+
+/** Максимум пунктов в списке подсказок редактора. */
+export const MAX_SUGGESTIONS = 100;
+
+// printer["gcode_macro NAME"].<переменная> и printer["<объект>  — внутри jinja
+const MACRO_VAR_RE = /printer\s*\[\s*(["'])gcode_macro\s+([^"'\n]*?)\s*\1\s*\]\s*\.\s*(\w*)$/;
+const BRACKET_RE = /printer\s*\[\s*(["'])([^"'\n]*)$/;
 
 export interface Suggestion {
   label: string;
@@ -38,6 +52,12 @@ export interface CompletionContext {
   end: number;
   /** gcode-строка от начала до каретки (для подбора команд / параметров / значений) */
   linePrefix?: string;
+  /** jinja: `printer["` + имя объекта или `printer["gcode_macro X"].` + переменная */
+  jinjaKind?: 'bracket' | 'macroVar';
+  /** имя макроса для `printer["gcode_macro X"].` */
+  macro?: string;
+  /** что дописать после имени объекта: закрывающие кавычка и `]`, если их нет после каретки */
+  closing?: string;
 }
 
 /** Список показан без набранных букв (сразу после пробела или «=»). */
@@ -75,6 +95,41 @@ export function getCompletionContext(
   }
 
   if (inJinja) {
+    const jinjaLine = left.slice(left.lastIndexOf('\n') + 1);
+
+    // printer["gcode_macro X"].<переменная> — пустой префикс тоже допустим (список переменных)
+    const mv = MACRO_VAR_RE.exec(jinjaLine);
+    if (mv) {
+      const mprefix = mv[3] ?? '';
+      return {
+        inJinja: true,
+        inGcode: false,
+        inConfig: false,
+        prefix: mprefix,
+        start: cursor - mprefix.length,
+        end: cursor,
+        jinjaKind: 'macroVar',
+        macro: mv[2] ?? '',
+      };
+    }
+
+    // printer["<имя объекта>: имена объектов, в том числе сразу после кавычки
+    const br = BRACKET_RE.exec(jinjaLine);
+    if (br) {
+      const quote = br[1] ?? '"';
+      const bprefix = br[2] ?? '';
+      return {
+        inJinja: true,
+        inGcode: false,
+        inConfig: false,
+        prefix: bprefix,
+        start: cursor - bprefix.length,
+        end: cursor,
+        jinjaKind: 'bracket',
+        closing: text.startsWith(quote, cursor) ? '' : `${quote}]`,
+      };
+    }
+
     const prefix = readPrefix(text, cursor, /[\w.]/);
     // подсказки Jinja — только после ввода первой буквы префикса
     if (prefix === '') return null;
@@ -197,6 +252,14 @@ export interface CompletionSources {
   catalog?: Catalog;
   /** параметры макроса, в теле которого каретка; null — каретка вне макроса */
   macroParams?: string[] | null;
+  /** имена объектов принтера и файла: значения FAN=, HEATER=…, printer[...] в jinja */
+  objects?: ObjectIndex;
+}
+
+/** Тип секции для пояснения: `fan_generic cooling` → `fan_generic`. */
+function sectionType(name: string): string | undefined {
+  const sp = name.indexOf(' ');
+  return sp === -1 ? undefined : name.slice(0, sp);
 }
 
 function detailOf(h: HintSuggestion): string | undefined {
@@ -217,7 +280,7 @@ function fromHint(h: HintSuggestion): Suggestion {
 export function getSuggestions(
   ctx: CompletionContext,
   sources: CompletionSources,
-  limit = 12,
+  limit = MAX_SUGGESTIONS,
 ): Suggestion[] {
   const q = ctx.prefix.toLowerCase();
   const out: Suggestion[] = [];
@@ -230,7 +293,21 @@ export function getSuggestions(
     out.push(s);
   };
 
-  if (ctx.inJinja) {
+  if (ctx.inJinja && ctx.jinjaKind === 'bracket') {
+    // printer["<имя>"]: имена объектов; закрывающие кавычка и ] добавляются, если их нет
+    for (const n of sources.objects ? jinjaObjectNames(sources.objects) : []) {
+      if (out.length >= limit) break;
+      if (n.toLowerCase().startsWith(q)) {
+        push({ label: n, insert: n + (ctx.closing ?? ''), kind: 'value', detail: sectionType(n) });
+      }
+    }
+  } else if (ctx.inJinja && ctx.jinjaKind === 'macroVar') {
+    // printer["gcode_macro X"].<переменная> (без префикса variable_)
+    for (const v of sources.objects ? macroVariables(sources.objects, ctx.macro ?? '') : []) {
+      if (out.length >= limit) break;
+      if (v.toLowerCase().startsWith(q)) push({ label: v, insert: v, kind: 'var' });
+    }
+  } else if (ctx.inJinja) {
     // внутри макроса `params.` предлагает параметры этого макроса, а не всего файла
     const scoped =
       sources.macroParams && q.startsWith('params.')
@@ -240,10 +317,25 @@ export function getSuggestions(
       if (out.length >= limit) break;
       if (v.toLowerCase().startsWith(q)) push({ label: v, insert: v, kind: 'var' });
     }
+    // printer.<объект> / printer["<объект с пробелом>"]
+    if (sources.objects && q.startsWith('printer.')) {
+      const typed = q.slice('printer.'.length); // что набрано после «printer.»
+      for (const n of jinjaObjectNames(sources.objects)) {
+        if (out.length >= limit) break;
+        const ref = printerRef(n);
+        // имя с пробелом пишется как printer["…"]: сверяем начало самого имени
+        const matches = ref.startsWith('printer.') ? ref.toLowerCase().startsWith(q) : n.toLowerCase().startsWith(typed);
+        if (matches) push({ label: ref, insert: ref, kind: 'var', detail: sectionType(n) });
+      }
+    }
   } else if (ctx.inGcode) {
     // команды, параметры и значения из каталога — приоритет, затем общие слова файла
     if (sources.catalog && ctx.linePrefix !== undefined) {
-      const r = suggestForLine(sources.catalog, ctx.linePrefix, { limit, skipExact: true });
+      const r = suggestForLine(sources.catalog, ctx.linePrefix, {
+        limit,
+        skipExact: true,
+        names: sources.objects ? makeNameResolver(sources.objects) : undefined,
+      });
       for (const h of r.items) push(fromHint(h));
     }
     // слова файла: на месте команды (там живут и макросы, которых каталог ещё не знает)

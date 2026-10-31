@@ -10,6 +10,8 @@ export interface MacroSource {
   name: string;
   description: string;
   params: MacroParam[];
+  /** `variable_*` макроса без префикса (так они видны в jinja и в SET_GCODE_VARIABLE) */
+  variables?: string[];
 }
 
 interface Block extends MacroSource {
@@ -24,14 +26,21 @@ function scan(text: string): Block[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const blocks: Block[] = [];
 
-  let cur: { name: string; from: number; description: string; body: string[]; inBody: boolean } | null =
-    null;
+  let cur: {
+    name: string;
+    from: number;
+    description: string;
+    body: string[];
+    variables: string[];
+    inBody: boolean;
+  } | null = null;
   const close = (to: number): void => {
     if (!cur) return;
     blocks.push({
       name: cur.name,
       description: cur.description,
       params: parseMacroParams(cur.body.join('\n')),
+      variables: cur.variables,
       from: cur.from,
       to,
     });
@@ -45,7 +54,16 @@ function scan(text: string): Block[] {
     if (/^\[/.test(ln)) {
       close(i);
       const m = MACRO_HEADER_RE.exec(ln);
-      if (m) cur = { name: m[1] ?? '', from: i, description: '', body: [], inBody: false };
+      if (m) {
+        cur = {
+          name: m[1] ?? '',
+          from: i,
+          description: '',
+          body: [],
+          variables: [],
+          inBody: false,
+        };
+      }
       continue;
     }
     if (!cur) continue;
@@ -59,6 +77,9 @@ function scan(text: string): Block[] {
       cur.inBody = k === 'gcode';
       if (k === 'gcode') cur.body.push(key[2] ?? '');
       else if (k === 'description') cur.description = (key[2] ?? '').trim();
+      else if (k.startsWith('variable_') && k.length > 'variable_'.length) {
+        cur.variables.push(k.slice('variable_'.length));
+      }
       continue;
     }
     // продолжение значения (отступ или пустая строка)
@@ -70,7 +91,12 @@ function scan(text: string): Block[] {
 
 /** Все `[gcode_macro NAME]` текста с описанием и параметрами из тела `gcode:`. */
 export function scanLocalMacros(text: string): MacroSource[] {
-  return scan(text).map(({ name, description, params }) => ({ name, description, params }));
+  return scan(text).map(({ name, description, params, variables }) => ({
+    name,
+    description,
+    params,
+    variables,
+  }));
 }
 
 /**

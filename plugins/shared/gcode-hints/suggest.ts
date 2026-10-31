@@ -5,6 +5,7 @@
  * подсказки и позицию, с которой их нужно подставлять (до каретки).
  */
 import { namedParams } from './catalog';
+import { quoteValue, type NameResolver } from './object-names';
 import type { Catalog, CommandInfo, ParamInfo } from './types';
 
 export interface HintSuggestion {
@@ -24,6 +25,8 @@ export interface SuggestOptions {
   substring?: boolean;
   /** не предлагать команду, которая уже набрана целиком и ничего не добавит */
   skipExact?: boolean;
+  /** имена объектов принтера для значений `FAN=`, `HEATER=`… (см. makeNameResolver) */
+  names?: NameResolver;
 }
 
 export interface HintResult {
@@ -78,7 +81,20 @@ export function completionTokenStart(linePrefix: string): number | null {
   if (openQuote) return null;
   const token = s.slice(start);
   const eq = token.indexOf('=');
-  return lead + start + (eq === -1 ? 0 : eq + 1);
+  if (eq === -1) return lead + start;
+  // в списке значений (`CHIPS=a,b`) подбор идёт по последнему элементу
+  const comma = token.lastIndexOf(',');
+  return lead + start + (comma > eq ? comma + 1 : eq + 1);
+}
+
+/** Введённые на строке `ИМЯ=значение` (ключи в верхнем регистре, кавычки сняты). */
+function enteredValues(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of text.matchAll(/([A-Za-z_]\w*)=("(?:[^"\\]|\\.)*"|\S*)/g)) {
+    const raw = m[2] ?? '';
+    out[(m[1] ?? '').toUpperCase()] = raw.startsWith('"') ? raw.slice(1, -1) : raw;
+  }
+  return out;
 }
 
 function sortByName(a: CommandInfo, b: CommandInfo): number {
@@ -142,18 +158,58 @@ export function suggestForLine(
 
   const eq = current.indexOf('=');
   if (eq !== -1) {
-    // значение: предлагаем только перечисления
     const param = params.find((p) => p.name.toUpperCase() === current.slice(0, eq).toUpperCase());
     const valuePrefix = current.slice(eq + 1);
-    if (!param?.choices) return EMPTY;
-    const q = valuePrefix.toUpperCase();
-    const items: HintSuggestion[] = param.choices
-      .filter((c) => c.toUpperCase().startsWith(q) && c.toUpperCase() !== q)
-      .map((c) => ({ kind: 'value' as const, label: c, insert: c, param, command: info }));
+    if (!param) return EMPTY;
+
+    // значение из перечисления (`MODE=PRIMARY|COPY|…`, `ENABLE=0|1`)
+    if (param.choices) {
+      const q = valuePrefix.toUpperCase();
+      const items: HintSuggestion[] = param.choices
+        .filter((c) => c.toUpperCase().startsWith(q) && c.toUpperCase() !== q)
+        .map((c) => ({ kind: 'value' as const, label: c, insert: c, param, command: info }));
+      return {
+        items: items.slice(0, limit),
+        replaceStart: tokenAbs + eq + 1,
+        passive: valuePrefix === '',
+      };
+    }
+
+    // имя объекта принтера (`FAN=`, `HEATER=`, …)
+    const resolved = opts.names?.(info.name, param.name, enteredValues(rest.slice(0, start)));
+    if (!resolved) return EMPTY;
+
+    let segment = valuePrefix;
+    let segmentStart = 0;
+    let chosen = new Set<string>();
+    if (resolved.separator) {
+      const i = valuePrefix.lastIndexOf(resolved.separator);
+      segment = valuePrefix.slice(i + 1);
+      segmentStart = i + 1;
+      chosen = new Set(
+        i === -1 ? [] : valuePrefix.slice(0, i).split(resolved.separator).map((v) => v.toLowerCase()),
+      );
+    }
+    const q = segment.toUpperCase();
+    const items: HintSuggestion[] = resolved.names
+      .filter(
+        (n) =>
+          n.value.toUpperCase().startsWith(q) &&
+          n.value.toUpperCase() !== q &&
+          !chosen.has(n.value.toLowerCase()),
+      )
+      .map((n) => ({
+        kind: 'value' as const,
+        label: n.value,
+        insert: resolved.separator ? n.value : quoteValue(n.value),
+        description: n.detail,
+        param,
+        command: info,
+      }));
     return {
       items: items.slice(0, limit),
-      replaceStart: tokenAbs + eq + 1,
-      passive: valuePrefix === '',
+      replaceStart: tokenAbs + eq + 1 + segmentStart,
+      passive: segment === '',
     };
   }
 
