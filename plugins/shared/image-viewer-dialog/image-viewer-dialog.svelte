@@ -2,6 +2,7 @@
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../icons/Icon.svelte';
+  import Loader from '../loader/Loader.svelte';
 
   let {
     open,
@@ -154,7 +155,7 @@
         </div>
       {:else if loading || !loaded}
         <div class="iv-state">
-          <span class="iv-spinner" aria-hidden="true"></span>
+          <Loader text={i18n.t('ft.loading')} />
         </div>
       {/if}
 
@@ -305,18 +306,4 @@
     pointer-events: none;
   }
 
-  .iv-spinner {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent);
-    animation: iv-spin 0.8s linear infinite;
-  }
-
-  @keyframes iv-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 </style>

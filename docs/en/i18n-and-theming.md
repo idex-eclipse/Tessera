@@ -196,3 +196,11 @@ covers the UI, but your element stays mounted and keeps receiving events.
   column (a widget still occupies its `h` rows, so its height is definite). Adapt with container
   queries, not `@media`, and size touch targets with `@media (pointer: coarse)` — see
   [surfaces.md → Narrow screens](surfaces.md#9-narrow-screens).
+
+## Loading indicator
+
+Use one loader everywhere — a rotating tesseract that takes its colour from `--accent`.
+
+- Core plugins: `import Loader from '…/plugins/shared/loader/Loader.svelte'`. Props: `size` (`sm` 16px for buttons, `md` 28px, `lg` 64px), `text` (caption for this place; defaults to `common.loading`, hidden for `sm`, `""` removes it), `inline`, `block` (fills the container).
+- Remote plugins: `<tessera-loader size="md" text="Loading…" block></tessera-loader>`. Pass `text` in your own language — the element has no plugin i18n context.
+- Do not write your own spinners.

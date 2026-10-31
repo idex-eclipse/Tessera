@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { useHeaterMonitor } from '../../../use-heater.svelte.ts';
@@ -327,7 +328,7 @@
             onclick={runPid}
           >
             {#if store.heatersState.tuning}
-              <Icon name="loader" size={14} /> {i18n.t('calibrations.heaters.tuning')}
+              <Loader size="sm" inline text="" /> {i18n.t('calibrations.heaters.tuning')}
             {:else}
               <Icon name="play" size={14} /> {i18n.t('calibrations.heaters.run')}
             {/if}
@@ -651,11 +652,6 @@
     color: var(--text-muted);
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
   /* Стрелка-указатель зеркалится в RTL */
   .dir-arrow { display: inline-block; }
   :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }

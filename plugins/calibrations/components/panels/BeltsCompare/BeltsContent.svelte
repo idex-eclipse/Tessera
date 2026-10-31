@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
@@ -117,7 +118,7 @@
           onclick={run}
         >
           {#if store.shaperState.busy !== ''}
-            <Icon name="loader" size={14} /> {i18n.t('calibrations.running')}
+            <Loader size="sm" inline text="" /> {i18n.t('calibrations.running')}
           {:else}
             <Icon name="play" size={14} /> {i18n.t('calibrations.run')}
           {/if}
@@ -194,5 +195,4 @@
     white-space: pre-wrap; word-break: break-word;
   }
 
-  @keyframes spin { to { transform: rotate(360deg); } }
 </style>

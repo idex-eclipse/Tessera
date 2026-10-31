@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../shared/icons/Icon.svelte';
@@ -135,7 +136,7 @@
                   }}
                 >
                   {#if store.updates.busy}
-                    <span class="spinner" aria-hidden="true"></span>
+                    <Loader size="sm" inline text="" />
                   {:else}
                     <Icon name="download" size={14} />
                   {/if}
@@ -151,7 +152,7 @@
                   }}
                 >
                   {#if store.updates.busy}
-                    <span class="spinner" aria-hidden="true"></span>
+                    <Loader size="sm" inline text="" />
                   {:else}
                     <Icon name="download" size={14} />
                   {/if}
@@ -687,21 +688,7 @@
     color: var(--accent);
   }
 
-  .spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
-  }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   /* свёрнутый шеврон «указывает в сторону содержимого»: в RTL — влево */
   :global([dir='rtl']) .chev:not(.open) { transform: rotate(90deg); }

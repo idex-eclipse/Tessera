@@ -228,3 +228,7 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
 }
+/* Стартовый загрузчик: #app ещё пуст, поэтому растягиваем на весь экран */
+#app > .tessera-loader.tl-block {
+  min-height: 100vh;
+}

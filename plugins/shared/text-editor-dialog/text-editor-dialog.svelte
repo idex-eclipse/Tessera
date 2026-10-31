@@ -6,6 +6,7 @@
   import { editorUi } from './editor-state.svelte.ts';
 
   import Icon from '../icons/Icon.svelte';
+  import Loader from '../loader/Loader.svelte';
   import ColorPickerMenu from '../color-picker/ColorPickerMenu.svelte';
   import { highlightKlipperLines, highlightPlainLines, toRenderLines } from './highlight';
   import {
@@ -1267,8 +1268,7 @@
               <div class="hl-list dev-list">
                 {#if devState[devTab].status === 'loading'}
                   <div class="dev-state">
-                    <span class="spinner"></span>
-                    <span>{i18n.t('ft.loading')}</span>
+                    <Loader inline text={i18n.t('ft.loading')} />
                   </div>
                 {:else if devState[devTab].status === 'idle'}
                   <div class="dev-state">{i18n.t('ft.dev.canHint')}</div>
@@ -1392,8 +1392,7 @@
     <div class="editor-body">
       {#if loading}
         <div class="editor-loading">
-          <span class="spinner"></span>
-          <span class="loading-text">{i18n.t('ft.loading')}</span>
+          <Loader size="lg" text={i18n.t('ft.loading')} />
         </div>
       {:else}
         <div class="code-wrap" dir="ltr">
@@ -1649,15 +1648,6 @@
     gap: var(--space-md);
     color: var(--text-muted);
   }
-  .spinner {
-    width: 28px; height: 28px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-text { font-size: var(--font-size-sm); }
 
   /* -------- раскладка: гаттер + оглавление + код -------- */
   .code-wrap {

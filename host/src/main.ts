@@ -1,6 +1,6 @@
 import 'drag-drop-touch';
 
-import { mount } from 'svelte';
+import { mount, unmount } from 'svelte';
 
 import App from './App.svelte';
 
@@ -14,6 +14,9 @@ import { createUiStore } from './core/ui-store.svelte.ts';
 import { guardAgent } from './core/guard-agent';
 
 import { registerCoreLocales } from './i18n/index.ts';
+
+import Loader from '../../plugins/shared/loader/Loader.svelte';
+import { defineTesseraLoaderElement } from '../../plugins/shared/loader/tessera-loader-element';
 
 import { widgetsCoreManifest } from '../../plugins/widgets-core/manifest';
 import * as widgetsCoreModule from '../../plugins/widgets-core/index';
@@ -90,7 +93,17 @@ addPluginLocales(historyLocales);
 addPluginLocales(calibrationsLocales);
 addPluginLocales(systemLocales);
 
+defineTesseraLoaderElement();
+
 async function startup(): Promise<void> {
+  const target = document.getElementById('app')!;
+  // Заменяет статичный сплэш из index.html на анимированный, пока грузятся плагины.
+  target.replaceChildren();
+  const splash = mount(Loader, {
+    target,
+    props: { size: 'lg', block: true, text: i18n.t('common.loading') },
+  });
+
   try {
     await loader.loadEnabledPlugins();
   } catch (e) {
@@ -102,8 +115,9 @@ async function startup(): Promise<void> {
   // документация и точка расширения (если в будущем появится ленивая оценка).
   loader.eagerActivateSurfacePlugins();
 
+  unmount(splash);
   mount(App, {
-    target: document.getElementById('app')!,
+    target,
     props: {
       settings,
       printerManager,

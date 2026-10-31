@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getAppContext } from '../../app-context';
+  import Loader from '../../../../plugins/shared/loader/Loader.svelte';
   import {
     getAuthRequiredPrinterId,
     login,
@@ -74,7 +75,7 @@
 
       <button class="auth-submit" type="submit" disabled={busy}>
         {#if busy}
-          <span class="spinner" aria-hidden="true"></span>
+          <Loader size="sm" inline text="" />
         {/if}
         {ctx.i18n.t('common.auth.submit')}
       </button>
@@ -164,18 +165,4 @@
     cursor: wait;
   }
 
-  .spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 </style>

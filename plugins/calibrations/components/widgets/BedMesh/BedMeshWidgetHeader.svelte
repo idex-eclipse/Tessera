@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../../shared/icons/Icon.svelte';
@@ -92,7 +93,7 @@
       title={!klippy.ready ? i18n.t('common.klipperNotReady') : i18n.t('bedMesh.widget.tools')}
     >
       {#if busy !== ''}
-        <span class="spinner" aria-hidden="true"></span>
+        <Loader size="sm" inline text="" />
       {:else}
         <Icon name="tool" size={15} />
       {/if}
@@ -115,7 +116,7 @@
           >
             <span class="item-label">{i18n.t(tool.labelKey)}</span>
             {#if busy === tool.key}
-              <span class="spinner" aria-hidden="true"></span>
+              <Loader size="sm" inline text="" />
             {/if}
           </button>
         {/each}
@@ -217,21 +218,7 @@
     white-space: nowrap;
   }
 
-  .spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
-  }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
   @media (pointer: coarse) {

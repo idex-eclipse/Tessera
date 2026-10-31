@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../shared/loader/Loader.svelte';
   import { untrack } from 'svelte';
 
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
@@ -379,7 +380,7 @@
       >
         <span class="nav-icon">
           {#if uploadProgress !== null}
-            <span class="spinner" aria-hidden="true"></span>
+            <Loader size="sm" inline text="" />
           {:else}
             <Icon name="upload" size={20}/>
           {/if}
@@ -1259,21 +1260,7 @@
     color: var(--text-muted);
   }
 
-  .spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
-  }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   @keyframes fade-in {
     from {

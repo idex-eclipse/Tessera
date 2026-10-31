@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../icons/Icon.svelte';
+  import Loader from '../loader/Loader.svelte';
   import { highlightKlipperLines, toRenderLines } from './highlight';
   import { HELP_WIDTH, placePopup, type Anchor } from './help-position';
   import type { HelpView } from './config-reference';
@@ -78,8 +79,7 @@
   <div class="help-body">
     {#if view.status === 'loading'}
       <div class="help-state">
-        <span class="help-spinner"></span>
-        <span>{i18n.t('ft.help.loading')}</span>
+        <Loader text={i18n.t('ft.help.loading')} />
       </div>
     {:else if view.status === 'notFound'}
       <div class="help-state">{i18n.t('ft.help.notFound', { name: section })}</div>
@@ -245,14 +245,4 @@
     font-size: var(--font-size-sm);
     cursor: pointer;
   }
-
-  .help-spinner {
-    width: 22px;
-    height: 22px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: help-spin 0.8s linear infinite;
-  }
-  @keyframes help-spin { to { transform: rotate(360deg); } }
 </style>

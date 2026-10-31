@@ -6,6 +6,7 @@
   import { pageHash } from '../shared/page-nav';
   import { usePrintProgress } from './viewer/use-print-progress.svelte';
   import GCodeViewer from './viewer/GCodeViewer.svelte';
+  import Loader from '../shared/loader/Loader.svelte';
 
   import { isCleared, unclear } from './viewer/preview-ui-state.svelte';
 
@@ -54,7 +55,7 @@
   {#if !path}
     <p class="empty">{i18n.t('gcodePreview.noPrint')}</p>
   {:else if !entry || entry.status === 'loading'}
-    <p class="empty">{i18n.t('gcodePreview.loading')}</p>
+    <Loader block text={i18n.t('gcodePreview.loading')} />
   {:else if entry.status === 'error'}
     <p class="empty error">{entry.message}</p>
   {:else}

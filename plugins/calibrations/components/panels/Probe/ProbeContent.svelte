@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
@@ -191,7 +192,7 @@
     <div class="btn-row">
       <button class="btn primary" disabled={isPrinting || busy !== ''} onclick={run}>
         {#if busy !== ''}
-          <Icon name="loader" size={14} /> {i18n.t('calibrations.probe.running')}
+          <Loader size="sm" inline text="" /> {i18n.t('calibrations.probe.running')}
         {:else}
           <Icon name="play" size={14} /> {i18n.t('calibrations.probe.run')}
         {/if}
@@ -360,5 +361,4 @@
     font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
   }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  @keyframes spin { to { transform: rotate(360deg); } }
 </style>

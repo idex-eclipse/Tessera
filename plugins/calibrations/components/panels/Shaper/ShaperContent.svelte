@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import '../../../../shared/responsive/card-table.css';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
@@ -349,7 +350,7 @@
         <div class="btn-row">
           <button class="btn primary" disabled={store.shaperState.busy !== '' || isPrinting || notHomed} onclick={run}>
             {#if store.shaperState.busy !== ''}
-              <Icon name="loader" size={14} /> {i18n.t('calibrations.running')}
+              <Loader size="sm" inline text="" /> {i18n.t('calibrations.running')}
             {:else}
               <Icon name="play" size={14} /> {i18n.t('calibrations.run')}
             {/if}
@@ -658,7 +659,6 @@
   .menu-item.menu-switch { cursor: pointer; }
   .menu-item.menu-switch input { cursor: pointer; }
 
-  @keyframes spin { to { transform: rotate(360deg); } }
 
   /* сенсорный указатель (а не узкое окно): зона нажатия ≥ 36px */
   @media (pointer: coarse) {

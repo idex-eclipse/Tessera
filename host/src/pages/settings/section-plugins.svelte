@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getAppContext } from '../../app-context';
+  import Loader from '../../../../plugins/shared/loader/Loader.svelte';
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
   import { readStoredAuth } from '../../core/auth-store.svelte.ts';
   import { useExtensionsCatalog } from '../../core/extensions-catalog.svelte.ts';
@@ -181,7 +182,7 @@
             </div>
             <div class="plugin-actions">
               {#if installer.busyId === plugin.id}
-                <span class="loading">{i18n.t('settings.registryWorking')}</span>
+                <Loader size="sm" inline text={i18n.t('settings.registryWorking')} />
               {:else if plugin.state === 'available'}
                 <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null}>
                   {i18n.t('common.install')}
@@ -219,7 +220,7 @@
   </div>
 
   {#if catalogLoading}
-    <p class="loading">{i18n.t('common.loading')}</p>
+    <Loader block text={i18n.t('common.loading')} />
   {:else if catalogError}
     <p class="error">{catalogError}</p>
   {:else if catalogEntries.length === 0}
@@ -404,7 +405,6 @@
 
 .section-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
 .section-header h3 { font-size: var(--font-size-lg); font-weight: 600; }
-.loading { color: var(--text-muted); font-style: italic; }
 .error { color: var(--danger); }
 .empty { color: var(--text-muted); font-style: italic; }
 .badge.installed { background: var(--success); color: #fff; }

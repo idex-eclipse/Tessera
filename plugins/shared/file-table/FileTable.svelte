@@ -6,6 +6,7 @@
   import ConfirmDialog from '../confirm-dialog.svelte';
   import ContextMenu, { type ContextMenuItem } from '../context-menu.svelte';
   import Icon from '../icons/Icon.svelte';
+  import Loader from '../loader/Loader.svelte';
   import PromptDialog from '../prompt-dialog.svelte';
   import TextEditorDialog from '../text-editor-dialog/text-editor-dialog.svelte';
   import ImageViewerDialog from '../image-viewer-dialog/image-viewer-dialog.svelte';
@@ -499,8 +500,7 @@ let {
     </div>
   {:else if loading && dataFiles.length === 0 && dataDirs.length === 0}
     <div class="ft-state">
-      <span class="ft-spinner" aria-hidden="true"></span>
-      <span class="ft-state-text">{i18n.t('ft.loading')}</span>
+      <Loader text={i18n.t('ft.loading')} />
     </div>
   {:else}
     <div class="ft-scroll">
@@ -861,10 +861,4 @@ let {
       padding: var(--space-xl); color: var(--text-muted); text-align: center;
     }
     .ft-state-hint { font-size: var(--font-size-sm); color: var(--text-muted); }
-    .ft-spinner {
-      width: 22px; height: 22px; border-radius: 50%;
-      border: 2px solid var(--border-color); border-top-color: var(--accent);
-      animation: ft-spin .8s linear infinite;
-    }
-    @keyframes ft-spin { to { transform: rotate(360deg); } }
 </style>

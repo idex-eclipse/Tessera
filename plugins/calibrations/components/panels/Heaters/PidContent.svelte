@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
@@ -82,7 +83,7 @@
 
       <button class="btn" onclick={runPid} disabled={!targetValid || store.heatersState.tuning || busy !== '' || isPrinting}>
         {#if store.heatersState.tuning}
-          <Icon name="loader" size={14} /> {i18n.t('calibrations.heaters.tuning')}
+          <Loader size="sm" inline text="" /> {i18n.t('calibrations.heaters.tuning')}
         {:else}
           <Icon name="play" size={14} /> {i18n.t('calibrations.heaters.run')}
         {/if}
@@ -166,7 +167,6 @@
   .card-v { font-size: var(--font-size-md); font-weight: 600; color: var(--text-primary); }
   .placeholder { color: var(--text-muted); font-size: var(--font-size-sm); margin: 0; }
   .placeholder.muted { font-style: italic; }
-  @keyframes spin { to { transform: rotate(360deg); } }
   /* Стрелка-указатель зеркалится в RTL */
   .dir-arrow { display: inline-block; }
   :global([dir='rtl']) .dir-arrow { transform: scaleX(-1); }

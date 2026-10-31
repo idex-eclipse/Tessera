@@ -200,3 +200,11 @@ const accent = getComputedStyle(document.documentElement).getPropertyValue('--ac
   одной колонкой (виджет по-прежнему занимает свои `h` рядов, поэтому высота у него определена).
   Адаптируйтесь через container queries, а не `@media`, а размеры зон нажатия задавайте через
   `@media (pointer: coarse)` — см. [surfaces.md → Узкие экраны](surfaces.md#9-узкие-экраны).
+
+## Индикатор загрузки
+
+Везде используется один загрузчик — вращающийся тессеракт, цвет берётся из `--accent`.
+
+- Core-плагины: `import Loader from '…/plugins/shared/loader/Loader.svelte'`. Пропсы: `size` (`sm` 16px для кнопок, `md` 28px, `lg` 64px), `text` (подпись для конкретного места; по умолчанию `common.loading`, для `sm` скрыта, `""` убирает её), `inline`, `block` (занимает весь контейнер).
+- Удалённые плагины: `<tessera-loader size="md" text="Загрузка…" block></tessera-loader>`. Передавайте `text` на своём языке — у элемента нет i18n-контекста плагина.
+- Не пишите собственные спиннеры.

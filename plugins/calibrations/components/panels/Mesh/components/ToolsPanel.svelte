@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loader from '../../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../../plugin-sdk/src/svelte/index';
 
   import { gcode, runGcode } from '../../../../commands';
@@ -47,7 +48,7 @@
       >
         <span class="tool-label">{i18n.t(tool.labelKey)}</span>
         {#if busy === tool.key}
-          <span class="spinner" aria-hidden="true"></span>
+          <Loader size="sm" inline text="" />
         {/if}
       </button>
     {/each}
@@ -100,19 +101,5 @@
     white-space: nowrap;
   }
 
-  .spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
-  }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 </style>

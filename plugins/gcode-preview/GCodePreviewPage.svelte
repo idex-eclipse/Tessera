@@ -11,6 +11,7 @@
 
   import { isCleared, unclear, clearPreview, usePreviewCommands } from './viewer/preview-ui-state.svelte';
   import Icon from '../shared/icons/Icon.svelte';
+  import Loader from '../shared/loader/Loader.svelte';
   import HeaderHelp from '../shared/header-help/HeaderHelp.svelte';
 
   const api = usePluginApi();
@@ -100,7 +101,7 @@
         <p class="empty">{i18n.t('gcodePreview.noFile')}</p>
         <p class="empty-hint">{i18n.t('gcodePreview.noFileHint')}</p>
       {:else if !entry || entry.status === 'loading'}
-        <p class="empty">{i18n.t('gcodePreview.loading')}</p>
+        <Loader size="lg" block text={i18n.t('gcodePreview.loading')} />
       {:else if entry.status === 'error'}
         <p class="error">{entry.message}</p>
       {:else}
