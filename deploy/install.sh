@@ -284,7 +284,7 @@ apply_plugins_policy() {
     if [ "$ALLOW_REMOTE" = 1 ]; then from="$CSP_ON"; to="$CSP_OFF"; else from="$CSP_OFF"; to="$CSP_ON"; fi
     $SUDO sed -i "s|$from|$to|g" "$conf"
     $SUDO nginx -t || die "nginx -t failed — edit $conf manually"
-    $SUDO systemctl reload nginx
+    $SUDO systemctl reload-or-restart nginx
   else
     warn "no Tessera CSP marker in $conf — run Update to rewrite the nginx config"
   fi
@@ -713,7 +713,8 @@ NGINX
   $SUDO install -m 644 /tmp/tessera-nginx.conf "$NGINX_AV/tessera"
   [ -n "$NGINX_EN" ] && $SUDO ln -sf "$NGINX_AV/tessera" "$NGINX_EN/tessera"
   $SUDO nginx -t || die "nginx -t failed — edit $NGINX_AV/tessera manually"
-  $SUDO systemctl reload nginx
+  # nginx may be installed but stopped: then a plain reload fails.
+  $SUDO systemctl reload-or-restart nginx
   log "nginx: http://<host-ip>:$PORT/"
 }
 
