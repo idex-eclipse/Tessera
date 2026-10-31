@@ -17,6 +17,7 @@
     <div class="input-slot">
       <ConsoleInput
         catalog={view.catalog}
+        objects={view.objects}
         history={view.history}
         printerId={view.printerId}
         placeholder={i18n.t('console.placeholder')}

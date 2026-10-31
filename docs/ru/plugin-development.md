@@ -147,7 +147,8 @@ if (!customElements.get('acme-hello-page')) {
 Дальше:
 
 ```bash
-node tools/extensions-sync.cjs        # пересобрать extensions/index.json
+tessera-ext sync                      # пересобрать extensions/index.json
+                                      # (в dev-checkout: node tools/extensions-sync.cjs)
 ```
 
 Откройте **Settings → Plugins → Refresh**, нажмите **Install** у «Hello» —
@@ -450,7 +451,7 @@ hotkeys) в принципе не требуют «активации по по�
 ### Рабочий цикл
 
 1. Собрать плагин, положить `manifest.json` + `index.js` в `extensions/<имя>/`.
-2. `node tools/extensions-sync.cjs` — пересобрать `extensions/index.json`
+2. `tessera-ext sync` (в dev-checkout: `node tools/extensions-sync.cjs`) — пересобрать `extensions/index.json`
    (нужно при первом добавлении плагина и при смене его версии/имени).
 3. Settings → Plugins → **Refresh** → **Install** / **Update**.
 4. При изменении кода — **F5** (см. «Чего не происходит при Update»).
@@ -544,6 +545,6 @@ Settings → About / Debug показывает зарегистрированн
 - [ ] Все строки идут через `api.i18n.t`; есть как минимум `en`.
 - [ ] Поведение при `klippy not ready` и при offline проверено.
 - [ ] Действия с побочным эффектом идут через `request()` (чтобы гарды сработали).
-- [ ] Версия увеличена; `tools/extensions-sync.cjs` выполнен.
+- [ ] Версия увеличена; каталог пересобран (`tessera-ext sync`).
 - [ ] Сборка: `process.env.NODE_ENV` определён, ничего не `external`, имя файла
       = `manifest.entry`.

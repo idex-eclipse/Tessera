@@ -2,9 +2,11 @@
 
 Tessera — веб-интерфейс для принтеров на Klipper/Moonraker. Хост — это
 оркестратор интерфейса; всё содержательное (температуры, файлы, камеры, консоль)
-делают **плагины**. Бэкенда нет: хост — статическое приложение на Svelte 5
-(runes) + Vite + TypeScript, которое ходит прямо в Moonraker и хранит
-настройки в `localStorage`.
+делают **плагины**. Для работы бэкенд не нужен: хост — статическое приложение на
+Svelte 5 (runes) + Vite + TypeScript, которое ходит прямо в Moonraker и хранит
+настройки в `localStorage`. Единственное исключение необязательно и работает только по
+запросу: [служба `tessera-ext`](deployment.md#служба-tessera-ext-установка-из-ui) ставит
+плагины из реестра по нажатию в UI.
 
 ## Роли
 
@@ -228,8 +230,8 @@ host/            приложение-хост (src/core, src/components, src/pa
 plugin-sdk/      типы, define-element, Svelte-хуки
 plugins/         core-плагины (+ plugins/shared — общие UI-кирпичи и парсеры)
 extensions/      provisioning-папка remote-плагинов (+ index.json)
-tools/           extensions-sync.cjs, tessera-ext.cjs (менеджер расширений), registry-pack.cjs
-deploy/          install.sh (меню: `tessera`), install-ext.sh (`tessera-ext`), конфигурация nginx
+tools/           для разработки и CI: extensions-sync.cjs, registry-pack.cjs, pack-release.sh
+deploy/          install.sh (меню: `tessera`), install-ext.sh и tessera-ext.py (`tessera-ext`, служба), конфигурация nginx
 docs/            эта документация (ru/ и en/)
 ```
 

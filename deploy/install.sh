@@ -7,30 +7,43 @@
 # Afterwards the menu is the `tessera` command (Install / Update / Remove / Settings / Extensions).
 #
 # Without the menu:
-#   bash install.sh install | update | rebuild | remove | extensions
+#   bash install.sh install | update | reinstall | remove | extensions
 #   TESSERA_NO_PROMPT=1 TESSERA_PORT=8080 bash install.sh      # install or update, no questions
+#   TESSERA_ARCHIVE=tessera.tar.gz bash install.sh install     # from a local archive (tools/pack-release.sh)
 #   bash install.sh --plugins-policy                           # old flag: plugins-by-URL setting only
 # Settings live in ~/.config/tessera/install.conf; TESSERA_* variables override them.
+#
+# Nothing is built on the printer: CI publishes a prebuilt archive for each branch
+# (.github/workflows/build.yml), this script downloads and verifies it.
 set -euo pipefail
 shopt -s extglob
 
 # ---------------------------------------------------------------- run from a copy
-# `tessera` runs deploy/install.sh from the installation itself. Update rewrites
-# that file with git while bash is still reading it, so work from a temp copy.
+# `tessera` runs deploy/install.sh from the installation itself. Update replaces
+# that file while bash is still reading it, so work from a temp copy.
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
-if [ -z "${TESSERA_INSTALLER_COPY:-}" ] && [ -d "$(dirname "$SELF")/../.git" ]; then
+if [ -z "${TESSERA_INSTALLER_COPY:-}" ] && [ "$(basename "$(dirname "$SELF")")" = deploy ]; then
   COPY="$(mktemp /tmp/tessera-install.XXXXXX)"
   cp "$SELF" "$COPY"
   TESSERA_INSTALLER_COPY="$COPY" exec bash "$COPY" "$@"
 fi
-[ -n "${TESSERA_INSTALLER_COPY:-}" ] && trap 'rm -f "$TESSERA_INSTALLER_COPY"' EXIT
+
+STAGING=""
+cleanup() {
+  [ -z "$STAGING" ] || rm -rf "$STAGING"
+  # run_action subshells end here too, and the menu still runs from the copy.
+  [ "$BASH_SUBSHELL" != 0 ] || [ -z "${TESSERA_INSTALLER_COPY:-}" ] || rm -f "$TESSERA_INSTALLER_COPY"
+}
+trap cleanup EXIT
 
 # ---------------------------------------------------------------- environment
 NO_PROMPT="${TESSERA_NO_PROMPT:-0}"
 DRY_RUN="${TESSERA_DRY_RUN:-0}"          # 1 = steps only print what they would do (testing)
 SKIP_NGINX="${TESSERA_SKIP_NGINX:-0}"
 SKIP_KLIPPER="${TESSERA_SKIP_KLIPPER_CFG:-0}"
-DEFAULT_REPO_URL="${TESSERA_REPO:-https://github.com/idex-eclipse/tessera.git}"
+ARCHIVE="${TESSERA_ARCHIVE:-}"           # install from this file instead of the published build
+FORCE_FETCH=0                            # 1 = download even if the installed commit is current
+DEFAULT_REPO_URL="https://github.com/idex-eclipse/tessera.git"
 
 log()  { printf '\033[1;34m[tessera]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[tessera]\033[0m %s\n' "$*"; }
@@ -135,6 +148,8 @@ REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6 || true)"; [ -
 CONF_FILE="${XDG_CONFIG_HOME:-$REAL_HOME/.config}/tessera/install.conf"
 CMD_MENU=/usr/local/bin/tessera
 CMD_EXT=/usr/local/bin/tessera-ext
+UNIT_SOCKET=/etc/systemd/system/tessera-ext.socket
+UNIT_SERVICE=/etc/systemd/system/tessera-ext.service
 
 as_user() { # as_user "cmd" — always run as the printer owner
   # Since running as root is forbidden, we are always the target user
@@ -148,7 +163,7 @@ nginx_paths() {
 
 # ---------------------------------------------------------------- settings
 # Precedence: TESSERA_* env (first load only) > install.conf > existing installation > default.
-CONF_KEYS="INSTALL_DIR BRANCH PORT MOONRAKER KLIPPER_CFG_DIR KLIPPER_DIR ALLOW_REMOTE"
+CONF_KEYS="INSTALL_DIR BRANCH REPO_URL PORT MOONRAKER KLIPPER_CFG_DIR KLIPPER_DIR ALLOW_REMOTE UI_INSTALL"
 USE_ENV=1
 
 load_settings() {
@@ -164,26 +179,28 @@ load_settings() {
   fi
   # e_* — environment (first load only); p_* — values of the previous load, so a
   # reload after an action without install.conf does not fall back to defaults.
-  local e_dir='' e_branch='' e_port='' e_moon='' e_cfg='' e_kdir='' e_remote=''
-  local p_dir='' p_branch='' p_port='' p_moon='' p_cfg='' p_kdir='' p_remote=''
+  local e_dir='' e_branch='' e_port='' e_moon='' e_cfg='' e_kdir='' e_remote='' e_repo='' e_ui=''
+  local p_dir='' p_branch='' p_port='' p_moon='' p_cfg='' p_kdir='' p_remote='' p_repo='' p_ui=''
   if [ "$USE_ENV" = 1 ]; then
     e_dir="${TESSERA_DIR:-}" e_branch="${TESSERA_BRANCH:-}" e_port="${TESSERA_PORT:-}"
     e_moon="${TESSERA_MOONRAKER:-}" e_cfg="${TESSERA_KLIPPER_CFG:-}" e_kdir="${TESSERA_KLIPPER_DIR:-}"
-    e_remote="${TESSERA_ALLOW_REMOTE_PLUGINS:-}"
+    e_remote="${TESSERA_ALLOW_REMOTE_PLUGINS:-}" e_repo="${TESSERA_REPO:-}" e_ui="${TESSERA_UI_INSTALL:-}"
   else
     p_dir="$INSTALL_DIR" p_branch="$BRANCH" p_port="$PORT" p_moon="$MOONRAKER"
-    p_cfg="$KLIPPER_CFG_DIR" p_kdir="$KLIPPER_DIR" p_remote="$ALLOW_REMOTE"
+    p_cfg="$KLIPPER_CFG_DIR" p_kdir="$KLIPPER_DIR" p_remote="$ALLOW_REMOTE" p_repo="$REPO_URL" p_ui="$UI_INSTALL"
   fi
   INSTALL_DIR="${e_dir:-${conf[INSTALL_DIR]:-${p_dir:-$REAL_HOME/tessera}}}"
   # install.conf describes one installation: ignore it for another directory.
   if [ -n "${conf[INSTALL_DIR]:-}" ] && [ "${conf[INSTALL_DIR]}" != "$INSTALL_DIR" ]; then conf=(); fi
 
   # Detected from an existing installation (made before install.conf existed).
-  local d_branch='' d_port='' d_moon='' d_remote=''
+  local d_branch='' d_port='' d_moon='' d_remote='' d_repo=''
   if [ -d "$INSTALL_DIR/.git" ]; then
     d_branch="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
     [ "$d_branch" = HEAD ] && d_branch=''
+    d_repo="$(git -C "$INSTALL_DIR" remote get-url origin 2>/dev/null || true)"
   fi
+  [ -n "$d_branch" ] || d_branch="$(build_info_get "$INSTALL_DIR/build-info" BRANCH)"
   nginx_paths
   if [ -f "$NGINX_AV/tessera" ]; then
     d_port="$(grep -oE 'listen +[0-9]+;' "$NGINX_AV/tessera" 2>/dev/null | head -1 | grep -oE '[0-9]+' || true)"
@@ -200,10 +217,8 @@ load_settings() {
   KLIPPER_CFG_DIR="${e_cfg:-${conf[KLIPPER_CFG_DIR]:-${p_cfg:-$REAL_HOME/printer_data/config}}}"
   KLIPPER_DIR="${e_kdir:-${conf[KLIPPER_DIR]:-${p_kdir:-$REAL_HOME/klipper}}}"
   ALLOW_REMOTE="${e_remote:-${conf[ALLOW_REMOTE]:-${p_remote:-${d_remote:-0}}}}"
-  REPO_URL="$DEFAULT_REPO_URL"
-  if [ -d "$INSTALL_DIR/.git" ]; then
-    REPO_URL="$(git -C "$INSTALL_DIR" remote get-url origin 2>/dev/null || echo "$DEFAULT_REPO_URL")"
-  fi
+  REPO_URL="${e_repo:-${conf[REPO_URL]:-${p_repo:-${d_repo:-$DEFAULT_REPO_URL}}}}"
+  UI_INSTALL="${e_ui:-${conf[UI_INSTALL]:-${p_ui:-1}}}"
   USE_ENV=0
 }
 
@@ -216,7 +231,22 @@ save_conf() {
   } > "$CONF_FILE"
 }
 
-is_installed() { [ -d "$INSTALL_DIR/.git" ]; }
+# .git = installation made before prebuilt builds; step_fetch migrates it.
+is_installed() { [ -f "$INSTALL_DIR/build-info" ] || [ -d "$INSTALL_DIR/.git" ]; }
+
+# build-info: KEY=value lines written by tools/pack-release.sh; data, never code.
+build_info_get() { # build_info_get FILE KEY
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1 || true
+}
+
+# Short commit of what is installed.
+installed_commit() {
+  if [ -f "$INSTALL_DIR/build-info" ]; then
+    build_info_get "$INSTALL_DIR/build-info" COMMIT | cut -c1-7
+  else
+    git -C "$INSTALL_DIR" rev-parse --short=7 HEAD 2>/dev/null || echo '?'
+  fi
+}
 
 count_extensions() {
   local n=0 d
@@ -243,7 +273,7 @@ remote_summary() {
   if [ "$ALLOW_REMOTE" = 1 ]; then echo "allowed (no CSP)"; else echo "blocked by CSP"; fi
 }
 
-# Applies ALLOW_REMOTE to an installed Tessera without a rebuild.
+# Applies ALLOW_REMOTE to an installed Tessera without a download.
 apply_plugins_policy() {
   is_installed || { log "plugins by URL: $(remote_summary) — applied on install"; return 0; }
   write_policy
@@ -254,7 +284,7 @@ apply_plugins_policy() {
     if [ "$ALLOW_REMOTE" = 1 ]; then from="$CSP_ON"; to="$CSP_OFF"; else from="$CSP_OFF"; to="$CSP_ON"; fi
     $SUDO sed -i "s|$from|$to|g" "$conf"
     $SUDO nginx -t || die "nginx -t failed — edit $conf manually"
-    $SUDO systemctl reload nginx
+    $SUDO systemctl reload-or-restart nginx
   else
     warn "no Tessera CSP marker in $conf — run Update to rewrite the nginx config"
   fi
@@ -263,11 +293,13 @@ apply_plugins_policy() {
 
 # ---------------------------------------------------------------- install steps
 step_deps() {
-  dry "check packages git/curl/nginx, Node.js >= 18, RAM/swap" && return 0
+  dry "check packages curl/tar/nginx/python3" && return 0
   if command -v apt-get >/dev/null 2>&1; then
-    log "checking system packages (git/curl/nginx)"
+    log "checking system packages (curl/tar/nginx/python3)"
     local miss="" p
-    for p in git curl nginx; do command -v "$p" >/dev/null 2>&1 || miss="$miss $p"; done
+    for p in curl tar nginx python3; do command -v "$p" >/dev/null 2>&1 || miss="$miss $p"; done
+    # https from curl and python3 needs it, and it has no command to look for.
+    [ -f /etc/ssl/certs/ca-certificates.crt ] || miss="$miss ca-certificates"
     if [ -n "$miss" ]; then
       $SUDO apt-get update -qq || true
       # shellcheck disable=SC2086
@@ -275,60 +307,172 @@ step_deps() {
     fi
   else
     warn "non-Debian family: auto package install skipped."
-    warn "ensure manually: git, curl, nginx, node>=18, then re-run this script."
+    warn "ensure manually: curl, tar, nginx, python3 >= 3.7, then re-run this script."
   fi
 
-  node_major() { node -v 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/'; }
-  if ! { command -v node >/dev/null 2>&1 && [ "$(node_major)" -ge 18 ]; }; then
-    if command -v apt-get >/dev/null 2>&1; then
-      log "node <18 or missing — installing Node.js 20 (NodeSource)"
-      curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO bash -
-      $SUDO apt-get install -y nodejs
-    else
-      die "need Node.js >= 18: install manually and re-run"
-    fi
-  fi
-  { command -v node >/dev/null 2>&1 && [ "$(node_major)" -ge 18 ]; } || die "node >= 18 unavailable"
-  command -v npm >/dev/null 2>&1 || die "npm not found"
-
-  local mem_kb
-  mem_kb="$(awk '/MemTotal/{print $2}' /proc/meminfo)"
-  if [ "$mem_kb" -lt 1200000 ] && ! $SUDO swapon --show 2>/dev/null | grep -q .; then
-    warn "RAM < 1.2G and no swap: vite build may OOM."
-    warn "Recommended: sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile"
-  fi
-}
-
-step_source() {
-  dry "git: $REPO_URL ($BRANCH) → $INSTALL_DIR" && return 0
-  if [ -d "$INSTALL_DIR/.git" ]; then
-    log "repository already exists — updating to $BRANCH"
-    # We use FETCH_HEAD instead of origin/<branch> to avoid 'non-fast-forward' errors
-    # that occur when switching between shallow-cloned remote tracking branches.
-    as_user "cd '$INSTALL_DIR' && git fetch --depth 1 origin '$BRANCH' && git checkout -f -B '$BRANCH' FETCH_HEAD"
-  else
-    log "cloning $REPO_URL ($BRANCH) → $INSTALL_DIR"
-    as_user "git clone --depth 1 -b '$BRANCH' '$REPO_URL' '$INSTALL_DIR'"
-  fi
-}
-
-find_build_dir() {
-  BUILD_DIR=""
   local c
-  for c in host/dist dist build host/build; do
-    [ -f "$INSTALL_DIR/$c/index.html" ] && { BUILD_DIR="$INSTALL_DIR/$c"; break; }
+  for c in curl tar gzip sha256sum; do
+    command -v "$c" >/dev/null 2>&1 || die "$c not found: install it and re-run"
   done
+  if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 7))' 2>/dev/null; then
+    warn "python3 >= 3.7 not found: tessera-ext and installing plugins from the UI will not work."
+  fi
 }
 
-step_build() {
-  if dry "npm ci + npm run build in $INSTALL_DIR"; then BUILD_DIR="$INSTALL_DIR/host/dist"; return 0; fi
-  log "dependencies + build (may take several minutes on SBC)"
-  as_user "cd '$INSTALL_DIR' && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund)"
-  as_user "cd '$INSTALL_DIR' && npm run build"
+https_get() { curl -fsSL --proto '=https' --proto-redir '=https' "$@"; }
 
-  find_build_dir
-  [ -n "$BUILD_DIR" ] || die "build output not found (checked host/dist, dist, build)"
-  case "$BUILD_DIR" in
+# owner/repo of REPO_URL; the builds are GitHub releases of that repository.
+repo_slug() {
+  local slug="${REPO_URL%/}"
+  slug="${slug%.git}"
+  case "$slug" in
+    https://github.com/*)     slug="${slug#https://github.com/}";;
+    git@github.com:*)         slug="${slug#git@github.com:}";;
+    ssh://git@github.com/*)   slug="${slug#ssh://git@github.com/}";;
+    *) return 1;;
+  esac
+  [[ "$slug" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || return 1
+  printf '%s' "$slug"
+}
+
+# URL of the rolling release of BRANCH (.github/workflows/build.yml).
+release_base() {
+  local slug
+  slug="$(repo_slug)" || return 1
+  printf 'https://github.com/%s/releases/download/build-%s' "$slug" "${BRANCH//\//-}"
+}
+
+remote_commit() { # short commit of the published build, empty when unreachable
+  local base
+  base="$(release_base)" || return 0
+  https_get -m 10 "$base/build-info" 2>/dev/null | sed -n 's/^COMMIT=//p' | cut -c1-7 || true
+}
+
+# Rejects absolute paths, `..` and anything that is not a plain file or directory.
+check_archive() { # check_archive FILE
+  local line name
+  tar -tzf "$1" > /dev/null || die "archive is damaged: $1"
+  while IFS= read -r line; do
+    case "$line" in
+      -*|d*) ;;
+      *) die "archive contains an unsupported entry: $line";;
+    esac
+  done < <(tar -tvzf "$1")
+  while IFS= read -r name; do
+    case "/$name/" in
+      //*|*/../*|*\\*) die "archive contains an unsafe path: $name";;
+    esac
+  done < <(tar -tzf "$1")
+}
+
+SWAP_ITEMS="host deploy build-info"
+
+# .old/ holds the previous build until the swap commits: renaming it to .trash
+# is the single point after which there is no going back.
+recover_swap() {
+  rm -rf "$INSTALL_DIR/.trash"
+  [ -d "$INSTALL_DIR/.old" ] || return 0
+  warn "restoring the previous build (an update did not finish)"
+  local item
+  for item in $SWAP_ITEMS; do
+    [ -e "$INSTALL_DIR/.old/$item" ] || continue
+    rm -rf "${INSTALL_DIR:?}/$item"
+    mv "$INSTALL_DIR/.old/$item" "$INSTALL_DIR/$item"
+  done
+  rm -rf "$INSTALL_DIR/.old"
+}
+
+swap_in() { # swap_in TREE
+  local item
+  mkdir "$INSTALL_DIR/.old"
+  for item in $SWAP_ITEMS; do
+    if [ -e "$INSTALL_DIR/$item" ]; then
+      mv "$INSTALL_DIR/$item" "$INSTALL_DIR/.old/$item" || { recover_swap; die "cannot replace $item"; }
+    fi
+    mv "$1/$item" "$INSTALL_DIR/$item" || { recover_swap; die "cannot replace $item"; }
+  done
+  mv "$INSTALL_DIR/.old" "$INSTALL_DIR/.trash"
+  rm -rf "$INSTALL_DIR/.trash"
+}
+
+# Everything of a source checkout except what swap_in just put there and extensions/.
+remove_checkout() {
+  find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name extensions ! -name host ! -name deploy ! -name build-info \
+    ! -path "$STAGING" -exec rm -rf {} +
+}
+
+step_fetch() {
+  BUILD_DIR="$INSTALL_DIR/host/dist"
+  dry "download the $BRANCH build of $REPO_URL, verify sha256, unpack into $INSTALL_DIR (extensions/ is kept)" && return 0
+
+  local legacy=0
+  if [ -d "$INSTALL_DIR/.git" ]; then
+    legacy=1
+    case "$INSTALL_DIR" in /|"$REAL_HOME"|"$REAL_HOME/") die "refusing to replace $INSTALL_DIR";; esac
+    [ -f "$INSTALL_DIR/deploy/install.sh" ] || die "$INSTALL_DIR does not look like Tessera — refusing to replace it"
+  elif ! is_installed && [ -d "$INSTALL_DIR" ] &&
+       [ -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name extensions ! -name '.staging-*' -print -quit)" ]; then
+    die "$INSTALL_DIR is not empty and is not a Tessera installation"
+  fi
+
+  mkdir -p "$INSTALL_DIR"
+  recover_swap
+  rm -rf "$INSTALL_DIR"/.staging-*
+  STAGING="$(mktemp -d "$INSTALL_DIR/.staging-XXXXXX")"
+  trap cleanup EXIT   # traps do not reach the subshell of run_action
+
+  local file="$STAGING/build.tar.gz"
+  if [ -n "$ARCHIVE" ]; then
+    [ -f "$ARCHIVE" ] || die "TESSERA_ARCHIVE: $ARCHIVE not found"
+    log "installing from $ARCHIVE"
+    cp "$ARCHIVE" "$file"
+  else
+    local base info commit name sha
+    base="$(release_base)" || die "$REPO_URL is not a GitHub repository: use TESSERA_ARCHIVE=<file>"
+    info="$STAGING/build-info.remote"
+    https_get -m 30 "$base/build-info" -o "$info" ||
+      die "no published build of branch $BRANCH at $base (CI may still be running, try again in a few minutes)"
+    commit="$(build_info_get "$info" COMMIT)"
+    name="$(build_info_get "$info" ARCHIVE)"
+    sha="$(build_info_get "$info" SHA256)"
+    [[ "$commit" =~ ^[0-9a-f]{7,40}$ && "$name" =~ ^tessera-[0-9a-f]+\.tar\.gz$ && "$sha" =~ ^[0-9a-f]{64}$ ]] ||
+      die "invalid build-info at $base"
+
+    if [ "$legacy" = 0 ] && [ "$FORCE_FETCH" != 1 ] && [ "$commit" = "$(build_info_get "$INSTALL_DIR/build-info" COMMIT)" ]; then
+      log "already on the latest $BRANCH build (${commit:0:7})"
+      rm -rf "$STAGING"; STAGING=""
+      return 0
+    fi
+
+    log "downloading the $BRANCH build (${commit:0:7})"
+    https_get -m 300 "$base/$name" -o "$file" || die "download failed: $base/$name"
+    printf '%s  %s\n' "$sha" "$file" | sha256sum -c --status - || die "sha256 mismatch: $base/$name"
+  fi
+
+  check_archive "$file"
+  local tree="$STAGING/tree"
+  mkdir "$tree"
+  # --touch: the archive has zero mtimes for reproducibility, and nginx builds ETag from mtime.
+  tar -xzf "$file" -C "$tree" --no-same-owner --no-same-permissions --touch
+  local must
+  for must in host/dist/index.html deploy/install.sh deploy/install-ext.sh deploy/tessera-ext.py build-info; do
+    [ -f "$tree/$must" ] || die "archive has no $must"
+  done
+  chmod -R a+rX "$tree"
+
+  if [ "$legacy" = 1 ]; then
+    warn "$INSTALL_DIR is a source checkout. It will be replaced with the prebuilt UI:"
+    warn "sources, .git and node_modules are deleted, extensions/ and your settings stay."
+    confirm "Replace it?" y || { log "cancelled, nothing changed"; exit 0; }
+  fi
+
+  swap_in "$tree"
+  [ "$legacy" = 0 ] || remove_checkout
+  rm -rf "$STAGING"; STAGING=""
+
+  chmod a+rx "$INSTALL_DIR" 2>/dev/null || true
+  case "$INSTALL_DIR" in
     "$REAL_HOME"/*) chmod a+x "$REAL_HOME" 2>/dev/null || true
                     warn "home directory made traversable (nginx reads dist from home)";;
   esac
@@ -353,12 +497,104 @@ install_command() { # install_command PATH SCRIPT
 
 step_extensions() {
   write_policy
-  if ! dry "node tools/extensions-sync.cjs"; then
-    as_user "cd '$INSTALL_DIR' && node tools/extensions-sync.cjs" || warn "extensions index not generated"
+  if ! dry "python3 deploy/tessera-ext.py sync"; then
+    as_user "python3 '$INSTALL_DIR/deploy/tessera-ext.py' sync" || warn "extensions index not generated"
   fi
   # `tessera` = this menu, `tessera-ext` = plugin manager (deploy/install-ext.sh).
   install_command "$CMD_MENU" "$INSTALL_DIR/deploy/install.sh"
   install_command "$CMD_EXT" "$INSTALL_DIR/deploy/install-ext.sh"
+}
+
+# ---------------------------------------------------------------- service for "install from the UI"
+# deploy/tessera-ext.py serve, socket-activated: no process while nobody uses it.
+# nginx always has the /tessera-api/ location; with no service it answers 502
+# and the UI simply does not offer the feature.
+ui_install_summary() {
+  if [ "$UI_INSTALL" = 1 ]; then echo "enabled"; else echo "disabled"; fi
+}
+
+nginx_group() { # primary group of the nginx worker user: only nginx may connect to the socket
+  local user
+  user="$(sed -n 's/^[[:space:]]*user[[:space:]]\{1,\}\([^[:space:];]*\).*/\1/p' /etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
+  id -gn "${user:-www-data}" 2>/dev/null
+}
+
+disable_service() {
+  dry "disable and remove tessera-ext.socket, tessera-ext.service" && return 0
+  [ -f "$UNIT_SOCKET" ] || [ -f "$UNIT_SERVICE" ] || return 0
+  $SUDO systemctl disable --now tessera-ext.socket 2>/dev/null || true
+  $SUDO systemctl stop tessera-ext.service 2>/dev/null || true
+  $SUDO rm -f "$UNIT_SOCKET" "$UNIT_SERVICE"
+  $SUDO systemctl daemon-reload 2>/dev/null || true
+}
+
+step_service() {
+  if [ "$UI_INSTALL" != 1 ]; then disable_service; return 0; fi
+  dry "write and enable tessera-ext.socket, tessera-ext.service" && return 0
+
+  local python group cfg_dir
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "no systemd: plugins can be installed with tessera-ext only, not from the UI"; return 0
+  fi
+  python="$(command -v python3 || true)"
+  if [ -z "$python" ] || ! "$python" -c 'import sys; sys.exit(sys.version_info < (3, 7))' 2>/dev/null; then
+    warn "no python3 >= 3.7: plugins cannot be installed from the UI"; return 0
+  fi
+  case "$INSTALL_DIR" in
+    *[[:space:]]*) warn "spaces in $INSTALL_DIR: plugins cannot be installed from the UI"; return 0;;
+  esac
+  group="$(nginx_group)" || { warn "cannot find the nginx user: plugins cannot be installed from the UI"; return 0; }
+  cfg_dir="$(dirname "$CONF_FILE")"
+  mkdir -p "$cfg_dir" "$INSTALL_DIR/extensions"
+
+  cat > /tmp/tessera-ext.socket <<SOCKET
+[Unit]
+Description=Tessera extensions API socket
+
+[Socket]
+ListenStream=/run/tessera-ext.sock
+SocketGroup=$group
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target
+SOCKET
+
+  cat > /tmp/tessera-ext.service <<SERVICE
+[Unit]
+Description=Tessera extensions API (install plugins from the UI)
+Requires=tessera-ext.socket
+
+[Service]
+Type=simple
+User=$REAL_USER
+ExecStart=$python $INSTALL_DIR/deploy/tessera-ext.py serve
+Environment=TESSERA_MOONRAKER=$MOONRAKER
+Environment=XDG_CONFIG_HOME=$(dirname "$cfg_dir")
+UMask=0022
+# The only thing it may write is extensions/.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindPaths=$INSTALL_DIR/extensions
+BindReadOnlyPaths=$INSTALL_DIR/deploy $cfg_dir
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+SERVICE
+
+  $SUDO install -m 644 /tmp/tessera-ext.socket "$UNIT_SOCKET"
+  $SUDO install -m 644 /tmp/tessera-ext.service "$UNIT_SERVICE"
+  rm -f /tmp/tessera-ext.socket /tmp/tessera-ext.service
+  if $SUDO systemctl daemon-reload &&
+     $SUDO systemctl enable tessera-ext.socket >/dev/null 2>&1 &&
+     $SUDO systemctl restart tessera-ext.socket; then
+    # A running service still has the previous deploy/ mounted.
+    $SUDO systemctl try-restart tessera-ext.service || true
+    log "plugins from the UI: enabled"
+  else
+    warn "cannot start tessera-ext.socket: plugins can be installed with tessera-ext only"
+  fi
 }
 
 step_nginx() {
@@ -420,6 +656,18 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # tessera-ext service: install plugins from the UI. It authorizes requests with
+    # Moonraker using the headers set here; no service → 502, the UI does not offer it.
+    location /tessera-api/ {
+        proxy_pass http://unix:/run/tessera-ext.sock;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 180s;
+        proxy_request_buffering on;
+        client_max_body_size 16k;
+    }
+
     location = /index.html {
         @CSP@
         add_header Cache-Control "no-store, no-cache, must-revalidate";
@@ -465,7 +713,8 @@ NGINX
   $SUDO install -m 644 /tmp/tessera-nginx.conf "$NGINX_AV/tessera"
   [ -n "$NGINX_EN" ] && $SUDO ln -sf "$NGINX_AV/tessera" "$NGINX_EN/tessera"
   $SUDO nginx -t || die "nginx -t failed — edit $NGINX_AV/tessera manually"
-  $SUDO systemctl reload nginx
+  # nginx may be installed but stopped: then a plain reload fails.
+  $SUDO systemctl reload-or-restart nginx
   log "nginx: http://<host-ip>:$PORT/"
 }
 
@@ -533,6 +782,7 @@ step_summary() {
 │ extensions: $INSTALL_DIR/extensions/
 │ Manage:     tessera       (update, remove, settings: branch, plugins by URL)
 │ Plugins:    tessera-ext   (menu; or: tessera-ext install <name> | update --all | remove <name>)
+│ From UI:    $(ui_install_summary) (Settings → Plugins)
 │ By URL:     $(remote_summary)
 ╰───────────────────────────────────────────────────────
 SUMMARY
@@ -542,7 +792,8 @@ SUMMARY
 do_install() {
   if is_installed; then
     warn "Tessera is already installed in $INSTALL_DIR — Update keeps it current."
-    confirm "Reinstall anyway (answer the questions again and rebuild)?" || return 0
+    confirm "Reinstall anyway (answer the questions again and download the build)?" || return 0
+    FORCE_FETCH=1
   fi
   if interactive; then
     ask INSTALL_DIR     "Installation directory"   "$INSTALL_DIR"
@@ -550,12 +801,12 @@ do_install() {
     ask MOONRAKER       "Moonraker host:port"      "$MOONRAKER"
     ask KLIPPER_CFG_DIR "Klipper config directory" "$KLIPPER_CFG_DIR"
   fi
-  log "branch: $BRANCH, plugins by URL: $(remote_summary) — change both in Settings"
+  log "branch: $BRANCH, plugins by URL: $(remote_summary), from the UI: $(ui_install_summary) — change them in Settings"
   save_conf
   step_deps
-  step_source
-  step_build
+  step_fetch
   step_extensions
+  step_service
   step_nginx
   step_klipper
   step_summary
@@ -568,21 +819,24 @@ do_update() {
   is_installed || die "Tessera is not installed in $INSTALL_DIR — use Install"
   save_conf   # installations made before install.conf get one now
   step_deps
-  step_source
-  step_build
+  step_fetch
   step_extensions
+  step_service
   step_nginx
   step_klipper
   step_summary
 }
 
-do_rebuild() {
+do_reinstall() {
   is_installed || die "Tessera is not installed in $INSTALL_DIR — use Install"
   save_conf
-  step_build
+  step_deps
+  FORCE_FETCH=1
+  step_fetch
   step_extensions
+  step_service
   step_nginx
-  log "rebuild done — reload the UI page"
+  log "reinstall done — reload the UI page"
 }
 
 do_extensions() {
@@ -606,14 +860,16 @@ do_remove() {
   fi
 
   echo "The following will be removed:"
-  is_installed && echo "  - $INSTALL_DIR (sources, build, $n_ext extension(s))"
+  is_installed && echo "  - $INSTALL_DIR (build, $n_ext extension(s))"
+  [ -f "$UNIT_SOCKET" ] && echo "  - systemd units tessera-ext.socket, tessera-ext.service"
   [ -f "$site" ] && echo "  - nginx site $site${NGINX_EN:+ and $NGINX_EN/tessera}, nginx logs tessera-*.log"
   [ -f /etc/nginx/conf.d/tessera-upgrade-map.conf ] && echo "  - /etc/nginx/conf.d/tessera-upgrade-map.conf (if no other site uses it)"
   grep -qsF "$KLIPPER_INCLUDE" "$pcfg" && echo "  - $KLIPPER_INCLUDE from $pcfg (backup: printer.cfg.tessera-bak)"
   [ -f "$KLIPPER_CFG_DIR/tessera-shell.cfg" ] && echo "  - $KLIPPER_CFG_DIR/tessera-shell.cfg"
   echo "  - commands $CMD_MENU, $CMD_EXT"
   echo "  - settings $CONF_FILE"
-  echo "Kept: nginx, Node.js, git packages; graphs in $KLIPPER_CFG_DIR/shapers."
+  echo "Kept: nginx, curl, python3 packages; graphs in $KLIPPER_CFG_DIR/shapers."
+  echo "Tessera no longer needs Node.js: remove it yourself if nothing else uses it."
   confirm "Remove Tessera?" || { log "cancelled"; return 0; }
 
   local keep_ext=0
@@ -621,6 +877,9 @@ do_remove() {
 
   # Leave the directory before deleting it (the menu may have been started there).
   cd "$REAL_HOME"
+
+  # service: it has extensions/ mounted
+  disable_service
 
   # nginx
   if [ -f "$site" ] || { [ -n "$NGINX_EN" ] && [ -L "$NGINX_EN/tessera" ]; }; then
@@ -670,9 +929,12 @@ do_remove() {
   return 0
 }
 
-# Branches of the repository on GitHub (no clone needed).
+# Branches that have a published build (no clone needed).
 remote_branches() {
-  git ls-remote --heads "$REPO_URL" 2>/dev/null | sed 's|.*refs/heads/||' | sort
+  local slug
+  slug="$(repo_slug)" || return 0
+  https_get -m 15 "https://api.github.com/repos/$slug/releases?per_page=100" 2>/dev/null |
+    grep -oE '"tag_name": *"build-[^"]+"' | sed 's/.*"build-//; s/"$//' | sort
 }
 
 set_branch() {
@@ -680,7 +942,7 @@ set_branch() {
   mapfile -t branches < <(remote_branches || true)
   echo
   if [ "${#branches[@]}" -gt 0 ]; then
-    echo "Branches of $REPO_URL:"
+    echo "Branches with a build in $REPO_URL:"
     for i in "${!branches[@]}"; do
       b="${branches[$i]}"
       printf '  %2d) %s%s\n' $((i + 1)) "$b" "$([ "$b" = "$BRANCH" ] && echo " ${C_G}(current)${C_0}")"
@@ -721,6 +983,28 @@ set_plugins_policy() {
   run_action apply_plugins_policy
 }
 
+apply_ui_install() {
+  is_installed || { log "plugins from the UI: $(ui_install_summary) — applied on install"; return 0; }
+  step_service
+  log "plugins from the UI: $(ui_install_summary). Reload the UI page."
+}
+
+set_ui_install() {
+  echo
+  echo "Plugins from the UI: Settings → Plugins installs, updates and removes plugins of the registry."
+  echo "A small service (tessera-ext.socket) does the work and runs only while it is being used."
+  echo "It asks Moonraker who may do this and takes nothing but a plugin id: code comes from the registry only."
+  if [ "$UI_INSTALL" = 1 ]; then
+    confirm "Disable it (plugins are then managed with tessera-ext only)?" || return 0
+    UI_INSTALL=0
+  else
+    confirm "Enable it?" || return 0
+    UI_INSTALL=1
+  fi
+  save_conf
+  run_action apply_ui_install
+}
+
 # ---------------------------------------------------------------- menus
 # Each action runs in a subshell: `die` ends the action, not the menu.
 run_action() {
@@ -750,8 +1034,10 @@ menu_main_screen() {
   site="$NGINX_AV/tessera"
   if is_installed; then
     st="${C_G}Installed${C_0}"
-    branch="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-    commit="$(git -C "$INSTALL_DIR" log -1 --format='%h (%cd)' --date=short 2>/dev/null || echo '?')"
+    branch="$BRANCH"
+    commit="$(installed_commit)"
+    if [ -f "$INSTALL_DIR/build-info" ]; then commit+=" ($(build_info_get "$INSTALL_DIR/build-info" DATE))"
+    else commit+=" (source checkout)"; fi
     ext="$(count_extensions) installed"
   else
     st="${C_R}Not installed${C_0}"
@@ -782,8 +1068,8 @@ menu_update() {
   local a local_sha remote_sha state
   while :; do
     is_installed || { warn "Tessera is not installed — use Install"; return 0; }
-    local_sha="$(git -C "$INSTALL_DIR" rev-parse --short=7 HEAD 2>/dev/null || echo '?')"
-    remote_sha="$(git ls-remote "$REPO_URL" "refs/heads/$BRANCH" 2>/dev/null | cut -c1-7 || true)"
+    local_sha="$(installed_commit)"
+    remote_sha="$(remote_commit)"
     if [ -z "$remote_sha" ]; then state="${C_R}remote unreachable${C_0}"
     elif [ "$remote_sha" = "$local_sha" ]; then state="${C_G}up to date${C_0}"
     else state="${C_Y}update available${C_0}"; fi
@@ -797,9 +1083,9 @@ menu_update() {
     row "  Remote:    ${remote_sha:--}  $state"
     row ''
     row '  1) [Update Tessera]'
-    row "     ${C_D}fetch $BRANCH $ARROW build $ARROW nginx $ARROW Klipper config${C_0}"
-    row '  2) [Rebuild only]'
-    row "     ${C_D}rebuild current sources, rewrite nginx config${C_0}"
+    row "     ${C_D}download $BRANCH build $ARROW nginx $ARROW Klipper config${C_0}"
+    row '  2) [Reinstall]'
+    row "     ${C_D}download the build again, rewrite nginx config${C_0}"
     row ''
     rule
     center "B) $BACK Back"
@@ -807,7 +1093,7 @@ menu_update() {
     ask_action a || return 1
     case "$a" in
       1) run_action do_update ;;
-      2) run_action do_rebuild ;;
+      2) run_action do_reinstall ;;
       b) return 0 ;;
       *) invalid ;;
     esac
@@ -815,15 +1101,17 @@ menu_update() {
 }
 
 menu_settings() {
-  local a remote
+  local a remote ui
   while :; do
     if [ "$ALLOW_REMOTE" = 1 ]; then remote="${C_Y}allowed${C_0}"; else remote="${C_G}blocked${C_0}"; fi
+    if [ "$UI_INSTALL" = 1 ]; then ui="${C_G}enabled${C_0}"; else ui="${C_D}disabled${C_0}"; fi
     box_top
     title 'Settings'
     rule
     row ''
     row "  1) [Branch]          ${C_C}$BRANCH${C_0}"
     row "  2) [Plugins by URL]  $remote"
+    row "  3) [Plugins from UI] $ui"
     row ''
     row "  ${C_D}Saved in $CONF_FILE${C_0}"
     rule
@@ -833,6 +1121,7 @@ menu_settings() {
     case "$a" in
       1) set_branch ;;
       2) set_plugins_policy ;;
+      3) set_ui_install ;;
       b) return 0 ;;
       *) invalid ;;
     esac
@@ -863,8 +1152,8 @@ usage() {
 Usage: install.sh [command]
   (no command)     interactive menu (in a terminal); without a terminal: install or update
   install          install Tessera (asks directory, port, Moonraker, Klipper config dir)
-  update           fetch the configured branch, rebuild, rewrite nginx/Klipper config
-  rebuild          rebuild current sources without fetching
+  update           download the build of the configured branch, rewrite nginx/Klipper config
+  reinstall        download the build again even if it is current, rewrite nginx config
   remove           uninstall Tessera completely
   extensions       open the plugin manager (tessera-ext)
   --plugins-policy change only the "plugins by URL" setting
@@ -878,7 +1167,7 @@ load_settings
 case "${1:-}" in
   install)    do_install ;;
   update)     do_update ;;
-  rebuild)    do_rebuild ;;
+  reinstall|rebuild) do_reinstall ;;
   remove)     do_remove ;;
   extensions) do_extensions ;;
   menu)       menu_main ;;

@@ -5,6 +5,8 @@ node_modules/
 # builds
 dist/
 build/
+release/
+__pycache__/
 host/dist/
 .vite/
 *.tsbuildinfo

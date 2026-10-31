@@ -44,6 +44,15 @@ describe('scanLocalMacros', () => {
     expect(macros[1]).toMatchObject({ name: 'clean_nozzle', description: '', params: [] });
   });
 
+  it('переменные variable_* без префикса', () => {
+    expect(macros[0]!.variables).toEqual(['x']);
+    expect(macros[1]!.variables).toEqual([]);
+    const two = scanLocalMacros(
+      '[gcode_macro A]\nVariable_Count: 0\nvariable_state: idle\nvariable_: 1\ngcode: M117\n',
+    );
+    expect(two[0]!.variables).toEqual(['count', 'state']);
+  });
+
   it('gcode в одну строку и CRLF', () => {
     const one = scanLocalMacros('[gcode_macro A]\r\ngcode: M117 {params.MSG|default("x")}\r\n');
     expect(one).toHaveLength(1);

@@ -11,6 +11,7 @@ const en: I18nMessages = {
 
   common: {
     add: 'Add',
+    install: 'Install',
     remove: 'Remove',
     refresh: 'Refresh',
     edit: 'Edit',
@@ -147,6 +148,14 @@ const en: I18nMessages = {
     addPlugin: 'Add plugin',
     allPrinters: 'All printers',
     scopeHint: 'If nothing selected — plugin available on all printers.',
+
+    registry: 'Plugin registry',
+    registryConfirm: 'A plugin gets full access to the printer. Install {name} from the registry?',
+    registryRemoveConfirm: 'Delete {name} from this printer? Other browsers will lose it too.',
+    registryUnauthorized: 'Log in to the printer on this host to manage plugins.',
+    registryUnreachable: 'Registry is unreachable: {error}',
+    registryWorking: 'Working…',
+    registryEmpty: 'No plugins in the registry',
 
     catalog: 'Catalog',
     catalogEmpty: 'No plugins available in catalog',

@@ -4,6 +4,7 @@
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
   import { letterSignature, namedParams, paramTypeLabel } from '../../shared/gcode-hints/catalog';
+  import { makeNameResolver, type ObjectIndex } from '../../shared/gcode-hints/object-names';
   import { suggestForLine, type HintSuggestion } from '../../shared/gcode-hints/suggest';
   import type { Catalog } from '../../shared/gcode-hints/types';
 
@@ -16,6 +17,7 @@
   let {
     disabled,
     catalog,
+    objects,
     history,
     printerId,
     placeholder = '',
@@ -25,6 +27,8 @@
   }: {
     disabled: boolean;
     catalog: Catalog;
+    /** имена объектов принтера для значений FAN=, HEATER=… */
+    objects: ObjectIndex;
     history: string[];
     printerId: string;
     placeholder?: string;
@@ -47,7 +51,7 @@
   let hint = $derived(
     dismissed || disabled
       ? { items: [] as HintSuggestion[], replaceStart: 0, passive: false }
-      : suggestForLine(catalog, input, { substring: true }),
+      : suggestForLine(catalog, input, { substring: true, names: makeNameResolver(objects) }),
   );
   let suggestions = $derived(hint.items);
 

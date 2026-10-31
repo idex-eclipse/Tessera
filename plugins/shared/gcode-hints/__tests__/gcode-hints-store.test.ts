@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PluginApi } from '../../../../plugin-sdk/src/types';
 import { clearDocCache } from '../doc-source';
+import { resolveNames } from '../object-names';
 import {
   attachHints,
   dropHints,
   getCatalog,
+  getObjects,
   hasDocs,
   parseMacroSections,
+  parseSectionNames,
 } from '../gcode-hints-store.svelte.ts';
 
 const DOCS = [
@@ -40,14 +43,23 @@ function makeHandle(): FakeHandle {
     httpBaseUrl: 'http://pr:7125',
     authToken: null,
     request: vi.fn(async (method: string) => {
+      if (method === 'printer.objects.list') {
+        return { objects: ['toolhead', 'fan_generic cooling', 'gcode_macro MY_MACRO'] };
+      }
       if (method === 'printer.gcode.help') return { SET_PIN: 'Set the value of an output pin', MY_MACRO: 'Hello' };
       if (method === 'printer.objects.query') {
         return {
           status: {
             configfile: {
               config: {
-                'gcode_macro MY_MACRO': { gcode: '{% set x = params.X|int %}', description: 'Hello' },
+                'gcode_macro MY_MACRO': {
+                  gcode: '{% set x = params.X|int %}',
+                  description: 'Hello',
+                  variable_count: '0',
+                  variable_state: 'idle',
+                },
                 'stepper_x': {},
+                'fan_generic Cooling': {},
               },
               settings: { 'gcode_macro my_macro': { gcode: 'M117', description: 'G-Code macro' } },
             },
@@ -106,12 +118,67 @@ describe('parseMacroSections', () => {
   it('мусор на входе не роняет разбор', () => {
     expect(parseMacroSections(null)).toEqual([]);
     expect(parseMacroSections({ config: { 'gcode_macro x': null } })).toEqual([
-      { name: 'x', description: '', params: [] },
+      { name: 'x', description: '', params: [], variables: [] },
     ]);
+  });
+
+  it('переменные макроса — ключи variable_* без префикса', () => {
+    const [m] = parseMacroSections({
+      config: { 'gcode_macro A': { gcode: 'M117', variable_x: '1', variable_long_name: '2', other: '3', variable_: '4' } },
+    });
+    expect(m!.variables).toEqual(['x', 'long_name']);
+  });
+});
+
+describe('parseSectionNames', () => {
+  it('config раньше settings, дубли без учёта регистра убираются', () => {
+    expect(
+      parseSectionNames({
+        config: { 'fan_generic Cooling': {}, extruder: {} },
+        settings: { 'fan_generic cooling': {}, heater_bed: {} },
+      }),
+    ).toEqual(['fan_generic Cooling', 'extruder', 'heater_bed']);
+    expect(parseSectionNames(undefined)).toEqual([]);
   });
 });
 
 describe('attachHints', () => {
+  it('собирает индекс объектов: секции, переменные макросов и printer.objects.list', async () => {
+    const pid = nextId();
+    const h = makeHandle();
+    vi.stubGlobal('fetch', vi.fn(() => http(404)));
+    const detach = attachHints(fakeApi(h), pid);
+
+    await vi.waitFor(() => expect(getObjects(pid).entries.length).toBeGreaterThan(0));
+    const idx = getObjects(pid);
+    expect(resolveNames(idx, 'SET_FAN_SPEED', 'FAN')?.names.map((n) => n.value)).toEqual(['Cooling']);
+    expect(resolveNames(idx, 'SET_GCODE_VARIABLE', 'VARIABLE', { MACRO: 'my_macro' })?.names.map((n) => n.value)).toEqual(['count', 'state']);
+    expect(idx.objects).toEqual(['toolhead', 'fan_generic cooling', 'gcode_macro MY_MACRO']);
+    expect(getObjects(pid)).toBe(idx); // мемоизирован
+
+    detach();
+    dropHints(pid);
+  });
+
+  it('printer.objects.list недоступен: объекты берутся из секций конфигурации', async () => {
+    const pid = nextId();
+    const h = makeHandle();
+    const base = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method: string) => {
+      if (method === 'printer.objects.list') throw new Error('boom');
+      return base(method);
+    });
+    vi.stubGlobal('fetch', vi.fn(() => http(404)));
+    const detach = attachHints(fakeApi(h), pid);
+
+    await vi.waitFor(() => expect(getObjects(pid).entries.length).toBeGreaterThan(0));
+    expect(getObjects(pid).objects).toContain('fan_generic Cooling');
+    expect(getObjects(pid).objects).not.toContain('toolhead');
+
+    detach();
+    dropHints(pid);
+  });
+
   it('грузит help, макросы и G-Codes.md; каталог их объединяет', async () => {
     const pid = nextId();
     const h = makeHandle();

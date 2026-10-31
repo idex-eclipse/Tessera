@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildCatalog } from '../../gcode-hints/catalog';
 import { parseGcodeDocs } from '../../gcode-hints/gcode-docs';
+import { buildObjectIndex, scanSectionNames } from '../../gcode-hints/object-names';
 import { macroParamNamesAt, scanLocalMacros } from '../../gcode-hints/local-macros';
 import {
   collectAllWords,
@@ -197,5 +198,123 @@ describe('getSuggestions: jinja и params.', () => {
   it('вне макроса params. берётся из файла целиком', () => {
     const r = at(CFG.replace('step_pin: PF13', 'step_pin: {params.B§}'));
     expect(r.items.map((i) => i.label)).toEqual(['params.BED']);
+  });
+});
+
+describe('имена объектов', () => {
+  const OBJ_DOCS = parseGcodeDocs(
+    [
+      '## Additional Commands',
+      '### [fan_generic]',
+      '#### SET_FAN_SPEED',
+      '`SET_FAN_SPEED FAN=config_name SPEED=<speed>`: Sets the fan speed.',
+      '### [gcode_macro]',
+      '#### SET_GCODE_VARIABLE',
+      '`SET_GCODE_VARIABLE MACRO=<macro_name> VARIABLE=<name> VALUE=<value>`: Changes a variable.',
+    ].join('\n'),
+  );
+  const FILE = [
+    '[fan_generic cooling]',
+    'pin: PA1',
+    '[fan_generic Case Fan]',
+    'pin: PA2',
+    '[heater_generic chamber]',
+    '[gcode_macro CLEAN]',
+    'variable_count: 0',
+    'variable_state: idle',
+    'gcode:',
+    '    SET_FAN_SPEED FAN=',
+    '    M117 {printer.}',
+  ].join('\n');
+
+  const objCatalog = buildCatalog({
+    help: { SET_FAN_SPEED: 'x', SET_GCODE_VARIABLE: 'x' },
+    docs: OBJ_DOCS,
+    macros: [],
+  });
+
+  function atObj(src: string, objects?: string[]) {
+    const cursor = src.indexOf('§');
+    const text = src.replace('§', '');
+    const ctx = getCompletionContext(text, cursor);
+    const macros = scanLocalMacros(text);
+    const sections = scanSectionNames(text);
+    const index = buildObjectIndex({ sections, macros, objects });
+    const items = ctx
+      ? getSuggestions(ctx, {
+          jinjaVars: collectJinjaVars(text),
+          allWords: collectAllWords(text),
+          catalog: objCatalog,
+          macroParams: macroParamNamesAt(text, cursor),
+          objects: index,
+        })
+      : [];
+    return { text, cursor, ctx, items };
+  }
+
+  it('FAN= в gcode-блоке: секции из этого же файла, имя с пробелом в кавычках', () => {
+    const r = atObj(FILE.replace('SET_FAN_SPEED FAN=', 'SET_FAN_SPEED FAN=§'));
+    expect(r.ctx).toMatchObject({ inGcode: true, prefix: '' });
+    expect(r.items.map((i) => [i.label, i.insert, i.kind])).toEqual([
+      ['cooling', 'cooling', 'value'],
+      ['Case Fan', '"Case Fan"', 'value'],
+    ].sort((a, b) => a[0]!.localeCompare(b[0]!)));
+    expect(r.items[0]!.detail).toBe('fan_generic');
+  });
+
+  it('VARIABLE= берёт переменные макроса из MACRO= на строке', () => {
+    const r = atObj(FILE.replace('SET_FAN_SPEED FAN=', 'SET_GCODE_VARIABLE MACRO=CLEAN VARIABLE=§'));
+    expect(r.items.map((i) => i.label)).toEqual(['count', 'state']);
+  });
+
+  it('printer[" — имена объектов, закрывающие кавычка и ] дописываются', () => {
+    const objs = ['toolhead', 'fan_generic cooling', 'heater_generic chamber', 'extruder'];
+    const r = atObj(FILE.replace('M117 {printer.}', 'M117 {printer["§'), objs);
+    expect(r.ctx).toMatchObject({ inJinja: true, jinjaKind: 'bracket', prefix: '' });
+    expect(isPassive(r.ctx!)).toBe(true);
+    expect(r.items.map((i) => i.label)).toEqual([
+      'extruder',
+      'fan_generic cooling',
+      'heater_generic chamber',
+      'toolhead',
+    ]);
+    expect(r.items[1]).toMatchObject({ insert: 'fan_generic cooling"]', detail: 'fan_generic' });
+  });
+
+  it('printer[" с префиксом и уже стоящей кавычкой после каретки', () => {
+    const objs = ['fan_generic cooling', 'fan_generic aux'];
+    const r = atObj(FILE.replace('M117 {printer.}', 'M117 {printer["fan_generic c§"]}'), objs);
+    expect(r.items.map((i) => [i.label, i.insert])).toEqual([['fan_generic cooling', 'fan_generic cooling']]);
+    // кавычка и ] уже на месте: ничего не дописываем
+    const r2 = atObj(FILE.replace('M117 {printer.}', 'M117 {printer["fan_generic c§"]}'), objs);
+    expect(r2.ctx?.closing).toBe('');
+  });
+
+  it("printer['…: одинарные кавычки сохраняются", () => {
+    const r = atObj(FILE.replace('M117 {printer.}', "M117 {printer['§"), ['fan_generic aux']);
+    expect(r.items[0]!.insert).toBe("fan_generic aux']");
+  });
+
+  it('printer["gcode_macro CLEAN"].<переменная> — переменные без variable_', () => {
+    const r = atObj(FILE.replace('M117 {printer.}', 'M117 {printer["gcode_macro CLEAN"].§'));
+    expect(r.ctx).toMatchObject({ jinjaKind: 'macroVar', macro: 'CLEAN', prefix: '' });
+    expect(r.items.map((i) => i.label)).toEqual(['count', 'state']);
+    const r2 = atObj(FILE.replace('M117 {printer.}', 'M117 {printer["gcode_macro CLEAN"].st§'));
+    expect(r2.items.map((i) => i.label)).toEqual(['state']);
+  });
+
+  it('printer.<префикс>: идентификаторы как printer.x, имена с пробелом как printer["…"]', () => {
+    const objs = ['extruder', 'fan_generic cooling', 'fan', 'toolhead'];
+    const r = atObj(FILE.replace('M117 {printer.}', 'M117 {printer.f§}'), objs);
+    expect(r.items.map((i) => i.label)).toEqual(['printer.fan', 'printer["fan_generic cooling"]']);
+    const r2 = atObj(FILE.replace('M117 {printer.}', 'M117 {printer.§}'), objs);
+    expect(r2.items.map((i) => i.label)).toEqual(
+      expect.arrayContaining(['printer.extruder', 'printer.fan', 'printer.toolhead', 'printer["fan_generic cooling"]']),
+    );
+  });
+
+  it('прежние jinja-сценарии не затронуты: params. и пустой префикс вне printer[', () => {
+    expect(atObj(FILE.replace('M117 {printer.}', 'M117 {§')).ctx).toBeNull();
+    expect(atObj(FILE.replace('M117 {printer.}', 'M117 {params.§}')).ctx?.jinjaKind).toBeUndefined();
   });
 });

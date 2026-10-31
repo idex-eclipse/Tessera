@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildCatalog } from '../catalog';
 import { parseGcodeDocs } from '../gcode-docs';
+import { buildObjectIndex, makeNameResolver } from '../object-names';
 import { completionTokenStart, suggestForLine } from '../suggest';
 
 const docs = parseGcodeDocs(
@@ -163,5 +164,119 @@ describe('completionTokenStart', () => {
     expect(completionTokenStart('MODE=PRI')).toBe(5);
     expect(completionTokenStart('RESPOND MSG="he')).toBeNull();
     expect(completionTokenStart('RESPOND MSG="hello" ')).toBe(20);
+  });
+});
+
+describe('имена объектов принтера', () => {
+  const ndocs = parseGcodeDocs(
+    [
+      '## Additional Commands',
+      '### [fan_generic]',
+      '#### SET_FAN_SPEED',
+      '`SET_FAN_SPEED FAN=config_name SPEED=<speed>`: Sets the fan speed.',
+      '### [heaters]',
+      '#### SET_HEATER_TEMPERATURE',
+      '`SET_HEATER_TEMPERATURE HEATER=<heater_name> [TARGET=<target_temperature>]`: Sets the heater.',
+      '### [resonance_tester]',
+      '#### TEST_RESONANCES',
+      '`TEST_RESONANCES AXIS=<axis> [NAME=<name>] [CHIPS=<chip_name>]`: Runs the resonance test.',
+      '### [gcode_macro]',
+      '#### SET_GCODE_VARIABLE',
+      '`SET_GCODE_VARIABLE MACRO=<macro_name> VARIABLE=<name> VALUE=<value>`: Changes a variable.',
+    ].join('\n'),
+  );
+  const ncatalog = buildCatalog({
+    help: {
+      SET_FAN_SPEED: 'x',
+      SET_HEATER_TEMPERATURE: 'x',
+      TEST_RESONANCES: 'x',
+      SET_GCODE_VARIABLE: 'x',
+    },
+    docs: ndocs,
+    macros: [],
+  });
+  const index = buildObjectIndex({
+    sections: [
+      'fan_generic cooling',
+      'fan_generic Case Fan',
+      'fan_generic aux',
+      'extruder',
+      'heater_bed',
+      'heater_generic chamber heater',
+      'adxl345 x',
+      'adxl345 y',
+      'adxl345 z',
+      'gcode_macro START_PRINT',
+    ],
+    macros: [{ name: 'START_PRINT', description: '', params: [], variables: ['count', 'state'] }],
+  });
+  const opts = { names: makeNameResolver(index) };
+  const labelsN = (line: string, o = opts) => suggestForLine(ncatalog, line, o).items.map((i) => i.label);
+
+  it('после «=» предлагаются имена из конфигурации, passive и replaceStart', () => {
+    const r = suggestForLine(ncatalog, 'SET_FAN_SPEED FAN=', opts);
+    expect(r.items.map((i) => i.label)).toEqual(['aux', 'Case Fan', 'cooling']);
+    expect(r.items.every((i) => i.kind === 'value' && i.description === 'fan_generic')).toBe(true);
+    expect(r.passive).toBe(true);
+    expect(r.replaceStart).toBe('SET_FAN_SPEED FAN='.length);
+  });
+
+  it('фильтр по префиксу без учёта регистра; точное совпадение не предлагается', () => {
+    expect(labelsN('SET_FAN_SPEED FAN=co')).toEqual(['cooling']);
+    expect(labelsN('SET_FAN_SPEED FAN=COOLING')).toEqual([]);
+    expect(suggestForLine(ncatalog, 'SET_FAN_SPEED FAN=co', opts).passive).toBe(false);
+  });
+
+  it('имя с пробелом подставляется в кавычках, в списке показано без них', () => {
+    const item = suggestForLine(ncatalog, 'SET_FAN_SPEED FAN=Ca', opts).items[0]!;
+    expect(item.label).toBe('Case Fan');
+    expect(item.insert).toBe('"Case Fan"');
+    expect(suggestForLine(ncatalog, 'SET_HEATER_TEMPERATURE HEATER=cha', opts).items[0]!.insert).toBe(
+      '"chamber heater"',
+    );
+  });
+
+  it('разные команды с одним и тем же config_name получают разные наборы', () => {
+    expect(labelsN('SET_HEATER_TEMPERATURE HEATER=')).toEqual([
+      'chamber heater',
+      'extruder',
+      'heater_bed',
+    ]);
+  });
+
+  it('список через запятую: подбор по последнему элементу без уже выбранных', () => {
+    const r = suggestForLine(ncatalog, 'TEST_RESONANCES AXIS=X CHIPS=x,', opts);
+    expect(r.items.map((i) => i.label)).toEqual(['y', 'z']);
+    expect(r.items.map((i) => i.insert)).toEqual(['y', 'z']); // без кавычек внутри списка
+    expect(r.replaceStart).toBe('TEST_RESONANCES AXIS=X CHIPS=x,'.length);
+    expect(r.passive).toBe(true);
+    expect(labelsN('TEST_RESONANCES AXIS=X CHIPS=x,z,')).toEqual(['y']);
+    expect(labelsN('TEST_RESONANCES AXIS=X CHIPS=x,y')).toEqual([]); // y набран целиком
+    expect(labelsN('TEST_RESONANCES AXIS=X CHIPS=')).toEqual(['x', 'y', 'z']);
+  });
+
+  it('VARIABLE берёт переменные макроса из MACRO= на этой же строке', () => {
+    expect(labelsN('SET_GCODE_VARIABLE MACRO=START_PRINT VARIABLE=')).toEqual(['count', 'state']);
+    expect(labelsN('SET_GCODE_VARIABLE MACRO="start_print" VARIABLE=s')).toEqual(['state']);
+    expect(labelsN('SET_GCODE_VARIABLE VARIABLE=')).toEqual([]);
+    expect(labelsN('SET_GCODE_VARIABLE MACRO=')).toEqual(['START_PRINT']);
+  });
+
+  it('параметры без правила (NAME=) значений не получают, без resolver — тоже', () => {
+    expect(labelsN('TEST_RESONANCES AXIS=X NAME=')).toEqual([]);
+    expect(labelsN('SET_FAN_SPEED FAN=', {} as typeof opts)).toEqual([]);
+  });
+
+  it('перечисления из docs важнее имён', () => {
+    // у ENABLE=[0|1] нет правила имён, но choices работают как раньше
+    expect(labels('SET_FILAMENT_SENSOR SENSOR=x ENABLE=')).toEqual(['0', '1']);
+  });
+});
+
+describe('completionTokenStart: списки', () => {
+  it('позиция после последней запятой значения', () => {
+    expect(completionTokenStart('TEST_RESONANCES CHIPS=x,y')).toBe('TEST_RESONANCES CHIPS=x,'.length);
+    expect(completionTokenStart('TEST_RESONANCES CHIPS=x')).toBe('TEST_RESONANCES CHIPS='.length);
+    expect(completionTokenStart('X CHIPS=a,')).toBe('X CHIPS=a,'.length);
   });
 });

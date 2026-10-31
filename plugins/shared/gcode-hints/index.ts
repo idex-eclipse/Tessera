@@ -23,9 +23,26 @@ export {
   type SuggestOptions,
 } from './suggest';
 export {
+  buildObjectIndex,
+  mergeObjectIndex,
+  scanSectionNames,
+  resolveNames,
+  makeNameResolver,
+  quoteValue,
+  jinjaObjectNames,
+  macroVariables,
+  printerRef,
+  type ObjectIndex,
+  type NameResolver,
+  type NameCandidate,
+  type ResolvedNames,
+} from './object-names';
+export {
   attachHints,
   dropHints,
   getCatalog,
+  getObjects,
   hasDocs,
   parseMacroSections,
+  parseSectionNames,
 } from './gcode-hints-store.svelte.ts';

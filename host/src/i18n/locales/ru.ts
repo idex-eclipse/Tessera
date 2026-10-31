@@ -11,6 +11,7 @@ const ru: I18nMessages = {
 
   common: {
     add: 'Добавить',
+    install: 'Установить',
     remove: 'Удалить',
     refresh: 'Обновить',
     edit: 'Изменить',
@@ -144,6 +145,14 @@ const ru: I18nMessages = {
     addPlugin: 'Добавить плагин', 
     allPrinters: 'Все принтеры', 
     scopeHint: 'Если ничего не выбрано — плагин доступен на всех принтерах.',
+
+    registry: 'Реестр плагинов',
+    registryConfirm: 'Плагин получает полный доступ к принтеру. Установить {name} из реестра?',
+    registryRemoveConfirm: 'Удалить {name} с этого принтера? Он пропадёт и в других браузерах.',
+    registryUnauthorized: 'Войдите на принтер этого хоста, чтобы управлять плагинами.',
+    registryUnreachable: 'Реестр недоступен: {error}',
+    registryWorking: 'Выполняется…',
+    registryEmpty: 'В реестре нет плагинов',
 
     catalog: 'Каталог',
     catalogEmpty: 'В каталоге нет доступных плагинов',

@@ -13,7 +13,7 @@ import {
   pushHistory,
   sendCommand,
 } from './console-session.svelte.ts';
-import { getCatalog } from '../shared/gcode-hints/gcode-hints-store.svelte.ts';
+import { getCatalog, getObjects } from '../shared/gcode-hints/gcode-hints-store.svelte.ts';
 import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
 
 /**
@@ -33,6 +33,7 @@ export function useConsoleView(api: PluginApi) {
   const lines = $derived(getLines(printerId));
   const connected = $derived(isConnected(printerId));
   const catalog = $derived(getCatalog(printerId));
+  const objects = $derived(getObjects(printerId));
   const history = $derived(getHistory(printerId));
   const prefs = $derived(getPrefs(printerId));
   const visibleLines = $derived(
@@ -48,6 +49,7 @@ export function useConsoleView(api: PluginApi) {
     get lines() { return lines; },
     get connected() { return connected; },
     get catalog() { return catalog; },
+    get objects() { return objects; },
     get history() { return history; },
     get prefs() { return prefs; },
     get displayLines() { return displayLines; },

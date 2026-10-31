@@ -56,8 +56,9 @@
     type Suggestion,
   } from './autocomplete';
   import { mergeLocalMacros } from '../gcode-hints/catalog';
-  import { attachHints, getCatalog } from '../gcode-hints/gcode-hints-store.svelte.ts';
+  import { attachHints, getCatalog, getObjects } from '../gcode-hints/gcode-hints-store.svelte.ts';
   import { macroParamNamesAt, scanLocalMacros } from '../gcode-hints/local-macros';
+  import { mergeObjectIndex, scanSectionNames } from '../gcode-hints/object-names';
 
   let {
     open,
@@ -152,6 +153,13 @@
   });
   let localMacros = $derived(scanLocalMacros(snapshot));
   let catalog = $derived(mergeLocalMacros(getCatalog(api.printer.id), localMacros));
+  // имена объектов (FAN=, HEATER=…, printer[...]): секции принтера + секции и макросы файла
+  let objects = $derived(
+    mergeObjectIndex(getObjects(api.printer.id), {
+      sections: scanSectionNames(snapshot),
+      macros: localMacros,
+    }),
+  );
 
   let preEl = $state<HTMLPreElement | null>(null);
   let inputEl = $state<HTMLTextAreaElement | null>(null);
@@ -880,6 +888,7 @@
       jinjaVars,
       allWords,
       catalog,
+      objects,
       macroParams: ctx.inJinja ? macroParamNamesAt(text, cursor) : null,
     });
     if (items.length === 0) {

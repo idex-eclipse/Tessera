@@ -1,9 +1,12 @@
 <script lang="ts">
   import { getAppContext } from '../../app-context';
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
+  import { readStoredAuth } from '../../core/auth-store.svelte.ts';
   import { useExtensionsCatalog } from '../../core/extensions-catalog.svelte.ts';
   import { absoluteManifestUrl } from '../../core/extensions-catalog.svelte.ts';
   import type { CatalogEntry } from '../../core/extensions-catalog.svelte.ts';
+  import { createExtensionsInstaller, findHostPrinter } from '../../core/extensions-installer.svelte.ts';
+  import type { RegistryPlugin } from '../../core/extensions-installer.svelte.ts';
 
   const { settings, loader, printerManager, i18n } = getAppContext();
 
@@ -52,6 +55,43 @@
     // записи settings хранят абсолютный URL, каталог — относительный
     await loader.reloadRemotePlugin(absoluteManifestUrl(entry.manifestUrl));
     reloadRequired = true;
+  }
+
+//registry (служба tessera-ext: нет службы — блока нет, плагины ставятся через CLI)
+
+  const installer = createExtensionsInstaller({
+    getToken: () => {
+      const host = findHostPrinter(printerManager.printers, window.location);
+      return host ? (readStoredAuth(host.id)?.token ?? null) : null;
+    },
+    catalog,
+    settings,
+    loader,
+  });
+  void installer.refresh();
+
+  // Папки, положенные вручную, — дело CLI: в реестре им нечего показывать.
+  let registryPlugins = $derived(installer.plugins.filter((p) => p.state !== 'local' || p.managed));
+
+  async function installFromRegistry(plugin: RegistryPlugin): Promise<void> {
+    const ok = await confirm({
+      title: i18n.t('settings.registry'),
+      message: i18n.t('settings.registryConfirm', { name: plugin.name }),
+    });
+    if (ok) await installer.install(plugin);
+  }
+
+  async function updateFromRegistry(plugin: RegistryPlugin): Promise<void> {
+    if (await installer.update(plugin)) reloadRequired = true;
+  }
+
+  async function removeFromRegistry(plugin: RegistryPlugin): Promise<void> {
+    const ok = await confirm({
+      title: i18n.t('settings.registry'),
+      message: i18n.t('settings.registryRemoveConfirm', { name: plugin.name }),
+      danger: true,
+    });
+    if (ok) await installer.remove(plugin);
   }
 
   let addAdvancedOpen = $state(false);
@@ -103,6 +143,73 @@
 </script>
 
 <div class="section">
+  <!-- Registry -->
+  {#if installer.available}
+    <div class="section-header">
+      <h3>{i18n.t('settings.registry')}</h3>
+      <button class="btn btn-secondary" onclick={() => installer.refresh()} disabled={installer.loading || installer.busyId !== null}>
+        {i18n.t('common.refresh')}
+      </button>
+    </div>
+
+    {#if installer.error}
+      <p class="error">
+        {installer.error.status === 401 ? i18n.t('settings.registryUnauthorized') : installer.error.message}
+      </p>
+    {/if}
+    {#if installer.registryError}
+      <p class="error">{i18n.t('settings.registryUnreachable', { error: installer.registryError })}</p>
+    {/if}
+
+    {#if registryPlugins.length === 0}
+      {#if !installer.loading && !installer.error && !installer.registryError}
+        <p class="empty">{i18n.t('settings.registryEmpty')}</p>
+      {/if}
+    {:else}
+      <div class="plugin-list">
+        {#each registryPlugins as plugin (plugin.id)}
+          <div class="plugin-row">
+            <div class="plugin-info">
+              <span class="plugin-name">{plugin.name}</span>
+              <span class="plugin-meta">
+                {plugin.id} · v{plugin.version}
+                <span class="badge verified">{i18n.t('settings.verified')}</span>
+              </span>
+              {#if plugin.description}
+                <span class="plugin-description">{plugin.description}</span>
+              {/if}
+            </div>
+            <div class="plugin-actions">
+              {#if installer.busyId === plugin.id}
+                <span class="loading">{i18n.t('settings.registryWorking')}</span>
+              {:else if plugin.state === 'available'}
+                <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null}>
+                  {i18n.t('common.install')}
+                </button>
+              {:else}
+                {#if plugin.state === 'update'}
+                  <span class="badge update">v{plugin.installedVersion} → v{plugin.version}</span>
+                  {#if plugin.managed}
+                    <button class="btn btn-primary" onclick={() => updateFromRegistry(plugin)} disabled={installer.busyId !== null}>
+                      {i18n.t('settings.update')}
+                    </button>
+                  {/if}
+                {:else}
+                  <span class="badge installed">{i18n.t('settings.installed')}</span>
+                {/if}
+                {#if plugin.managed}
+                  <button class="btn btn-danger" onclick={() => removeFromRegistry(plugin)} disabled={installer.busyId !== null}>
+                    {i18n.t('common.remove')}
+                  </button>
+                {/if}
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  {/if}
+
   <!-- Catalog -->
   <div class="section-header">
     <h3>{i18n.t('settings.catalog')}</h3>

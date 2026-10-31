@@ -5,6 +5,7 @@ import { buildCatalog } from './catalog';
 import { loadDoc } from './doc-source';
 import { parseGcodeDocs } from './gcode-docs';
 import type { MacroSource } from './local-macros';
+import { buildObjectIndex, type ObjectIndex } from './object-names';
 import type { Catalog, GcodeDocs } from './types';
 
 /**
@@ -24,14 +25,19 @@ interface PrinterHints {
   help: Record<string, string> | null;
   macros: MacroSource[];
   docs: GcodeDocs | null;
+  /** секции конфигурации (имена объектов для FAN=, HEATER=…) */
+  sections: string[];
+  /** результат printer.objects.list (имена для printer[...] в jinja) */
+  objects: string[];
 }
 
-const EMPTY: PrinterHints = { help: null, macros: [], docs: null };
+const EMPTY: PrinterHints = { help: null, macros: [], docs: null, sections: [], objects: [] };
 
 // $state.raw: данные крупные и заменяются целиком — глубокая реактивность не нужна
 let hintsByPrinter = $state.raw<Record<string, PrinterHints>>({});
 
 const catalogMemo = new Map<string, { src: PrinterHints; catalog: Catalog }>();
+const objectsMemo = new Map<string, { src: PrinterHints; index: ObjectIndex }>();
 const liveSeq = new Map<string, number>();
 
 function patch(printerId: string, p: Partial<PrinterHints>): void {
@@ -49,6 +55,20 @@ export function getCatalog(printerId: string): Catalog {
   const catalog = buildCatalog(src);
   catalogMemo.set(printerId, { src, catalog });
   return catalog;
+}
+
+/** Имена объектов принтера (секции конфигурации, макросы, printer.objects.list). Реактивен. */
+export function getObjects(printerId: string): ObjectIndex {
+  const src = hintsByPrinter[printerId] ?? EMPTY;
+  const hit = objectsMemo.get(printerId);
+  if (hit && hit.src === src) return hit.index;
+  const index = buildObjectIndex({
+    sections: src.sections,
+    macros: src.macros,
+    objects: src.objects,
+  });
+  objectsMemo.set(printerId, { src, index });
+  return index;
 }
 
 /** Загружен ли справочник G-Codes.md (иначе доступны только help, макросы и запасная таблица). */
@@ -72,12 +92,31 @@ export function parseMacroSections(configfile: unknown): MacroSource[] {
       const key = name.toUpperCase();
       if (!name || seen.has(key)) continue;
       seen.add(key);
-      const sec = (v ?? {}) as { gcode?: unknown; description?: unknown };
+      const sec = (v ?? {}) as Record<string, unknown>;
       out.push({
         name,
         description: typeof sec.description === 'string' ? sec.description : '',
         params: typeof sec.gcode === 'string' ? parseMacroParams(sec.gcode) : [],
+        variables: Object.keys(sec)
+          .filter((k) => k.toLowerCase().startsWith('variable_') && k.length > 'variable_'.length)
+          .map((k) => k.slice('variable_'.length)),
       });
+    }
+  }
+  return out;
+}
+
+/** Имена всех секций конфигурации; `config` (исходный регистр) раньше `settings`. */
+export function parseSectionNames(configfile: unknown): string[] {
+  const cfg = (configfile ?? {}) as { config?: Record<string, unknown>; settings?: Record<string, unknown> };
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const sections of [cfg.config, cfg.settings]) {
+    for (const section of Object.keys(sections ?? {})) {
+      const key = section.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(section);
     }
   }
   return out;
@@ -88,18 +127,25 @@ async function loadLive(api: PluginApi, printerId: string): Promise<void> {
   liveSeq.set(printerId, seq);
   try {
     const h = api.moonrakerFor(printerId);
-    const [help, cfgRes] = await Promise.all([
+    const [help, cfgRes, objRes] = await Promise.all([
       h.request<Record<string, string>>('printer.gcode.help'),
       h
         .request<{ status?: { configfile?: unknown } }>('printer.objects.query', {
           objects: { configfile: ['config', 'settings'] },
         })
         .catch(() => null),
+      h.request<{ objects?: unknown }>('printer.objects.list').catch(() => null),
     ]);
     if (liveSeq.get(printerId) !== seq) return; // пришёл более свежий запрос
     const next: Partial<PrinterHints> = {};
     if (help && typeof help === 'object') next.help = help;
-    if (cfgRes) next.macros = parseMacroSections(cfgRes.status?.configfile);
+    if (cfgRes) {
+      next.macros = parseMacroSections(cfgRes.status?.configfile);
+      next.sections = parseSectionNames(cfgRes.status?.configfile);
+    }
+    if (objRes && Array.isArray(objRes.objects)) {
+      next.objects = objRes.objects.filter((o): o is string => typeof o === 'string');
+    }
     patch(printerId, next);
   } catch {
     // klippy ещё не готов / нет связи — повторим по onReady
@@ -187,5 +233,6 @@ export function dropHints(printerId: string): void {
     hintsByPrinter = rest;
   }
   catalogMemo.delete(printerId);
+  objectsMemo.delete(printerId);
   liveSeq.delete(printerId);
 }
