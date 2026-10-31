@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Loader from '../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../shared/icons/Icon.svelte';
@@ -114,7 +113,7 @@
         onclick={restartKlipper}
       >
         {#if pending === 'klipper'}
-          <Loader size="sm" inline text="" />
+          <span class="spinner" aria-hidden="true"></span>
         {:else}
           <Icon name="refresh" size={14} />
         {/if}
@@ -127,7 +126,7 @@
         onclick={restartFirmware}
       >
         {#if pending === 'firmware'}
-          <Loader size="sm" inline text="" />
+          <span class="spinner" aria-hidden="true"></span>
         {:else}
           <Icon name="refresh" size={14} />
         {/if}
@@ -252,5 +251,19 @@
     display: block;  /* явно НЕ flex/grid — никакого вертикального центрирования */
   }
 
+  .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
 
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 </style>
