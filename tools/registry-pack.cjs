@@ -13,7 +13,8 @@
  *                       "." keeps URLs relative to registry.json
  *   --out               where to write <name>-<version>.tar.gz and registry.json (default: cwd)
  *
- * Same input → same bytes → same sha256 (sorted entries, zeroed mtime/owner, gzip without timestamp).
+ * Same input → same bytes → same sha256 on any OS (sorted entries, zeroed mtime/owner, gzip
+ * without timestamp and with a fixed OS byte).
  */
 
 const fs = require('fs');
@@ -67,8 +68,10 @@ function main() {
     '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner',
     '--format=gnu', '-cf', '-', '.',
   ], { cwd: src, maxBuffer: 64 * 1024 * 1024 });
-  // zlib не пишет mtime в заголовок gzip → архив детерминирован
+  // zlib не пишет mtime в заголовок gzip, а байт 9 — ОС упаковки (0x0a Windows, 0x03 Unix):
+  // фиксируем его, чтобы архив не зависел от платформы
   const archive = zlib.gzipSync(tarBytes, { level: 9 });
+  archive[9] = 0x03;
   fs.writeFileSync(path.join(out, archiveName), archive);
 
   const sha256 = crypto.createHash('sha256').update(archive).digest('hex');

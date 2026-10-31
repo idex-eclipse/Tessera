@@ -393,8 +393,8 @@ in `registry/registry.json`:
   "sha256": "…", "size": 12345, "description": "…" } ] }
 ```
 
-The archive is reproducible: entries are sorted, timestamps and owners are zeroed,
-and the gzip header has no timestamp. Anyone can rebuild a plugin from the reviewed
+The archive is reproducible on any OS: entries are sorted, timestamps and owners are
+zeroed, and the gzip header has no timestamp and a fixed OS byte. Anyone can rebuild a plugin from the reviewed
 commit and get the same sha256. `--url-base .` keeps archive URLs relative to
 `registry.json`; pass a full URL (for example a GitHub Release download URL) to host
 archives elsewhere.
