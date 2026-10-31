@@ -2,9 +2,11 @@
 
 Tessera is a web UI for printers running Klipper/Moonraker. The host is the UI
 orchestrator; everything substantive (temperatures, files, cameras, console) is done
-by **plugins**. There is no backend: the host is a static Svelte 5 (runes) + Vite +
+by **plugins**. It needs no backend to work: the host is a static Svelte 5 (runes) + Vite +
 TypeScript application that talks straight to Moonraker and keeps its settings in
-`localStorage`.
+`localStorage`. The one exception is optional and runs on demand: the
+[`tessera-ext` service](deployment.md#the-tessera-ext-service-installing-from-the-ui)
+installs registry plugins when you press a button in the UI.
 
 ## Roles
 
@@ -231,8 +233,8 @@ host/            the host application (src/core, src/components, src/pages, src/
 plugin-sdk/      types, define-element, Svelte hooks
 plugins/         core plugins (+ plugins/shared — shared UI bricks and parsers)
 extensions/      the provisioning folder of remote plugins (+ index.json)
-tools/           extensions-sync.cjs, tessera-ext.cjs (plugin manager), registry-pack.cjs
-deploy/          install.sh (menu: `tessera`), install-ext.sh (`tessera-ext`), nginx configuration
+tools/           for development and CI: extensions-sync.cjs, registry-pack.cjs, pack-release.sh
+deploy/          install.sh (menu: `tessera`), install-ext.sh and tessera-ext.py (`tessera-ext`, the service), nginx configuration
 docs/            this documentation (ru/ and en/)
 ```
 

@@ -19,7 +19,7 @@
   <img alt="Svelte 5" src="https://img.shields.io/badge/svelte-5-ff3e00.svg" />
   <img alt="Vite" src="https://img.shields.io/badge/vite-5-646cff.svg" />
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6.svg" />
-  <img alt="No backend" src="https://img.shields.io/badge/backend-none-informational.svg" />
+  <img alt="No backend required" src="https://img.shields.io/badge/backend-not%20required-informational.svg" />
   <img alt="Version" src="https://img.shields.io/badge/version-0.5.0-green.svg" />
 </p>
 
@@ -65,7 +65,7 @@
 
 ---
 
-Tessera is a browser-only control panel for Klipper printers. It talks to Moonraker directly over a single WebSocket per printer, keeps all your preferences in `localStorage`, and ships **no backend of its own** — the printer host runs Klipper and Moonraker, Tessera just renders them beautifully.
+Tessera is a browser-only control panel for Klipper printers. It talks to Moonraker directly over a single WebSocket per printer, keeps all your preferences in `localStorage`, and **needs no backend of its own to work** — the printer host runs Klipper and Moonraker, Tessera just renders them beautifully. The one exception is optional: a small on-demand service that installs registry plugins right from the UI.
 
 The UI is built from **plugins**: the host provides the shell (printer tabs, sidebar, dashboard grid, settings, theming, notification surfaces) and every functional block — temperature graphs, macros, calibration wizards, file tables — is a plugin contribution. Third-party plugins are first-class citizens: they are loaded as Custom Elements and can be written in **any framework**.
 
@@ -192,7 +192,7 @@ Some combinations are claimed by the browser or OS before the page sees them (fo
 
 - **Klipper** + **Moonraker** on the printer host (recent versions; Moonraker with file, update and device-power APIs)
 - A modern evergreen browser (Custom Elements, ES modules, `DecompressionStream` for 3MF)
-- Node.js ≥ 18 only if you build from source (the installer handles this)
+- On the host: `curl`, `tar`, `nginx`, `python3` ≥ 3.7 (the installer handles this). Node.js is for development only
 
 Optional companions:
 
@@ -218,11 +218,11 @@ questions: installation directory, nginx port, Moonraker address and Klipper con
 directory. The branch and "plugins by URL" come from **S) Settings**: defaults are
 `main` and *blocked*. Install will:
 
-1. install system dependencies (`git`, `curl`, `nginx`) and Node.js 20 if missing;
-2. clone the repo into `~/tessera` and build the frontend;
+1. install system dependencies (`curl`, `tar`, `nginx`, `python3`) if missing;
+2. download the prebuilt UI of the chosen branch into `~/tessera` and check its sha256. Nothing is built on the printer;
 3. write an nginx site (`sites-available/tessera` + symlink in `sites-enabled`) modeled on the kiauh/fluidd pattern: SPA fallback, no-cache `index.html`, gzip, unlimited upload size, `location /extensions/` for plugin provisioning, and reverse-proxies `/websocket` + `/printer|api|access|machine|server/` to Moonraker. The UI is therefore **same-origin with Moonraker and needs no `moonraker.conf` changes**;
 4. create `tessera-shell.cfg` (shaper/belt graph shell commands) in your Klipper config dir and include it in `printer.cfg` **only if** the `gcode_shell_command` extension is detected. Otherwise it prints the manual kiauh install instructions and leaves the include out, so a missing extension can never brick your config on restart;
-5. create the `tessera` (this menu) and `tessera-ext` (plugin manager) commands;
+5. create the `tessera` (this menu) and `tessera-ext` (plugin manager) commands, and enable the service for installing plugins from the UI;
 6. remind you to `FIRMWARE_RESTART` when ready.
 
 <a id="installer-menu"></a>
@@ -251,9 +251,9 @@ Enter.
 | Item | What it does |
 |---|---|
 | **1) Install** | first installation (see above) |
-| **2) Update** | shows the installed commit and the branch's latest commit on GitHub. *Update Tessera* fetches, rebuilds and rewrites the nginx/Klipper config without asking anything. *Rebuild only* rebuilds the current sources |
-| **3) Remove** | complete uninstall. It lists everything first and asks for confirmation: nginx site and logs, the `[include]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`), `tessera-shell.cfg`, both commands, `~/tessera`. Installed extensions can be kept in `~/tessera-extensions-backup`. nginx, Node.js, git and your `shapers/` graphs stay |
-| **S) Settings** | branch (picked from the branches on GitHub; Update is offered after a change) and plugins by URL (applied at once, no rebuild) |
+| **2) Update** | shows the installed commit and the commit of the branch's published build. *Update Tessera* downloads the build and rewrites the nginx/Klipper config without asking anything. *Reinstall* downloads the build again even if it is current |
+| **3) Remove** | complete uninstall. It lists everything first and asks for confirmation: nginx site and logs, the `[include]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`), `tessera-shell.cfg`, both commands, the service units, `~/tessera`. Installed extensions can be kept in `~/tessera-extensions-backup`. Packages (nginx, python3) and your `shapers/` graphs stay |
+| **S) Settings** | branch (picked from the branches with a published build; Update is offered after a change), plugins by URL and installing from the UI (applied at once) |
 | **E) Extensions** | the plugin manager, see [Extensions](#installing-extensions) |
 
 <details>
@@ -261,9 +261,9 @@ Enter.
 
 The installer keeps its answers in `~/.config/tessera/install.conf`, so Update asks
 nothing. For an installation made before the menu existed, the values are detected
-from git, the nginx config and `extensions/policy.json`.
+from `build-info` or git, the nginx config and `extensions/policy.json`.
 
-Commands without the menu: `tessera install | update | rebuild | remove | extensions`.
+Commands without the menu: `tessera install | update | reinstall | remove | extensions`.
 Without a terminal, or with `TESSERA_NO_PROMPT=1`, a bare run installs or updates
 without questions (CI).
 
@@ -271,7 +271,7 @@ Environment variables override `install.conf`:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TESSERA_DIR` | `~/tessera` | clone + build + extensions directory |
+| `TESSERA_DIR` | `~/tessera` | build + extensions directory |
 | `TESSERA_BRANCH` | `main` | branch: dev channels, feature branches |
 | `TESSERA_REPO` | upstream repo | forks |
 | `TESSERA_PORT` | `8000` | nginx port for the UI (asked again on conflict) |
@@ -279,6 +279,8 @@ Environment variables override `install.conf`:
 | `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | Klipper config dir (multi-instance kiauh aware) |
 | `TESSERA_KLIPPER_DIR` | `~/klipper` | used to detect `gcode_shell_command` |
 | `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` = allow installing UI plugins by URL (turns off the CSP) |
+| `TESSERA_UI_INSTALL` | `1` | `0` = plugins through `tessera-ext` only, no service for the UI |
+| `TESSERA_ARCHIVE` | none | install from a local archive (`tools/pack-release.sh`): forks, offline |
 | `TESSERA_SKIP_NGINX=1` | off | bring your own reverse proxy |
 | `TESSERA_SKIP_KLIPPER_CFG=1` | off | web UI only, touch no Klipper config |
 | `TESSERA_NO_PROMPT=1` | off | fully non-interactive (CI) |
@@ -291,9 +293,10 @@ More: [docs/en/deployment.md](docs/en/deployment.md#installing-the-host-deployin
 ### Extensions
 
 Optional plugins are installed from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext)
-registry, which holds each plugin's open sources and prebuilt archives. The plugin manager
-downloads an archive, checks its sha256 and unpacks it into `~/tessera/extensions/`;
-nothing is built on the printer.
+registry, which holds each plugin's open sources and prebuilt archives. A plugin is
+downloaded, checked against its sha256 and unpacked into `~/tessera/extensions/`; nothing is
+built on the printer. The easiest way is in the UI: **Settings → Plugins → Plugin registry**.
+The same in a terminal:
 
 ```bash
 tessera-ext                     # menu: Install / Update / Remove (or E) in the `tessera` menu)
@@ -435,8 +438,8 @@ Shortcuts are declarative, like guards:
 Four layers, no auto-updates in the browser — **files on disk are the source of truth**
 (analogous to Klipper extras):
 
-1. **Provisioning** — `extensions/<id>/` on the host (dev: vite middleware; prod: nginx `location /extensions/`). Reviewed plugins come from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry through `tessera-ext`: prebuilt archives checked against sha256, nothing is built on the printer;
-2. **Discovery** — same-origin catalog `/extensions/index.json`, regenerated by `tools/extensions-sync.cjs`; plus an advanced *Add by URL* mode with a trust confirmation and an `external` badge;
+1. **Provisioning** — `extensions/<id>/` on the host (dev: vite middleware; prod: nginx `location /extensions/`). Reviewed plugins come from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry in the UI or through `tessera-ext`: prebuilt archives checked against sha256, nothing is built on the printer;
+2. **Discovery** — same-origin catalog `/extensions/index.json`, regenerated by `tessera-ext sync`; plus an advanced *Add by URL* mode with a trust confirmation and an `external` badge;
 3. **Loading** — fetch manifest → resolve entry against the manifest origin → `import()` → merge locales → sanitize contributions;
 4. **Enablement** — per-printer enable, version badges, hot *Update* without reload.
 
@@ -470,8 +473,8 @@ tessera/
 │   ├── system/        # right panel, banner, notifications, machine page, power chip
 │   └── console · jobs · history · config · gcode-preview
 ├── extensions/      # remote-plugin provisioning folder (index.json generated)
-├── tools/           # extensions-sync.cjs, tessera-ext.cjs (plugin manager), registry-pack.cjs
-├── deploy/          # install.sh (menu: `tessera`), install-ext.sh (`tessera-ext`), nginx config
+├── tools/           # for development and CI: extensions-sync.cjs, registry-pack.cjs, pack-release.sh
+├── deploy/          # install.sh (menu: `tessera`), install-ext.sh and tessera-ext.py (`tessera-ext`, the service), nginx config
 └── docs/            # developer documentation (en/, ru/)
 ```
 

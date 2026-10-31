@@ -38,7 +38,7 @@ and in the text diverge, trust the code and fix the document.
 - **How do I save a setting?** `api.settings.set/get` — see [settings.md](settings.md).
 - **How do I update a plugin?** From the registry: `tessera-ext update --all`, then
   F5. A plugin copied by hand: replace the files in `extensions/<name>/`, bump
-  `version`, run `node tools/extensions-sync.cjs`, press Update in Settings, F5 if the
+  `version`, run `tessera-ext sync`, press Update in Settings, F5 if the
   code changed. See [deployment.md](deployment.md).
 - **Why doesn't my hotkey fire?** A conflict (both disabled), an input field, fleet
   mode, another page — see [hotkeys.md](hotkeys.md).

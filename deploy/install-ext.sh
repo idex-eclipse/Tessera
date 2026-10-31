@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tessera extensions manager — thin wrapper around tools/tessera-ext.cjs.
+# Tessera extensions manager — thin wrapper around deploy/tessera-ext.py.
 #
 # Usually run as `tessera-ext` (deploy/install.sh puts that command into
 # /usr/local/bin). Without arguments it opens an interactive menu:
@@ -24,20 +24,20 @@ SELF_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 DIR="${TESSERA_DIR:-}"
 if [ -z "$DIR" ]; then
-  if [ -f "$SELF_DIR/../tools/tessera-ext.cjs" ]; then
+  if [ -f "$SELF_DIR/tessera-ext.py" ]; then
     DIR="$(cd "$SELF_DIR/.." && pwd)"
-  elif [ -f "$HOME/tessera/tools/tessera-ext.cjs" ]; then
+  elif [ -f "$HOME/tessera/deploy/tessera-ext.py" ]; then
     DIR="$HOME/tessera"
   fi
 fi
-if { [ -z "$DIR" ] || [ ! -f "$DIR/tools/tessera-ext.cjs" ]; } && [ -t 0 ]; then
+if { [ -z "$DIR" ] || [ ! -f "$DIR/deploy/tessera-ext.py" ]; } && [ -t 0 ]; then
   read -r -p "Tessera installation directory: " DIR || true
 fi
-[ -n "$DIR" ] && [ -f "$DIR/tools/tessera-ext.cjs" ] ||
-  die "tools/tessera-ext.cjs not found${DIR:+ in $DIR}. Install or update Tessera with deploy/install.sh first."
+[ -n "$DIR" ] && [ -f "$DIR/deploy/tessera-ext.py" ] ||
+  die "deploy/tessera-ext.py not found${DIR:+ in $DIR}. Install or update Tessera with deploy/install.sh first."
 
-command -v node >/dev/null 2>&1 || die "node not found. Re-run deploy/install.sh (it installs Node.js)."
-NODE_MAJOR="$(node -v | sed 's/^v\([0-9]*\).*/\1/')"
-[ "$NODE_MAJOR" -ge 18 ] || die "Node.js >= 18 required (found $(node -v))."
+command -v python3 >/dev/null 2>&1 || die "python3 not found. Run: tessera update (it installs python3)."
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 7))' ||
+  die "Python >= 3.7 required (found $(python3 -V 2>&1))."
 
-exec node "$DIR/tools/tessera-ext.cjs" "$@"
+exec python3 "$DIR/deploy/tessera-ext.py" "$@"

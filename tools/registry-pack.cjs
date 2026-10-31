@@ -2,7 +2,7 @@
 
 /**
  * Packs a built plugin into a reproducible archive and upserts its entry
- * in registry.json (format read by tools/tessera-ext.cjs).
+ * in registry.json (format read by deploy/tessera-ext.py).
  *
  * Usage:
  *   node tools/registry-pack.cjs <built-plugin-dir> --dir <name> --url-base <url> [--out <registry-dir>] [--plugin-api <n>]

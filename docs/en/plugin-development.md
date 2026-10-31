@@ -148,7 +148,8 @@ if (!customElements.get('acme-hello-page')) {
 Next:
 
 ```bash
-node tools/extensions-sync.cjs        # regenerate extensions/index.json
+tessera-ext sync                      # regenerate extensions/index.json
+                                      # (in a dev checkout: node tools/extensions-sync.cjs)
 ```
 
 Open **Settings → Plugins → Refresh**, press **Install** next to "Hello" — a
@@ -450,7 +451,7 @@ Useful to know when designing:
 ### Workflow
 
 1. Build the plugin, put `manifest.json` + `index.js` into `extensions/<name>/`.
-2. `node tools/extensions-sync.cjs` — regenerate `extensions/index.json`
+2. `tessera-ext sync` (in a dev checkout: `node tools/extensions-sync.cjs`) — regenerate `extensions/index.json`
    (needed when a plugin is first added and when its version/name changes).
 3. Settings → Plugins → **Refresh** → **Install** / **Update**.
 4. When the code changes — **F5** (see "What does not happen on Update").
@@ -545,6 +546,6 @@ Collected from the actual behaviour of the code:
 - [ ] All strings go through `api.i18n.t`; at least `en` exists.
 - [ ] Behaviour under `klippy not ready` and offline is checked.
 - [ ] Side-effect actions go through `request()` (so guards fire).
-- [ ] The version is bumped; `tools/extensions-sync.cjs` has been run.
+- [ ] The version is bumped; the catalog is regenerated (`tessera-ext sync`).
 - [ ] Build: `process.env.NODE_ENV` is defined, nothing is `external`, the file
       name = `manifest.entry`.

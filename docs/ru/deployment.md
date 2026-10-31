@@ -13,13 +13,16 @@ Core-плагины (`@core/…`) вшиты в бандл хоста. Remote-п
 | **Loading** | fetch манифеста → import модуля | загрузчик плагинов хоста |
 | **Enablement** | включён ли плагин, на каких принтерах | `localStorage` → `mpu:v2:plugins` |
 
-UI **сам файлы не пишет** и плагины сам не обновляет: источник истины — содержимое
-`extensions/`. Файлы попадают туда двумя путями:
+Сам браузер файлы на сервер не пишет: источник истины — содержимое `extensions/`.
+Файлы попадают туда тремя путями:
 
-- **из реестра плагинов** командой `tessera-ext` (рекомендуемый путь): проверенные
-  готовые архивы со сверкой sha256;
+- **из реестра в UI**: Settings → Plugins → **Реестр плагинов**. Работает через
+  [службу `tessera-ext`](#служба-tessera-ext-установка-из-ui);
+- **из реестра в терминале**: команда `tessera-ext`. Те же проверенные готовые архивы
+  со сверкой sha256;
 - **вручную**: копируете папку плагина в `extensions/<имя>/` и запускаете
-  `node tools/extensions-sync.cjs` (разработка, частные плагины).
+  `tessera-ext sync` (в dev-checkout: `node tools/extensions-sync.cjs`). Для разработки
+  и частных плагинов.
 
 ---
 
@@ -27,7 +30,7 @@ UI **сам файлы не пишет** и плагины сам не обно�
 
 ```
 extensions/
-├── index.json                  ← генерируется tools/extensions-sync.cjs
+├── index.json                  ← генерируется tessera-ext sync
 ├── hello/
 │   ├── manifest.json
 │   ├── index.js                ← entry (имя берётся из manifest.entry)
@@ -66,7 +69,8 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 
 Команду `tessera-ext` (`/usr/local/bin/tessera-ext`) создаёт `deploy/install.sh`.
 Она запускает [`deploy/install-ext.sh`](../../deploy/install-ext.sh), а тот —
-`tools/tessera-ext.cjs` из каталога установки. Плагин можно назвать полным id
+`deploy/tessera-ext.py` из каталога установки (системный `python3` ≥ 3.7, только
+стандартная библиотека, venv не нужен). Плагин можно назвать полным id
 (`acme/hello`) или коротким именем (`hello`); неоднозначное имя — ошибка. Без
 команды `tessera-ext` (например, до обновления Tessera) работает
 `bash ~/tessera/deploy/install-ext.sh`. В конце `install.sh` предлагает сразу
@@ -78,6 +82,7 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 
 - sha256 архива совпадает с `registry.json`;
 - в архиве только обычные файлы и папки: без симлинков, абсолютных путей и `..`;
+- архив распаковывается не больше чем в 100 МБ и 5000 записей;
 - `manifest.json` из архива совпадает с записью реестра по `id` и `version`;
 - `pluginApi` записи не новее, чем поддерживает хост (сейчас `1`).
 
@@ -115,10 +120,11 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 `extensions/index.json` — **статический** массив, который генерирует скрипт:
 
 ```bash
-node tools/extensions-sync.cjs
+tessera-ext sync                # на принтере
+node tools/extensions-sync.cjs  # в dev-checkout, тот же формат
 ```
 
-Скрипт обходит `extensions/*/manifest.json` и записывает:
+Команда обходит `extensions/*/manifest.json` и записывает:
 
 ```json
 [
@@ -135,14 +141,14 @@ node tools/extensions-sync.cjs
 ]
 ```
 
-`origin` равен `registry` у плагинов, установленных через `tools/tessera-ext.cjs`
+`origin` равен `registry` у плагинов, установленных из реестра
 (в каталоге у них бейдж *Проверен*), и `local` у папок, положенных вручную. Папки,
 имя которых начинается с `.`, пропускаются.
 
 Папки без `manifest.json` пропускаются с предупреждением; ошибки разбора
 манифеста логируются, остальные плагины всё равно попадают в каталог.
 
-Запускайте скрипт **после добавления плагина** и при смене его `name`/`version`.
+Запускайте её **после добавления плагина вручную** и при смене его `name`/`version`.
 Правки кода плагина без смены версии перегенерации не требуют.
 
 Каталог — удобство discovery, не источник истины для загрузки: плагин, которого
@@ -166,6 +172,14 @@ Settings → Plugins → **Refresh** (перечитывает `index.json` бе
 При установке можно ограничить плагин набором принтеров (`printerIds`);
 пустой список — все принтеры.
 
+### Из реестра, прямо в UI
+
+Settings → Plugins → **Реестр плагинов**: **Install** скачивает плагин на сервер и сразу
+включает его в этом браузере. **Update** обновляет файлы (новый код подхватится после
+перезагрузки страницы, UI покажет плашку), **Remove** удаляет файлы и запись. Блок виден,
+только если служба доступна; без неё всё работает как раньше, через `tessera-ext`.
+Папки, положенные вручную, через UI не заменяются и не удаляются.
+
 ### По URL (advanced)
 
 Settings → Plugins → **Add by URL (advanced)**: хост загружает манифест по
@@ -183,7 +197,7 @@ Settings → Plugins → **Add by URL (advanced)**: хост загружает 
 (dev-сервер, ручная настройка), кнопка видна.
 
 Настройка меняется в меню установщика: `tessera` → **S) Settings** →
-**2) Plugins by URL**. Пересборка не нужна: установщик перепишет `policy.json`,
+**2) Plugins by URL**. Скачивать сборку заново не нужно: установщик перепишет `policy.json`,
 переключит CSP в конфиге nginx и перезагрузит nginx. После этого обновите страницу
 UI. Без меню: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/install.sh --plugins-policy`.
 
@@ -213,7 +227,7 @@ UI. Без меню: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/insta
 - Плагин исполняется в контексте страницы хоста: он видит `localStorage` своего
   origin (включая токены авторизации Moonraker). Ставьте плагины только из
   доверенных источников.
-- Целостность проверяется **при доставке**: `tools/tessera-ext.cjs` сверяет каждый
+- Целостность проверяется **при доставке**: `deploy/tessera-ext.py` сверяет каждый
   архив с sha256 из `registry.json`. Доверие к плагину из реестра держится на ревью
   его исходников в репозитории-реестре и на сборке в CI. Браузер хеши повторно не
   проверяет, а плагины, установленные по URL, не проверяются вовсе.
@@ -223,11 +237,46 @@ UI. Без меню: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/insta
 
 ---
 
+## Служба `tessera-ext`: установка из UI
+
+Tessera по-прежнему работает без собственного бэкенда: UI — статика, данные — в
+Moonraker. Служба — необязательное исключение ради одного удобства: ставить плагины без
+терминала. Браузер не может записать файл на сервер, и Moonraker в `extensions/` не пишет.
+
+- **Процесс есть только во время работы.** `tessera-ext.socket` слушает
+  `/run/tessera-ext.sock`, systemd запускает `deploy/tessera-ext.py serve` при первом
+  запросе, через 5 минут простоя процесс завершается.
+- **Клиент передаёт только id плагина.** `POST /tessera-api/v1/{install,update,remove}`
+  с телом `{"id": "acme/hello"}`, плюс `GET /tessera-api/v1/status`. URL, пути и `--force`
+  через API не передать. Адрес реестра служба берёт сама и читает его только по `https://`
+  (`TESSERA_REGISTRY_URL` на неё не действует; ветка — из `tessera-ext branch`).
+- **Права проверяет Moonraker.** На каждый запрос служба пересылает `Authorization`,
+  `X-Api-Key`, `X-Real-IP` и `X-Forwarded-For` в `GET /access/user`. Не 200 — отказ. JWT,
+  API-ключи, `trusted_clients` и `force_logins` работают так же, как у Moonraker. Если
+  авторизации в Moonraker нет, плагины реестра может ставить и удалять любой в сети; тем,
+  кто и так управляет принтером, это не даёт ничего нового, а произвольный код так не
+  поставить.
+- **Защита от чужих сайтов.** Нужен `Content-Type: application/json`, `Origin` должен
+  совпадать с `Host`, CORS-заголовков нет.
+- **Песочница.** Служба работает от пользователя принтера, не от root. Сокет открыт только
+  для группы nginx. Записывать служба может только в `extensions/`: `ProtectHome=tmpfs`,
+  `ProtectSystem=strict`, `NoNewPrivileges`.
+
+Проверки архива те же, что в CLI: это один и тот же код. Журнал:
+`journalctl -u tessera-ext`.
+
+Выключается в меню: `tessera` → **S) Settings** → **3) Plugins from UI** (или
+`TESSERA_UI_INSTALL=0` при установке): юниты удаляются, nginx отвечает на
+`/tessera-api/` 502, и UI этот блок не показывает.
+
+---
+
 ## Установка хоста: `deploy/install.sh`
 
-Скрипт для Armbian/Debian: клонирует репозиторий, собирает хост, настраивает
-nginx (включая `/extensions/` и проксирование WebSocket) и, при желании,
-конфиги Klipper. Он запускается как меню в стиле kiauh:
+Скрипт для Armbian/Debian: скачивает готовую сборку, настраивает nginx (включая
+`/extensions/` и проксирование WebSocket), службу `tessera-ext` и, при желании, конфиги
+Klipper. На принтере ничего не собирается: Vite и Node.js там не нужны. Он запускается как
+меню в стиле kiauh:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
@@ -238,10 +287,10 @@ curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/in
 
 | Пункт | Что делает |
 |---|---|
-| **1) Install** | спрашивает каталог, порт nginx, адрес Moonraker, каталог конфигов Klipper; ставит зависимости, клонирует, собирает, настраивает nginx и Klipper, создаёт команды `tessera` и `tessera-ext` |
-| **2) Update** | показывает установленный коммит и последний коммит ветки на GitHub. *Update Tessera* — fetch → сборка → nginx → конфиг Klipper, без вопросов. *Rebuild only* — пересборка без обновления исходников |
-| **3) Remove** | показывает, что будет удалено, и просит подтверждения: сайт nginx и его логи, `[include tessera-shell.cfg]` из `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`) и `tessera-shell.cfg`, команды `tessera`/`tessera-ext`, каталог установки, `install.conf`. Установленные расширения можно сохранить — они переносятся в `~/tessera-extensions-backup`. nginx, Node.js, git и графики `shapers/` не удаляются |
-| **S) Settings** | ветка (список веток с GitHub; после смены предлагается Update) и плагины по URL (применяется сразу, без пересборки) |
+| **1) Install** | спрашивает каталог, порт nginx, адрес Moonraker, каталог конфигов Klipper; ставит зависимости (`curl`, `tar`, `nginx`, `python3`), скачивает сборку, настраивает nginx и Klipper, создаёт команды `tessera` и `tessera-ext` |
+| **2) Update** | показывает установленный коммит и коммит опубликованной сборки ветки. *Update Tessera* — скачивание → nginx → конфиг Klipper, без вопросов. *Reinstall* — скачать сборку заново, даже если она актуальна, и переписать конфиг nginx |
+| **3) Remove** | показывает, что будет удалено, и просит подтверждения: сайт nginx и его логи, `[include tessera-shell.cfg]` из `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`) и `tessera-shell.cfg`, команды `tessera`/`tessera-ext`, юниты службы, каталог установки, `install.conf`. Установленные расширения можно сохранить — они переносятся в `~/tessera-extensions-backup`. Пакеты (nginx, python3) и графики `shapers/` не удаляются |
+| **S) Settings** | ветка (список веток с опубликованной сборкой; после смены предлагается Update), плагины по URL и установка из UI (применяются сразу) |
 | **E) Extensions** | менеджер расширений `tessera-ext` |
 
 Навигация как в kiauh: буква или цифра, затем Enter. Каждое действие выполняется
@@ -249,13 +298,32 @@ curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/in
 
 Настройки хранятся в `~/.config/tessera/install.conf` (`KEY=value`). Update берёт
 их оттуда и ничего не спрашивает. Если файла нет (установка, сделанная до появления
-меню), значения определяются по системе: ветка — по git, порт и Moonraker — по
-конфигу nginx, плагины по URL — по `policy.json`.
+меню), значения определяются по системе: ветка — по `build-info` или git, порт и
+Moonraker — по конфигу nginx, плагины по URL — по `policy.json`.
+
+**Откуда берётся сборка.** CI (`.github/workflows/build.yml`) на каждый push в `main` и
+`dev` собирает UI и обновляет плавающий релиз `build-<ветка>`: архив
+`tessera-<коммит>.tar.gz` и `build-info` с его именем и sha256. Установщик проверяет
+sha256 и заменяет `host/`, `deploy/` и `build-info`; при сбое остаётся прежняя версия.
+**`extensions/` в архив не входит и при обновлении не затрагивается.** Sha256 защищает от
+повреждения при скачивании; подлинность, как и раньше, держится на GitHub и HTTPS.
+
+**Старые установки** (git-checkout) обновляются в два шага. Первый `tessera update`
+выполняет ещё старый скрипт: git, `npm ci`, сборка. Следующий видит `.git`, спрашивает
+подтверждение и заменяет исходники готовой сборкой; `extensions/` и настройки остаются.
+Node.js автоматически не удаляется: если он больше ни для чего не нужен, удалите его сами.
+
+Собрать архив для форка или офлайн-установки:
+
+```bash
+npm ci && npm run build && bash tools/pack-release.sh   # → release/tessera-<коммит>.tar.gz
+TESSERA_ARCHIVE=release/tessera-<коммит>.tar.gz bash deploy/install.sh install
+```
 
 Без меню (скрипты, CI):
 
 ```bash
-bash install.sh install | update | rebuild | remove | extensions
+bash install.sh install | update | reinstall | remove | extensions
 TESSERA_NO_PROMPT=1 bash install.sh      # без терминала и вопросов: установка или обновление
 ```
 
@@ -271,6 +339,8 @@ TESSERA_NO_PROMPT=1 bash install.sh      # без терминала и вопр
 | `TESSERA_SKIP_NGINX` | `0` | не настраивать nginx |
 | `TESSERA_NO_PROMPT` | `0` | не задавать вопросов |
 | `TESSERA_ALLOW_REMOTE_PLUGINS` | прежний выбор (при первой установке `0`) | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/` |
+| `TESSERA_UI_INSTALL` | прежний выбор (при первой установке `1`) | `1` — установка плагинов из UI (служба `tessera-ext`); `0` — только CLI |
+| `TESSERA_ARCHIVE` | нет | ставить из этого файла, а не из опубликованной сборки |
 
 Скрипт не запускается от root. При каждой установке и обновлении он пересобирает
 `extensions/index.json`. Подробности — в самом `deploy/install.sh`.
@@ -283,7 +353,7 @@ TESSERA_NO_PROMPT=1 bash install.sh      # без терминала и вопр
    внутри, `process.env.NODE_ENV` определён.
 2. Положить `manifest.json` + собранные файлы в `extensions/<имя>/`.
 3. Увеличить `version`.
-4. `node tools/extensions-sync.cjs`.
+4. `tessera-ext sync` (в dev-checkout: `node tools/extensions-sync.cjs`).
 5. Settings → Plugins → Refresh → Install / Update.
 6. F5, если менялся код.
 7. Проверить обе темы, оба языка, offline, *Klippy not ready*.

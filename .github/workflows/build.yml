@@ -1,0 +1,114 @@
+# Publishes a prebuilt Tessera for each branch: deploy/install.sh downloads it,
+# nothing is built on the printer.
+#
+# Rolling prerelease build-<branch>:
+#   tessera-<commit>.tar.gz  the build (see tools/pack-release.sh)
+#   build-info               which archive is current, its sha256
+name: build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - name: Pack
+        env:
+          TESSERA_BUILD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: bash tools/pack-release.sh release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/
+          retention-days: 7
+
+  installers:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.8', '3.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: shellcheck --severity=warning deploy/install.sh deploy/install-ext.sh tools/pack-release.sh deploy/tests/e2e.sh
+      - run: python -m unittest discover -s deploy/tests -v
+      - name: Dry run
+        run: TESSERA_DRY_RUN=1 TESSERA_NO_PROMPT=1 TESSERA_DIR="$RUNNER_TEMP/dry" bash deploy/install.sh install
+
+  e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: Install on a real nginx and systemd
+        run: bash deploy/tests/e2e.sh "$PWD/release"
+
+  publish:
+    needs: [build, installers, e2e]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: build-${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: Move the tag
+        run: |
+          git tag -f "$TAG"
+          git push -f origin "refs/tags/$TAG"
+      - name: Create the rolling release
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 ||
+            gh release create "$TAG" --prerelease --latest=false \
+              --title "Rolling build: $GITHUB_REF_NAME" \
+              --notes "Prebuilt UI of branch $GITHUB_REF_NAME for deploy/install.sh. Replaced on every push."
+      # build-info goes last: it must never name an archive that is not there yet.
+      - name: Upload
+        run: |
+          gh release upload "$TAG" release/tessera-*.tar.gz --clobber
+          gh release upload "$TAG" release/build-info --clobber
+      # Two are kept: a printer may be downloading the previous one right now.
+      - name: Remove old archives
+        run: |
+          current="$(sed -n 's/^ARCHIVE=//p' release/build-info)"
+          gh release view "$TAG" --json assets \
+            --jq '.assets | map(select(.name | startswith("tessera-"))) | sort_by(.createdAt) | reverse | .[].name' |
+            grep -vx "$current" | tail -n +2 |
+            while read -r name; do gh release delete-asset "$TAG" "$name" --yes; done

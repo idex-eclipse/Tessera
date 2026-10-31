@@ -36,9 +36,9 @@
 - **Как отправить команду?** `api.moonraker().request('printer.gcode.script', { script })`;
   она пройдёт через гарды.
 - **Как сохранить настройку?** `api.settings.set/get` — см. [settings.md](settings.md).
-- **Как обновить плагин?** Из реестра: `tessera-ext update --all`, затем F5.
+- **Как обновить плагин?** Из реестра: Update в Settings → Plugins или `tessera-ext update --all`, затем F5.
   Плагин, положенный вручную: заменить файлы в `extensions/<имя>/`, поднять `version`,
-  `node tools/extensions-sync.cjs`, Update в Settings, F5 при изменении кода.
+  `tessera-ext sync`, Update в Settings, F5 при изменении кода.
   См. [deployment.md](deployment.md).
 - **Почему не срабатывает моя горячая клавиша?** Конфликт (обе отключены),
   поле ввода, fleet-режим, другая страница — см. [hotkeys.md](hotkeys.md).

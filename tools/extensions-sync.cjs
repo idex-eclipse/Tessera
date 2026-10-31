@@ -5,8 +5,9 @@
  *
  * Usage: node tools/extensions-sync.cjs
  *
- * Run after placing/updating plugins in ~/extensions/
- * (tools/tessera-ext.cjs runs it automatically after install/update/remove).
+ * Development tool: run after placing/updating plugins in ~/extensions/.
+ * On a printer the same index is written by deploy/tessera-ext.py (`tessera-ext sync`,
+ * and automatically after install/update/remove); keep the two formats identical.
  */
 
 const fs = require('fs');
@@ -16,7 +17,7 @@ const EXTENSIONS_DIR = process.env.TESSERA_EXTENSIONS_DIR
   ? path.resolve(process.env.TESSERA_EXTENSIONS_DIR)
   : path.resolve(__dirname, '..', 'extensions');
 
-/** Written by tools/tessera-ext.cjs next to manifest.json of registry plugins. */
+/** Written by deploy/tessera-ext.py next to manifest.json of registry plugins. */
 const ORIGIN_FILE = '.tessera-origin.json';
 
 function readJson(file) {
