@@ -895,7 +895,11 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
         self.respond(handler)
 
 
-class ApiServer(socketserver.UnixStreamServer):
+# No unix sockets on Windows: the CLI of a dev checkout must still load there.
+UNIX_SERVER = getattr(socketserver, 'UnixStreamServer', None)
+
+
+class ApiServer(UNIX_SERVER or object):
     def __init__(self, socket_path=None):
         super().__init__(socket_path or '', ApiHandler, bind_and_activate=False)
         self.idle = False
@@ -915,6 +919,8 @@ class ApiServer(socketserver.UnixStreamServer):
 
 def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
     global local_sources_allowed  # pylint: disable=global-statement
+    if not UNIX_SERVER:
+        raise ExtError('serve needs unix sockets: it runs on the printer, not on Windows')
     local_sources_allowed = False
     os.umask(0o022)
 
