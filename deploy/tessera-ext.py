@@ -689,6 +689,7 @@ def cmd_branch(name):
 
 API_PREFIX = '/tessera-api/v1/'
 MAX_REQUEST_BODY = 4096
+MAX_DRAINED_BODY = 64 * 1024
 IDLE_EXIT_SECONDS = 300
 PLUGIN_ID_RE = re.compile(r'[^\x00-\x1f\x7f]{1,200}')
 MOONRAKER_RE = re.compile(r'[A-Za-z0-9.\-:\[\]]{1,255}')
@@ -841,18 +842,29 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             print(f'[tessera-ext] {e!r}', file=sys.stderr)
             self.send_json(500, {'error': 'Internal error, see: journalctl -u tessera-ext'})
 
-    def read_plugin_id(self):
-        if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
-            # A form on another site cannot send this type without a CORS preflight.
-            raise ExtError('Content-Type must be application/json', 415)
+    def read_body(self):
+        """
+        Comes before any refusal: closing a socket with unread data breaks the
+        connection, and nginx would answer 502 instead of that refusal.
+        """
         try:
             length = int(self.headers.get('Content-Length') or '')
         except ValueError as e:
             raise ExtError('Content-Length required', 411) from e
-        if length < 0 or length > MAX_REQUEST_BODY:
+        if length < 0:
+            raise ExtError('Invalid Content-Length')
+        # nginx limits the body to client_max_body_size, far below this.
+        data = self.rfile.read(min(length, MAX_DRAINED_BODY))
+        if length > MAX_REQUEST_BODY:
             raise ExtError('Request body too large', 413)
+        return data
+
+    def parse_plugin_id(self, data):
+        if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
+            # A form on another site cannot send this type without a CORS preflight.
+            raise ExtError('Content-Type must be application/json', 415)
         try:
-            body = json.loads(self.rfile.read(length).decode('utf-8'))
+            body = json.loads(data.decode('utf-8'))
         except ValueError as e:
             raise ExtError('Request body must be JSON') from e
         # A plugin id and nothing else: no URLs, paths or force from a request.
@@ -873,10 +885,11 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         def handler():
+            data = self.read_body()
             if not self.path.startswith(API_PREFIX) or self.path[len(API_PREFIX):] not in API_ACTIONS:
                 raise ExtError('Not found', 404)
             check_same_origin(self.headers)
-            pid = self.read_plugin_id()
+            pid = self.parse_plugin_id(data)
             check_moonraker_auth(self.headers)
             return API_ACTIONS[self.path[len(API_PREFIX):]](pid)
         self.respond(handler)

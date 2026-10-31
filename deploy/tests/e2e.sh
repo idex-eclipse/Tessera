@@ -3,7 +3,7 @@
 # nginx and systemd (the CI runner): changes the system, do not run on a printer.
 #
 # Usage: bash deploy/tests/e2e.sh <dir with tessera-*.tar.gz>
-set -euo pipefail
+set -eEuo pipefail   # -E: the ERR trap below also covers functions
 
 RELEASE="${1:?release directory}"
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"

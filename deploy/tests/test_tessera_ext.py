@@ -254,7 +254,7 @@ class InstallTests(Base):
     def test_refuses_foreign_folder(self):
         self.put_manual(pid='someone/else')
         self.publish(plugin_files())
-        self.assert_refused('is not acme/hello')
+        self.assert_refused('is not acme/hello', 'acme/hello')
 
     def test_failed_update_keeps_previous_version(self):
         self.publish(plugin_files())
