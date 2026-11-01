@@ -194,6 +194,8 @@
     border-radius: var(--radius-md);
     background: var(--bg-surface);
     overflow: hidden;
+    /* z-index частей чипа остаётся внутри него и не перекрывает панели страницы */
+    isolation: isolate;
     transition:
         background var(--transition-fast),
         border-color var(--transition-fast),
