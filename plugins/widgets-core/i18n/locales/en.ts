@@ -181,6 +181,7 @@ export const en = {
       speed: 'Speed',
       value: 'Value',
       groupAuto: 'Auto fans',
+      groupControlled: 'Controllable',
       autoNote: 'Klipper controls this fan automatically — read-only.',
     },
     camera: {
