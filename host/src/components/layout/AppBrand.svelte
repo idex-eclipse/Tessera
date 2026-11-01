@@ -1,20 +1,24 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+
   import { createTesseract, type TesseractHandle } from '../../../../plugins/shared/loader/tesseract';
   import { getAppContext } from '../../app-context.ts';
 
   let { collapsed }: { collapsed: boolean } = $props();
 
-  const { i18n } = getAppContext();
+  const { i18n, ui } = getAppContext();
 
   let svg: SVGSVGElement;
   let handle: TesseractHandle | undefined;
-  let stopped = $state(false);
+  let stopped = $derived(!ui.logoAnimated);
 
   // Логотип — тот же тессеракт, что и в загрузчике, но без подписи и role="status":
   // это декоративная марка, а не индикатор загрузки. Клик останавливает его в позе
-  // host/public/logo.svg, повторный — снова запускает вращение.
+  // host/public/logo.svg, повторный — снова запускает вращение. Выбор хранится в
+  // настройках, поэтому после F5 логотип сразу стоит или крутится, как оставили.
   $effect(() => {
-    handle = createTesseract(svg);
+    // Начальное состояние читается без подписки: дальше им управляет сам тессеракт.
+    handle = createTesseract(svg, { parked: untrack(() => stopped) });
     return () => {
       handle?.destroy();
       handle = undefined;
@@ -22,7 +26,7 @@
   });
 
   const toggle = () => {
-    if (handle) stopped = handle.toggle();
+    if (handle) ui.setLogoAnimated(!handle.toggle());
   };
 
   let label = $derived(i18n.t(stopped ? 'nav.playLogoAnimation' : 'nav.stopLogoAnimation'));

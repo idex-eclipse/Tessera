@@ -206,10 +206,15 @@ function draw(lines: SVGLineElement[], points: ProjectedPoint[]): void {
   }
 }
 
+export interface TesseractOptions {
+  /** Сразу стоять в позе логотипа (без анимации), пока не вызовут `toggle()`. */
+  parked?: boolean;
+}
+
 /**
  * Рисует тессеракт в переданном `<svg>` линиями со `stroke="currentColor"`.
  */
-export function createTesseract(svg: SVGSVGElement): TesseractHandle {
+export function createTesseract(svg: SVGSVGElement, options: TesseractOptions = {}): TesseractHandle {
   svg.setAttribute('viewBox', `0 0 ${VIEW} ${VIEW}`);
 
   const lines = EDGES.map(() => {
@@ -265,9 +270,16 @@ export function createTesseract(svg: SVGSVGElement): TesseractHandle {
       draw(lines, k > 0 ? blend(project(cur), LOGO_POINTS, k) : project(cur));
     },
   };
-  inst.tick(0);
-  instances.add(inst);
-  ensureLoop();
+  if (options.parked) {
+    mode = 'parked';
+    cur = LOGO_POSE;
+    blendNow = 1;
+    draw(lines, LOGO_POINTS);
+  } else {
+    inst.tick(0);
+    instances.add(inst);
+    ensureLoop();
+  }
 
   return {
     destroy() {

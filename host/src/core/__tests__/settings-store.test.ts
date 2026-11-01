@@ -39,6 +39,7 @@ describe('settings-store / base state', () => {
 
     expect(store.ui).toEqual({
       accent: null,
+      logoAnimated: true,
       bgImage: null,
       theme: 'light',
       locale: 'en',
@@ -281,6 +282,17 @@ describe('settings-store / ui state', () => {
       sidebarWidth: 320,
       sidebarCollapsed: true,
     });
+  });
+});
+
+describe('settings-store / logo animation', () => {
+  it('is on by default and remembers being stopped', () => {
+    const storage = new MemoryStorage();
+    const store = createSettingsStore({ storage });
+    expect(store.ui.logoAnimated).toBe(true);
+
+    store.setLogoAnimated(false);
+    expect(createSettingsStore({ storage }).ui.logoAnimated).toBe(false);
   });
 });
 

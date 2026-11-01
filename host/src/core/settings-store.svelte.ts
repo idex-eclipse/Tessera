@@ -93,6 +93,7 @@ const DEFAULT_UI_STATE: UiState = {
   rightPanelWidth: 320,
   bgImage: null,
   accent: null,
+  logoAnimated: true,
   fleetOpen: false,
   fleetPanels: [],
   fleetPanelsCustomized: false,
@@ -485,6 +486,10 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
         RIGHT_PANEL_MAX_WIDTH,
       ),
     });
+  }
+
+  function setLogoAnimated(logoAnimated: boolean): void {
+    patchUi({ logoAnimated });
   }
 
   function setBackgroundImage(bgImage: string | null): boolean {
@@ -979,6 +984,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     setRightPanelWidth,
     setBackgroundImage,
     setAccent,
+    setLogoAnimated,
 
     getPrinterSettings,
     getPageVisibility,
@@ -1195,6 +1201,11 @@ function normalizeUiState(value: unknown): UiState {
     ? source.accent.toLowerCase()
     : null;
 
+  const logoAnimated =
+    typeof source.logoAnimated === 'boolean'
+      ? source.logoAnimated
+      : DEFAULT_UI_STATE.logoAnimated;
+
   const fleetOpen =
     typeof source.fleetOpen === 'boolean'
       ? source.fleetOpen
@@ -1239,6 +1250,7 @@ function normalizeUiState(value: unknown): UiState {
     rightPanelWidth,
     bgImage: bgImage && bgImage.length <= BG_IMAGE_MAX_CHARS ? bgImage : null,
     accent,
+    logoAnimated,
     fleetOpen,
     fleetPanels,
     fleetPanelsCustomized,

@@ -330,6 +330,10 @@ export function createUiStore(
       return settings.ui.accent;
     },
 
+    get logoAnimated(): boolean {
+      return settings.ui.logoAnimated;
+    },
+
     get fleetOpen(): boolean {
       return settings.ui.fleetOpen ?? false;
     },
@@ -360,6 +364,7 @@ export function createUiStore(
     setRightPanelWidth,
     setBackgroundImage,
     setAccent,
+    setLogoAnimated: (animated: boolean) => settings.setLogoAnimated(animated),
     toggleFleet,
     setFleet,
 

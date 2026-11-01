@@ -110,5 +110,24 @@ describe('tesseract logo pose', () => {
     expect(isRunning()).toBe(true);
     expect(JSON.stringify(endpoints(lines))).not.toBe(parked);
     handle.destroy();
+    run(1); // дать тикеру увидеть пустой набор и сбросить rafId: модуль общий для тестов
+  });
+
+  it('can start already parked on the logo pose, and spin up on toggle', () => {
+    const { svg, lines, run, isRunning } = setup();
+    const handle = createTesseract(svg, { parked: true });
+    expect(isRunning()).toBe(false);
+
+    const k = VIEW / 64;
+    const pts = endpoints(lines);
+    expect(pts.some(([x, y]) => Math.abs(x - 32 * k) < 0.1 && Math.abs(y - 5 * k) < 0.1)).toBe(true);
+
+    const parked = JSON.stringify(pts);
+    expect(handle.toggle()).toBe(false);
+    run(2);
+    expect(isRunning()).toBe(true);
+    expect(JSON.stringify(endpoints(lines))).not.toBe(parked);
+    handle.destroy();
+    run(1); // дать тикеру увидеть пустой набор и сбросить rafId: модуль общий для тестов
   });
 });

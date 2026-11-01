@@ -67,6 +67,8 @@ export interface UiState {
   rightPanelWidth: number;
   bgImage: string | null;
   accent: string | null;
+  /** Вращается ли тессеракт-логотип в шапке; false — стоит в позе логотипа. */
+  logoAnimated: boolean;
   fleetOpen?: boolean;
   fleetPanels: FleetPanelLayoutItem[];
   fleetPanelsCustomized: boolean;
