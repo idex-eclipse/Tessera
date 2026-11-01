@@ -6,5 +6,5 @@
 - **Русский** — [docs/ru/](ru/README.md)
 
 Both versions cover the same material: architecture, the plugin development guide,
-the `PluginApi` and Moonraker proxy references, guards, hotkeys, settings,
+surfaces, the `PluginApi` and Moonraker proxy references, guards, hotkeys, settings,
 localization and theming, and deployment.

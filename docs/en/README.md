@@ -25,7 +25,7 @@ and in the text diverge, trust the code and fix the document.
 | [hotkeys.md](hotkeys.md) | plugin and host hotkeys, conflicts, reassignment |
 | [settings.md](settings.md) | `localStorage` keys, plugin settings, sync, export |
 | [i18n-and-theming.md](i18n-and-theming.md) | translations, RTL, CSS variables, the panel language |
-| [deployment.md](deployment.md) | `extensions/`, the catalog, installing and updating plugins |
+| [deployment.md](deployment.md) | `extensions/`, the catalog, installing and updating plugins, the host installer and the service |
 
 ## Quick answers
 
@@ -36,8 +36,8 @@ and in the text diverge, trust the code and fix the document.
 - **How do I send a command?** `api.moonraker().request('printer.gcode.script', { script })`;
   it goes through the guards.
 - **How do I save a setting?** `api.settings.set/get` — see [settings.md](settings.md).
-- **How do I update a plugin?** From the registry: `tessera-ext update --all`, then
-  F5. A plugin copied by hand: replace the files in `extensions/<name>/`, bump
+- **How do I update a plugin?** From the registry: Update in Settings → Plugins or
+  `tessera-ext update --all`, then F5. A plugin copied by hand: replace the files in `extensions/<name>/`, bump
   `version`, run `tessera-ext sync`, press Update in Settings, F5 if the
   code changed. See [deployment.md](deployment.md).
 - **Why doesn't my hotkey fire?** A conflict (both disabled), an input field, fleet

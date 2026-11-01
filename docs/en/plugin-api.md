@@ -79,9 +79,10 @@ this call, navigates to that printer's dashboard. `null` clears the active print
 
 ### `onPrinterChange(cb)` → `unsubscribe`
 
-The callback receives the new active printer. It is **not called** when the active
-printer is cleared (`null`). It is not called immediately on subscription — read
-the initial value from `api.printer`.
+The callback receives the new active printer. It also fires when the active
+printer's URL changes, with the same `id`. It is **not called** when the active
+printer is cleared (`null`) or renamed (use `onPrintersChange` for renames). It is
+not called immediately on subscription — read the initial value from `api.printer`.
 
 ### `onPrintersChange(cb)` → `unsubscribe`
 
@@ -97,7 +98,8 @@ receives the whole current list.
 The handle of the active printer. **Throws synchronously** if there is no active
 printer. The handle itself is a stable object, but it resolves the current active
 printer anew on every call: after a tab switch your subscriptions must be
-re-created (subscriptions do not "move" between printers).
+re-created (subscriptions do not "move" between printers). If a kept handle is used
+with no active printer, `request` rejects and the other members throw.
 
 ### `moonrakerFor(printerId)`
 
@@ -109,8 +111,12 @@ Semantics:
 - the printer must exist, otherwise an `unknown printerId` exception is thrown;
 - the handle object is **stable** between calls (cached per plugin) — you can keep
   it in module state;
-- the handle is bound to `printerId` but resolves `url` lazily → it survives a URL
-  change in Settings and connection re-creation;
+- the handle is bound to `printerId` but resolves `url` lazily → the handle object
+  survives a URL change in Settings and the Retry button. **Registrations do not:**
+  both replace the connection, and `subscribe`, `onNotify`, `onReady` and `poll` made
+  earlier stop working, with no event about it. A URL change reaches you through
+  `onPrinterChange` for the active printer (see
+  [moonraker-proxy.md](moonraker-proxy.md#connection-state));
 - after the printer is **removed** the handle is inert: `request` is rejected,
   `subscribe`/`onNotify`/`poll` are no-ops, `readyState === 'closed'`. The
   connection is not brought up again.
@@ -128,7 +134,8 @@ user (the plugin's sync toggle):
 - **sync off (default)** — separate settings per printer;
 - **sync on** — one set of settings for all printers on the device.
 
-The plugin does not see this: the API is the same, the host picks the namespace.
+The API is the same in both modes, the host picks the namespace. Re-subscribe
+`onChange` after a switch, see [settings.md](settings.md).
 
 ```ts
 interface PluginSettingsApi {
@@ -142,6 +149,8 @@ interface PluginSettingsApi {
 
 - `settings` — the **active** printer's settings. With no active printer `get`
   returns `undefined`, `set` does nothing, `onChange` returns an empty function.
+  `get` and `set` follow the active printer, while `onChange` stays bound to the
+  printer that was active at subscribe time: re-subscribe in `onPrinterChange`.
 - `settingsFor(id)` — a specific printer's settings; a non-existent `id` →
   exception; the object is stable.
 
@@ -165,7 +174,8 @@ api.settings.onChange((_key, all) => {
 - Name keys with an area prefix (`columns:page:gcodes`).
 - Store compact values. Everything sits in `localStorage` (the browser limit is
   about 5 MB per origin).
-- Do not store secrets: settings end up in the Settings → About / Debug export.
+- Do not store secrets: settings end up in the Settings → About / Debug export
+  (only the host's own authorization tokens are left out of it).
 
 ---
 
@@ -175,7 +185,8 @@ api.settings.onChange((_key, all) => {
 
 `api.fleet` lets a **fleet panel** (see [surfaces.md](surfaces.md#6-fleet-panels))
 feed the search box and filter buttons of fleet mode. It is the only plugin → host
-channel; the host stores the values and never interprets them.
+data channel (the others are signals: `mpu:banner-expand`, `mpu:banner-collapse`,
+`mpu:auth-logout`); the host stores the values and never interprets them.
 
 ```ts
 api.fleet.publish(printerId, {
@@ -210,9 +221,10 @@ api.i18n.t('hello.greeting', { name: 'Voron' });  // "Hello, {name}" → "Hello,
 api.i18n.locale;                                  // 'ru'
 ```
 
-A key is resolved first in the plugin's dictionary, then in the host's dictionary
-(`common.*`, `settings.*`, …). If the key is found nowhere, `t` returns **the key
-itself**. Substitutions are `{name}`, with `string | number` values. Details are in
+All dictionaries, the host's and every plugin's, merge into one catalog per locale,
+and the last registered value of a key wins, so prefix your keys. A key is looked up
+in the locale, its base language, then `en`. If the key is found nowhere, `t` returns
+**the key itself**. Substitutions are `{name}`, with `string | number` values. Details are in
 [i18n-and-theming.md](i18n-and-theming.md).
 
 ### `onLocaleChange(cb)` → `unsubscribe`

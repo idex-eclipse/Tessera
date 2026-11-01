@@ -82,7 +82,7 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 
 - sha256 архива совпадает с `registry.json`;
 - в архиве только обычные файлы и папки: без симлинков, абсолютных путей и `..`;
-- архив распаковывается не больше чем в 100 МБ и 5000 записей;
+- архив не больше 20 МБ и распаковывается не больше чем в 100 МБ и 5000 записей;
 - `manifest.json` из архива совпадает с записью реестра по `id` и `version`;
 - `pluginApi` записи не новее, чем поддерживает хост (сейчас `1`).
 
@@ -108,10 +108,10 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 - **prod**: nginx-блок `location /extensions/ { alias <каталог проекта>/extensions/; … }`
   с отключённым кэшированием (его настраивает `deploy/install.sh`).
 
-Кэширование: `index.json`, `manifest.json` и неименованные (без хеша) `entry` —
-`no-cache`. Файлы с хешами в имени (`index-3f9a1c.js`) можно кэшировать
-`immutable`. Пока для `index.js` без хеша кэш выключен, браузер получит свежий
-код при следующей загрузке страницы.
+Кэширование: сайт nginx из `deploy/install.sh` отдаёт `no-cache, no-store` для всего
+`/extensions/`, поэтому браузер получит свежий код при следующей загрузке страницы. На своём
+сервере держите `index.json`, `manifest.json` и `entry` без хеша в `no-cache`; файлы с
+хешами в имени (`index-3f9a1c.js`) можно кэшировать `immutable`.
 
 ---
 
@@ -169,9 +169,6 @@ Settings → Plugins → **Refresh** (перечитывает `index.json` бе
 | установлен | запись есть, версия совпадает с каталогом (или не записана) |
 | доступно обновление | `installedVersion` ≠ версия в каталоге |
 
-При установке можно ограничить плагин набором принтеров (`printerIds`);
-пустой список — все принтеры.
-
 ### Из реестра, прямо в UI
 
 Settings → Plugins → **Реестр плагинов**: **Install** скачивает плагин на сервер и сразу
@@ -182,7 +179,10 @@ Settings → Plugins → **Реестр плагинов**: **Install** скач
 
 ### По URL (advanced)
 
-Settings → Plugins → **Add by URL (advanced)**: хост загружает манифест по
+Только этот диалог может ограничить плагин набором принтеров (`printerIds`); пустой список —
+все принтеры.
+
+Settings → Plugins → **Добавить по URL (продвинутый режим)**: хост загружает манифест по
 адресу, показывает превью (`id`, `name`, `version`) и предупреждение о доверии
 (плагин получает полный доступ к Moonraker). Запись получает бейдж *external*.
 
@@ -213,8 +213,8 @@ UI. Без меню: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/insta
 ### Выключение и удаление
 
 Выключатель в списке установленных плагинов снимает вклады и гарды без
-удаления записи; удаление убирает запись из `mpu:v2:plugins`. Core-плагин
-`@core/system` закреплён (*pinned*): его нельзя отключить или удалить.
+удаления записи; удаление убирает запись из `mpu:v2:plugins`. Встроенные плагины нельзя
+отключить или удалить.
 
 ---
 
@@ -256,8 +256,8 @@ Moonraker. Служба — необязательное исключение р
   авторизации в Moonraker нет, плагины реестра может ставить и удалять любой в сети; тем,
   кто и так управляет принтером, это не даёт ничего нового, а произвольный код так не
   поставить.
-- **Защита от чужих сайтов.** Нужен `Content-Type: application/json`, `Origin` должен
-  совпадать с `Host`, CORS-заголовков нет.
+- **Защита от чужих сайтов.** POST-запросам нужен `Content-Type: application/json`, `Origin`,
+  если он есть, должен совпадать с `Host`, CORS-заголовков нет.
 - **Песочница.** Служба работает от пользователя принтера, не от root. Сокет открыт только
   для группы nginx. Записывать служба может только в `extensions/`: `ProtectHome=tmpfs`,
   `ProtectSystem=strict`, `NoNewPrivileges`.
@@ -289,7 +289,7 @@ curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/in
 |---|---|
 | **1) Install** | спрашивает каталог, порт nginx, адрес Moonraker, каталог конфигов Klipper; ставит зависимости (`curl`, `tar`, `nginx`, `python3`), скачивает сборку, настраивает nginx и Klipper, создаёт команды `tessera` и `tessera-ext` |
 | **2) Update** | показывает установленный коммит и коммит опубликованной сборки ветки. *Update Tessera* — скачивание → nginx → конфиг Klipper, без вопросов. *Reinstall* — скачать сборку заново, даже если она актуальна, и переписать конфиг nginx |
-| **3) Remove** | показывает, что будет удалено, и просит подтверждения: сайт nginx и его логи, `[include tessera-shell.cfg]` из `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`) и `tessera-shell.cfg`, команды `tessera`/`tessera-ext`, юниты службы, каталог установки, `install.conf`. Установленные расширения можно сохранить — они переносятся в `~/tessera-extensions-backup`. Пакеты (nginx, python3) и графики `shapers/` не удаляются |
+| **3) Remove** | показывает, что будет удалено, и просит подтверждения: сайт nginx и его логи, `[include tessera-shell.cfg]` из `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`) и `tessera-shell.cfg`, команды `tessera`/`tessera-ext`, юниты службы, каталог установки, `install.conf` и upgrade-map nginx, если его не использует другой сайт. Установленные расширения можно сохранить — они переносятся в `~/tessera-extensions-backup`. Пакеты (nginx, python3) и графики `shapers/` не удаляются |
 | **S) Settings** | ветка (список веток с опубликованной сборкой; после смены предлагается Update), плагины по URL и установка из UI (применяются сразу) |
 | **E) Extensions** | менеджер расширений `tessera-ext` |
 
@@ -335,7 +335,10 @@ TESSERA_NO_PROMPT=1 bash install.sh      # без терминала и вопр
 | `TESSERA_BRANCH` | `main` | ветка |
 | `TESSERA_PORT` | `8000` | порт nginx |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | адрес Moonraker |
+| `TESSERA_REPO` | основной репозиторий | форки |
 | `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | каталог конфигов Klipper |
+| `TESSERA_KLIPPER_DIR` | `~/klipper` | для обнаружения `gcode_shell_command` |
+| `TESSERA_SKIP_KLIPPER_CFG` | `0` | не трогать конфиг Klipper |
 | `TESSERA_SKIP_NGINX` | `0` | не настраивать nginx |
 | `TESSERA_NO_PROMPT` | `0` | не задавать вопросов |
 | `TESSERA_ALLOW_REMOTE_PLUGINS` | прежний выбор (при первой установке `0`) | `1` — разрешить установку по URL (без CSP); `0` — только `/extensions/` |
@@ -382,9 +385,12 @@ node <Tessera>/tools/registry-pack.cjs dist --dir hello --url-base . --out <Tess
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": 1, "url": "https://…/hello-1.2.0.tar.gz",
-  "sha256": "…", "size": 12345, "description": "…" } ] }
+  "pluginApi": 1, "url": "hello-1.2.0.tar.gz",
+  "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
+
+`--plugin-api <n>` задаёт `pluginApi`; CLI отказывается ставить запись новее, чем поддерживает
+хост. Для упаковки нужен GNU tar (`--sort=name`).
 
 Архив воспроизводим на любой ОС: записи отсортированы, время и владелец обнулены, в
 заголовке gzip нет времени, а байт ОС зафиксирован. Любой может пересобрать плагин из проверенного коммита и получить

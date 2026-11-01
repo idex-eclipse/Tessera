@@ -78,11 +78,6 @@ function packColumn<T extends Placed>(ordered: T[]): T[] {
   });
 }
 
-/** Складывает макет в одну колонку, сохраняя порядок мобильного показа. */
-export function stackLayout<T extends Placed>(items: T[]): T[] {
-  return packColumn(sortedByPosition(items));
-}
-
 /** Сдвигает элемент на `delta` позиций в одноколоночном порядке. */
 export function moveInStack<T extends Placed>(items: T[], instanceId: string, delta: -1 | 1): T[] {
   const ordered = sortedByPosition(items);

@@ -166,6 +166,26 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     Set<(settings: PluginSettingsState) => void>
   >();
   const printerSettingsPairs = new Set<string>();
+
+  onSyncChange(() => {
+    // namespace сменился — сбрасываем кэши
+    pluginSettingsCache = {};
+    printerSettingsCache = {};
+
+    // уведомляем подписчиков плагинов
+    for (const [cacheKey, pair] of pluginSettingsPairs) {
+      notifyPluginSettingsChange(
+        cacheKey,
+        readPluginSettings(storage, pair.printerId, pair.pluginId),
+      );
+    }
+
+    // форсируем реактивное обновление printer settings
+    for (const pid of printerSettingsPairs) {
+      warmPrinterSettings(pid);
+    }
+  });
+
   /**
    * Persist corrected active printer id if needed.
    */
@@ -744,25 +764,6 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     );
 
     notifyPluginSettingsChange(cacheKey, next);
-
-    onSyncChange(() => {
-      // namespace сменился — сбрасываем кэши
-      pluginSettingsCache = {};
-      printerSettingsCache = {};
-
-      // уведомляем подписчиков плагинов
-      for (const [cacheKey, pair] of pluginSettingsPairs) {
-        notifyPluginSettingsChange(
-          cacheKey,
-          readPluginSettings(storage, pair.printerId, pair.pluginId),
-        );
-      }
-
-      // форсируем реактивное обновление printer settings
-      for (const pid of printerSettingsPairs) {
-        warmPrinterSettings(pid);
-      }
-    });
   }
 
   function setPluginSetting(

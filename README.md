@@ -15,12 +15,12 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" /></a>
+  <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" /></a>
   <img alt="Svelte 5" src="https://img.shields.io/badge/svelte-5-ff3e00.svg" />
-  <img alt="Vite" src="https://img.shields.io/badge/vite-5-646cff.svg" />
+  <img alt="Vite" src="https://img.shields.io/badge/vite-6-646cff.svg" />
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6.svg" />
   <img alt="No backend required" src="https://img.shields.io/badge/backend-not%20required-informational.svg" />
-  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-green.svg" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.7.0-green.svg" />
 </p>
 
 ---
@@ -81,13 +81,18 @@ A drag-and-drop grid of autonomous widgets, arranged per printer:
 - **Status** — print progress, layer & ETA, pause / resume / cancel, speed & flow factors
 - **Macros** — buttons with automatic parameter forms parsed from your macro bodies (defaults pre-filled, required fields flagged)
 - **Tools** — jog cross/rows, extrude & retract, force move, motors off, IDEX carriage modes (PRIMARY / COPY / MIRROR / experimental DIRECT-mode from [Dmitry Butyugin's fork of Klipper for IDEX printers](https://github.com/dmbutyugin/klipper/tree/generic-cartesian)), active-tool awareness, plus one-tap **QGL** / **Z-tilt** buttons when those commands are available
-- **Limits** — velocity, acceleration and square-corner velocity on the fly
+- **Limits** — velocity, acceleration, square-corner velocity and minimum cruise ratio on the fly
 - **Outputs** — fan sliders and output-pin control (PWM and digital), plus read-only indicators for Klipper-managed auto-fans (heater_fan / controller_fan / temperature_fan)
 - **Camera** — live MJPEG/HLS views, multiple streams
 - **Filament** — runout sensor status and enable/disable
 - **Job queue** — reorder, start, manage queued prints
+- **Console, jobs table, G-code preview, calibrations, bed mesh** — the main pages are available as widgets too
 
 Every widget is data-autonomous: it subscribes to the proxy itself, so two widgets never share a hidden channel, and a broken plugin cannot take down the rest of the UI.
+
+Sliders pick one or two columns by the widget's own width. When blocks do not fit by height they go under accordions that remember their state, separately for wide and narrow dashboards.
+
+**Editing the layout:** open **Settings → Edit layout**. Drag a widget and resize it from its edges; on a touch screen dragging starts with a long press, so a swipe still scrolls the page. On a narrow dashboard each card gets up/down buttons and a ruler with a thumb that changes the height row by row. The toolbar stays in view above the chip strip. Undo and redo (`Ctrl+Z`, `Ctrl+Y`) and **Discard changes** cover the layout and the chips together.
 
 <a id="quick-access-chip-strip"></a>
 ### Quick-access chip strip
@@ -96,13 +101,13 @@ A persistent strip under the banners keeps the most urgent controls one tap away
 
 - **Temperature chips** — current value, target badge, heating/cooling trend, tap-to-set popover (optional heater on-time timer)
 - **Macro chips** — run instantly, or open the parameter form
-- **Output chips** — fan/pin state with spinning-fan feedback; preset buttons (0/25/50/75/100 %) + fine slider
+- **Output chips** — fan/pin state with spinning-fan feedback; preset buttons (0/25/50/75/100 %, binary pins 0/100) + fine slider
 - **Tuning chips** — pressure advance, retraction, flow and speed factor, with a live preview of the exact G-code that will be sent
-- **Live Z chip** — step-adjust the running Z-offset (0.01–0.1 mm), bake it into the probe, save to config
+- **Live Z chip** — step-adjust the running Z-offset (0.005–0.05 mm), bake it into the probe, save to config
 - **Filament chips** — detected / empty / off at a glance, toggle from the popover
 - **Power chips** — Moonraker power devices, **tap the chip itself to toggle** (lights, printer power, enclosure fan) — works even when Klipper is not ready, and respects server-side `locked_while_printing`
 
-Chips survive navigation and printer switches. In dashboard edit mode you add them from per-provider accordion pickers, drag them to reorder, and remove them with explicit controls; removed or renamed devices show an explicit *unavailable* state instead of silently decaying. Touch and stylus reordering are supported through the same host-wide drag-and-drop polyfill used by other editable surfaces.
+Chips survive navigation and printer switches. In dashboard edit mode you add them from per-provider accordion pickers, reorder them with buttons or by dragging, and remove them with explicit controls; removed or renamed devices show an explicit *unavailable* state instead of silently decaying. Touch and stylus reordering are supported through the same host-wide drag-and-drop polyfill used by other editable surfaces.
 
 <p align="left">
   <img src="docs/screenshots/Dashboard.png" alt="Dashboard" width="40%"/>
@@ -131,6 +136,7 @@ Long-running calibrations survive tab switches and printer switching — activit
 ### Files, editor, preview
 
 - **Universal file table** across jobs / config / logs: extended G-code metadata (filament, time, thumbnails, printed/queued status), column manager with drag-to-reorder, per-printer sort & columns, context menus
+- **History** — a page with past print jobs
 - **3MF inspector** — open OrcaSlicer / Bambu-lineage projects in the browser: inspect plates, slice summaries and filament slots, preview thumbnails, and **extract the embedded G-code** for printing (raw `.3mf` is never uploaded to Moonraker)
 - **Config & G-code editor** — fullscreen editor with Klipper-config and G-code syntax highlighting, Jinja highlighting, section TOC, own find/replace (layout-independent hotkeys), line numbers, auto-pairs, and *Save & Restart* for `.cfg` / `moonraker.conf`
 - **G-code preview** — 2D and 3D viewers with live print-progress overlay, layer scrubbing, **follow-print** mode, and **exclude object** controls. The 3D viewer renders extrusion as solid filaments rather than plain lines, while travel moves stay as thin guides. Exclude-object UI appears when Klipper actually reports print objects — i.e. during an active print — and every exclusion is irreversible and confirmation-guarded.
@@ -148,7 +154,7 @@ Long-running calibrations survive tab switches and printer switching — activit
   - **System** — system info, SD card, live host load charts
   - **Monitoring** — host throttling / under-voltage (Raspberry Pi) and CPU temperature; per-MCU load, retransmit and round-trip charts, CAN bus state; TMC driver status table with decoded flags and "seen earlier" history
   - **Storage & updates** — storage, database, update manager with commit history and rollback
-- **Klipper state banner** — distinct from connection status: firmware errors and startup are shown where they belong
+- **Klipper state banner** — distinct from connection status: firmware errors and startup are shown where they belong. Collapsed, it shows the error title, or the state, file and progress of a print
 
 <a id="console"></a>
 ### Console
@@ -164,25 +170,27 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 
 - **Printer tabs** with per-printer dashboard layout, chip strip, widget providers, page visibility and plugin settings
 - **Warm switching** — per-printer hook cores are kept alive across tab changes and fleet drawer cycles, so returning to a printer restores live data without a cold resubscribe flash
-- **Fleet mode** — tap the grid button below the tabs to slide open a drawer showing every printer's camera, print status, tool position, and temperatures in a live card grid. Each card is read-only and talks to its own printer; tap **Activate** to jump to that printer's dashboard. Panels are plugin-contributed (`printerPanels` in the manifest), so third-party plugins can add their own fleet cards.
-- **Fleet search & filters** — the drawer header has a search box (printer name or the file being printed) and filter buttons (printing / idle / Klipper error) with counters. On narrow screens the buttons collapse to icons; the layout is RTL-ready
-- **Fleet panel editor** — the drawer header includes an **Edit panels** action: reorder fleet panels with drag-and-drop and hide/show them per device. The layout is stored device-globally and applied consistently across printer cards.
+- **Fleet mode** — tap the chevron tab hanging under the header to slide open a drawer showing every printer's camera, print status, tool position, and temperatures in a live card grid. Each card is read-only and talks to its own printer; tap **Activate** to jump to that printer's dashboard. Panels are plugin-contributed (`printerPanels` in the manifest), so third-party plugins can add their own fleet cards.
+- **Fleet search & filters** — the drawer header has a search box (printer name or the file being printed) and filter buttons (printing / idle / Klipper error) with counters. On narrow screens the buttons collapse to icons; the layout is RTL-ready. The search data comes from the fleet panels themselves (`api.fleet`); the host does not interpret it.
+- **Fleet panel editor** — the drawer header includes an **Edit panels** action: reorder fleet panels with drag-and-drop and hide/show them per device. The layout is stored in `mpu:v2:ui` and applied consistently across printer cards. Reordering uses CSS `order` rather than moving DOM nodes, so Custom Elements are not remounted and keep their content and height.
 - **Offline overlay** — infrastructure-only (never reads business data); you can switch printers without dismissing it
 - **Settings sync** — opt-in per plugin, device-global
+- **Settings export and import** — in **Settings → About / Debug**: a JSON file with your preferences, without authorization tokens
 - **Themes** — light & dark, every color a CSS variable; accent customization and custom background images are supported
 - **i18n** — English & Russian, RTL-ready layout
-- **Narrow screens** — below 768px the side panels open as full-width overlays, the dashboard becomes one column (each widget keeps its row height), banners are collapsed by default and chips fold into a two-row scrolling strip, both collapsing on scroll down; pages and widgets adapt to their own width, not just the window's
+- **Narrow screens** — in a window up to 768px the side panels open as full-width overlays. Banners, chips and the dashboard follow the width of the work area, so they can go narrow on a wide window too: the dashboard becomes one column (each widget keeps its row height), banners are collapsed by default, and chips start closed and open as a two-row scrolling strip; both collapse on scroll down. On a wide screen banners and chips collapse only when they take too much height. Settings shows a list of tabs, and a tab opens in its place with a back button. Pages and widgets adapt to their own width
 
 <a id="hotkeys"></a>
 ### Hotkeys
 
 Keyboard navigation plus shortcuts contributed by plugins, all remappable in **Settings → Hotkeys**:
 
-- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `D` opens the dashboard, `R` / `L` toggle the right panel and the left menu
+- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `Ctrl+↑` / `Ctrl+↓` cycle through sections, `D` opens the dashboard, `R` / `L` toggle the right panel and the left menu
+- **Editing the layout** — `Ctrl+Z` undoes a step, `Ctrl+Y` or `Ctrl+Shift+Z` redoes it
 - **Plugin shortcuts** — a plugin declares them in its manifest with a scope: *global* (everywhere), *dashboard* (only on the dashboard) or *plugin* (only on that plugin's own page)
-- **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on macOS and Ctrl elsewhere
+- **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on Apple platforms and Ctrl elsewhere
 - **Conflict-safe** — if two shortcuts collide, **both are disabled** with a console warning and a mark in Settings (the same key is fine for *dashboard* + *plugin*, or for two different plugins' own pages)
-- **Typing-safe** — bare keys and `Shift+key` never fire while you type in a field; `Ctrl`/`Alt`/`Cmd` combos do
+- **Typing-safe** — bare keys and `Shift+key` never fire while you type in a field; `Ctrl`/`Alt`/`Cmd` combos do by default, and a shortcut can opt out with `allowInInputs: false`, as `Ctrl+arrows` and `Ctrl+Z` do
 - **Yours to change** — rebind, disable or reset any shortcut (host or plugin); overrides are stored device-wide
 
 Some combinations are claimed by the browser or OS before the page sees them (for example `Ctrl+1…9` tab switching in some browsers, or `Ctrl+←/→` Spaces switching on macOS) — rebind those in Settings.
@@ -192,7 +200,7 @@ Some combinations are claimed by the browser or OS before the page sees them (fo
 
 - **Klipper** + **Moonraker** on the printer host (recent versions; Moonraker with file, update and device-power APIs)
 - A modern evergreen browser (Custom Elements, ES modules, `DecompressionStream` for 3MF)
-- On the host: `curl`, `tar`, `nginx`, `python3` ≥ 3.7 (the installer handles this). Node.js is for development only
+- On the host: a regular user with `sudo` (the installer refuses to run as root), `curl`, `tar`, `gzip`, `sha256sum`, `nginx`, `python3` ≥ 3.7, `ca-certificates`. The installer adds missing packages on Debian-family systems; elsewhere install them yourself. Node.js is for development only
 
 Optional companions:
 
@@ -220,7 +228,7 @@ directory. The branch and "plugins by URL" come from **S) Settings**: defaults a
 
 1. install system dependencies (`curl`, `tar`, `nginx`, `python3`) if missing;
 2. download the prebuilt UI of the chosen branch into `~/tessera` and check its sha256. Nothing is built on the printer;
-3. write an nginx site (`sites-available/tessera` + symlink in `sites-enabled`) modeled on the kiauh/fluidd pattern: SPA fallback, no-cache `index.html`, gzip, unlimited upload size, `location /extensions/` for plugin provisioning, and reverse-proxies `/websocket` + `/printer|api|access|machine|server/` to Moonraker. The UI is therefore **same-origin with Moonraker and needs no `moonraker.conf` changes**;
+3. write an nginx site (`sites-available/tessera` + symlink in `sites-enabled`) modeled on the kiauh/fluidd pattern: SPA fallback, no-cache `index.html`, gzip, unlimited upload size, `location /extensions/` for plugin provisioning, `location /tessera-api/` for the UI install service, and reverse-proxies `/websocket` + `/printer|api|access|machine|server/` to Moonraker. Note that the first printer Tessera creates connects to `<host>:7125` directly, not through this proxy. If Moonraker refuses that connection, add the UI's address to `cors_domains` in `moonraker.conf`, or set the printer's URL to `http://<host>:8000` to go through the proxy;
 4. create `tessera-shell.cfg` (shaper/belt graph shell commands) in your Klipper config dir and include it in `printer.cfg` **only if** the `gcode_shell_command` extension is detected. Otherwise it prints the manual kiauh install instructions and leaves the include out, so a missing extension can never brick your config on restart;
 5. create the `tessera` (this menu) and `tessera-ext` (plugin manager) commands, and enable the service for installing plugins from the UI;
 6. remind you to `FIRMWARE_RESTART` when ready.
@@ -252,7 +260,7 @@ Enter.
 |---|---|
 | **1) Install** | first installation (see above) |
 | **2) Update** | shows the installed commit and the commit of the branch's published build. *Update Tessera* downloads the build and rewrites the nginx/Klipper config without asking anything. *Reinstall* downloads the build again even if it is current |
-| **3) Remove** | complete uninstall. It lists everything first and asks for confirmation: nginx site and logs, the `[include]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`), `tessera-shell.cfg`, both commands, the service units, `~/tessera`. Installed extensions can be kept in `~/tessera-extensions-backup`. Packages (nginx, python3) and your `shapers/` graphs stay |
+| **3) Remove** | complete uninstall. It lists everything first and asks for confirmation: nginx site and logs, the `[include]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`), `tessera-shell.cfg`, both commands, the service units, `~/tessera`, `install.conf`, and the nginx upgrade map unless another site uses it. Installed extensions can be kept in `~/tessera-extensions-backup`. Packages (nginx, python3) and your `shapers/` graphs stay |
 | **S) Settings** | branch (picked from the branches with a published build; Update is offered after a change), plugins by URL and installing from the UI (applied at once) |
 | **E) Extensions** | the plugin manager, see [Extensions](#installing-extensions) |
 
@@ -272,14 +280,14 @@ Environment variables override `install.conf`:
 | Variable | Default | Purpose |
 |---|---|---|
 | `TESSERA_DIR` | `~/tessera` | build + extensions directory |
-| `TESSERA_BRANCH` | `main` | branch: dev channels, feature branches |
+| `TESSERA_BRANCH` | `main` | a branch with a published build (`main`, `dev`) |
 | `TESSERA_REPO` | upstream repo | forks |
 | `TESSERA_PORT` | `8000` | nginx port for the UI (asked again on conflict) |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker upstream for the proxy |
-| `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | Klipper config dir (multi-instance kiauh aware) |
+| `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | Klipper config dir (set it by hand for multi-instance setups) |
 | `TESSERA_KLIPPER_DIR` | `~/klipper` | used to detect `gcode_shell_command` |
-| `TESSERA_ALLOW_REMOTE_PLUGINS` | `0` | `1` = allow installing UI plugins by URL (turns off the CSP) |
-| `TESSERA_UI_INSTALL` | `1` | `0` = plugins through `tessera-ext` only, no service for the UI |
+| `TESSERA_ALLOW_REMOTE_PLUGINS` | previous choice (`0` on first install) | `1` = allow installing UI plugins by URL (turns off the CSP) |
+| `TESSERA_UI_INSTALL` | previous choice (`1` on first install) | `0` = plugins through `tessera-ext` only, no service for the UI |
 | `TESSERA_ARCHIVE` | none | install from a local archive (`tools/pack-release.sh`): forks, offline |
 | `TESSERA_SKIP_NGINX=1` | off | bring your own reverse proxy |
 | `TESSERA_SKIP_KLIPPER_CFG=1` | off | web UI only, touch no Klipper config |
@@ -329,7 +337,7 @@ config).
 ### First launch
 
 1. Open `http://<printer-host>:8000`.
-2. Click **[+]** in the printer tabs and enter the Moonraker URL (`http://127.0.0.1:7125` on the same machine).
+2. Tessera has already created a first printer, `MyPrinter`, at `<host>:7125`. Change its URL in **Settings → Printers** if Moonraker is elsewhere, and add more printers with **[+]** in the printer tabs.
 3. Tessera connects and lights up only the widgets, chips and pages your printer actually has — feature detection is per printer.
 
 <a id="for-developers"></a>
@@ -347,7 +355,7 @@ Full developer documentation lives in [`docs/en`](docs/en/README.md) (Russian: [
 | [PluginApi](docs/en/plugin-api.md) | the full API reference |
 | [Moonraker proxy](docs/en/moonraker-proxy.md) | requests, subscriptions, cache, polling, errors, auth |
 | [Guards](docs/en/guards.md) · [Hotkeys](docs/en/hotkeys.md) | pre-flight request checks · keyboard shortcuts |
-| [Settings](docs/en/settings.md) · [i18n & theming](docs/en/i18n-and-theming.md) · [Deployment](docs/en/deployment.md) | storage, translations & CSS variables, installing plugins |
+| [Settings](docs/en/settings.md) · [i18n & theming](docs/en/i18n-and-theming.md) · [Deployment](docs/en/deployment.md) | storage, translations & CSS variables, installing plugins and the host |
 | [Architecture](docs/en/architecture.md) | how the host is put together |
 
 <a id="architecture"></a>
@@ -395,8 +403,10 @@ api.settings                // namespaced get/set/onChange for the active printe
 api.settingsFor(printerId)  // same PluginSettingsApi, but scoped to a specific printer
                             // (for fleet panels that persist per-printer prefs)
 
-api.i18n                    // t(key, params), live locale + dir
-api.theme                   // current theme, onThemeChange
+api.i18n                    // t(key, params), live locale
+api.theme                   // current theme
+api.fleet                   // publish tags and search text for fleet search and filters
+api.setActivePrinter(id)    // switch the active printer
 api.guards.resume(...)      // continue a frozen request chain
 api.printers               // printer registry (read-only); onPrintersChange
 api.onPrinterChange / onLocaleChange / onThemeChange
@@ -406,12 +416,12 @@ api.onPrinterChange / onLocaleChange / onThemeChange
 
 The fleet drawer can reorder and hide these panels per device. The host keeps the DOM in stable registration order and changes visual order with CSS `order`, so panels are not remounted when the user drags them. This preserves Custom Element internal state and avoids zero-height collapse artifacts.
 
-Core `@core/widgets` ships four fleet panels today:
+Core plugins ship four fleet panels today:
 
-- camera
-- print status
-- tool position
-- temperatures
+- camera (`@core/widgets`)
+- print status (`@core/system`)
+- tool position (`@core/widgets`)
+- temperatures (`@core/widgets`)
 
 Third-party plugins can contribute their own fleet panels using the same
 contract.
@@ -441,7 +451,7 @@ Four layers, no auto-updates in the browser — **files on disk are the source o
 
 1. **Provisioning** — `extensions/<id>/` on the host (dev: vite middleware; prod: nginx `location /extensions/`). Reviewed plugins come from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry in the UI or through `tessera-ext`: prebuilt archives checked against sha256, nothing is built on the printer;
 2. **Discovery** — same-origin catalog `/extensions/index.json`, regenerated by `tessera-ext sync`; plus an advanced *Add by URL* mode with a trust confirmation and an `external` badge;
-3. **Loading** — fetch manifest → resolve entry against the manifest origin → `import()` → merge locales → sanitize contributions;
+3. **Loading** — fetch manifest → resolve entry against the manifest URL → `import()` → merge locales → sanitize contributions;
 4. **Enablement** — per-printer enable, version badges, hot *Update* without reload.
 
 Remote plugin build rules (vite lib-mode): define `process.env.NODE_ENV`, keep runtime dependencies bundled (bare imports don't resolve in browser `import()`), and keep `manifest.entry` in sync with the built filename.
@@ -449,7 +459,7 @@ Remote plugin build rules (vite lib-mode): define `process.env.NODE_ENV`, keep r
 <a id="where-settings-live"></a>
 ### Where settings live
 
-Everything is `localStorage` under a versioned prefix (`mpu:v2:*`): printers, active printer, installed plugins, UI prefs (including fleet-mode state, fleet panel order/visibility, accent color, background image and hotkey overrides), per-printer dashboard/page/chip layout, and plugin settings (per printer or device-global). Schema changes show an export-or-reset dialog — there are no silent migrations.
+Everything is `localStorage` under a versioned prefix (`mpu:v2:*`): printers, active printer, installed plugins, UI prefs (including fleet-mode state, fleet panel order/visibility, accent color, background image and hotkey overrides), per-printer dashboard/page/chip layout, and plugin settings (per printer or device-global). Schema changes show an export-or-reset dialog; the only silent step is a one-time backfill of the layout flags for older settings.
 
 <a id="project-structure"></a>
 <details>
@@ -463,19 +473,21 @@ tessera/
 │   ├── components/  # layout, tabs, sidebar, slots, overlays/banners/chips hosts
 │   ├── i18n/        # host locales (en, ru)
 │   └── styles/      # global.css — the single source of theme variables
-├── plugin-sdk/src/  # types, svelte hooks, define-plugin, CE define-element   (MIT)
+├── plugin-sdk/src/  # types, svelte hooks, define-plugin, CE define-element
 ├── plugins/
 │   ├── shared/      # UI bricks + pure parsers (file table, editor, highlight,
 │   │                #   macro-params, header-help, klippy-state, slider, color-picker,
-│   │                #   3MF inspector, uPlot core, core-keeper) — never a data bus
-│   ├── widgets-core/  # temperature, status, macros, tools, limits, outputs,
+│   │                #   3MF inspector, uPlot core, core-keeper, loader, accordion,
+│   │                #   responsive, exclude-objects) — never a data bus
+│   ├── widgets-core/  # temperature, macros, tools, limits, outputs,
 │   │                  #   camera, filament, job-queue + their chips + fleet panels
 │   ├── calibrations/  # shaper / belts / probe / heaters / mesh + livez chip
-│   ├── system/        # right panel, banner, notifications, machine page, power chip
+│   ├── system/        # status widget and fleet panel, right panel, banner,
+│   │                  #   notifications, machine page, power chip
 │   └── console · jobs · history · config · gcode-preview
 ├── extensions/      # remote-plugin provisioning folder (index.json generated)
 ├── tools/           # for development and CI: extensions-sync.cjs, registry-pack.cjs, pack-release.sh
-├── deploy/          # install.sh (menu: `tessera`), install-ext.sh and tessera-ext.py (`tessera-ext`, the service), nginx config
+├── deploy/          # install.sh (menu: `tessera`), install-ext.sh and tessera-ext.py (`tessera-ext`, the service), tests/
 └── docs/            # developer documentation (en/, ru/)
 ```
 
@@ -484,7 +496,7 @@ tessera/
 <a id="licensing"></a>
 ## Licensing
 
-- **GPL-3.0**. Forks and distributions (appliance images, pre-loaded boxes) must stay open. This matches the Klipper/Moonraker ecosystem.
+- **GNU GPL v3.0 or later** (`GPL-3.0-or-later`) for the whole repository. Forks and distributions (appliance images, pre-loaded boxes) must stay open. This matches the Klipper/Moonraker ecosystem.
 
 <a id="acknowledgments"></a>
 ## Acknowledgments

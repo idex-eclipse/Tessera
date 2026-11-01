@@ -210,12 +210,12 @@ defineMpuElement('acme-hello-page', HelloPage);
 | Хук | Возвращает |
 |---|---|
 | `usePluginApi()` | полный `PluginApi` (бросает ошибку вне контекста плагина) |
-| `useMoonraker()` | `api.moonraker()` — handle **активного** принтера на момент вызова |
+| `useMoonraker()` | `api.moonraker()` — стабильный handle, следующий за **активным** принтером; если его нет, бросает исключение |
 | `useI18n()` | `api.i18n` |
 | `useWidget()` | то же, что `usePluginApi()` (для виджетов) |
 
-> `useMoonraker()` возвращает handle активного принтера на момент вызова и
-> не переключается сам. Для реакции на смену принтера подпишитесь на
+> Handle заново определяет активный принтер при каждом вызове, но уже сделанные подписки
+> остаются на прежнем принтере. Для реакции на смену принтера подпишитесь на
 > `api.onPrinterChange` и переподпишите свои подписки (или используйте
 > `api.moonrakerFor(printerId)` с явным принтером).
 
@@ -259,6 +259,25 @@ export default defineConfig({
 Плагин на другом фреймворке собирается так же; требования те же: один ES-модуль,
 CE зарегистрированы при импорте, зависимости внутри бандла.
 
+### Общие помощники
+
+`plugins/shared/*` — исходники **core-плагинов**, они импортируются статически; это не
+часть SDK, и совместимость не обещается. Remote-плагин несёт зависимости в своём бандле,
+поэтому может скопировать нужное, но импортировать это во время работы не может. Что есть
+для раскладки:
+
+| Помощник | Что делает |
+|---|---|
+| `responsive/observe-widget-box.ts` | Svelte-action, сообщает `{ width, height, narrow }` области виджета |
+| `responsive/observe-width.ts`, `responsive/use-narrow.svelte.ts` | ширина элемента; признак узкого окна (`useNarrow()`) |
+| `slider-field/SliderField.svelte`, `SliderGrid.svelte` | слайдер с полем ввода и сетка в одну или две колонки (`columns`) |
+| `slider-field/slider-layout.ts` | `sliderColumns(width, narrow)`, `sectionsNeedAccordion(heights, gap, available)` |
+| `accordion/SectionAccordion.svelte` | секция, которая по запросу становится аккордеоном: `title`, `accordion`, `open`, `onToggle`, `bind:contentHeight` |
+| `accordion/use-accordion-state.svelte.ts` | `useAccordionState(api, key)`: помнит открытые секции для каждого принтера, отдельно для широкого и узкого режима |
+| `popover-align.ts` | `shouldOpenAbove()`, `shouldAlignToEnd()`, `placeChipPopover()` для поповеров чипов |
+| `loader/Loader.svelte` | загрузчик; `<tessera-loader>` — его элемент для remote-плагинов (см. [i18n-and-theming.md](i18n-and-theming.md#индикатор-загрузки)) |
+| `gcode-hints/` | каталог G-code команд для автодополнения |
+
 ---
 
 ## 4. Контракт Custom Element
@@ -280,9 +299,10 @@ hostContainer.appendChild(el);
 - `api` и `params` выставлены к моменту `connectedCallback`.
 - `api` стабилен, пока не сменится манифест плагина. Если хост заменяет `api`
   или тег — элемент **пересоздаётся**, а не получает новый `api` на лету.
-- `params` могут обновляться на живом элементе (например, меняется
-  query-строка страницы): хост просто присваивает `el.params = новыйОбъект`
-  и обновляет `dataset`. Событие об этом не диспатчится.
+- На живом элементе `params` не меняются: при смене объекта (query страницы, `mode`
+  баннера, `edit` чипа, `narrow` где угодно) хост **заменяет элемент** новым. То, что должно
+  сохраниться, держите в настройках или на уровне модуля.
+- Хост дублирует `params` в `dataset` элемента.
 - Все `params` — строки (`Record<string, string>`). Структурированные данные
   передаются как JSON-строка (например, `placed` у picker'а чипов).
 
@@ -302,7 +322,7 @@ hostContainer.appendChild(el);
 | Поверхность | Элемент | `params` |
 |---|---|---|
 | Страница (`pages[].element`) | страница | query-параметры маршрута (`#/p/<printer>/<page>?file=a.gcode` → `{ file: 'a.gcode' }`) |
-| Виджет (`widgets[].element`) | тело виджета | query-параметры маршрута дашборда (`edit`, `preview`, …) + `narrow: 'true' \| 'false'` |
+| Виджет (`widgets[].element`) | тело виджета | query-параметры маршрута дашборда (`preview`, …) + `narrow: 'true' \| 'false'`; в режиме редактирования не смонтировано |
 | Шапка виджета (`widgets[].headerElement`) | кнопки в шапке | `{}` |
 | Баннер (`banners[]`) | баннер | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
 | Свёрнутый баннер (`collapsedBanners[]`) | свёрнутый вид баннера | `{ route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
@@ -342,6 +362,9 @@ interface PluginManifest {
 }
 ```
 
+Инструменты каталога и реестра также читают из манифеста `description`, `author` и `icon`;
+сам хост их игнорирует, в типе SDK их нет.
+
 Хост проверяет только четыре обязательных поля (`id`, `name`, `version`,
 `entry` — непустые строки). Остальное санитайзится при загрузке: **невалидный
 вклад отбрасывается с предупреждением в консоль**, плагин при этом загружается.
@@ -352,7 +375,8 @@ interface PluginManifest {
 | `overlays[]`, `banners[]`, `printerPanels[]` | `id`, `element` |
 | `collapsedBanners[]` | `id`, `banner` (id баннера того же плагина), `element` |
 | `chips[]` | `type`, `provider`, `titleKey`, `element`, `pickerElement` |
-| `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` должен разбираться |
+| `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` должен разбираться; `allowInInputs`, если задан, — boolean |
+| `guards[]` | `id`, `handler` и `match` в виде массива |
 | `pages[]`, `widgets[]` | не валидируются структурно (но без `element` ничего не отрисуется) |
 
 Если значение `overlays`/`banners`/`collapsedBanners`/`chips`/`printerPanels`/`hotkeys` — не
@@ -442,9 +466,11 @@ hotkeys) в принципе не требуют «активации по по�
   (`margin-inline-start` вместо `margin-left`).
 - **Offline.** Если активный принтер недоступен, хост показывает поверх
   интерфейса оверлей соединения; ваши элементы при этом остаются смонтированными.
-  Запросы в это время отклоняются (`Moonraker connection is not open`),
-  подписки восстановятся после переподключения.
-- **Klipper не обязательно готов.** Moonraker может работать при `klippy not
+  Запросы в это время отклоняются (`Moonraker connection is not open`), хотя чтение из
+  кэша может и выполниться. Подписки восстановятся после переподключения, но не после
+  кнопки Retry в оверлее: она заменяет соединение (см.
+  [moonraker-proxy.md](moonraker-proxy.md#состояние-соединения)).
+- **Klipper не обязательно готов.** Moonraker может работать при `klippy is not
   ready`. Проверяйте `printer.info.state` и показывайте заглушку, а не ошибку.
 
 ---
@@ -466,7 +492,8 @@ Vite с теми же URL, что в проде (`/extensions/...`) и без к
 
 Settings → Plugins → **Add by URL (advanced)** — прямая установка по адресу
 манифеста, например `http://localhost:5174/manifest.json` с dev-сервера
-плагина. Хост покажет предупреждение о доверии, запись получит бейдж *external*.
+плагина. Хост покажет предупреждение о доверии, запись получит бейдж *external*. Если этот
+режим на принтере выключен (см. ниже), кнопка скрыта.
 
 Для плагина с **другого origin** сервер должен отдавать CORS-заголовки
 (`Access-Control-Allow-Origin`) и для манифеста, и для модуля — это ограничение
@@ -484,6 +511,10 @@ CORS не требуют.
   санитайзером.
 - `[plugin-loader] Failed to load plugin from …` — не загрузился манифест или
   модуль.
+- `[plugin-loader] Plugin "…" has collapsedBanner "…" for unknown banner "…"` — свёрнутый
+  вид ссылается на баннер, которого плагин не объявил.
+- `[plugin-loader] Plugin "…" tried to register rightPanel` — это можно только `@core/system`.
+- `[guard-agent] …: invalid guard contribution` — у гарда нет `id`, `match` или `handler`.
 - `[guard-agent] …: handler export "…" not found` — в манифесте указан гард, но
   модуль не экспортирует функцию с таким именем.
 - `[hotkeys] Conflict on "…"` — конфликт горячих клавиш (обе отключены).
@@ -502,12 +533,10 @@ Settings → About / Debug показывает зарегистрированн
 
 Собрано из реального поведения кода:
 
-1. **`params` и Svelte-враппер.** `defineMpuElement` передаёт в компонент
-   `params` как обычное значение, снятое в момент чтения; присваивание
-   `el.params = …` на живом элементе **не вызывает перерисовку** Svelte-компонента.
-   Если страница должна реагировать на смену query (например, `?file=`),
-   реализуйте собственный CE с сеттером `params` либо читайте
-   `window.location.hash` / подписывайтесь на `hashchange`.
+1. **Смена `params` пересоздаёт элемент.** `defineMpuElement` передаёт в компонент
+   `params` как обычное значение, а живой элемент хост не обновляет: новая query-строка
+   (`?file=`) или новый `narrow` — это новый элемент и новый компонент. Состояние внутри
+   теряется, поэтому то, что должно сохраниться, держите в настройках или на уровне модуля.
 2. **`api.settings.onChange` вызывает колбэк как `cb('', всеНастройкиПлагина)`.**
    Первый аргумент всегда пустая строка, второй — **весь** объект настроек
    текущего принтера, а не одно значение. Сравнивайте нужные ключи сами.
@@ -530,9 +559,12 @@ Settings → About / Debug показывает зарегистрированн
 10. **`version` — строка и сравнивается на равенство**, не по semver.
 11. **`banners[].scope`** присутствует в типе, но хостом не применяется:
     баннер рендерится на всех маршрутах. Фильтруйте по `params.route` сами.
-12. **Дашборд может синхронизироваться между принтерами.** Тумблер
-    `dashboard` в `mpu:v2:settingsSync` переключает хранение раскладки в общий
-    `mpu:v2:settings:GLOBAL` (по умолчанию выключен).
+12. **Дашборд может синхронизироваться между принтерами.** Флаг
+    `dashboard` в `mpu:v2:settingsSync` переводит настройки принтера в общий
+    `mpu:v2:settings:GLOBAL` (по умолчанию выключен, переключателя в UI пока нет).
+13. **В core-плагинах нет `$effect` в хуках `*.svelte.ts`.** За этим следит тест
+    (`plugins/shared/__tests__/no-effects-in-hooks.test.ts`): подписывайтесь
+    императивно через `onReady`/`onNotify`, а `$effect` используйте только в компонентах.
 
 ---
 
@@ -546,8 +578,10 @@ Settings → About / Debug показывает зарегистрированн
 - [ ] Элемент корректно переживает размонтирование и повторное монтирование.
 - [ ] Нет цветов в hex: только CSS-переменные темы; светлая и тёмная темы проверены.
 - [ ] Все строки идут через `api.i18n.t`; есть как минимум `en`.
-- [ ] Поведение при `klippy not ready` и при offline проверено.
+- [ ] Поведение при `klippy is not ready` и при offline проверено.
 - [ ] Действия с побочным эффектом идут через `request()` (чтобы гарды сработали).
 - [ ] Версия увеличена; каталог пересобран (`tessera-ext sync`).
+- [ ] Для реестра: упаковано и опубликовано, как описано в
+      [deployment.md](deployment.md#публикация-в-реестр).
 - [ ] Сборка: `process.env.NODE_ENV` определён, ничего не `external`, имя файла
       = `manifest.entry`.

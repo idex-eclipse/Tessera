@@ -71,8 +71,8 @@ Additionally:
 Format: `Modifier+Modifier+Key`, case-insensitive.
 
 **Modifiers:** `Ctrl` (`Control`), `Alt` (`Option`), `Shift`, `Meta` (`Cmd`,
-`Command`, `Win`, `Super`) and the platform **`Mod`** — `Cmd` on macOS and `Ctrl`
-on other platforms. Writing `Mod+…` is recommended for cross-platform actions.
+`Command`, `Win`, `Super`) and the platform **`Mod`** — `Cmd` on Apple platforms
+(macOS, iPhone, iPad) and `Ctrl` on the others. Writing `Mod+…` is recommended for cross-platform actions.
 
 **Keys:**
 
@@ -84,7 +84,10 @@ on other platforms. Writing `Mod+…` is recommended for cross-platform actions.
   `Delete` (`Del`), `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp` (`Up`),
   `ArrowDown` (`Down`), `ArrowLeft` (`Left`), `ArrowRight` (`Right`), `F1`…`F12`.
 
-Examples: `F`, `Alt+1`, `Ctrl+Shift+K`, `Mod+/`, `Shift+/`, `Ctrl+ArrowRight`, `Ctrl++`.
+Examples: `F`, `Alt+1`, `Ctrl+Shift+K`, `Mod+/`, `Shift+/`, `Ctrl+ArrowRight`, `Ctrl+=`.
+
+The key is matched by its physical position, so the main-row `+` reports as `=`:
+`Ctrl++` and `plus` parse, but fire only from the numeric keypad.
 
 Invalid: an empty string, modifiers only (`Ctrl+Shift`), two main keys
 (`Ctrl+K+L`), a repeated modifier, an empty part (`Ctrl++K`).
@@ -131,7 +134,7 @@ even with a modifier (needed for combinations that mean something in text:
 The host also does not call the handler if the event is already handled
 (`defaultPrevented`), on auto-repeat (`repeat`) and during IME input.
 
-## The host's navigation keys
+## The host's keys
 
 | Keys | Action |
 |---|---|
@@ -141,16 +144,25 @@ The host also does not call the handler if the event is already handled
 | `Ctrl+←` | the previous printer (wraps around) |
 | `D` | go to the active printer's dashboard |
 | `Ctrl+↓` / `Ctrl+↑` | the next / previous section in sidebar order (Dashboard → plugin pages → Dashboard) |
-| `Ctrl+Z` | undo a step while editing the dashboard layout (also quick chips) |
-| `Ctrl+Y` / `Ctrl+Shift+Z` | redo the step (on Apple platforms `Cmd+Z` and `Cmd+Shift+Z` work too) |
+| `Ctrl+Z` (`Cmd+Z` on Apple platforms) | undo a step while editing the dashboard layout and quick chips |
+| `Ctrl+Y`, `Ctrl+Shift+Z` (`Cmd+Shift+Z` on Apple platforms) | redo the step |
 | `R` | show / hide the right panel |
 | `L` | show / hide the left menu |
 
 A switch closes fleet so that the result is visible. `R` and `L` collapse/expand the
 panels on a wide screen and open/close the full-width overlay on a narrow one
-(see [surfaces.md](surfaces.md#9-narrow-screens)). `F` and `Ctrl+arrows` do not
-fire in input fields. Do not take these combinations in plugins — both sides would
-be disabled.
+(see [surfaces.md](surfaces.md#9-narrow-screens)). In input fields only `Ctrl+1…9`
+fire; the other keys stay with the field, so `Ctrl+Z` there is the field's own undo.
+
+Undo and redo work only in edit mode; elsewhere the host leaves the event to the
+browser. They still take part in the conflict check everywhere, so do not take these
+combinations in plugins, like the others: both sides would be disabled.
+
+To override a host key, use the key `@host:<id>` with these ids: `toggle-fleet`,
+`printer-1` … `printer-9`, `printer-next`, `printer-prev`, `dashboard`,
+`toggle-right-panel`, `toggle-sidebar`, `page-next`, `page-prev`, `layout-undo`,
+`layout-redo`, `layout-redo-shift`, and on Apple platforms `layout-undo-cmd` and
+`layout-redo-cmd`.
 
 Platform limitations (the host cannot influence them): `Ctrl+1…9` is taken by the
 browser in some browsers/OSes (tab switching), and `Ctrl+←/→` on macOS switch

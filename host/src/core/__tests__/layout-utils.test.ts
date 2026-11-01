@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { moveInStack, overlaps, setHeight, settle, stackLayout } from '../layout-utils';
+import { moveInStack, overlaps, setHeight, settle } from '../layout-utils';
 
 const item = (instanceId: string, x: number, y: number, w: number, h: number) => ({ instanceId, x, y, w, h });
 
@@ -18,16 +18,14 @@ describe('settle', () => {
   });
 });
 
-describe('stackLayout', () => {
-  it('orders by y then x and packs into one column', () => {
-    const out = stackLayout([item('b', 6, 0, 6, 3), item('c', 0, 4, 12, 2), item('a', 0, 0, 6, 5)]);
+describe('moveInStack', () => {
+  it('packs the layout into one column, ordered by y then x', () => {
+    const out = moveInStack([item('b', 6, 0, 6, 3), item('c', 0, 4, 12, 2), item('a', 0, 0, 6, 5)], 'a', -1);
     expect(out.map((i) => i.instanceId)).toEqual(['a', 'b', 'c']);
     expect(out.map((i) => i.y)).toEqual([0, 5, 8]);
     expect(out.every((i) => i.x === 0 && i.w === 12)).toBe(true);
   });
-});
 
-describe('moveInStack', () => {
   const base = [item('a', 0, 0, 6, 2), item('b', 6, 0, 6, 3), item('c', 0, 3, 12, 2)];
 
   it('moves an item down and repacks', () => {

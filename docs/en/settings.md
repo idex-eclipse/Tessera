@@ -13,7 +13,7 @@ tied to the origin and the device. The schema is versioned with the `mpu:v2:` pr
 | `mpu:v2:ui` | device UI: theme, language, `dir`, panel sizes, background, accent, fleet, hotkey overrides |
 | `mpu:v2:editor-colors` | config editor syntax colors: `{ v: 1, light: { <token>: '#rrggbb' }, dark: { … } }` — only the tokens the user changed; applied as CSS variables `--tok-<token>` (editor header → settings button) |
 | `mpu:v2:settings:<printerId>` | printer settings: page visibility, widget providers, dashboard layout, chips |
-| `mpu:v2:settings:GLOBAL` | the same, shared by all printers (if dashboard sync is on) |
+| `mpu:v2:settings:GLOBAL` | the same, shared by all printers (if dashboard sync is on; see below) |
 | `mpu:v2:plugin-settings:<printerId>:<pluginId>` | a plugin's settings for a printer (`api.settings`) |
 | `mpu:v2:plugin-settings:GLOBAL:<pluginId>` | a plugin's settings shared across the device (sync on) |
 | `mpu:v2:settingsSync` | `{ plugins: { <pluginId>: boolean }, dashboard: boolean }` — sync flags |
@@ -67,7 +67,8 @@ interface PrinterSettingsState {
 
 Until the user changes the layout, the host shows the *default* set (it is not
 written to storage and adapts to the installed plugins); the first change fixes the
-layout and sets the `…Customized` flag.
+layout and sets the `…Customized` flag. Reset clears the flag, and so can undo or
+discard in dashboard edit mode when they return to the default state.
 
 ---
 
@@ -101,15 +102,19 @@ transfer concerns its set):
 - **turning off** writes the shared set into the active printer's set (overwriting
   it); the other printers' sets stay as they were before sync was enabled.
 
-`onChange` subscribers get the update immediately, without a page reload.
+`onChange` subscribers get the update at the moment of the switch, without a page
+reload. Later writes notify only subscriptions made after the switch, so re-subscribe
+if your plugin toggles sync while it runs.
 
 Consequence for developers: **anything you write to `api.settings` may end up shared
 across all printers** (table columns, sortings, user prefs). Do not store things
 there that must be unique per printer (calibrations, a specific camera's URL), or
 provide keys that include the printer identifier.
 
-A separate `dashboard` flag in `mpu:v2:settingsSync` switches the dashboard layout
-and chips storage to the shared `mpu:v2:settings:GLOBAL`.
+A separate `dashboard` flag in `mpu:v2:settingsSync` switches the whole printer settings
+set (dashboard layout and chips, but also page visibility and widget providers) to the
+shared `mpu:v2:settings:GLOBAL`. The store has `setDashboardSync`, but the UI has no
+toggle for it yet.
 
 ### Recommendations
 
@@ -126,8 +131,8 @@ and chips storage to the shared `mpu:v2:settings:GLOBAL`.
 
 Settings → About / Debug:
 
-- **Export** saves **all** `mpu:v2:*` keys to JSON, including `mpu:v2:auth:*`
-  (Moonraker authorization tokens!). Do not send an export to outsiders.
+- **Export** saves the `mpu:v2:*` keys to JSON, except the Moonraker authorization
+  tokens (`mpu:v2:auth:*`): after an import on another device, sign in again.
 - **Import** writes the `mpu:v2:*` keys from the file into `localStorage` and
   reloads the page; foreign keys are skipped.
 
@@ -138,7 +143,7 @@ On start the host looks for keys of old schemas (`mpu:v1:*` or `mpu:*` without
 exports the old data or resets it. There is no automatic migration — you will not
 get old plugin settings back without configuring them again.
 
-## What the host does not keep in localStorage
+## What the host keeps outside localStorage
 
 Nothing. Printer data (files, history, temperatures) lives in Moonraker/Klipper; the
 host does not duplicate it and does not read it for its own UI. The fleet search

@@ -52,7 +52,8 @@ lookup goes in order:
 2. the base language (`ru`), if the locale has a region;
 3. the host's fallback locale (`en`).
 
-If the key is nowhere, `t` returns **the key itself**.
+If the key is nowhere, `t` returns **the key itself**. A placeholder with no matching
+param becomes an empty string.
 
 Consequences:
 
@@ -146,7 +147,9 @@ const accent = getComputedStyle(document.documentElement).getPropertyValue('--ac
 | Shadows | `--shadow-sm`, `--shadow-md`, `--shadow-lg` |
 | Transitions | `--transition-fast` (150ms), `--transition-normal` (250ms) |
 | Dashboard grid | `--grid-row-height` (80px) |
-| Layers | `--z-plugin-overlays` (60), `--z-right-panel` (30) |
+| Layers | `--z-drawer` (40). The overlay layer and the right panel read `--z-plugin-overlays` and `--z-right-panel`, which are not defined: their fallbacks 60 and 30 apply |
+| Layout | `--header-height` (48px), `--sidebar-width` (260px), `--sidebar-collapsed-width`, `--touch-target` (44px) |
+| Direction | `--dir-sign` (1 in LTR, −1 in RTL), for transforms; keyframes `drawer-in-start`, `drawer-in-end` |
 
 The light/dark values are in
 [`host/src/styles/global.css`](../../host/src/styles/global.css).
@@ -199,7 +202,8 @@ covers the UI, but your element stays mounted and keeps receiving events.
 
 ## Loading indicator
 
-Use one loader everywhere — a rotating tesseract that takes its colour from `--accent`.
+Use one loader everywhere — a rotating tesseract that takes its colour from `--accent`
+(size `sm` inherits the text colour).
 
 - Core plugins: `import Loader from '…/plugins/shared/loader/Loader.svelte'`. Props: `size` (`sm` 16px for buttons, `md` 28px, `lg` 64px), `text` (caption for this place; defaults to `common.loading`, hidden for `sm`, `""` removes it), `inline`, `block` (fills the container).
 - Remote plugins: `<tessera-loader size="md" text="Loading…" block></tessera-loader>`. Pass `text` in your own language — the element has no plugin i18n context.

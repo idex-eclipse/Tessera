@@ -15,8 +15,10 @@ What the proxy provides:
 - **poll-on-demand** for data Moonraker does not push by itself;
 - a single place for authorization (401 → login overlay).
 
-Switching the printer tab **does not drop** connections; a proxy lives as long as
-the printer is in the registry.
+Switching the printer tab **does not drop** connections, and a socket drop keeps the
+proxy. A URL change in Settings and the overlay's Retry button replace the proxy, and
+all registrations made on the old one are lost (see
+[Connection state](#connection-state)).
 
 ---
 
@@ -77,6 +79,8 @@ plugin → GuardAgent (preflight) → cache → WebSocket → Moonraker
 | A guard did not answer / parking expired | `GuardError` | `'guard_timeout'` |
 | An identical request is already waiting for a decision | `GuardError` | `'already_pending'` |
 | The printer was removed (for `moonrakerFor`) | `Error` | `printer '…' is not configured` |
+| No active printer (for a kept `moonraker()` handle) | `Error` | `[plugin-api] No active printer for moonraker()` |
+| The proxy was replaced while the request was in flight | `Error` | `Moonraker proxy disposed` |
 
 ```ts
 try {
@@ -166,13 +170,15 @@ does not add new fields to the shared union (somebody already requested them, fo
 example the proxy's baseline), the snapshot arrives almost immediately; if it does
 — after Moonraker answers `printer.objects.subscribe`. Values not yet in the cache
 arrive as ordinary deltas. With `{ immediate: false }` no snapshot is sent — only
-subsequent deltas.
+subsequent deltas. Immediate subscribers get a full snapshot again after every
+reconnect.
 
 ### Merging subscriptions
 
 All subscriptions of all plugins are folded into one **union of objects and
 fields** and sent to Moonraker as a single set. An object is unsubscribed when its
-last subscriber leaves. Duplicate subscriptions from different plugins are free.
+last subscriber leaves, except the objects of the baseline subscription (see below).
+Duplicate subscriptions from different plugins are free.
 
 ### Things to remember
 
@@ -192,9 +198,10 @@ last subscriber leaves. Duplicate subscriptions from different plugins are free.
 ### The proxy's baseline subscription
 
 Independently of plugins, the proxy keeps its own **baseline subscription** to the
-printer's key objects (`extruder*`, `heater_bed`, `toolhead`, `print_stats`,
-`display_status`, `virtual_sdcard`, `gcode_move`, `webhooks`, `bed_mesh`,
-`motion_report`, `idle_timeout`, `heater_generic *`) so that the snapshot cache is
+printer's key objects and selected fields of them (`extruder*`, `heater_bed`,
+`toolhead`, `dual_carriage`, `print_stats`, `display_status`, `virtual_sdcard`,
+`gcode_move`, `webhooks`, `motion_report`, `idle_timeout`, `extruder_stepper`,
+`firmware_retraction`, `save_variables`, `heater_generic *`) so that the snapshot cache is
 warm. That is why the first subscription to those objects usually answers
 instantly. The list is refreshed when the socket opens, on
 `notify_klippy_ready/started` and on `notify_config_changed`.
@@ -250,10 +257,11 @@ Rules:
 - several registrations of the same `method+params` are merged: the **minimum**
   interval is used, counting is by reference count; polling stops with the last
   cancel;
-- at most one request in flight per method; the first tick is immediate on
+- at most one request in flight per `method+params`; the first tick is immediate on
   registration and on (re)connect of the socket;
-- **methods with side effects are rejected** (see the "Never cached" list) with a
-  console warning, and `poll` returns an empty function;
+- only the methods of the "Never cached" list are refused, with a console warning,
+  and `poll` returns an empty function. Other methods with side effects are not
+  detected, so never poll them;
 - `poll` bypasses GuardAgent (it is an internal refresh, reads only).
 
 ---
@@ -269,7 +277,8 @@ const offReady = api.moonraker().onReady(() => initialLoad());
 
 - `readyState` is the socket state (not Klipper's!). `'closed'` also holds between
   reconnection attempts.
-- `onConnectionStatusChange` fires on every transition.
+- `onConnectionStatusChange` fires on every transition, not on subscription. A handle
+  of a removed printer calls it once with `'closed'`, and its `httpBaseUrl` is `''`.
 - `onReady(cb)` is called **every time the socket opens**, and immediately (via a
   microtask) if you subscribe while the socket is already open. Suitable for
   "reload everything after (re)connect".
@@ -277,6 +286,11 @@ const offReady = api.moonraker().onReady(() => initialLoad());
   30 s). Offline **does not break** host loading.
 - Subscriptions made before a drop are re-sent after the connection is restored
   (the proxy remembers the desired state).
+- A URL change in Settings and the overlay's **Retry** are different: they replace the
+  proxy, and `subscribe`, `onNotify`, `onReady`, `onConnectionStatusChange` and `poll`
+  registrations on the old one are dropped. Your handle then talks to the new proxy,
+  but only for calls made afterwards. For the active printer `onPrinterChange` reports a
+  URL change; Retry raises no event.
 - You do not need to show "no connection" to the user yourself: the host draws the
   offline overlay. But your element must not crash on rejected `request`s.
 
@@ -296,7 +310,8 @@ go over plain HTTP to Moonraker, **bypassing the proxy, cache and guards**:
 
 ```ts
 const base = api.moonraker().httpBaseUrl;           // e.g. http://printer.local:7125
-const thumb = `${base}/server/files/gcodes/${encodeURIComponent(path)}`;
+const encoded = path.split('/').map(encodeURIComponent).join('/');   // keep the slashes
+const thumb = `${base}/server/files/gcodes/${encoded}`;
 ```
 
 Headers for an authorized Moonraker:
@@ -322,8 +337,10 @@ Rules:
 
 The password never reaches plugins. The host handles sign-in itself:
 
-1. Moonraker answers `401` (to a WebSocket request or HTTP) → the proxy flags
-   "authorization required" → the host shows the sign-in overlay.
+1. The proxy's own probe gets `401` or `403`, the socket closes with code `4001` or
+   `4003`, or a JSON-RPC request fails with an authorization error → the proxy flags
+   "authorization required" → the host shows the sign-in overlay. A `401` on your own
+   `fetch` does not show it.
 2. After sign-in the token is stored for the printer and passed to the proxy; your
    handle starts returning it in `authToken`.
 3. Sign-out is initiated by the right panel; plugins can tell the host about a

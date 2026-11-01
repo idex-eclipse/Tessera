@@ -211,12 +211,12 @@ SDK hooks (`@sdk/svelte`):
 | Hook | Returns |
 |---|---|
 | `usePluginApi()` | the full `PluginApi` (throws outside a plugin context) |
-| `useMoonraker()` | `api.moonraker()` — the handle of the **active** printer at the time of the call |
+| `useMoonraker()` | `api.moonraker()` — the stable handle that follows the **active** printer; throws if there is none |
 | `useI18n()` | `api.i18n` |
 | `useWidget()` | same as `usePluginApi()` (for widgets) |
 
-> `useMoonraker()` returns the handle of the active printer at the moment of the
-> call and does not switch by itself. To react to a printer change, subscribe to
+> The handle re-resolves the active printer on each call, but existing subscriptions
+> stay on the old printer. To react to a printer change, subscribe to
 > `api.onPrinterChange` and re-create your subscriptions (or use
 > `api.moonrakerFor(printerId)` with an explicit printer).
 
@@ -260,6 +260,25 @@ Copy the result (`dist/index.js` + `manifest.json`) into `extensions/<name>/`.
 A plugin on another framework is built the same way; the requirements are the
 same: one ES module, CEs registered on import, dependencies inside the bundle.
 
+### Shared helpers
+
+`plugins/shared/*` is the source of the **core plugins** and is imported statically;
+it is not part of the SDK and has no compatibility promise. A remote plugin carries its
+dependencies in its own bundle, so it may copy what it needs, but it cannot import these
+at runtime. What is there for layout:
+
+| Helper | What it does |
+|---|---|
+| `responsive/observe-widget-box.ts` | Svelte action reporting `{ width, height, narrow }` of the widget area |
+| `responsive/observe-width.ts`, `responsive/use-narrow.svelte.ts` | element width; a window-level narrow flag (`useNarrow()`) |
+| `slider-field/SliderField.svelte`, `SliderGrid.svelte` | a slider with an input, and a grid of one or two columns (`columns`) |
+| `slider-field/slider-layout.ts` | `sliderColumns(width, narrow)`, `sectionsNeedAccordion(heights, gap, available)` |
+| `accordion/SectionAccordion.svelte` | a section that becomes an accordion on demand: `title`, `accordion`, `open`, `onToggle`, `bind:contentHeight` |
+| `accordion/use-accordion-state.svelte.ts` | `useAccordionState(api, key)`: remembers open sections per printer, separately for wide and narrow |
+| `popover-align.ts` | `shouldOpenAbove()`, `shouldAlignToEnd()`, `placeChipPopover()` for chip popovers |
+| `loader/Loader.svelte` | the loader; `<tessera-loader>` is its element for remote plugins (see [i18n-and-theming.md](i18n-and-theming.md#loading-indicator)) |
+| `gcode-hints/` | the G-code command catalog behind autocomplete |
+
 ---
 
 ## 4. The Custom Element contract
@@ -281,9 +300,10 @@ The parameters are additionally mirrored into the element's `dataset`
 - `api` and `params` are set by the time `connectedCallback` runs.
 - `api` is stable until the plugin's manifest changes. If the host replaces `api`
   or the tag, the element is **re-created** rather than receiving a new `api` on the fly.
-- `params` may be updated on a live element (for example, the page's query
-  string changes): the host simply assigns `el.params = newObject` and updates
-  `dataset`. No event is dispatched for this.
+- `params` does not change on a live element: when the object changes (a page's query,
+  a banner's `mode`, a chip's `edit`, `narrow` anywhere), the host **replaces the element**
+  with a new one. Keep state that must survive in settings or at module level.
+- The host mirrors `params` to the element's `dataset`.
 - All `params` are strings (`Record<string, string>`). Structured data is passed
   as a JSON string (for example `placed` in the chip picker).
 
@@ -302,7 +322,7 @@ The parameters are additionally mirrored into the element's `dataset`
 | Surface | Element | `params` |
 |---|---|---|
 | Page (`pages[].element`) | page | the route's query parameters (`#/p/<printer>/<page>?file=a.gcode` → `{ file: 'a.gcode' }`) |
-| Widget (`widgets[].element`) | widget body | the dashboard route's query parameters (`edit`, `preview`, …) + `narrow: 'true' \| 'false'` |
+| Widget (`widgets[].element`) | widget body | the dashboard route's query parameters (`preview`, …) + `narrow: 'true' \| 'false'`; not mounted in edit mode |
 | Widget header (`widgets[].headerElement`) | header buttons | `{}` |
 | Banner (`banners[]`) | banner | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
 | Collapsed banner (`collapsedBanners[]`) | collapsed banner view | `{ route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
@@ -342,6 +362,9 @@ interface PluginManifest {
 }
 ```
 
+The catalog and registry tools also read `description`, `author` and `icon` from the
+manifest; the host itself ignores them, and they are not in the SDK type.
+
 The host checks only the four required fields (`id`, `name`, `version`,
 `entry` — non-empty strings). Everything else is sanitized on load: **an invalid
 contribution is dropped with a console warning**; the plugin still loads. What
@@ -352,7 +375,8 @@ counts as invalid:
 | `overlays[]`, `banners[]`, `printerPanels[]` | `id`, `element` |
 | `collapsedBanners[]` | `id`, `banner` (id of a banner of the same plugin), `element` |
 | `chips[]` | `type`, `provider`, `titleKey`, `element`, `pickerElement` |
-| `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` must parse |
+| `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` must parse; `allowInInputs`, if set, is a boolean |
+| `guards[]` | `id`, `handler`, and `match` as an array |
 | `pages[]`, `widgets[]` | not validated structurally (but nothing is rendered without `element`) |
 
 If the value of `overlays`/`banners`/`collapsedBanners`/`chips`/`printerPanels`/`hotkeys` is not an
@@ -442,8 +466,10 @@ Useful to know when designing:
   (`margin-inline-start` instead of `margin-left`).
 - **Offline.** If the active printer is unreachable, the host shows a connection
   overlay on top of the UI; your elements stay mounted. Requests are rejected in
-  the meantime (`Moonraker connection is not open`); subscriptions are restored
-  after reconnect.
+  the meantime (`Moonraker connection is not open`), though a cached read may still
+  resolve. Subscriptions are restored after a reconnect, but not after the overlay's
+  Retry button, which replaces the connection (see
+  [moonraker-proxy.md](moonraker-proxy.md#connection-state)).
 - **Klipper is not necessarily ready.** Moonraker can run while `klippy is not
   ready`. Check `printer.info.state` and show a placeholder rather than an error.
 
@@ -467,7 +493,8 @@ for `.json`/`.js`.
 
 Settings → Plugins → **Add by URL (advanced)** — install directly from a manifest
 address, for example `http://localhost:5174/manifest.json` from the plugin's dev
-server. The host shows a trust warning, and the record gets an *external* badge.
+server. The host shows a trust warning, and the record gets an *external* badge. With
+this mode off on the printer (see below) the button is hidden.
 
 For a plugin on a **different origin**, the server must send CORS headers
 (`Access-Control-Allow-Origin`) for both the manifest and the module — this is a
@@ -483,6 +510,10 @@ sends a CSP that blocks scripts from other origins. Turn it on in the installer 
 - `[plugin-loader] Plugin "…" has invalid <kind> contribution` — the contribution
   was dropped by the sanitizer.
 - `[plugin-loader] Failed to load plugin from …` — the manifest or module failed to load.
+- `[plugin-loader] Plugin "…" has collapsedBanner "…" for unknown banner "…"` — the
+  collapsed view points to a banner the plugin does not declare.
+- `[plugin-loader] Plugin "…" tried to register rightPanel` — only `@core/system` may.
+- `[guard-agent] …: invalid guard contribution` — a guard lacks `id`, `match` or `handler`.
 - `[guard-agent] …: handler export "…" not found` — the manifest declares a guard
   but the module does not export a function with that name.
 - `[hotkeys] Conflict on "…"` — a hotkey conflict (both disabled).
@@ -501,12 +532,10 @@ all hotkeys, with a "disabled: conflict" mark where applicable.
 
 Collected from the actual behaviour of the code:
 
-1. **`params` and the Svelte wrapper.** `defineMpuElement` passes `params` to the
-   component as a plain value, read at the moment of access; assigning
-   `el.params = …` on a live element **does not re-render** the Svelte component.
-   If a page must react to a query change (for example `?file=`), implement a
-   custom CE with a `params` setter, or read `window.location.hash` / subscribe
-   to `hashchange`.
+1. **A change of `params` re-creates your element.** `defineMpuElement` passes `params`
+   to the component as a plain value, and the host does not update a live element: a new
+   query string (`?file=`) or a new `narrow` means a new element and a fresh component.
+   State inside it is lost, so keep what must survive in settings or at module level.
 2. **`api.settings.onChange` calls the callback as `cb('', allPluginSettings)`.**
    The first argument is always an empty string and the second is the **whole**
    settings object of the current printer, not a single value. Compare the keys
@@ -532,8 +561,11 @@ Collected from the actual behaviour of the code:
 11. **`banners[].scope`** exists in the type but is not applied by the host: a
     banner is rendered on all routes. Filter by `params.route` yourself.
 12. **The dashboard may be synchronized between printers.** The `dashboard`
-    toggle in `mpu:v2:settingsSync` switches the layout storage to the shared
-    `mpu:v2:settings:GLOBAL` (off by default).
+    flag in `mpu:v2:settingsSync` switches the printer settings storage to the shared
+    `mpu:v2:settings:GLOBAL` (off by default, and the UI has no toggle for it yet).
+13. **In core plugins, no `$effect` in `*.svelte.ts` hooks.** A test
+    (`plugins/shared/__tests__/no-effects-in-hooks.test.ts`) enforces it: subscribe
+    imperatively with `onReady`/`onNotify`, and use `$effect` only in components.
 
 ---
 
@@ -547,8 +579,10 @@ Collected from the actual behaviour of the code:
 - [ ] The element correctly survives unmounting and re-mounting.
 - [ ] No hex colors: only theme CSS variables; light and dark themes checked.
 - [ ] All strings go through `api.i18n.t`; at least `en` exists.
-- [ ] Behaviour under `klippy not ready` and offline is checked.
+- [ ] Behaviour under `klippy is not ready` and offline is checked.
 - [ ] Side-effect actions go through `request()` (so guards fire).
 - [ ] The version is bumped; the catalog is regenerated (`tessera-ext sync`).
+- [ ] For the registry: packed and published as in
+      [deployment.md](deployment.md#publishing-to-the-registry).
 - [ ] Build: `process.env.NODE_ENV` is defined, nothing is `external`, the file
       name = `manifest.entry`.

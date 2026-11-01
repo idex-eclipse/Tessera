@@ -16,7 +16,7 @@
     return guardAgent.onChange(refresh);
   });
 
-  const HOST_VERSION = '0.1.0';
+  const HOST_VERSION = '0.7.0';
 
   const { loader, i18n, hotkeys } = getAppContext();
 
@@ -28,6 +28,8 @@
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith('mpu:v2:')) continue;
+      // Токены авторизации не должны попадать в файл, которым могут поделиться
+      if (k.startsWith('mpu:v2:auth:')) continue;
       try {
         data[k] = JSON.parse(localStorage.getItem(k) ?? 'null');
       } catch {

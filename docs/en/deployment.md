@@ -84,7 +84,7 @@ What the CLI checks before anything lands in `extensions/`:
 - the archive's sha256 matches `registry.json`;
 - the archive contains only regular files and folders: no symlinks, no absolute
   paths, no `..`;
-- the archive unpacks to at most 100 MB and 5000 entries;
+- the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
 - `pluginApi` of the entry is not newer than the host supports (now `1`).
 
@@ -112,10 +112,10 @@ Serving on the server:
   `location /extensions/ { alias <project dir>/extensions/; … }` with caching
   disabled (configured by `deploy/install.sh`).
 
-Caching: `index.json`, `manifest.json` and un-hashed `entry` files are `no-cache`.
-Files with hashes in the name (`index-3f9a1c.js`) can be cached `immutable`. As long
-as caching is off for an un-hashed `index.js`, the browser gets fresh code on the
-next page load.
+Caching: the nginx site from `deploy/install.sh` sends `no-cache, no-store` for all of
+`/extensions/`, so the browser gets fresh code on the next page load. On your own server
+keep `index.json`, `manifest.json` and un-hashed `entry` files `no-cache`; files with
+hashes in the name (`index-3f9a1c.js`) can be cached `immutable`.
 
 ---
 
@@ -173,9 +173,6 @@ Settings → Plugins → **Refresh** (re-reads `index.json` bypassing the cache)
 | installed | a record exists, the version matches the catalog (or is not recorded) |
 | update available | `installedVersion` ≠ the version in the catalog |
 
-On install, the plugin can be limited to a set of printers (`printerIds`); an empty
-list means all printers.
-
 ### From the registry, in the UI
 
 Settings → Plugins → **Plugin registry**: **Install** downloads the plugin to the server
@@ -186,6 +183,9 @@ works as before, through `tessera-ext`. Folders put in place by hand cannot be r
 or deleted from the UI.
 
 ### By URL (advanced)
+
+Only this dialog can limit a plugin to a set of printers (`printerIds`); an empty list
+means all printers.
 
 Settings → Plugins → **Add by URL (advanced)**: the host loads the manifest from the
 address, shows a preview (`id`, `name`, `version`) and a trust warning (the plugin
@@ -217,8 +217,8 @@ file name with a hash), and after an update the UI shows a **Reload** notice. De
 ### Disabling and removal
 
 The toggle in the installed-plugins list removes contributions and guards without
-deleting the record; removal deletes the record from `mpu:v2:plugins`. The core
-plugin `@core/system` is *pinned*: it cannot be disabled or removed.
+deleting the record; removal deletes the record from `mpu:v2:plugins`. Built-in plugins
+cannot be disabled or removed.
 
 ---
 
@@ -262,8 +262,8 @@ write to `extensions/`.
   Moonraker. If Moonraker has no authorization, anyone on the network can install and remove
   registry plugins; that gives nothing new to someone who already controls the printer, and
   arbitrary code cannot be installed this way.
-- **Protection from other sites.** `Content-Type: application/json` is required, `Origin`
-  must match `Host`, and there are no CORS headers.
+- **Protection from other sites.** POST requests require `Content-Type: application/json`,
+  `Origin`, when present, must match `Host`, and there are no CORS headers.
 - **Sandbox.** The service runs as the printer user, not root. The socket is open to the
   nginx group only. The service can write to `extensions/` only: `ProtectHome=tmpfs`,
   `ProtectSystem=strict`, `NoNewPrivileges`.
@@ -295,7 +295,7 @@ After installation the `tessera` command opens the same menu.
 |---|---|
 | **1) Install** | asks the directory, nginx port, Moonraker address and Klipper config directory; installs dependencies (`curl`, `tar`, `nginx`, `python3`), downloads the build, configures nginx and Klipper, creates the `tessera` and `tessera-ext` commands |
 | **2) Update** | shows the installed commit and the commit of the branch's published build. *Update Tessera* — download → nginx → Klipper config, no questions. *Reinstall* — download the build again even if it is current and rewrite the nginx config |
-| **3) Remove** | lists what will be removed and asks for confirmation: the nginx site and its logs, `[include tessera-shell.cfg]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`) and `tessera-shell.cfg`, the `tessera`/`tessera-ext` commands, the service units, the installation directory, `install.conf`. Installed extensions can be kept: they are moved to `~/tessera-extensions-backup`. Packages (nginx, python3) and the `shapers/` graphs stay |
+| **3) Remove** | lists what will be removed and asks for confirmation: the nginx site and its logs, `[include tessera-shell.cfg]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`) and `tessera-shell.cfg`, the `tessera`/`tessera-ext` commands, the service units, the installation directory, `install.conf`, and the nginx upgrade map unless another site uses it. Installed extensions can be kept: they are moved to `~/tessera-extensions-backup`. Packages (nginx, python3) and the `shapers/` graphs stay |
 | **S) Settings** | branch (list of branches with a published build; Update is offered after a change), plugins by URL and installing from the UI (applied at once) |
 | **E) Extensions** | the `tessera-ext` plugin manager |
 
@@ -342,7 +342,10 @@ Environment variables override `install.conf`:
 | `TESSERA_BRANCH` | `main` | branch |
 | `TESSERA_PORT` | `8000` | nginx port |
 | `TESSERA_MOONRAKER` | `127.0.0.1:7125` | Moonraker address |
+| `TESSERA_REPO` | upstream repo | forks |
 | `TESSERA_KLIPPER_CFG` | `~/printer_data/config` | Klipper config directory |
+| `TESSERA_KLIPPER_DIR` | `~/klipper` | used to detect `gcode_shell_command` |
+| `TESSERA_SKIP_KLIPPER_CFG` | `0` | do not touch the Klipper config |
 | `TESSERA_SKIP_NGINX` | `0` | do not configure nginx |
 | `TESSERA_NO_PROMPT` | `0` | ask no questions |
 | `TESSERA_ALLOW_REMOTE_PLUGINS` | previous choice (`0` on first install) | `1` = allow install by URL (no CSP); `0` = only `/extensions/` |
@@ -389,9 +392,12 @@ in `registry/registry.json`:
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": 1, "url": "https://…/hello-1.2.0.tar.gz",
-  "sha256": "…", "size": 12345, "description": "…" } ] }
+  "pluginApi": 1, "url": "hello-1.2.0.tar.gz",
+  "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
+
+`--plugin-api <n>` sets `pluginApi`; the CLI refuses an entry newer than the host supports.
+Packing needs GNU tar (`--sort=name`).
 
 The archive is reproducible on any OS: entries are sorted, timestamps and owners are
 zeroed, and the gzip header has no timestamp and a fixed OS byte. Anyone can rebuild a plugin from the reviewed

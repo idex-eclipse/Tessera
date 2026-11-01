@@ -23,14 +23,14 @@ Svelte 5 (runes) + Vite + TypeScript, которое ходит прямо в Mo
 
 ```
 HOST
-header   : [Printer A][Printer B][+]                          [язык][тема]
+header   : [меню] [Printer A][Printer B][+] (язычок fleet)         [правая панель]
 sidebar  : Dashboard | страницы плагинов | Settings
-main     : [баннеры (в потоке)] + [полоса чипов (в потоке)]
+main     : [баннеры (в потоке)] + [панель правки, в edit-режиме] + [полоса чипов (в потоке)]
            + ( дашборд-грид  |  страница плагина  |  Settings )
 right    : правая панель @core/system (сворачиваемая)
 overlays : окна плагинов (поверх main и right, под offline-overlay)
+offline  : оверлей состояния соединения (поверх main, оверлеев и right)
 fleet    : fullscreen-drawer ниже шапки, карточки всех принтеров
-offline  : оверлей состояния соединения (поверх всего)
 
 pool: Map<printerUrl, MoonrakerProxy>      ← инфраструктура, не состояние хоста
         │  api.moonraker() (WS: подписки + request + кэш)     │ HTTP напрямую для файлов/превью
@@ -50,8 +50,8 @@ pool: Map<printerUrl, MoonrakerProxy>      ← инфраструктура, н�
 3. `await loader.loadEnabledPlugins()` — загрузка **remote-плагинов** из
    `mpu:v2:plugins`: `fetch` манифеста → `import(entry)` → слияние локалей →
    санитайз → реестр → гарды. Сбой одного плагина не мешает остальным.
-4. Монтируется `App.svelte`. Он создаёт `AppContext`, `HotkeyManager` (и
-   запускает его) и рисует оболочку.
+4. Монтируется `App.svelte`. Он создаёт `LayoutEditor`, `HotkeyManager` (и
+   запускает его), fleet-индекс и `AppContext` и рисует оболочку.
 
 Offline **не валит загрузку**: соединения поднимаются в фоне.
 
@@ -59,7 +59,7 @@ Offline **не валит загрузку**: соединения подним�
 
 Объект с зависимостями, который `App.svelte` кладёт в Svelte-контекст:
 `settings`, `printerManager`, `registry`, `ui`, `i18n`, `loader`, `router`,
-`hotkeys`. Компоненты хоста получают его через `getAppContext()`. Плагины его
+`hotkeys`, `fleetIndex`, `editor`. Компоненты хоста получают его через `getAppContext()`. Плагины его
 **не видят**: у них только `PluginApi`.
 
 ## Слой core ([`host/src/core/`](../../host/src/core))
@@ -69,14 +69,14 @@ Offline **не валит загрузку**: соединения подним�
 | `types.ts` | единый источник типов хранилища и публичных контрактов (реэкспорт `plugin-sdk/src/types`) |
 | `surfaces.ts` | таблица видов вкладов (`pages`, `widgets`, `overlays`, `banners`, `collapsedBanners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): валидаторы, метки, признак «постоянная поверхность» |
 | `plugin-loader.svelte.ts` | загрузка/установка/удаление/включение remote-плагинов; нормализация и санитайз вкладов; регистрация гардов |
-| `plugin-registry.svelte.ts` | реестр вкладов (`getPages/Widgets/Overlays/Banners/Chips/PrinterPanels/Hotkeys/RightPanel`) и пользовательские предпочтения принтера |
+| `plugin-registry.svelte.ts` | реестр вкладов (`getPages/Widgets/Overlays/Banners/CollapsedBanners/Chips/PrinterPanels/Hotkeys/RightPanel`) и пользовательские предпочтения принтера |
 | `plugin-api-factory.ts` | создание `PluginApi` для плагина |
 | `plugin-api-cache.ts` | единый кэш `PluginApi`: один api на плагин, пока не сменился манифест |
 | `moonraker-proxy.ts` | пул прокси, WebSocket, кэши, подписки, поллинг |
 | `guard-agent.ts` | конвейер гардов |
 | `hotkeys.ts` | чистая логика: разбор комбинаций, сопоставление событий, конфликты |
 | `hotkey-manager.svelte.ts` | слушатель `keydown`, контекст (маршрут/страница/fleet), переопределения |
-| `host-hotkeys.ts` | хостовые клавиши навигации |
+| `host-hotkeys.ts` | клавиши хоста: навигация, отмена и повтор в режиме редактирования дашборда |
 | `settings-store.svelte.ts` | `localStorage`: принтеры, плагины, ui, настройки принтеров и плагинов |
 | `settings-sync.svelte.ts` | флаги sync и миграция настроек между режимами |
 | `printer-manager.svelte.ts` | реестр принтеров, активный принтер, подключение прокси |
@@ -87,14 +87,20 @@ Offline **не валит загрузку**: соединения подним�
 | `auth-store.svelte.ts` | токены Moonraker, оверлей входа |
 | `extensions-catalog.svelte.ts` | чтение `/extensions/index.json` |
 | `legacy-settings.ts` | детект устаревших ключей `localStorage` |
-| `default-layout.ts`, `default-chips.ts`, `layout-utils.ts` | стандартный состав дашборда и полосы чипов |
+| `default-layout.ts`, `default-chips.ts` | стандартный состав дашборда и полосы чипов |
+| `layout-utils.ts` | геометрия сетки: `findFreeSpot`, `settle`, `moveInStack`, `setHeight` |
+| `layout-editor.svelte.ts` | сессия редактирования дашборда: история правок, отмена и повтор, откат изменений |
+| `banner-layout.ts`, `chips-layout.ts`, `collapse-on-scroll.ts` | когда сворачиваются баннеры и чипы: по доступной высоте и при прокрутке |
+| `fleet-index.svelte.ts`, `fleet-filter.ts` | fleet-индекс, поиск и фильтры на его основе |
+| `extensions-installer.svelte.ts` | установка плагинов из реестра через службу `tessera-ext` |
+| `storage.ts` | интерфейс хранилища и реализация в памяти для тестов |
 
 ### Реестр вкладов
 
 Единый стор по видам поверхностей; все списки хранят пары
-`{ pluginId, contribution }` в порядке регистрации. Порядок регистрации важен:
-core-плагины регистрируются раньше remote, remote — в порядке записей
-`mpu:v2:plugins`. Реестр делает две вещи:
+`{ pluginId, contribution }` в порядке регистрации. Core-плагины регистрируются раньше
+remote. Remote-плагины загружаются параллельно и регистрируются по мере готовности, поэтому
+**их порядок не гарантирован**. Реестр делает две вещи:
 
 1. отвечает «какие вклады зарегистрированы»;
 2. хранит предпочтения пользователя по принтеру: видимость страниц,
@@ -112,7 +118,8 @@ core-плагины регистрируются раньше remote, remote —
    Svelte-экспорт модуля в Custom Element (`mpu-auto-…`), подставляет
    `iconSvg` из `pageIcons`;
 3. `sanitizeSurfaceContributions` — отбрасывает невалидные вклады по таблице
-   `surfaces.ts` с предупреждением; `rightPanel` принимается только у `@core/system`;
+   `surfaces.ts` с предупреждением (у страниц и виджетов там нет валидатора, они не
+   проверяются); `rightPanel` принимается только у `@core/system`;
 4. `activate` — состояние загрузчика + реестр + гарды (единый путь и для
    core, и для remote, и для install/enable).
 
@@ -120,7 +127,7 @@ core-плагины регистрируются раньше remote, remote —
 
 `getPluginApi(ctx, pluginId)` возвращает один и тот же `PluginApi` для плагина,
 пока не сменился объект его манифеста (горячее обновление). Стабильность
-важна: `PluginElementHost` пересоздаёт Custom Element при смене `api`. Для ещё
+важна: `PluginElementHost` пересоздаёт Custom Element при смене `api` или `params`. Для ещё
 не загруженного плагина (страницы, виджеты) допускается api с заглушкой манифеста.
 
 ## Поверхности и их рендер
@@ -152,6 +159,7 @@ Hash-роутер. Поддерживает deep-link, F5 и back/forward.
 | `#/p/:printerId` | дашборд принтера |
 | `#/p/:printerId/:pageId?query` | страница плагина (query → `params`) |
 | `#/settings[/section]` | Settings |
+| любой другой путь, например `#/dashboard?edit=1` | дашборд активного принтера, query сохраняется |
 
 Смена активного принтера по hash'у — часть роутера; клик по вкладке принтера
 ведёт на дашборд этого принтера.
@@ -180,7 +188,7 @@ Hash-роутер. Поддерживает deep-link, F5 и back/forward.
 
 Поиск и фильтры fleet-режима (по имени принтера, по печатаемому файлу, по
 «печатает / простаивает / ошибка Klipper») требуют данных, которых у хоста нет. Это
-**единственный** канал плагин → хост, и он намеренно узкий:
+**единственный** канал данных плагин → хост, и он намеренно узкий:
 
 - Fleet-панель публикует `api.fleet.publish(printerId, { tags, searchText })` и
   снимает запись через `api.fleet.retract(printerId)`.
@@ -231,7 +239,7 @@ plugin-sdk/      типы, define-element, Svelte-хуки
 plugins/         core-плагины (+ plugins/shared — общие UI-кирпичи и парсеры)
 extensions/      provisioning-папка remote-плагинов (+ index.json)
 tools/           для разработки и CI: extensions-sync.cjs, registry-pack.cjs, pack-release.sh
-deploy/          install.sh (меню: `tessera`), install-ext.sh и tessera-ext.py (`tessera-ext`, служба), конфигурация nginx
+deploy/          install.sh (меню: `tessera`, он же пишет сайт nginx), install-ext.sh и tessera-ext.py (`tessera-ext`, служба)
 docs/            эта документация (ru/ и en/)
 ```
 

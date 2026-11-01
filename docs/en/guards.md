@@ -95,8 +95,9 @@ The handler may return a decision synchronously or via a Promise.
 
 > Return **exactly** one of the three objects. An object with an unknown `action`
 > is treated as `freeze` (the request is parked and waits for `resume` until the
-> timeout). If the handler returns `undefined`/a non-object, the request is
-> rejected as `guard_timeout` without attribution.
+> timeout), and so is any other value without a valid `action`, such as a string.
+> If the handler returns `null` or `undefined`, the request is rejected as
+> `guard_timeout` without attribution.
 
 ### Handler errors
 
@@ -113,14 +114,18 @@ An example of "confirm before starting a print":
 ```ts
 let pendingToken: string | null = null;
 
-export const printCheck = (request, token) => {
+export const printCheck = (
+  request: { method: string; params: unknown; targetPrinterId: string },
+  token: string,
+) => {
   if (request.method !== 'printer.print.start') return { action: 'allow' };
   pendingToken = token;           // remember BEFORE returning the decision
   showConfirmDialog(request);     // show your own overlay (the plugin's overlays[])
   return { action: 'freeze' };
 };
 
-// when the user pressed a button in the overlay:
+// when the user pressed a button in the overlay. Handlers do not receive `api`:
+// `api` here is the property of your always-mounted overlay element.
 function onUserDecision(ok: boolean) {
   if (!pendingToken) return;
   api.guards.resume(pendingToken, ok ? 'accept' : 'deny', ok ? undefined : 'acme.guard.cancelled');
@@ -129,15 +134,15 @@ function onUserDecision(ok: boolean) {
 ```
 
 - `token` arrives as the handler's second argument — before the decision. It is
-  unique for each request.
+  unique for each guard call, so one chain can have several.
 - `resume(token, 'accept')` continues the walk **from the chain's next guard**
   (dialogs of several guards are shown strictly one after another); `'deny'`
   rejects the request with the attribution of the guard that froze it.
 - The dialog is shown by **the plugin itself** (usually via its own `overlays[]`):
   the overlay's visibility is its decision.
 - **Re-sending a command is not a resume.** It is a new chain; an identical request
-  while a parking exists is rejected as `already_pending`. Resuming is only via the
-  token.
+  while a parking exists is rejected as `already_pending` if guards apply to its
+  initiator. Resuming is only via the token.
 - An unknown token (a repeated `resume`, expired parking) is ignored with a console
   warning.
 
@@ -149,7 +154,8 @@ function onUserDecision(ok: boolean) {
 2. **Minus the initiating plugin's own guards** — a guard does not guard its own
    plugin's requests (protection against recursion).
 3. Order = registration order: core plugins first in bundle order, then remote ones
-   in the order of the `mpu:v2:plugins` records. There are no priorities.
+   as they finish loading, so the order of remote guards is not guaranteed; do not rely
+   on it. There are no priorities.
 4. The walk is sequential. A veto from any guard wins (intersection).
 
 Practical takeaway: you do not need to (and cannot) "intercept first". Assume the
@@ -164,8 +170,8 @@ other guards will also run.
 | The handler did not return a decision | 10 s | the request is rejected (`guard_timeout`) + a notification |
 | Parking (`freeze`) without `resume` | 10 minutes | the request is rejected (`guard_timeout`) + a notification |
 
-If a plugin with a parked chain is disabled or removed, the parking is rejected
-(`denied_by_guard`).
+If the plugin that froze the chain or the plugin that initiated the request is
+disabled or removed, the parking is rejected (`denied_by_guard`).
 
 ---
 
@@ -182,9 +188,11 @@ interface GuardRejection {
 }
 ```
 
-Translate `reasonKey` with `api.i18n.t`. The key must be in the dictionary of the
-plugin that assigned it — or in a shared one (`common.*`) if you want it to be
-understood by any initiator.
+These types are not exported by the SDK: check `error.rejection` rather than using
+`instanceof`, and type the handler's `ctx` with `GuardContext` from the SDK.
+
+Translate `reasonKey` with `api.i18n.t`. All dictionaries merge into one catalog, so a
+key of any loaded plugin resolves for every initiator; give it a unique prefix.
 
 ## Notifications
 

@@ -25,7 +25,7 @@
 | [hotkeys.md](hotkeys.md) | горячие клавиши плагинов и хоста, конфликты, переназначение |
 | [settings.md](settings.md) | ключи `localStorage`, настройки плагина, sync, экспорт |
 | [i18n-and-theming.md](i18n-and-theming.md) | переводы, RTL, CSS-переменные, панельный язык |
-| [deployment.md](deployment.md) | `extensions/`, каталог, установка и обновление плагинов |
+| [deployment.md](deployment.md) | `extensions/`, каталог, установка и обновление плагинов, установщик хоста и служба |
 
 ## Быстрые ответы
 

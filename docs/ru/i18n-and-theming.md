@@ -52,7 +52,8 @@ api.i18n.t('acme.greeting', { name: api.printer.name });   // подстанов
 2. базовый язык (`ru`), если у локали есть регион;
 3. запасная локаль хоста (`en`).
 
-Если ключа нет нигде, `t` возвращает **сам ключ**.
+Если ключа нет нигде, `t` возвращает **сам ключ**. Плейсхолдер без соответствующего
+параметра превращается в пустую строку.
 
 Следствия:
 
@@ -75,7 +76,7 @@ api.i18n.t('acme.greeting', { name: api.printer.name });   // подстанов
 const off = api.onLocaleChange((locale, dir) => rerender());
 ```
 
-Хост выставляет `lang`-подобные атрибуты на `<html>`: `data-locale`, `dir`
+Хост выставляет атрибуты на `<html>`: `data-locale`, `dir`
 (`ltr` | `rtl`). Для RTL используйте **логические** CSS-свойства:
 `margin-inline-start`, `padding-inline`, `inset-inline-end`, `text-align: start`,
 `border-inline-start` вместо `left/right`.
@@ -148,7 +149,9 @@ const accent = getComputedStyle(document.documentElement).getPropertyValue('--ac
 | Тени | `--shadow-sm`, `--shadow-md`, `--shadow-lg` |
 | Переходы | `--transition-fast` (150ms), `--transition-normal` (250ms) |
 | Сетка дашборда | `--grid-row-height` (80px) |
-| Слои | `--z-plugin-overlays` (60), `--z-right-panel` (30) |
+| Слои | `--z-drawer` (40). Слой оверлеев и правая панель читают `--z-plugin-overlays` и `--z-right-panel`, которые не определены: действуют их запасные значения 60 и 30 |
+| Раскладка | `--header-height` (48px), `--sidebar-width` (260px), `--sidebar-collapsed-width`, `--touch-target` (44px) |
+| Направление | `--dir-sign` (1 в LTR, −1 в RTL), для трансформаций; анимации `drawer-in-start`, `drawer-in-end` |
 
 Светлые/тёмные значения лежат в [`host/src/styles/global.css`](../../host/src/styles/global.css).
 
@@ -203,7 +206,8 @@ const accent = getComputedStyle(document.documentElement).getPropertyValue('--ac
 
 ## Индикатор загрузки
 
-Везде используется один загрузчик — вращающийся тессеракт, цвет берётся из `--accent`.
+Везде используется один загрузчик — вращающийся тессеракт, цвет берётся из `--accent`
+(размер `sm` наследует цвет текста).
 
 - Core-плагины: `import Loader from '…/plugins/shared/loader/Loader.svelte'`. Пропсы: `size` (`sm` 16px для кнопок, `md` 28px, `lg` 64px), `text` (подпись для конкретного места; по умолчанию `common.loading`, для `sm` скрыта, `""` убирает её), `inline`, `block` (занимает весь контейнер).
 - Удалённые плагины: `<tessera-loader size="md" text="Загрузка…" block></tessera-loader>`. Передавайте `text` на своём языке — у элемента нет i18n-контекста плагина.

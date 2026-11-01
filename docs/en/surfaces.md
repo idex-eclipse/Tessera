@@ -19,9 +19,15 @@ container); the plugin owns the content.
 Layers, top to bottom:
 
 ```
-offline-overlay       — connection status (host only)
-plugin overlays       — modal windows
-right panel           — the column on the right
+auth overlay          — 900, login prompt (host only)
+host dialogs          — 300, confirmations and settings dialogs
+printer tabs menu     — 250
+fleet mode            — 200, full-screen drawer
+offline-overlay       — 100, connection status (host only)
+plugin overlays       — 60, modal windows
+side panels, narrow   — 40, menu and right panel over the content
+right panel           — 30, the column on the right
+edit toolbar, narrow  — 10, pinned while the page scrolls
 banners               — in flow at the top of main (push content down)
 chip strip            — in flow under the banners
 main content          — dashboard / plugin page / Settings
@@ -40,7 +46,11 @@ main content          — dashboard / plugin page / Settings
 4. **A single visual language** — the panel (see
    [i18n-and-theming.md](i18n-and-theming.md#panel-language)).
 5. The host mounts the element when the surface appears on screen and unmounts it
-   when it disappears. Release subscriptions in `disconnectedCallback`.
+   when it disappears. Release subscriptions in `disconnectedCallback`. **When the
+   `params` object changes the host replaces the element with a new one**, so state
+   held inside it is lost: a banner on a change of `mode`, `route` or `narrow`, a chip
+   on `edit` or `narrow`, a widget body on the route query or `narrow`. Keep what must
+   survive in settings or at module level.
 6. For pages and widgets, `id`/`type` are global names — use a plugin prefix.
 
 ---
@@ -76,7 +86,8 @@ by default.
 **The page title** is not drawn by the host: the name is set by the sidebar entry;
 inside the page use panel headers.
 
-**Layout.** A page occupies the whole main area and scrolls together with it. The
+**Layout.** A page occupies main below the banners and chips and scrolls there; on a
+narrow screen main scrolls as a whole, banners and chips included. The
 recommended structure is a vertical stack of panels. A grid of several
 independently scrolling panels is acceptable if they form one working surface
 (example: the console — log + command reference).
@@ -110,7 +121,7 @@ stored by the bare `id`: two plugins with the same page `id` conflict.
 | `provider` | the concrete implementation; usually `manifest.id` |
 | `titleKey` | i18n key of the title; **the title is drawn by the host** in the card header |
 | `element` | the widget body CE |
-| `headerElement` | a CE the host puts in the card header to the right of the title (buttons, toggles); `params` = `{}` |
+| `headerElement` | a CE the host puts in the card header to the right of the title (buttons, toggles), or on a second line when it does not fit; `params` = `{}` |
 | `defaultSize` | size in grid cells when added; 4×3 by default |
 | `minSize` | minimum size on resize; 2×2 by default |
 
@@ -121,6 +132,10 @@ providers for one `type`; the user chooses the provider in the widget card (the
 switch appears only if there is more than one provider). If no choice was made,
 the first registered one is used. To *replace* a built-in widget, register the same
 `type` with your own `provider`.
+
+The choice applies only to the default dashboard. A customized layout stores the
+`provider` of each placed widget, so there the switch changes nothing: remove the
+widget and add it again with the other provider.
 
 The types from which the host assembles the default dashboard:
 `tools`, `temperature-graph`, `console`, `outputs`, `jobs-table`,
@@ -137,8 +152,9 @@ is always definite. The layout is stored per printer
 ### Parameters
 
 The widget body receives `params` = the dashboard route's query parameters (for
-example `edit: '1'` in edit mode, `preview: <file>` on a preview deep link)
-plus `narrow` (see [Narrow screens](#9-narrow-screens)).
+example `preview: <file>` on a preview deep link) plus `narrow` (see
+[Narrow screens](#9-narrow-screens)). In edit mode the host shows placeholder cards
+instead, so the body and `headerElement` are not mounted.
 
 ### Widget design
 
@@ -178,9 +194,10 @@ in registration order and **push** the content down (they do not cover it).
   ```
 
   `expand` shows this banner in full even when the host would collapse it, like a tap
-  on its collapsed row; `collapse` returns it to what the host decides. They do not
-  affect other banners. On a wide screen they also hold `mode`: after `expand` until
-  the user scrolls back to the top, after `collapse` until the next `expand`.
+  on its collapsed row; `collapse` returns it to what the host decides. This does not
+  affect other banners. On a wide screen they also hold `mode`, which is shared by all
+  banners: after `expand` until the user scrolls back to the top, after `collapse`
+  until the next `expand`.
 - A banner **does not duplicate** the offline overlay: a banner is the state of
   Klipper/the plugin, the offline overlay is the connection to Moonraker.
 
@@ -235,14 +252,14 @@ banner is dropped with a warning.
 ```
 
 An overlay is a floating window (usually modal) above main and the right panel,
-below the offline overlay. The typical case: a dialog the plugin opens based on
+below fleet mode, the offline overlay and host dialogs. The typical case: a dialog the plugin opens based on
 printer state (for example, confirming a manual probing step).
 
 **How an overlay differs from an ordinary pop-up window.** A pop-up window (a
 popover, or a dialog inside a page or widget) can only be shown by the plugin on
 its own page, while its element is mounted. An overlay is a persistent surface: its
-element is always mounted, so the plugin can show the window **on any page and
-anywhere in the UI** — for example, the manual-probing dialog appears even if the
+element is always mounted, so the plugin can show the window **on any page**
+(unless a higher layer covers it) — for example, the manual-probing dialog appears even if the
 user is on the console page at that moment. If a window only needs to exist inside
 your own page, you do not need an overlay.
 
@@ -255,9 +272,9 @@ Declare hotkeys for an overlay's actions with `scope: 'global'`
 How it works:
 
 - The host mounts a **permanent layer** `position: fixed; inset: 0` with
-  `z-index: var(--z-plugin-overlays, 60)`. The layer itself and the element wrapper
-  have `pointer-events: none`, while **all descendants of your element get
-  `pointer-events: auto`**.
+  `z-index: var(--z-plugin-overlays, 60)`. The layer and its item wrapper have
+  `pointer-events: none`, while **everything inside the wrapper, your element and its
+  descendants, gets `pointer-events: auto`**.
 - The element is always mounted (params `{}`); showing/hiding the content is the
   **plugin's own** job. When the window is closed the element must render nothing
   (otherwise its descendants would intercept clicks on the UI under the layer).
@@ -299,8 +316,7 @@ one action. The strip is a "mosaic" of chips arranged by the user.
       "provider": "acme/hello",
       "titleKey": "hello.chip.gauge",
       "element": "acme-gauge-chip",
-      "pickerElement": "acme-gauge-picker",
-      "icon": "file"
+      "pickerElement": "acme-gauge-picker"
     }
   ]
 }
@@ -335,10 +351,11 @@ interpret it. What items exist and how they look is up to the plugin.
   banners and the header): `shouldOpenAbove()` and `shouldAlignToEnd()` from
   `plugins/shared/popover-align.ts` decide the side and the alignment (LTR/RTL).
   On a narrow screen the strip scrolls and clips its content, so the popover must be
-  `position: fixed`: `placeChipPopover()` from the same file returns its coordinates.
+  `position: fixed`: `placeChipPopover()` from the same file takes the chip's rectangle
+  and the estimated popover size, and returns a CSS style string for it.
 - When `edit === '1'` (dashboard edit mode) the host draws its own affordances
-  (frame, "+", close buttons, drag-and-drop). The chip must not perform actions in
-  this mode.
+  (frame, "+", close buttons, order buttons, drag-and-drop). The chip must not perform
+  actions in this mode.
 - No item (a sensor disappeared) → draw the *missing* state: a dashed border and
   muted text.
 - A chip's actions are an ordinary `api.moonraker().request()`, so guards see them.
@@ -432,34 +449,28 @@ cannot use the right panel.
 
 ## 9. Narrow screens
 
-In dashboard edit mode (`#/dashboard?edit=1`) the toolbar sits above the quick chips and does not scroll away. On a narrow dashboard widgets are not dragged: beside each card there are up/down buttons (the first press stacks the layout into one column) and a ruler whose thumb changes the height row by row, and on a wide touch screen a widget is dragged by a long press, so a swipe still scrolls the page.
+The breakpoint is **768px** (`NARROW_BREAKPOINT` in `ui-store`), measured in two places:
 
-The Settings page follows its own rule: in the mobile mode (≤ 768px window) or when the page itself is narrower than 560px it shows the list of tabs, and a tab opens over the list with a back button (`#/settings` is the list, `#/settings/<id>` is the tab). Otherwise the tab list sits beside the tab.
+- The side panels follow the *window*: narrow at a width ≤ 768px (`ui.isNarrow`).
+- Banners, chips and widgets follow the *work area*: narrow when its content box is
+  under 768px (`core/narrow-width.ts`). The padding of main and the open sidebars
+  count, so a wide window can still be "narrow" for them.
 
-The host switches to "narrow" mode at a width ≤ **768px** (a single breakpoint,
-`NARROW_BREAKPOINT` in `ui-store`). The side panels follow the *window* width
-(`ui.isNarrow`); banners, chips and widgets follow the width of the *work area*
-(main/dashboard), so a wide window with both sidebars open can still be "narrow" for
-them. Every plugin surface the host mounts itself (banners, chips, widget body, right
-panel) receives
-`params.narrow` = `'true'` | `'false'` — a string, like the other `params`.
-The value is fixed when the element is mounted; on a window resize the host only
-updates the element's `data-narrow` attribute (component props are not reactive).
-To react live, use `matchMedia('(max-width: 768px)')` or container queries on
-your own container: `narrow` is a convenience flag, not a replacement. Narrow
-mode means a *small window*, not a touch device: mouse, keyboard and hotkeys
-keep working exactly as on desktop.
+Narrow mode means a *small area*, not a touch device: mouse, keyboard and hotkeys keep
+working exactly as on desktop.
 
-What the host does by itself in narrow mode:
+### `params.narrow`
 
-- **Adapting inside a plugin.** Prefer container queries over `@media`: a page or
-  widget may be narrow on a wide screen. Make the surface root a container
-  (`:global(mpu-x) { display:block; container-type:inline-size }`) and query it:
-  `@container (max-width: 720px)` — stack columns, `480px` — compact. A dialog that
-  is `position: fixed` is not inside any container: make its panel one. Tables that
-  must not scroll sideways: `plugins/shared/responsive/card-table.css` turns a
-  `table.card-table` (with `data-label` on each `td`) into cards below 520px.
-  Touch targets: use `@media (pointer: coarse)`, not the window width.
+Banners, collapsed views, chips, widget bodies and the right panel receive
+`params.narrow` = `'true'` | `'false'` — a string, like the other `params`. Pages,
+overlays, fleet panels, `headerElement` and pickers do not. When the value changes the
+host replaces the element (see the [general rules](#general-rules-for-all-surfaces)),
+so a new element always starts with the current value and `narrow` needs no live
+tracking. It is a convenience flag: what fits inside your own surface depends on its
+size, so use container queries for that (see below).
+
+### What the host does by itself
+
 - **Side panels** (menu and right panel) open over the content at full width under
   the header; at most one is open. The right panel always receives
   `collapsed: 'false'`; the saved "collapsed" state and width are ignored.
@@ -472,9 +483,45 @@ What the host does by itself in narrow mode:
   are always under a closed "Banners (N)" accordion. A banner counts as visible when its
   height is non-zero, so keep rendering *nothing* when there is nothing to report.
 - **Chips** are folded into a "Quick access" accordion (collapsed by default, open
-  in edit mode). Open, they form a horizontally scrolling two-row strip. On touch the
-  order is changed with buttons, not drag-and-drop. The chip height is unchanged (80px).
+  in edit mode). Open, they form a horizontally scrolling two-row strip. The chip height
+  is unchanged (80px).
 - **Collapsing on scroll.** Scrolling down (threshold 32px) collapses both banners and
   chips; only a tap on them expands them again, scrolling back to the top does not.
   Scrolling of page-level inner containers counts too, but not of small lists inside
   widgets or scrolling without user input (such as a console log following new lines).
+
+### Adapting inside a plugin
+
+Prefer container queries over `@media`: a page or widget may be narrow on a wide screen.
+Make the surface root a container
+(`:global(mpu-x) { display:block; container-type:inline-size }`) and query it:
+`@container (max-width: 720px)` — stack columns, `480px` — compact. A dialog that is
+`position: fixed` is not inside any container: make its panel one. Tables that must not
+scroll sideways: `plugins/shared/responsive/card-table.css` turns a `table.card-table`
+(with `data-label` on each `td`) into cards below 520px. Touch targets: use
+`@media (pointer: coarse)`, not the window width. Core plugins have ready helpers, see
+[plugin-development.md](plugin-development.md#shared-helpers).
+
+### Editing the dashboard
+
+Edit mode is opened from Settings → Edit layout (`#/dashboard?edit=1`). The toolbar sits
+above the chip strip: on a wide screen it is outside the scrolling area, on a narrow one
+it stays pinned. Changes are written at once, so **Save** only leaves the mode, and
+**Discard changes** returns the widget layout and the quick chips to their state on
+entry. Undo and redo cover both (see [hotkeys.md](hotkeys.md)).
+
+- On a wide dashboard a card is dragged and resized from its edges. On touch, dragging
+  starts with a long press (400 ms), so a swipe still scrolls the page.
+- On a narrow dashboard cards are not dragged. Next to each card there is a ruler and
+  up/down buttons, on the right of the card and on the left in RTL. The ruler's thumb
+  changes the height row by row, from the widget's `minSize.h` to 16 rows.
+- There is one layout for both modes, so the first up/down press stacks it into one
+  column and overwrites the wide arrangement. Undo or discard brings it back.
+- In edit mode every chip has order buttons on any device, and drag-and-drop works too.
+
+### The Settings page
+
+In the mobile mode (window ≤ 768px) or when the page itself is narrower than 560px, the
+page shows the list of tabs, and a chosen tab replaces it and gets a back button
+(`#/settings` is the list, `#/settings/<id>` is the tab). Otherwise the list sits beside
+the tab, and `#/settings` opens General.

@@ -23,14 +23,14 @@ installs registry plugins when you press a button in the UI.
 
 ```
 HOST
-header   : [Printer A][Printer B][+]                          [language][theme]
+header   : [menu] [Printer A][Printer B][+] (fleet tab)            [right panel]
 sidebar  : Dashboard | plugin pages | Settings
-main     : [banners (in flow)] + [chip strip (in flow)]
+main     : [banners (in flow)] + [edit toolbar, in edit mode] + [chip strip (in flow)]
            + ( dashboard grid  |  plugin page  |  Settings )
 right    : the @core/system right panel (collapsible)
 overlays : plugin windows (above main and right, below the offline overlay)
+offline  : the connection-state overlay (above main, overlays and right)
 fleet    : a full-screen drawer below the header, cards of all printers
-offline  : the connection-state overlay (above everything)
 
 pool: Map<printerUrl, MoonrakerProxy>      ← infrastructure, not host state
         │  api.moonraker() (WS: subscriptions + request + cache)   │ HTTP directly for files/previews
@@ -50,8 +50,8 @@ The entry point is [`host/src/main.ts`](../../host/src/main.ts):
 3. `await loader.loadEnabledPlugins()` — loads **remote plugins** from
    `mpu:v2:plugins`: `fetch` the manifest → `import(entry)` → merge locales →
    sanitize → registry → guards. A failure of one plugin does not block the others.
-4. `App.svelte` is mounted. It creates the `AppContext` and the `HotkeyManager` (and
-   starts it) and renders the shell.
+4. `App.svelte` is mounted. It creates the `LayoutEditor`, the `HotkeyManager` (and
+   starts it), the fleet index and the `AppContext`, and renders the shell.
 
 Offline **does not break loading**: connections come up in the background.
 
@@ -59,7 +59,7 @@ Offline **does not break loading**: connections come up in the background.
 
 An object with dependencies that `App.svelte` puts into the Svelte context:
 `settings`, `printerManager`, `registry`, `ui`, `i18n`, `loader`, `router`,
-`hotkeys`. Host components get it through `getAppContext()`. Plugins **do not see**
+`hotkeys`, `fleetIndex`, `editor`. Host components get it through `getAppContext()`. Plugins **do not see**
 it: they have only `PluginApi`.
 
 ## The core layer ([`host/src/core/`](../../host/src/core))
@@ -69,14 +69,14 @@ it: they have only `PluginApi`.
 | `types.ts` | the single source of storage types and public contracts (re-exports `plugin-sdk/src/types`) |
 | `surfaces.ts` | the table of contribution kinds (`pages`, `widgets`, `overlays`, `banners`, `collapsedBanners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): validators, labels, the "persistent surface" flag |
 | `plugin-loader.svelte.ts` | loading/installing/removing/enabling remote plugins; normalizing and sanitizing contributions; registering guards |
-| `plugin-registry.svelte.ts` | the contribution registry (`getPages/Widgets/Overlays/Banners/Chips/PrinterPanels/Hotkeys/RightPanel`) and the user's per-printer preferences |
+| `plugin-registry.svelte.ts` | the contribution registry (`getPages/Widgets/Overlays/Banners/CollapsedBanners/Chips/PrinterPanels/Hotkeys/RightPanel`) and the user's per-printer preferences |
 | `plugin-api-factory.ts` | creating `PluginApi` for a plugin |
 | `plugin-api-cache.ts` | the single `PluginApi` cache: one api per plugin until the manifest changes |
 | `moonraker-proxy.ts` | the proxy pool, WebSocket, caches, subscriptions, polling |
 | `guard-agent.ts` | the guard pipeline |
 | `hotkeys.ts` | pure logic: parsing combinations, matching events, conflicts |
 | `hotkey-manager.svelte.ts` | the `keydown` listener, context (route/page/fleet), overrides |
-| `host-hotkeys.ts` | the host's navigation keys |
+| `host-hotkeys.ts` | the host's keys: navigation, and undo/redo in dashboard edit mode |
 | `settings-store.svelte.ts` | `localStorage`: printers, plugins, ui, printer and plugin settings |
 | `settings-sync.svelte.ts` | sync flags and settings migration between modes |
 | `printer-manager.svelte.ts` | the printer registry, the active printer, attaching proxies |
@@ -87,14 +87,20 @@ it: they have only `PluginApi`.
 | `auth-store.svelte.ts` | Moonraker tokens, the sign-in overlay |
 | `extensions-catalog.svelte.ts` | reading `/extensions/index.json` |
 | `legacy-settings.ts` | detecting obsolete `localStorage` keys |
-| `default-layout.ts`, `default-chips.ts`, `layout-utils.ts` | the default dashboard and chip strip composition |
+| `default-layout.ts`, `default-chips.ts` | the default dashboard and chip strip composition |
+| `layout-utils.ts` | grid geometry: `findFreeSpot`, `settle`, `moveInStack`, `setHeight` |
+| `layout-editor.svelte.ts` | the dashboard edit session: edit history, undo/redo, discarding changes |
+| `banner-layout.ts`, `chips-layout.ts`, `collapse-on-scroll.ts` | when banners and chips collapse: by available height and on scroll |
+| `fleet-index.svelte.ts`, `fleet-filter.ts` | the fleet index and the search and filters built on it |
+| `extensions-installer.svelte.ts` | installing registry plugins through the `tessera-ext` service |
+| `storage.ts` | the storage interface, with an in-memory implementation for tests |
 
 ### The contribution registry
 
 A single store organized by surface kind; all lists hold `{ pluginId, contribution }`
-pairs in registration order. The order matters: core plugins register before remote
-ones, and remote ones in the order of the `mpu:v2:plugins` records. The registry does
-two things:
+pairs in registration order. Core plugins register before remote ones. Remote plugins
+load concurrently and register as each one finishes, so **their order is not
+guaranteed**. The registry does two things:
 
 1. answers "which contributions are registered";
 2. stores the user's per-printer preferences: page visibility, widget provider
@@ -112,7 +118,8 @@ For every manifest:
    module's Svelte export into a Custom Element (`mpu-auto-…`) and substitutes
    `iconSvg` from `pageIcons`;
 3. `sanitizeSurfaceContributions` — drops invalid contributions per the `surfaces.ts`
-   table with a warning; `rightPanel` is accepted only from `@core/system`;
+   table with a warning (pages and widgets have no validator there and are not checked);
+   `rightPanel` is accepted only from `@core/system`;
 4. `activate` — loader state + registry + guards (a single path for core, remote and
    install/enable alike).
 
@@ -120,7 +127,7 @@ For every manifest:
 
 `getPluginApi(ctx, pluginId)` returns the same `PluginApi` for a plugin until its
 manifest object changes (hot update). Stability matters: `PluginElementHost`
-re-creates the Custom Element when `api` changes. For a not-yet-loaded plugin (pages,
+re-creates the Custom Element when `api` or `params` changes. For a not-yet-loaded plugin (pages,
 widgets) an api with a stub manifest is allowed.
 
 ## Surfaces and their rendering
@@ -153,6 +160,7 @@ A hash router. It supports deep links, F5 and back/forward.
 | `#/p/:printerId` | a printer's dashboard |
 | `#/p/:printerId/:pageId?query` | a plugin page (query → `params`) |
 | `#/settings[/section]` | Settings |
+| any other path, such as `#/dashboard?edit=1` | the active printer's dashboard, with the query kept |
 
 Changing the active printer from the hash is part of the router; a click on a printer
 tab leads to that printer's dashboard.
@@ -182,7 +190,7 @@ tab leads to that printer's dashboard.
 
 Search and filters in fleet mode (by printer name, by the file being printed, by
 "printing / idle / Klipper error") need data the host does not have. This is the
-**only** channel from plugin to host, and it is deliberately narrow:
+**only** data channel from plugin to host, and it is deliberately narrow:
 
 - A fleet panel publishes `api.fleet.publish(printerId, { tags, searchText })`
   and withdraws it with `api.fleet.retract(printerId)`.
@@ -234,7 +242,7 @@ plugin-sdk/      types, define-element, Svelte hooks
 plugins/         core plugins (+ plugins/shared — shared UI bricks and parsers)
 extensions/      the provisioning folder of remote plugins (+ index.json)
 tools/           for development and CI: extensions-sync.cjs, registry-pack.cjs, pack-release.sh
-deploy/          install.sh (menu: `tessera`), install-ext.sh and tessera-ext.py (`tessera-ext`, the service), nginx configuration
+deploy/          install.sh (menu: `tessera`, it also writes the nginx site), install-ext.sh and tessera-ext.py (`tessera-ext`, the service)
 docs/            this documentation (ru/ and en/)
 ```
 

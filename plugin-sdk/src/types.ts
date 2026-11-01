@@ -98,8 +98,8 @@ export interface WidgetContribution extends ElementContribution {
  *
  * Чип = glanceable-состояние + одно действие. Рендерится в QuickAccessPanel
  * (flow-wrap полоса под баннерами). Хост инжектит в CE свойства:
- * - mpuApi (PluginApi)
- * - mpuChip (QuickChipLayoutItem — дескриптор экземпляра)
+ * - api (PluginApi)
+ * - params (chipId, chipLabel?, edit, narrow)
  *
  * Плагин перечисляет доступные предметы через pickerElement (CE-каталог),
  * хост не читает бизнес-данные плагинов.
@@ -375,7 +375,8 @@ export interface MoonrakerProxyHandle {
    * intervalMs (min-интервал по всем регистрациям того же method+params,
    * refcounted) и освежает те же кэши (snapshot или TTL), которые читает
    * request(). Обходит GuardAgent (внутренний refresh, только чтения);
-   * методы с побочным эффектом отклоняются с предупреждением.
+   * методы из списка «никогда не кэшируются» отклоняются с предупреждением,
+   * остальные методы с побочным эффектом не распознаются: не поллите их.
    * Возвращает unreg; поллинг останавливается с последней регистрацией.
    */
   poll(method: string, params: unknown, intervalMs: number): () => void;

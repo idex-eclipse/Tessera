@@ -2,8 +2,9 @@ import type { MoonrakerProxyHandle } from '../types';
 import { usePluginApi } from './use-plugin-api';
 
 /**
- * Returns the MoonrakerProxyHandle for the current active printer.
- * Re-call after onPrinterChange to get the new printer's handle.
+ * Returns the stable MoonrakerProxyHandle that follows the active printer on each call.
+ * Existing subscriptions stay on the old printer: re-create them in onPrinterChange.
+ * Throws if there is no active printer.
  */
 export function useMoonraker(): MoonrakerProxyHandle {
   const api = usePluginApi();
