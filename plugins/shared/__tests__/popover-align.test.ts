@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldAlignToEnd, shouldOpenAbove } from '../popover-align';
+import { chipPopoverStyle, shouldAlignToEnd, shouldOpenAbove } from '../popover-align';
 
 describe('shouldOpenAbove', () => {
   const vh = 800;
@@ -28,5 +28,47 @@ describe('shouldAlignToEnd', () => {
     expect(shouldAlignToEnd({ left: 300, right: 400 }, 240, 500, false)).toBe(true);
     expect(shouldAlignToEnd({ left: 20, right: 120 }, 240, 500, false)).toBe(false);
     expect(shouldAlignToEnd({ left: 20, right: 100 }, 240, 500, true)).toBe(true);
+  });
+});
+
+describe('chipPopoverStyle', () => {
+  const viewport = { width: 400, height: 800 };
+  const popover = { width: 200, height: 200 };
+
+  it('LTR: below the chip, anchored to its left edge', () => {
+    const rect = { left: 20, right: 120, top: 100, bottom: 180 };
+    expect(chipPopoverStyle(rect, popover, viewport, false)).toBe(
+      'top: 186px; bottom: auto; left: 20px; right: auto;',
+    );
+  });
+
+  it('LTR: anchors to the right edge when it would overflow the viewport', () => {
+    const rect = { left: 280, right: 380, top: 100, bottom: 180 };
+    expect(chipPopoverStyle(rect, popover, viewport, false)).toBe(
+      'top: 186px; bottom: auto; left: auto; right: 20px;',
+    );
+  });
+
+  it('RTL: anchors to the right edge by default, to the left one on overflow', () => {
+    const start = { left: 280, right: 380, top: 100, bottom: 180 };
+    expect(chipPopoverStyle(start, popover, viewport, true)).toBe(
+      'top: 186px; bottom: auto; left: auto; right: 20px;',
+    );
+    const end = { left: 20, right: 120, top: 100, bottom: 180 };
+    expect(chipPopoverStyle(end, popover, viewport, true)).toBe(
+      'top: 186px; bottom: auto; left: 20px; right: auto;',
+    );
+  });
+
+  it('opens above when it does not fit below', () => {
+    const rect = { left: 20, right: 120, top: 650, bottom: 730 };
+    expect(chipPopoverStyle(rect, popover, viewport, false)).toBe(
+      'top: auto; bottom: 156px; left: 20px; right: auto;',
+    );
+  });
+
+  it('keeps a margin from the viewport edge for a chip scrolled off screen', () => {
+    const rect = { left: -50, right: 50, top: 100, bottom: 180 };
+    expect(chipPopoverStyle(rect, popover, viewport, false)).toContain('left: 8px;');
   });
 });
