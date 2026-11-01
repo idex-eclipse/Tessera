@@ -227,6 +227,7 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
       if (binding.pluginId === HOST_HOTKEY_OWNER) {
         const host = hostByKey.get(binding.contribution.id);
         if (!host) continue;
+        if (host.when && !host.when()) continue;
         event.preventDefault();
         try {
           host.run(event);

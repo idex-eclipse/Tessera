@@ -8,6 +8,7 @@
   import Settings from '../../pages/settings/Settings.svelte';
   import PluginSlot from '../plugin-slot/PluginSlot.svelte';
   import PluginBanners from '../plugin-banners/PluginBanners.svelte';
+  import EditToolbar from './EditToolbar.svelte';
   import QuickAccessPanel from '../quick-access/QuickAccessPanel.svelte';
   import { createCollapseOnScroll } from '../../core/collapse-on-scroll.ts';
   import { narrowWidth } from '../../core/narrow-width.ts';
@@ -215,6 +216,7 @@
     {narrow}
     available={mainHeight}
   />
+  <EditToolbar {narrow} />
   <QuickAccessPanel {route} {narrow} available={mainHeight} bind:accordionOpen={chipsOpen} />
 
   <div class="route-scroll" bind:this={scrollerEl}>

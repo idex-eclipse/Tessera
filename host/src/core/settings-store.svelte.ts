@@ -600,6 +600,24 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     });
   }
 
+  /** Возвращает макет и чипы принтера к сохранённому состоянию (отмена правок), флаги включительно. */
+  function restoreEditState(
+    printerId: string,
+    state: {
+      dashboardLayout: DashboardWidgetLayoutItem[];
+      dashboardLayoutCustomized: boolean;
+      quickChips: QuickChipLayoutItem[];
+      quickChipsCustomized: boolean;
+    },
+  ): void {
+    updatePrinterSettings(printerId, (draft) => {
+      draft.dashboardLayout = state.dashboardLayout;
+      draft.dashboardLayoutCustomized = state.dashboardLayoutCustomized;
+      draft.quickChips = state.quickChips;
+      draft.quickChipsCustomized = state.quickChipsCustomized;
+    });
+  }
+
   function getQuickChips(printerId: string): QuickChipLayoutItem[] {
     return ensurePrinterSettings(printerId).quickChips;
   }
@@ -972,6 +990,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     getDashboardLayout,
     setDashboardLayout,
     resetDashboardLayout,
+    restoreEditState,
 
     getQuickChips,
     setQuickChips,

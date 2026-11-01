@@ -35,6 +35,14 @@
     <polyline points="15 18 9 12 15 6"></polyline>
   {:else if name === 'chevron-right'}
     <polyline points="9 18 15 12 9 6"></polyline>
+  {:else if name === 'chevron-up'}
+    <polyline points="18 15 12 9 6 15"></polyline>
+  {:else if name === 'undo'}
+    <path d="M9 14 4 9l5-5"></path>
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path>
+  {:else if name === 'redo'}
+    <path d="m15 14 5-5-5-5"></path>
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"></path>
   {:else if name === 'chevron-down'}
     <polyline points="6 9 12 15 18 9"></polyline>
   {:else if name === 'menu'}

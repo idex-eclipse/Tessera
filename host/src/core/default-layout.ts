@@ -23,26 +23,19 @@ export interface DefaultLayoutResolver {
   (type: string): { provider: string; defaultSize?: { w: number; h: number } } | null;
 }
 
-function makeId(type: string, index: number): string {
-  const cryptoObj = (globalThis as { crypto?: Crypto }).crypto;
-  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
-    return cryptoObj.randomUUID();
-  }
-  return `default-${type}-${index}-${Date.now().toString(36)}`;
-}
-
 export function buildDefaultLayout(
   resolve: DefaultLayoutResolver,
 ): DashboardWidgetLayoutItem[] {
   const items: DashboardWidgetLayoutItem[] = [];
-  DEFAULT_DASHBOARD.forEach((d, i) => {
+  DEFAULT_DASHBOARD.forEach((d) => {
     const r = resolve(d.type);
     if (!r) return; // плагин выключен/удалён — пропускаем без дыр
     const size = d.w !== undefined && d.h !== undefined
       ? { w: d.w, h: d.h }
       : (r.defaultSize ?? { w: 4, h: 4 });
     items.push({
-      instanceId: makeId(d.type, i),
+      // Стабильный id: раскладка строится заново при каждом чтении, а правки ищут виджет по id
+      instanceId: `default-${d.type}`,
       type: d.type,
       provider: r.provider,
       x: 0, y: 0,       // Dashboard.findFreeSpot расставит при рендере

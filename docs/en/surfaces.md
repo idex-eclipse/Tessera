@@ -432,6 +432,8 @@ cannot use the right panel.
 
 ## 9. Narrow screens
 
+In dashboard edit mode (`#/dashboard?edit=1`) the toolbar sits above the quick chips and does not scroll away. On a narrow dashboard widgets are not dragged: beside each card there are up/down buttons (the first press stacks the layout into one column) and a ruler whose thumb changes the height row by row, and on a wide touch screen a widget is dragged by a long press, so a swipe still scrolls the page.
+
 The Settings page follows its own rule: in the mobile mode (≤ 768px window) or when the page itself is narrower than 560px it shows the list of tabs, and a tab opens over the list with a back button (`#/settings` is the list, `#/settings/<id>` is the tab). Otherwise the tab list sits beside the tab.
 
 The host switches to "narrow" mode at a width ≤ **768px** (a single breakpoint,

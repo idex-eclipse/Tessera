@@ -141,6 +141,8 @@ The host also does not call the handler if the event is already handled
 | `Ctrl+←` | the previous printer (wraps around) |
 | `D` | go to the active printer's dashboard |
 | `Ctrl+↓` / `Ctrl+↑` | the next / previous section in sidebar order (Dashboard → plugin pages → Dashboard) |
+| `Ctrl+Z` | undo a step while editing the dashboard layout (also quick chips) |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | redo the step (on Apple platforms `Cmd+Z` and `Cmd+Shift+Z` work too) |
 | `R` | show / hide the right panel |
 | `L` | show / hide the left menu |
 

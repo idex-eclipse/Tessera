@@ -1,7 +1,9 @@
+import type { LayoutEditor } from './layout-editor.svelte.ts';
 import type { PluginRegistry } from './plugin-registry.svelte.ts';
 import type { PrinterManager } from './printer-manager.svelte.ts';
 import type { Route, Router } from './router.svelte.ts';
 import type { UiStore } from './ui-store.svelte.ts';
+import { detectMacPlatform } from './hotkeys';
 
 /**
  * Хостовые hotkeys навигации.
@@ -19,6 +21,8 @@ export interface HostHotkey {
   /** i18n-ключ описания (About/Debug). */
   titleKey: string;
   allowInInputs?: boolean;
+  /** Клавиша действует, только пока условие истинно; иначе событие остаётся браузеру. */
+  when?: () => boolean;
   run(event: KeyboardEvent): void;
 }
 
@@ -32,8 +36,10 @@ export function createHostHotkeys(deps: {
   /** Видимые страницы плагинов активного принтера — в порядке сайдбара. */
   registry: Pick<PluginRegistry, 'getVisiblePages'>;
   getRoute(): Route;
+  /** Редактор дашборда: без него клавиши отмены/повтора правок не регистрируются. */
+  editor?: Pick<LayoutEditor, 'active' | 'undo' | 'redo'>;
 }): HostHotkey[] {
-  const { router, printerManager, ui, registry, getRoute } = deps;
+  const { router, printerManager, ui, registry, getRoute, editor } = deps;
 
   function goTo(printerId: string | undefined): void {
     if (!printerId) return;
@@ -146,5 +152,38 @@ export function createHostHotkeys(deps: {
       allowInInputs: false,
       run: () => stepPage(-1),
     },
+    ...(editor ? editorHotkeys(editor) : []),
+  ];
+}
+
+/**
+ * Отмена и повтор в режиме редактирования дашборда; в полях ввода остаётся нативная отмена.
+ * Ctrl действует всегда, а не через `Mod`: на Apple-платформах (и при эмуляции iPhone в DevTools)
+ * `Mod` означал бы только Cmd. Cmd-варианты добавляются там, где это привычная клавиша.
+ */
+function editorHotkeys(editor: Pick<LayoutEditor, 'active' | 'undo' | 'redo'>): HostHotkey[] {
+  const undo: Omit<HostHotkey, 'id' | 'keys'> = {
+    titleKey: 'settings.about.hostHotkeys.layoutUndo',
+    allowInInputs: false,
+    when: () => editor.active,
+    run: () => editor.undo(),
+  };
+  const redo: Omit<HostHotkey, 'id' | 'keys'> = {
+    titleKey: 'settings.about.hostHotkeys.layoutRedo',
+    allowInInputs: false,
+    when: () => editor.active,
+    run: () => editor.redo(),
+  };
+
+  return [
+    { ...undo, id: 'layout-undo', keys: 'Ctrl+Z' },
+    { ...redo, id: 'layout-redo', keys: 'Ctrl+Y' },
+    { ...redo, id: 'layout-redo-shift', keys: 'Ctrl+Shift+Z' },
+    ...(detectMacPlatform()
+      ? [
+          { ...undo, id: 'layout-undo-cmd', keys: 'Meta+Z' },
+          { ...redo, id: 'layout-redo-cmd', keys: 'Meta+Shift+Z' },
+        ]
+      : []),
   ];
 }

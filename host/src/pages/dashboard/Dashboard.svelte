@@ -5,13 +5,15 @@
   import type { DashboardWidgetLayoutItem } from '../../core/settings-store.svelte.ts';
   import type { WidgetContribution } from '../../../../plugin-sdk/src/types';
 
-  import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
+  import { getAppContext } from '../../app-context.ts';
+  import Icon from '../../components/icons/Icon.svelte';
   import { narrowWidth } from '../../core/narrow-width.ts';
 
   import WidgetContainer from './WidgetContainer.svelte';
   import AddWidgetDialog from './AddWidgetDialog.svelte';
+  import HeightRuler from './HeightRuler.svelte';
 
-  import { findFreeSpot, overlaps } from '../../core/layout-utils.ts';
+  import { findFreeSpot, moveInStack, setHeight, settle } from '../../core/layout-utils.ts';
 
   let {
     printerManager,
@@ -35,8 +37,9 @@
   // Edit mode
   // ------------------------------------------------------------------
 
-  let editMode = $state(params.edit === '1');
-  let dialogOpen = $state(false);
+  const { editor } = getAppContext();
+
+  let editMode = $derived(editor.active);
   let activeId = $state<string | null>(null);
   let gridEl = $state<HTMLElement | null>(null);
 
@@ -83,35 +86,6 @@
     return `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  function settle(
-    items: DashboardWidgetLayoutItem[],
-    activeInstanceId: string,
-  ): DashboardWidgetLayoutItem[] {
-    const result = items.map((i) => ({ ...i }));
-    const active = result.find((i) => i.instanceId === activeInstanceId);
-    if (!active) return result;
-
-    const queue: DashboardWidgetLayoutItem[] = [active];
-    const inQueue = new Set<string>([active.instanceId]);
-    let guard = 0;
-
-    while (queue.length > 0 && guard++ < 500) {
-      const cur = queue.shift()!;
-      for (const other of result) {
-        if (other.instanceId === cur.instanceId) continue;
-        if (overlaps(cur, other)) {
-          other.y = cur.y + cur.h;
-          if (!inQueue.has(other.instanceId)) {
-            inQueue.add(other.instanceId);
-            queue.push(other);
-          }
-        }
-      }
-    }
-
-    return result;
-  }
-
   function gridMetrics(): { colStep: number; rowStep: number } {
     const cs = getComputedStyle(gridEl!);
     const colGap = parseFloat(cs.columnGap) || 0;
@@ -133,6 +107,7 @@
       ...current,
       { instanceId: generateInstanceId(), type, provider, x: pos.x, y: pos.y, w, h },
     ]);
+    editor.changed();
   }
 
   function handleRemove(instanceId: string): void {
@@ -142,83 +117,168 @@
       activePrinterId,
       current.filter((i) => i.instanceId !== instanceId),
     );
+    editor.changed();
   }
 
-  async function handleReset(): Promise<void> {
+  // ------------------------------------------------------------------
+  // мобильный режим: порядок кнопками, высота линейкой
+  // ------------------------------------------------------------------
+
+  function minHeightOf(item: DashboardWidgetLayoutItem): number {
+    return contributionOf(item)?.minSize?.h ?? 2;
+  }
+
+  function moveItem(item: DashboardWidgetLayoutItem, delta: -1 | 1): void {
     if (!activePrinterId) return;
-    const ok = await confirm({
-      title: i18n.t('dashboard.resetLayout'),
-      message: i18n.t('dashboard.resetLayoutConfirm'),
-      danger: true,
-    });
-    if (!ok) return;
-    registry.resetDashboardLayout(activePrinterId);
+    registry.setDashboardLayout(
+      activePrinterId,
+      moveInStack(registry.getDashboardLayout(activePrinterId), item.instanceId, delta),
+    );
+    editor.changed();
   }
 
-  function toggleEdit(): void {
-    editMode = !editMode;
-    if (!editMode) {
-      activeId = null;
-      dialogOpen = false;
-      if (params.edit && window.location.hash.includes('edit=1')) {
-        window.location.replace(window.location.hash.split('?')[0] || '#/');
-      }
-    }
+  // Шаг линейки измеряем: зазор между рядами в мобильном режиме другой.
+  let rowStep = $state(0);
+  $effect(() => {
+    if (isMobile && gridEl) rowStep = gridMetrics().rowStep;
+  });
+
+  // Жест считается от раскладки на его начало: «вверх-вниз» возвращает всё в точности.
+  let heightBase: DashboardWidgetLayoutItem[] | null = null;
+
+  function startHeight(): void {
+    if (!activePrinterId) return;
+    heightBase = registry.getDashboardLayout(activePrinterId).map((i) => ({ ...i }));
+  }
+
+  function applyHeight(item: DashboardWidgetLayoutItem, h: number): void {
+    if (!activePrinterId || !heightBase) return;
+    registry.setDashboardLayout(
+      activePrinterId,
+      setHeight(heightBase, item.instanceId, h, minHeightOf(item), MAX_H),
+    );
+  }
+
+  function commitHeight(): void {
+    heightBase = null;
+    editor.changed();
   }
 
   // ------------------------------------------------------------------
-  // move drag (free placement)
+  // жесты: перенос и ресайз
   // ------------------------------------------------------------------
+
+  /**
+   * Ведёт жест окном: move до отпускания, затем один `onEnd`. `pointercancel` (браузер забрал
+   * касание под прокрутку) завершает жест так же, как отпускание. Для касания блокируем
+   * прокрутку страницы на время жеста.
+   */
+  function trackGesture(
+    touch: boolean,
+    onMove: (e: PointerEvent) => void,
+    onEnd: () => void,
+  ): void {
+    const stopScroll = (e: TouchEvent): void => {
+      if (e.cancelable) e.preventDefault();
+    };
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('touchmove', stopScroll);
+      onEnd();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    if (touch) window.addEventListener('touchmove', stopScroll, { passive: false });
+  }
+
+  function endGesture(instanceId: string): void {
+    activeId = null;
+    if (!activePrinterId) return;
+    registry.setDashboardLayout(
+      activePrinterId,
+      settle(registry.getDashboardLayout(activePrinterId), instanceId),
+    );
+    editor.changed();
+  }
+
+  // Касание: карточка прокручивается пальцем, перенос начинается после долгого нажатия.
+  const LONG_PRESS_MS = 400;
+  const LONG_PRESS_SLOP = 10;
 
   function onMoveStart(item: DashboardWidgetLayoutItem, e: PointerEvent): void {
-    if (!editMode || !activePrinterId || !gridEl) return;
+    if (!editMode || isMobile || !activePrinterId || !gridEl) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, a, input, select, .resize-handle')) return;
 
-    e.preventDefault();
-    const { colStep, rowStep } = gridMetrics();
+    if (e.pointerType !== 'touch') {
+      e.preventDefault();
+      beginMove(item, e.clientX, e.clientY, false);
+      return;
+    }
 
-    const px = e.clientX;
-    const py = e.clientY;
+    let x = e.clientX;
+    let y = e.clientY;
+    const sx = x;
+    const sy = y;
+
+    const stop = (): void => {
+      clearTimeout(timer);
+      window.removeEventListener('pointermove', track);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+    const track = (ev: PointerEvent): void => {
+      x = ev.clientX;
+      y = ev.clientY;
+      if (Math.hypot(x - sx, y - sy) > LONG_PRESS_SLOP) stop();
+    };
+    const timer = setTimeout(() => {
+      stop();
+      navigator.vibrate?.(10);
+      beginMove(item, x, y, true);
+    }, LONG_PRESS_MS);
+
+    window.addEventListener('pointermove', track);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  }
+
+  function beginMove(item: DashboardWidgetLayoutItem, px: number, py: number, touch: boolean): void {
+    if (!activePrinterId || !gridEl) return;
+    const { colStep, rowStep } = gridMetrics();
     const gx = item.x;
     const gy = item.y;
 
     activeId = item.instanceId;
 
-    const move = (ev: PointerEvent): void => {
-      if (!activePrinterId) return;
-      const cur = registry.getDashboardLayout(activePrinterId);
-      const it = cur.find((i) => i.instanceId === item.instanceId);
-      if (!it) return;
+    trackGesture(
+      touch,
+      (ev) => {
+        if (!activePrinterId) return;
+        const cur = registry.getDashboardLayout(activePrinterId);
+        const it = cur.find((i) => i.instanceId === item.instanceId);
+        if (!it) return;
 
-      const dcol = Math.round((ev.clientX - px) / colStep);
-      const drow = Math.round((ev.clientY - py) / rowStep);
+        const dcol = Math.round((ev.clientX - px) / colStep);
+        const drow = Math.round((ev.clientY - py) / rowStep);
 
-      const x = Math.min(12 - it.w, Math.max(0, gx + dcol));
-      const y = Math.max(0, gy + drow);
+        const x = Math.min(12 - it.w, Math.max(0, gx + dcol));
+        const y = Math.max(0, gy + drow);
 
-      if (x === it.x && y === it.y) return;
+        if (x === it.x && y === it.y) return;
 
-      registry.setDashboardLayout(
-        activePrinterId,
-        cur.map((i) => (i.instanceId === item.instanceId ? { ...i, x, y } : i)),
-      );
-    };
-
-    const up = (): void => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      activeId = null;
-      if (activePrinterId) {
         registry.setDashboardLayout(
           activePrinterId,
-          settle(registry.getDashboardLayout(activePrinterId), item.instanceId),
+          cur.map((i) => (i.instanceId === item.instanceId ? { ...i, x, y } : i)),
         );
-      }
-    };
-
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+      },
+      () => endGesture(item.instanceId),
+    );
   }
 
   // ------------------------------------------------------------------
@@ -255,80 +315,52 @@
 
     activeId = item.instanceId;
 
-    const move = (ev: PointerEvent): void => {
-      if (!activePrinterId) return;
-      const cur = registry.getDashboardLayout(activePrinterId);
-      const it = cur.find((i) => i.instanceId === item.instanceId);
-      if (!it) return;
+    trackGesture(
+      e.pointerType === 'touch',
+      (ev) => {
+        if (!activePrinterId) return;
+        const cur = registry.getDashboardLayout(activePrinterId);
+        const it = cur.find((i) => i.instanceId === item.instanceId);
+        if (!it) return;
 
-      const dcol = Math.round((ev.clientX - px) / colStep);
-      const drow = Math.round((ev.clientY - py) / rowStep);
+        const dcol = Math.round((ev.clientX - px) / colStep);
+        const drow = Math.round((ev.clientY - py) / rowStep);
 
-      let x = gx, y = gy, w = startW, h = startH;
+        let x = gx, y = gy, w = startW, h = startH;
 
-      if (hasE) {
-        w = Math.min(12 - gx, Math.max(minW, startW + dcol));
-      } else if (hasW) {
-        let d = dcol;
-        d = Math.max(d, -gx);
-        d = Math.min(d, startW - minW);
-        x = gx + d;
-        w = startW - d;
-      }
+        if (hasE) {
+          w = Math.min(12 - gx, Math.max(minW, startW + dcol));
+        } else if (hasW) {
+          let d = dcol;
+          d = Math.max(d, -gx);
+          d = Math.min(d, startW - minW);
+          x = gx + d;
+          w = startW - d;
+        }
 
-      if (hasS) {
-        h = Math.min(MAX_H, Math.max(minH, startH + drow));
-      } else if (hasN) {
-        let d = drow;
-        d = Math.max(d, -gy);
-        d = Math.min(d, startH - minH);
-        y = gy + d;
-        h = startH - d;
-      }
+        if (hasS) {
+          h = Math.min(MAX_H, Math.max(minH, startH + drow));
+        } else if (hasN) {
+          let d = drow;
+          d = Math.max(d, -gy);
+          d = Math.min(d, startH - minH);
+          y = gy + d;
+          h = startH - d;
+        }
 
-      if (x === it.x && y === it.y && w === it.w && h === it.h) return;
+        if (x === it.x && y === it.y && w === it.w && h === it.h) return;
 
-      registry.setDashboardLayout(
-        activePrinterId,
-        cur.map((i) => (i.instanceId === item.instanceId ? { ...i, x, y, w, h } : i)),
-      );
-    };
-
-    const up = (): void => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      activeId = null;
-      if (activePrinterId) {
         registry.setDashboardLayout(
           activePrinterId,
-          settle(registry.getDashboardLayout(activePrinterId), item.instanceId),
+          cur.map((i) => (i.instanceId === item.instanceId ? { ...i, x, y, w, h } : i)),
         );
-      }
-    };
-
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+      },
+      () => endGesture(item.instanceId),
+    );
   }
 </script>
 
 {#if activePrinter}
-  {#if editMode}
-    <div class="edit-toolbar">
-      <span class="edit-hint">{i18n.t('dashboard.editHint')}</span>
-      <button class="btn btn-secondary" onclick={() => (dialogOpen = true)}>
-        + {i18n.t('dashboard.addWidget')}
-      </button>
-      {#if layout.length > 0}
-        <button class="btn btn-danger" onclick={handleReset}>
-          {i18n.t('dashboard.resetLayout')}
-        </button>
-      {/if}
-      <button class="btn btn-primary" onclick={toggleEdit}>
-        {i18n.t('common.save')}
-      </button>
-    </div>
-  {/if}
-
   {#if layout.length === 0 && !editMode}
     <div class="empty-state">
       <p>{i18n.t('dashboard.noWidgets')}</p>
@@ -336,13 +368,54 @@
     </div>
   {:else}
     <div class="dashboard-grid" class:edit-mode={editMode} class:mobile={isMobile} bind:this={gridEl} use:narrowWidth={(v) => (isMobile = v)}>
-      {#each displayLayout as item (item.instanceId)}
-        {#if editMode}
+      {#each displayLayout as item, index (item.instanceId)}
+        {#if editMode && isMobile}
+          <div class="mobile-row" style={`--h: ${item.h};`}>
+            <div class="layout-card">
+              <div class="layout-card-head">
+                <span class="layout-card-title">{titleOf(item)}</span>
+                <button class="btn btn-danger" onclick={() => handleRemove(item.instanceId)}>✕</button>
+              </div>
+
+              <span class="layout-card-meta">{item.type} · {item.provider}</span>
+              <span class="size-badge">{item.h}</span>
+            </div>
+
+            <HeightRuler
+              h={item.h}
+              min={minHeightOf(item)}
+              max={MAX_H}
+              {rowStep}
+              label={i18n.t('dashboard.widgetHeight')}
+              onStart={startHeight}
+              onChange={(h) => applyHeight(item, h)}
+              onCommit={commitHeight}
+            />
+
+            <div class="move-rail">
+              <button
+                class="ctl"
+                disabled={index === 0}
+                onclick={() => moveItem(item, -1)}
+                aria-label={i18n.t('dashboard.moveUp')}
+                title={i18n.t('dashboard.moveUp')}
+              ><Icon name="chevron-up" size={20} /></button>
+              <button
+                class="ctl"
+                disabled={index === displayLayout.length - 1}
+                onclick={() => moveItem(item, 1)}
+                aria-label={i18n.t('dashboard.moveDown')}
+                title={i18n.t('dashboard.moveDown')}
+              ><Icon name="chevron-down" size={20} /></button>
+            </div>
+          </div>
+        {:else if editMode}
           <div
             class="layout-card"
             class:dragging={activeId === item.instanceId}
             style={`grid-column: ${item.x + 1} / span ${item.w}; grid-row: ${item.y + 1} / span ${item.h}; --h: ${item.h};`}
             onpointerdown={(e) => onMoveStart(item, e)}
+            oncontextmenu={(e) => e.preventDefault()}
           >
             <div class="layout-card-head">
               <span class="layout-card-title">{titleOf(item)}</span>
@@ -379,8 +452,8 @@
       {registry}
       printerId={activePrinterId!}
       {i18n}
-      open={dialogOpen}
-      onClose={() => (dialogOpen = false)}
+      open={editor.addDialogOpen}
+      onClose={() => (editor.addDialogOpen = false)}
       onAdd={handleAdd}
     />
   {/if}
@@ -392,20 +465,6 @@
 {/if}
 
 <style>
-  .edit-toolbar,
-  .view-toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-md);
-  }
-
-  .edit-hint {
-    flex: 1;
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-  }
-
   .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
@@ -426,7 +485,9 @@
     border-radius: var(--radius-md);
     cursor: grab;
     user-select: none;
-    touch-action: none;
+    -webkit-touch-callout: none;
+    /* Палец прокручивает страницу; перенос начинается долгим нажатием (см. onMoveStart) */
+    touch-action: pan-y;
   }
 
   .dashboard-grid.edit-mode .layout-card.dragging {
@@ -550,25 +611,39 @@
     cursor: default;
   }
 
-  .dashboard-grid.mobile.edit-mode .resize-handle {
-    display: none;
+  /* Строка мобильного редактирования: карточка, линейка, кнопки порядка.
+     Порядок колонок сам зеркалится в RTL. */
+  .mobile-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 28px var(--touch-target);
+    grid-template-rows: minmax(0, 1fr);
+    gap: var(--space-xs);
+    min-width: 0;
+    min-height: 0;
   }
 
-  .edit-toolbar {
-    flex-wrap: wrap;
+  .move-rail {
+    display: flex;
+    flex-direction: column;
+    align-self: center;
+    gap: var(--space-xs);
   }
 
-  .edit-toolbar .btn {
-    min-width: 120px;
+  .ctl {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    cursor: pointer;
   }
 
-  @media (max-width: 768px) {
-    .edit-toolbar {
-      gap: var(--space-xs);
-    }
-
-    .edit-toolbar .btn {
-      flex: 1;
-    }
+  .ctl:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
 </style>

@@ -79,14 +79,15 @@
   let visible = $derived(editMode || resolved.some((r) => r.element !== null));
 
   // ---------- Узкий экран: аккордеон ----------
-  // Свёрнут по умолчанию; в edit-режиме всегда раскрыт. «Узкий» не значит «сенсорный»:
-  // мышиный DnD остаётся, а кнопки порядка добавлены для тача, где HTML5 DnD не работает.
+  // Свёрнут по умолчанию; в edit-режиме всегда раскрыт. Кнопки порядка есть всегда в edit-режиме:
+  // DnD остаётся (мышь и полифилл для тача), кнопки удобнее там, где перетаскивать неловко.
   let activeCount = $derived(resolved.filter((r) => r.element !== null).length);
   // На широком экране аккордеон появляется, только когда чипы заняли слишком много места.
   let chipsHeight = $state(0);
   let hasAccordion = $derived(!editMode && (narrow || chipsNeedAccordion(chipsHeight, available)));
   let collapsedByAccordion = $derived(hasAccordion && !accordionOpen);
-  let touchEdit = $derived(narrow && editMode);
+  // Кнопки порядка нужны не только тачу: в режиме редактирования они всегда рядом с чипом.
+  let touchEdit = $derived(editMode);
 
   function moveChip(index: number, delta: -1 | 1): void {
     if (!printerId) return;
@@ -96,6 +97,7 @@
     const [moved] = next.splice(index, 1);
     if (moved) next.splice(to, 0, moved);
     ctx.settings.setQuickChips(printerId, next);
+    ctx.editor.changed();
   }
 
   function paramsFor(item: QuickChipLayoutItem): Record<string, string> {
@@ -120,6 +122,7 @@
       printerId,
       chips.filter((c) => c.instanceId !== instanceId),
     );
+    ctx.editor.changed();
   }
 
   async function resetChips(): Promise<void> {
@@ -131,6 +134,7 @@
     });
     if (!ok) return;
     ctx.settings.resetQuickChips(printerId);
+    ctx.editor.changed();
   }
 
   function handlePick(type: string, provider: string, id: string, label?: string): void {
@@ -141,6 +145,7 @@
       ...chips,
       { instanceId: generateInstanceId(), type, provider, id, label },
     ]);
+    ctx.editor.changed();
   }
 
   // ---------- HTML5 DnD handlers ----------
@@ -195,6 +200,7 @@
 
     if (moved) next.splice(target, 0, moved);
     ctx.settings.setQuickChips(printerId, next);
+    ctx.editor.changed();
     endDrag();
   }
 
@@ -510,6 +516,7 @@
     cursor: pointer;
   }
   .qa-move-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .quick-access:not(.narrow) .qa-move-btn { min-height: 28px; }
   .qa-chip-wrap.ghost {
     padding: 0 var(--space-sm);
     border: 1px dashed var(--border-color);

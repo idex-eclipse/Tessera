@@ -13,6 +13,7 @@
   import type { AppContext } from './app-context.ts';
   import { provideAppContext } from './app-context.ts';
   import { createFleetIndex } from './core/fleet-index.svelte.ts';
+  import { createLayoutEditor } from './core/layout-editor.svelte.ts';
   import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
   import { createHostHotkeys } from './core/host-hotkeys.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
@@ -53,6 +54,24 @@
     router: Router;
   } = $props();
 
+  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+  const editor = createLayoutEditor({
+    getRoute: () => router.route,
+    getPrinterId: () => printerManager.activePrinterId,
+    read: (printerId) => {
+      const s = settings.getPrinterSettings(printerId);
+      return clone({
+        dashboardLayout: s.dashboardLayout,
+        dashboardLayoutCustomized: Boolean(s.dashboardLayoutCustomized),
+        quickChips: s.quickChips,
+        quickChipsCustomized: Boolean(s.quickChipsCustomized),
+      });
+    },
+    write: (printerId, snapshot) => settings.restoreEditState(printerId, clone(snapshot)),
+    leave: () => window.location.replace(window.location.hash.split('?')[0] || '#/'),
+  });
+
   const hotkeys = createHotkeyManager({
     registry,
     getRoute: () => router.route,
@@ -62,17 +81,24 @@
       loader.pluginAppliesToPrinter(pluginId, printerManager.activePrinterId ?? ''),
     isFleetOpen: () => ui.fleetOpen,
     getOverrides: () => settings.ui.hotkeyOverrides,
-    hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route }),
+    hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route, editor }),
   });
 
   const fleetIndex = createFleetIndex();
 
   const ctx: AppContext = {
-    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex,
+    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex, editor,
   };
   provideAppContext(ctx);
 
   onMount(() => hotkeys.start());
+
+  // Сессия редактирования дашборда (снимок на входе, история) следует за адресом и принтером.
+  $effect(() => {
+    void router.route;
+    void printerManager.activePrinterId;
+    editor.sync();
+  });
 
   // Записи удалённых принтеров не должны оставаться в fleet-индексе.
   $effect(() =>
