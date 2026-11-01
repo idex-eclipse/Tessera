@@ -6,7 +6,7 @@
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReady.svelte';
   import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
   import Icon from '../../../shared/icons/Icon.svelte';
-  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../shared/popover-align.ts';
+  import { placeChipPopover } from '../../../shared/popover-align.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -47,17 +47,14 @@
   const POPOVER_WIDTH = 240;
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
+  let popoverStyle = $state('');
 
   function openPopover(): void {
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
       // Поповер растёт от начала строки: вправо в LTR, влево в RTL — проверяем нужный край.
-      placement = {
-        above: shouldOpenAbove(rect, 260, window.innerHeight),
-        alignRight: shouldAlignToEnd(rect, POPOVER_WIDTH, window.innerWidth, isRtl()),
-      };
+      popoverStyle = placeChipPopover(rect, { width: POPOVER_WIDTH, height: 260 });
     }
     popoverOpen = true;
   }
@@ -133,7 +130,7 @@
 
   {#if popoverOpen && !missing}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
-    <div class="chip-popover" class:below={!placement.above} class:align-right={placement.alignRight}>
+    <div class="chip-popover" style={popoverStyle}>
       <div class="cluster">
         <div class="steps">
           {#each STEPS as s (s)}
@@ -217,15 +214,12 @@
 
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
   .chip-popover {
-    position: absolute; bottom: calc(100% + 6px); inset-inline-start: 0; z-index: 1001;
+    position: fixed; z-index: 1001;
     background: var(--bg-surface); border: 1px solid var(--border-color);
     border-radius: var(--radius-md); box-shadow: var(--shadow-md);
     padding: var(--space-sm);
     display: flex; flex-direction: column; gap: var(--space-xs);
   }
-  .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  /* alignRight = «прижать к концу строки»: в RTL это левый край */
-  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .cluster { display: grid; grid-template-columns: auto auto; gap: var(--space-xs); align-items: stretch; }
   .steps { display: grid; grid-template-columns: repeat(2, minmax(56px, auto)); gap: var(--space-xs); }
