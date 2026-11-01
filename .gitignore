@@ -41,3 +41,6 @@ Config_Reference.md
 G-Codes.md
 # Local roadmap shared between chats
 roadmap.md
+
+# Local test plugin
+plugins/dummy/

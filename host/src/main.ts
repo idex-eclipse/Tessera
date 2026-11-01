@@ -50,6 +50,10 @@ import { calibrationsManifest } from '../../plugins/calibrations/manifest';
 import * as calibrationsModule from '../../plugins/calibrations/index';
 import { locales as calibrationsLocales } from '../../plugins/calibrations/i18n';
 
+/* import { dummyManifest } from '../../plugins/dummy/manifest';
+import * as dummyModule from '../../plugins/dummy/index';
+import { locales as dummyLocales } from '../../plugins/dummy/i18n'; **/
+
 import './styles/global.css';
 
 const settings = createSettingsStore();
