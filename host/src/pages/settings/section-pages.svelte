@@ -61,14 +61,14 @@
 
 <style>
   .section { display: flex; flex-direction: column; gap: var(--space-md); }
-  .section-actions { display: flex; align-items: center; gap: var(--space-md); }
-  .printer-select { display: flex; align-items: center; gap: var(--space-sm); color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .printer-select select { padding: var(--space-xs) var(--space-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); }
+  .section-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); }
+  .printer-select { display: flex; min-width: 0; max-width: 100%; align-items: center; gap: var(--space-sm); color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .printer-select select { min-width: 0; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); }
   .hint { color: var(--text-muted); font-size: var(--font-size-sm); }
   .empty { color: var(--text-muted); }
   .page-list { display: flex; flex-direction: column; gap: var(--space-xs); }
-  .page-row { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; }
+  .page-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; }
   .page-row:hover { background: var(--bg-surface-hover); }
   .page-name { font-weight: 500; }
-  .page-meta { margin-inline-start: auto; color: var(--text-muted); font-size: var(--font-size-sm); font-family: monospace; }
+  .page-meta { margin-inline-start: auto; min-width: 0; overflow-wrap: anywhere; color: var(--text-muted); font-size: var(--font-size-sm); font-family: monospace; }
 </style>

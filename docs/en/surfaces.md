@@ -432,6 +432,8 @@ cannot use the right panel.
 
 ## 9. Narrow screens
 
+The Settings page follows its own rule: in the mobile mode (≤ 768px window) or when the page itself is narrower than 560px it shows the list of tabs, and a tab opens over the list with a back button (`#/settings` is the list, `#/settings/<id>` is the tab). Otherwise the tab list sits beside the tab.
+
 The host switches to "narrow" mode at a width ≤ **768px** (a single breakpoint,
 `NARROW_BREAKPOINT` in `ui-store`). The side panels follow the *window* width
 (`ui.isNarrow`); banners, chips and widgets follow the width of the *work area*

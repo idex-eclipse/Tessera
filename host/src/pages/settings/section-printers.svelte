@@ -74,11 +74,11 @@
 }
 
   .printer-list { display: flex; flex-direction: column; gap: var(--space-sm); }
-  .printer-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+  .printer-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
   .printer-row.active { border-color: var(--accent); }
-  .printer-main { display: flex; align-items: center; gap: var(--space-sm); border: none; background: transparent; cursor: pointer; color: var(--text-primary); flex: 1; text-align: start; }
+  .printer-main { display: flex; align-items: center; gap: var(--space-sm); border: none; background: transparent; cursor: pointer; color: var(--text-primary); flex: 1 1 160px; min-width: 0; text-align: start; }
   .printer-name { font-weight: 600; }
-  .printer-url { color: var(--text-muted); font-size: var(--font-size-sm); font-family: monospace; }
+  .printer-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--font-size-sm); font-family: monospace; }
   .printer-actions { display: flex; gap: var(--space-sm); }
   .empty { color: var(--text-muted); }
   .btn { padding: var(--space-sm) var(--space-lg); border: none; border-radius: var(--radius-md); font-size: var(--font-size-md); cursor: pointer; }

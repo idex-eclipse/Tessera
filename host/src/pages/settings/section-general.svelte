@@ -217,7 +217,7 @@
 
 <style>
   .section { display: flex; flex-direction: column; gap: var(--space-lg); }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+  .row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-md); }
   .accent-row { align-items: flex-start; }
   .row-label { color: var(--text-secondary); }
   .seg { display: flex; border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }

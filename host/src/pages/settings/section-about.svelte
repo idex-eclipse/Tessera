@@ -159,14 +159,15 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: var(--space-md);
     padding: var(--space-sm) var(--space-md);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
   }
   .about-label { font-weight: 500; }
-  .about-value { color: var(--text-muted); font-family: monospace; font-size: var(--font-size-sm); }
-  .about-actions { display: flex; gap: var(--space-sm); }
+  .about-value { min-width: 0; overflow-wrap: anywhere; color: var(--text-muted); font-family: monospace; font-size: var(--font-size-sm); }
+  .about-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
   .error { color: var(--danger); font-size: var(--font-size-sm); }
   .btn { padding: var(--space-sm) var(--space-lg); border: none; border-radius: var(--radius-md); font-size: var(--font-size-md); cursor: pointer; }
   .btn-secondary { background: var(--bg-surface-hover); color: var(--text-primary); }
