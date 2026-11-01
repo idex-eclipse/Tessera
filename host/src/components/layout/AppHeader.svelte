@@ -89,7 +89,8 @@
 
   .header-left {
     display: flex;
-    align-items: center;
+    align-self: stretch;
+    align-items: stretch;
     flex: 1;
     min-width: 0;
   }

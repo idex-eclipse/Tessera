@@ -132,7 +132,8 @@
 
   .fleet-toggle {
     position: absolute;
-    bottom: -27px;
+    /* от низа Header, а не от высоты строки вкладок: её меняет полоса прокрутки */
+    top: 100%;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
