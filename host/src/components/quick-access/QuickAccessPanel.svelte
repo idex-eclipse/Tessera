@@ -4,13 +4,27 @@
   import type { Route } from '../../core/router.svelte.ts';
 
   import { getAppContext } from '../../app-context.ts';
+  import { chipsNeedAccordion } from '../../core/chips-layout.ts';
   import { getPluginApi } from '../../core/plugin-api-cache.ts';
   import PluginElementHost from '../plugin-element-host.svelte';
+  import Collapsible from '../Collapsible.svelte';
   import Icon from '../icons/Icon.svelte';
   import { confirm } from '../confirm/confirm-dialog.svelte.ts';
   import AddChipDialog from './AddChipDialog.svelte';
 
-  let { route, narrow = false }: { route: Route; narrow?: boolean } = $props();
+  let {
+    route,
+    narrow = false,
+    accordionOpen = $bindable(false),
+    available = 0,
+  }: {
+    route: Route;
+    narrow?: boolean;
+    /** Аккордеон раскрыт. На узком экране его сворачивает и AppMain при скролле вниз. */
+    accordionOpen?: boolean;
+    /** Высота рабочей области: от неё считается, не слишком ли много места заняли чипы. */
+    available?: number;
+  } = $props();
 
   const ctx = getAppContext();
 
@@ -67,9 +81,11 @@
   // ---------- Узкий экран: аккордеон ----------
   // Свёрнут по умолчанию; в edit-режиме всегда раскрыт. «Узкий» не значит «сенсорный»:
   // мышиный DnD остаётся, а кнопки порядка добавлены для тача, где HTML5 DnD не работает.
-  let accordionOpen = $state(false);
   let activeCount = $derived(resolved.filter((r) => r.element !== null).length);
-  let collapsedByAccordion = $derived(narrow && !editMode && !accordionOpen);
+  // На широком экране аккордеон появляется, только когда чипы заняли слишком много места.
+  let chipsHeight = $state(0);
+  let hasAccordion = $derived(!editMode && (narrow || chipsNeedAccordion(chipsHeight, available)));
+  let collapsedByAccordion = $derived(hasAccordion && !accordionOpen);
   let touchEdit = $derived(narrow && editMode);
 
   function moveChip(index: number, delta: -1 | 1): void {
@@ -231,7 +247,7 @@
 
 {#if visible && printerId}
   <div class="quick-access" class:edit={editMode} class:narrow>
-    {#if narrow && !editMode}
+    {#if hasAccordion}
       <button
         class="qa-toggle"
         onclick={() => (accordionOpen = !accordionOpen)}
@@ -269,8 +285,9 @@
       {/if}
     {/if}
 
-    <!-- Скрываем через CSS, а не {#if}: иначе chips теряют состояние при сворачивании -->
-    <div class="qa-chips" class:accordion-closed={collapsedByAccordion}>
+    <!-- Collapsible, а не {#if}: иначе chips теряют состояние при сворачивании -->
+    <Collapsible open={!collapsedByAccordion}>
+    <div class="qa-chips" bind:clientHeight={chipsHeight}>
       {#each resolved as r (r.item.instanceId)}
         {#if r.element && r.pluginId}
           {@const api = apiFor(r.pluginId)}
@@ -334,6 +351,7 @@
         {/if}
       {/each}
     </div>
+    </Collapsible>
   </div>
 
   {#if editMode}
@@ -446,10 +464,23 @@
   }
   .qa-chevron.open { transform: rotate(180deg); }
 
-  .qa-chips.accordion-closed { display: none; }
+  /* Лента в две строки с горизонтальной прокруткой. Поповеры chips — position: fixed
+     (plugins/shared/popover-align.ts), поэтому скролл-контейнер их не обрезает. */
+  .quick-access.narrow .qa-chips {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: var(--space-xs);
+  }
 
-  /* Без max-height/overflow: поповеры chips позиционируются внутри полосы и обрезались бы
-     скролл-контейнером. Место ограничивает сам аккордеон (по умолчанию свёрнут). */
+  /* Лента клипует содержимое: место под ✕, который выступает за угол chip */
+  .quick-access.narrow.edit .qa-chips {
+    padding-block-start: 12px;
+    padding-inline-end: 12px;
+  }
 
   /* ✕ 28px визуально, зона нажатия расширена до ~44px */
   .quick-access.narrow .qa-x {
