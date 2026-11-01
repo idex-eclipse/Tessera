@@ -49,6 +49,8 @@ const ru: I18nMessages = {
     collapse: 'Свернуть меню',
     menu: 'Меню',
     openMenu: 'Открыть меню',
+    stopLogoAnimation: 'Остановить анимацию логотипа',
+    playLogoAnimation: 'Запустить анимацию логотипа',
   },
 
   banners: {

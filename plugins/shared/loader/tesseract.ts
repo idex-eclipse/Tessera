@@ -79,17 +79,76 @@ export function project(rot: Rotation): ProjectedPoint[] {
   return out;
 }
 
-function rotationAt(t: number): Rotation {
+/** Угловые скорости вращения, рад/с. */
+const RATES: Rotation = { xw: 0.9, zw: 0.55, xz: 0.35, yz: 0.22 };
+
+const ZERO: Rotation = { xw: 0, zw: 0, xz: 0, yz: 0 };
+
+const ANGLES = ['xw', 'zw', 'xz', 'yz'] as const;
+
+function advance(r: Rotation, seconds: number): Rotation {
   return {
-    xw: t * 0.9,
-    zw: t * 0.55,
-    xz: t * 0.35,
-    yz: t * 0.22,
+    xw: r.xw + RATES.xw * seconds,
+    zw: r.zw + RATES.zw * seconds,
+    xz: r.xz + RATES.xz * seconds,
+    yz: r.yz + RATES.yz * seconds,
   };
+}
+
+/**
+ * Поза логотипа (host/public/logo.svg): 4D-повороты нулевые, а обычный куб развёрнут
+ * изометрически — диагональ (1,1,1) смотрит в камеру, силуэт даёт правильный шестигранник.
+ */
+const LOGO_POSE: Rotation = { xw: 0, zw: 0, xz: Math.PI / 4, yz: Math.atan(Math.SQRT1_2) };
+
+/** Радиус шестигранника для куба с ребром 2 в изометрии: √(8/3). */
+const ISO_RADIUS = Math.sqrt(8 / 3);
+
+/** logo.svg нарисован в viewBox 64; внешний куб — w = +1 (ближе к камере, крупнее). */
+const LOGO_SCALE = VIEW / 64;
+const LOGO_OUTER = { cy: 31 * LOGO_SCALE, r: 26 * LOGO_SCALE };
+const LOGO_INNER = { cy: 35 * LOGO_SCALE, r: 12.5 * LOGO_SCALE };
+
+/**
+ * Точные вершины логотипа. Перспективная проекция из `project` даёт в той же позе
+ * чуть другие пропорции, поэтому к концу остановки анимация подтягивается к этим точкам.
+ */
+const LOGO_POINTS: ProjectedPoint[] = VERTICES.map(([x, y, z, w]) => {
+  const [px, pz] = rotate(x, z, LOGO_POSE.xz);
+  const [py] = rotate(y, pz, LOGO_POSE.yz);
+  const ring = w > 0 ? LOGO_OUTER : LOGO_INNER;
+  const k = ring.r / ISO_RADIUS;
+  return { x: VIEW / 2 + px * k, y: ring.cy + py * k, depth: 1 };
+});
+
+/** Сколько секунд тессеракт доворачивается до позы логотипа и сколько разгоняется обратно. */
+const SETTLE_S = 1.8;
+const RELEASE_S = 0.6;
+
+const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
+const smoothstep = (a: number, b: number, x: number): number => {
+  const k = clamp01((x - a) / (b - a));
+  return k * k * (3 - 2 * k);
+};
+
+function blend(from: ProjectedPoint[], to: ProjectedPoint[], k: number): ProjectedPoint[] {
+  return from.map((p, i) => {
+    const q = to[i]!;
+    return {
+      x: p.x + (q.x - p.x) * k,
+      y: p.y + (q.y - p.y) * k,
+      depth: p.depth + (q.depth - p.depth) * k,
+    };
+  });
 }
 
 export interface TesseractHandle {
   destroy(): void;
+  /**
+   * Останавливает вращение в позе логотипа или запускает его снова.
+   * Возвращает true, если тессеракт теперь останавливается.
+   */
+  toggle(): boolean;
 }
 
 interface Instance {
@@ -100,6 +159,11 @@ interface Instance {
 const instances = new Set<Instance>();
 let rafId = 0;
 let t0 = 0;
+
+/** Время в секундах на той же шкале, что и `t` в кадре; 0, пока кадров ещё не было. */
+function currentTime(): number {
+  return t0 ? (performance.now() - t0) / 1000 : 0;
+}
 
 function frame(now: number): void {
   rafId = 0;
@@ -154,9 +218,52 @@ export function createTesseract(svg: SVGSVGElement): TesseractHandle {
     return line;
   });
 
+  // spin: base + RATES·(t − spinFrom). settle/release: base — углы в момент начала фазы,
+  // phaseFrom — её начало. parked — вне тикера, кадр уже нарисован.
+  let mode: 'spin' | 'settle' | 'release' | 'parked' = 'spin';
+  let base: Rotation = ZERO;
+  let spinFrom = 0;
+  let phaseFrom = 0;
+  let delta: Rotation = ZERO;
+  let cur: Rotation = ZERO;
+  let blendFrom = 0;
+  let blendNow = 0;
+
   const inst: Instance = {
     lines,
-    tick: (t) => draw(lines, project(rotationAt(t))),
+    tick(t) {
+      let k = 0;
+      if (mode === 'spin') {
+        cur = advance(base, t - spinFrom);
+      } else if (mode === 'settle') {
+        const p = clamp01((t - phaseFrom) / SETTLE_S);
+        const e = 1 - (1 - p) * (1 - p);
+        cur = {
+          xw: base.xw + delta.xw * e,
+          zw: base.zw + delta.zw * e,
+          xz: base.xz + delta.xz * e,
+          yz: base.yz + delta.yz * e,
+        };
+        k = blendFrom + (1 - blendFrom) * smoothstep(0.4, 1, p);
+        if (p >= 1) {
+          mode = 'parked';
+          cur = LOGO_POSE;
+          instances.delete(inst);
+        }
+      } else if (mode === 'release') {
+        const s = t - phaseFrom;
+        const p = clamp01(s / RELEASE_S);
+        // Скорость нарастает линейно за RELEASE_S, дальше постоянная.
+        cur = advance(base, s < RELEASE_S ? (s * s) / (2 * RELEASE_S) : s - RELEASE_S / 2);
+        k = blendFrom * (1 - smoothstep(0, 1, p));
+        if (p >= 1) {
+          mode = 'spin';
+          spinFrom = phaseFrom + RELEASE_S / 2;
+        }
+      }
+      blendNow = k;
+      draw(lines, k > 0 ? blend(project(cur), LOGO_POINTS, k) : project(cur));
+    },
   };
   inst.tick(0);
   instances.add(inst);
@@ -166,6 +273,29 @@ export function createTesseract(svg: SVGSVGElement): TesseractHandle {
     destroy() {
       instances.delete(inst);
       lines.forEach((l) => l.remove());
+    },
+    toggle() {
+      const t = currentTime();
+      base = mode === 'spin' ? advance(base, t - spinFrom) : cur;
+      blendFrom = blendNow;
+      phaseFrom = t;
+      if (mode === 'spin' || mode === 'release') {
+        // Довернуть вперёд до позы логотипа, не замедляясь сильнее, чем при обычном вращении.
+        const d = {} as Record<(typeof ANGLES)[number], number>;
+        for (const a of ANGLES) {
+          const full = Math.PI * 2;
+          let v = (((LOGO_POSE[a] - base[a]) % full) + full) % full;
+          while (v < (RATES[a] * SETTLE_S) / 2) v += full;
+          d[a] = v;
+        }
+        delta = d;
+        mode = 'settle';
+      } else {
+        mode = 'release';
+      }
+      instances.add(inst);
+      ensureLoop();
+      return mode === 'settle';
     },
   };
 }

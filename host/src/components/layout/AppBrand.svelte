@@ -1,18 +1,42 @@
 <script lang="ts">
-  import Icon from '../icons/Icon.svelte';
+  import { createTesseract, type TesseractHandle } from '../../../../plugins/shared/loader/tesseract';
+  import { getAppContext } from '../../app-context.ts';
 
   let { collapsed }: { collapsed: boolean } = $props();
+
+  const { i18n } = getAppContext();
+
+  let svg: SVGSVGElement;
+  let handle: TesseractHandle | undefined;
+  let stopped = $state(false);
+
+  // Логотип — тот же тессеракт, что и в загрузчике, но без подписи и role="status":
+  // это декоративная марка, а не индикатор загрузки. Клик останавливает его в позе
+  // host/public/logo.svg, повторный — снова запускает вращение.
+  $effect(() => {
+    handle = createTesseract(svg);
+    return () => {
+      handle?.destroy();
+      handle = undefined;
+    };
+  });
+
+  const toggle = () => {
+    if (handle) stopped = handle.toggle();
+  };
+
+  let label = $derived(i18n.t(stopped ? 'nav.playLogoAnimation' : 'nav.stopLogoAnimation'));
 </script>
 
 <div class="brand" class:collapsed>
-  <a class="logo" href="#/" title="Tessera">
-    <span class="logo-mark">
-      <Icon name="printer" size={16} />
-    </span>
+  <div class="logo">
+    <button type="button" class="logo-mark" aria-pressed={stopped} aria-label={label} title={label} onclick={toggle}>
+      <svg bind:this={svg} class="logo-cube" aria-hidden="true" focusable="false"></svg>
+    </button>
     {#if !collapsed}
-      <span class="logo-text">TESSERA</span>
+      <a class="logo-text" href="#/" title="Tessera">TESSERA</a>
     {/if}
-  </a>
+  </div>
 </div>
 
 <style>
@@ -39,7 +63,6 @@
     align-items: center;
     gap: var(--space-sm);
     color: var(--text-on-header);
-    text-decoration: none;
     white-space: nowrap;
   }
 
@@ -49,15 +72,32 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: var(--radius-md);
-    background: var(--accent);
-    color: #fff;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
     flex-shrink: 0;
+  }
+
+  .logo-cube {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .logo-cube :global(line) {
+    stroke: currentColor;
+    stroke-width: 4.5;
+    stroke-linecap: round;
   }
 
   .logo-text {
     font-weight: 700;
     font-size: var(--font-size-lg);
     letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
   }
 </style>

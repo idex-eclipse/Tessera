@@ -52,6 +52,8 @@ const en: I18nMessages = {
     collapse: 'Collapse menu',
     menu: 'Menu',
     openMenu: 'Open menu',
+    stopLogoAnimation: 'Stop logo animation',
+    playLogoAnimation: 'Resume logo animation',
   },
 
   banners: {
