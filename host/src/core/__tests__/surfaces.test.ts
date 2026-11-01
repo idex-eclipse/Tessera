@@ -29,6 +29,10 @@ describe('surfaces', () => {
     const chip = SURFACE_SPECS.chips.validate!;
     expect(chip({ type: 't', provider: 'p', titleKey: 'k', element: 'e', pickerElement: 'pe' })).toBe(true);
     expect(chip({ type: 't', provider: 'p', titleKey: 'k', element: 'e' })).toBe(false);
+
+    const collapsed = SURFACE_SPECS.collapsedBanners.validate!;
+    expect(collapsed({ id: 'a', banner: 'b', element: 'x-a' })).toBe(true);
+    expect(collapsed({ id: 'a', element: 'x-a' })).toBe(false);
   });
 
   it('contributionsOf returns [] for missing kinds', () => {

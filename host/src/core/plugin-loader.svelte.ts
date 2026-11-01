@@ -163,6 +163,21 @@ function sanitizeSurfaceContributions(manifest: PluginManifest): void {
     );
   }
 
+  // Свёрнутый вид без своего баннера показывать негде.
+  if (manifest.collapsedBanners) {
+    const bannerIds = new Set(manifest.banners?.map((banner) => banner.id));
+    manifest.collapsedBanners = manifest.collapsedBanners.filter((item) => {
+      const known = bannerIds.has(item.banner);
+      if (!known) {
+        console.warn(
+          `[plugin-loader] Plugin "${manifest.id}" has collapsedBanner "${item.id}" ` +
+            `for unknown banner "${item.banner}"`,
+        );
+      }
+      return known;
+    });
+  }
+
   for (const kind of SINGLETON_SURFACES) {
     const value = manifest[kind];
     if (!value) continue;

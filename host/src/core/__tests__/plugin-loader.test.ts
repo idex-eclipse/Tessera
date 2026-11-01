@@ -760,6 +760,26 @@ describe('plugin-loader / sanitize', () => {
     expect(registry.getBanners()).toHaveLength(2);
   });
 
+  it('accepts collapsed banners only for a banner of the same plugin', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      banners: [{ id: 'banner1', element: 'mpu-test-banner1' }],
+      collapsedBanners: [
+        { id: 'ok', banner: 'banner1', element: 'mpu-test-collapsed-ok' },
+        { id: 'orphan', banner: 'other', element: 'mpu-test-collapsed-orphan' },
+        { id: 'no-banner', element: 'mpu-test-collapsed-invalid' } as never,
+      ],
+    });
+
+    const { loader, registry } = setup({
+      fetchManifest: vi.fn(async () => manifest),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getCollapsedBanners().map((r) => r.contribution.id)).toEqual(['ok']);
+  });
+
   it('accepts valid chips', async () => {
     const manifest = createTestManifest({
       id: '@test/plugin',

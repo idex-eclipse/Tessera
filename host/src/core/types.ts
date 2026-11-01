@@ -14,6 +14,7 @@ import type {
 
 import type {
   RegisteredBanner,
+  RegisteredCollapsedBanner,
   RegisteredChip,
   RegisteredHotkey,
   RegisteredOverlay,
@@ -161,6 +162,7 @@ export interface PluginRegistryView {
 
   getOverlays(): RegisteredOverlay[];
   getBanners(): RegisteredBanner[];
+  getCollapsedBanners(): RegisteredCollapsedBanner[];
   getChips(): RegisteredChip[];
   getPrinterPanels(): RegisteredPrinterPanel[];
   getHotkeys(): RegisteredHotkey[];

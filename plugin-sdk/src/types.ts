@@ -155,6 +155,18 @@ export interface BannerContribution extends SurfaceContribution {
 }
 
 /**
+ * Collapsed view of a banner of the same plugin.
+ *
+ * Shown by the host instead of the banner while the banner surface is collapsed
+ * on a narrow screen. Display-only: a click bubbles up to the host and expands
+ * the surface (call stopPropagation() for a control of your own).
+ */
+export interface CollapsedBannerContribution extends SurfaceContribution {
+  /** BannerContribution.id of the banner this view belongs to. */
+  banner: string;
+}
+
+/**
  * Printer panel contribution.
  *
  * CE-элемент рендерится ПО ОДНОМУ ЭКЗЕМПЛЯРУ НА КАЖДЫЙ настроенный принтер
@@ -276,6 +288,7 @@ export interface PluginManifest {
 
   overlays?: OverlayContribution[];
   banners?: BannerContribution[];
+  collapsedBanners?: CollapsedBannerContribution[];
   rightPanel?: RightPanelContribution;
   chips?: ChipContribution[];
   printerPanels?: PrinterPanelContribution[];

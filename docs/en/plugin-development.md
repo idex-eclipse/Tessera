@@ -305,6 +305,7 @@ The parameters are additionally mirrored into the element's `dataset`
 | Widget (`widgets[].element`) | widget body | the dashboard route's query parameters (`edit`, `preview`, …) + `narrow: 'true' \| 'false'` |
 | Widget header (`widgets[].headerElement`) | header buttons | `{}` |
 | Banner (`banners[]`) | banner | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
+| Collapsed banner (`collapsedBanners[]`) | collapsed banner view | `{ route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
 | Overlay (`overlays[]`) | overlay | `{}` |
 | Chip (`chips[].element`) | chip | `{ chipId, chipLabel?, edit: '1' \| '0', narrow: 'true' \| 'false' }` |
 | Chip picker (`chips[].pickerElement`) | item catalog | `{ edit: '1', placed: '<JSON array of ids>' }` |
@@ -328,6 +329,7 @@ interface PluginManifest {
   widgets?: WidgetContribution[];
   overlays?: OverlayContribution[];
   banners?: BannerContribution[];
+  collapsedBanners?: CollapsedBannerContribution[];
   chips?: ChipContribution[];
   printerPanels?: PrinterPanelContribution[];
   hotkeys?: HotkeyContribution[];
@@ -348,11 +350,12 @@ counts as invalid:
 | Contribution | Required non-empty strings |
 |---|---|
 | `overlays[]`, `banners[]`, `printerPanels[]` | `id`, `element` |
+| `collapsedBanners[]` | `id`, `banner` (id of a banner of the same plugin), `element` |
 | `chips[]` | `type`, `provider`, `titleKey`, `element`, `pickerElement` |
 | `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` must parse |
 | `pages[]`, `widgets[]` | not validated structurally (but nothing is rendered without `element`) |
 
-If the value of `overlays`/`banners`/`chips`/`printerPanels`/`hotkeys` is not an
+If the value of `overlays`/`banners`/`collapsedBanners`/`chips`/`printerPanels`/`hotkeys` is not an
 array, it is discarded.
 
 ### Plugin identifier

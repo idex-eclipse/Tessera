@@ -2,6 +2,7 @@ import { HOTKEY_SCOPES, parseCombo } from './hotkeys';
 import type {
   BannerContribution,
   ChipContribution,
+  CollapsedBannerContribution,
   HotkeyContribution,
   OverlayContribution,
   PageContribution,
@@ -35,6 +36,7 @@ export interface SurfaceContributionMap {
   widgets: WidgetContribution;
   overlays: OverlayContribution;
   banners: BannerContribution;
+  collapsedBanners: CollapsedBannerContribution;
   chips: ChipContribution;
   printerPanels: PrinterPanelContribution;
   hotkeys: HotkeyContribution;
@@ -56,6 +58,7 @@ export type RegisteredPage = Registered<'pages'>;
 export type RegisteredWidget = Registered<'widgets'>;
 export type RegisteredOverlay = Registered<'overlays'>;
 export type RegisteredBanner = Registered<'banners'>;
+export type RegisteredCollapsedBanner = Registered<'collapsedBanners'>;
 export type RegisteredChip = Registered<'chips'>;
 export type RegisteredPrinterPanel = Registered<'printerPanels'>;
 export type RegisteredHotkey = Registered<'hotkeys'>;
@@ -67,6 +70,7 @@ export const SURFACE_KINDS = [
   'widgets',
   'overlays',
   'banners',
+  'collapsedBanners',
   'chips',
   'printerPanels',
   'hotkeys',
@@ -124,6 +128,11 @@ export const SURFACE_SPECS: Record<SurfaceKind, SurfaceSpec> = {
   banners: {
     label: 'banner',
     validate: (v) => hasStrings(v, ID_AND_ELEMENT),
+    persistent: true,
+  },
+  collapsedBanners: {
+    label: 'collapsedBanner',
+    validate: (v) => hasStrings(v, ['id', 'banner', 'element']),
     persistent: true,
   },
   chips: {

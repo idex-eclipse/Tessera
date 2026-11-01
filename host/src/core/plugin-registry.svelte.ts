@@ -6,6 +6,7 @@ import {
   contributionsOf,
   type Registered,
   type RegisteredBanner,
+  type RegisteredCollapsedBanner,
   type RegisteredChip,
   type RegisteredHotkey,
   type RegisteredOverlay,
@@ -49,6 +50,7 @@ import { findFreeSpot } from './layout-utils.ts';
 
 export type {
   RegisteredBanner,
+  RegisteredCollapsedBanner,
   RegisteredChip,
   RegisteredHotkey,
   RegisteredOverlay,
@@ -76,6 +78,7 @@ export function createPluginRegistry(settings: SettingsStore) {
     widgets: [],
     overlays: [],
     banners: [],
+    collapsedBanners: [],
     chips: [],
     printerPanels: [],
     hotkeys: [],
@@ -161,6 +164,10 @@ export function createPluginRegistry(settings: SettingsStore) {
 
   function getBanners(): RegisteredBanner[] {
     return surfaces.banners;
+  }
+
+  function getCollapsedBanners(): RegisteredCollapsedBanner[] {
+    return surfaces.collapsedBanners;
   }
 
   function getChips(): RegisteredChip[] {
@@ -358,6 +365,7 @@ function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
     getEffectiveProvider,
     getOverlays,
     getBanners,
+    getCollapsedBanners,
     getRightPanel,
     getChips,
     getPrinterPanels,

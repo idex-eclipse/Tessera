@@ -305,6 +305,7 @@ hostContainer.appendChild(el);
 | Виджет (`widgets[].element`) | тело виджета | query-параметры маршрута дашборда (`edit`, `preview`, …) + `narrow: 'true' \| 'false'` |
 | Шапка виджета (`widgets[].headerElement`) | кнопки в шапке | `{}` |
 | Баннер (`banners[]`) | баннер | `{ mode: 'expanded' \| 'collapsed', route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
+| Свёрнутый баннер (`collapsedBanners[]`) | свёрнутый вид баннера | `{ route: 'dashboard' \| 'plugin-page' \| 'settings', narrow: 'true' \| 'false' }` |
 | Оверлей (`overlays[]`) | оверлей | `{}` |
 | Чип (`chips[].element`) | чип | `{ chipId, chipLabel?, edit: '1' \| '0', narrow: 'true' \| 'false' }` |
 | Picker чипа (`chips[].pickerElement`) | каталог предметов | `{ edit: '1', placed: '<JSON-массив id>' }` |
@@ -328,6 +329,7 @@ interface PluginManifest {
   widgets?: WidgetContribution[];
   overlays?: OverlayContribution[];
   banners?: BannerContribution[];
+  collapsedBanners?: CollapsedBannerContribution[];
   chips?: ChipContribution[];
   printerPanels?: PrinterPanelContribution[];
   hotkeys?: HotkeyContribution[];
@@ -348,11 +350,12 @@ interface PluginManifest {
 | Вклад | Обязательные непустые строки |
 |---|---|
 | `overlays[]`, `banners[]`, `printerPanels[]` | `id`, `element` |
+| `collapsedBanners[]` | `id`, `banner` (id баннера того же плагина), `element` |
 | `chips[]` | `type`, `provider`, `titleKey`, `element`, `pickerElement` |
 | `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` должен разбираться |
 | `pages[]`, `widgets[]` | не валидируются структурно (но без `element` ничего не отрисуется) |
 
-Если значение `overlays`/`banners`/`chips`/`printerPanels`/`hotkeys` — не
+Если значение `overlays`/`banners`/`collapsedBanners`/`chips`/`printerPanels`/`hotkeys` — не
 массив, оно сбрасывается.
 
 ### Идентификатор плагина

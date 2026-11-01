@@ -67,7 +67,7 @@ it: they have only `PluginApi`.
 | File | Responsible for |
 |---|---|
 | `types.ts` | the single source of storage types and public contracts (re-exports `plugin-sdk/src/types`) |
-| `surfaces.ts` | the table of contribution kinds (`pages`, `widgets`, `overlays`, `banners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): validators, labels, the "persistent surface" flag |
+| `surfaces.ts` | the table of contribution kinds (`pages`, `widgets`, `overlays`, `banners`, `collapsedBanners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): validators, labels, the "persistent surface" flag |
 | `plugin-loader.svelte.ts` | loading/installing/removing/enabling remote plugins; normalizing and sanitizing contributions; registering guards |
 | `plugin-registry.svelte.ts` | the contribution registry (`getPages/Widgets/Overlays/Banners/Chips/PrinterPanels/Hotkeys/RightPanel`) and the user's per-printer preferences |
 | `plugin-api-factory.ts` | creating `PluginApi` for a plugin |

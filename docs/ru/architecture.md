@@ -67,7 +67,7 @@ Offline **не валит загрузку**: соединения подним�
 | Файл | Отвечает за |
 |---|---|
 | `types.ts` | единый источник типов хранилища и публичных контрактов (реэкспорт `plugin-sdk/src/types`) |
-| `surfaces.ts` | таблица видов вкладов (`pages`, `widgets`, `overlays`, `banners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): валидаторы, метки, признак «постоянная поверхность» |
+| `surfaces.ts` | таблица видов вкладов (`pages`, `widgets`, `overlays`, `banners`, `collapsedBanners`, `chips`, `printerPanels`, `hotkeys`, `rightPanel`): валидаторы, метки, признак «постоянная поверхность» |
 | `plugin-loader.svelte.ts` | загрузка/установка/удаление/включение remote-плагинов; нормализация и санитайз вкладов; регистрация гардов |
 | `plugin-registry.svelte.ts` | реестр вкладов (`getPages/Widgets/Overlays/Banners/Chips/PrinterPanels/Hotkeys/RightPanel`) и пользовательские предпочтения принтера |
 | `plugin-api-factory.ts` | создание `PluginApi` для плагина |
