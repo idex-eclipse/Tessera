@@ -191,7 +191,9 @@ export const en = {
       settings: 'Settings',
       soundEnabled: 'Play sound on critical notifications',
       ignoredPatterns: 'Ignored patterns (regex)',
-      patternPlaceholder: 'regex pattern to ignore',
+      patternPlaceholder: 'regex to ignore, e.g. tmc\\d+ stepper_\\w+: ol[ab]',
+      ignore: 'Ignore this notification',
+      ignoredHint: 'Case-insensitive; matches anywhere in the text. Applies to all printers.',
       addPattern: 'Add',
       remove: 'Remove',
       sev: {

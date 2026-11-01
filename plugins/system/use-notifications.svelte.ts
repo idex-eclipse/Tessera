@@ -1,6 +1,6 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, MoonrakerProxyHandle } from '../../plugin-sdk/src/types.ts';
+import type { PluginApi, MoonrakerProxyHandle, PluginSettingsApi } from '../../plugin-sdk/src/types.ts';
 
 import { createHealthWatch, type HealthAlert, type HealthWatch } from './health-alerts.ts';
 import { CANBUS_FIELDS, MCU_FIELDS } from './health-model.ts';
@@ -49,6 +49,26 @@ let toastSettings = $state<{ ignoredPatterns: string[]; soundEnabled: boolean }>
   soundEnabled: false,
 });
 
+/** Скомпилированные ignoredPatterns (регистронезависимо, как KLIPPER_CRITICAL_RE). */
+let compiledIgnores: RegExp[] = [];
+
+function compilePatterns(list: readonly string[]): RegExp[] {
+  const out: RegExp[] = [];
+  for (const p of list) {
+    if (!p) continue;
+    try {
+      out.push(new RegExp(p, 'i'));
+    } catch {
+      /* невалидный regex — пропускаем */
+    }
+  }
+  return out;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Дедуп per (printerId, source, normalized-text)
 const dedup = new Map<string, number>();
 
@@ -72,19 +92,51 @@ const subsByPrinter = new Map<string, PrinterSubs>();
 // ------------------------------------------------------------------
 // Агрегатор: ОДИН на приложение, живёт, пока есть хотя бы один потребитель
 // ------------------------------------------------------------------
-function createAggregator(api: PluginApi) {
+export function createAggregator(api: PluginApi) {
   // ------------------------------------------------------------------
   // Settings (device-global, sync-aware через api.settings)
   // ------------------------------------------------------------------
+  // api.settings привязан к АКТИВНОМУ принтеру (а при выключенном sync плагина —
+  // хранит отдельно на каждый принтер), тогда как агрегатор слушает все принтеры сразу.
+  // Паттерны игнора поэтому пишем во все принтеры, а читаем объединением: так они
+  // действуют одинаково, какой бы принтер ни был активен.
+  function printerSettings(): PluginSettingsApi[] {
+    const list: PluginSettingsApi[] = [];
+    for (const p of api.printers) {
+      try {
+        list.push(api.settingsFor(p.id));
+      } catch {
+        /* принтер удалён между чтением реестра и вызовом */
+      }
+    }
+    return list.length > 0 ? list : [api.settings];
+  }
+
   function loadSettings(): void {
-    const ignored = api.settings.get<string[]>('system.notifications.ignoredPatterns') ?? [];
+    const all = printerSettings();
+    const ignored = [
+      ...new Set(
+        all.flatMap((s) => s.get<string[]>('system.notifications.ignoredPatterns') ?? []),
+      ),
+    ];
     const sound = api.settings.get<boolean>('system.notifications.soundEnabled') ?? false;
     toastSettings = { ignoredPatterns: ignored, soundEnabled: sound };
+    compiledIgnores = compilePatterns(ignored);
   }
 
   function setIgnoredPatterns(list: string[]): void {
-    api.settings.set('system.notifications.ignoredPatterns', list);
+    for (const s of printerSettings()) s.set('system.notifications.ignoredPatterns', list);
     toastSettings.ignoredPatterns = [...list];
+    compiledIgnores = compilePatterns(list);
+    // паттерн должен убрать и то, что уже в истории, иначе кажется, что он не сработал
+    items = items.filter((n) => !isIgnored(n.text));
+  }
+
+  /** «Игнорировать это уведомление»: точный паттерн по тексту. */
+  function ignoreText(text: string): void {
+    const p = `^${escapeRegExp(text)}$`;
+    if (toastSettings.ignoredPatterns.includes(p)) return;
+    setIgnoredPatterns([...toastSettings.ignoredPatterns, p]);
   }
 
   function setSoundEnabled(v: boolean): void {
@@ -98,15 +150,7 @@ function createAggregator(api: PluginApi) {
   const DEDUP_PRUNE_AT = 500;
   const DEDUP_KEEP_MS = 60_000;
   function isIgnored(text: string): boolean {
-    for (const p of toastSettings.ignoredPatterns) {
-      if (!p) continue;
-      try {
-        if (new RegExp(p).test(text)) return true;
-      } catch {
-        /* невалидный regex — пропускаем */
-      }
-    }
-    return false;
+    return compiledIgnores.some((re) => re.test(text));
   }
 
   function dedupKey(printerId: string, n: NotificationItem): string {
@@ -117,6 +161,9 @@ function createAggregator(api: PluginApi) {
     printerId: string,
     n: Omit<NotificationItem, 'id' | 'time' | 'seen' | 'dismissed' | 'printerId'>,
   ): void {
+    // единая точка фильтрации: сюда приходят и gcode/TMC/health, и guard, и notifyLocal
+    if (isIgnored(n.text)) return;
+
     const item: NotificationItem = {
       ...n,
       printerId,
@@ -161,7 +208,7 @@ function createAggregator(api: PluginApi) {
     if (mpu) {
       const severity = mpu[1]!.toLowerCase() as 'critical' | 'error' | 'info';
       let text = mpu[2]!.trim().replace(/[\r\n]+/g, ' ');
-      if (!text || isIgnored(text)) return;
+      if (!text) return;
       if (text.length > MPU_TEXT_MAX) text = text.slice(0, MPU_TEXT_MAX - 1) + '…';
       push(printerId, {
         severity,
@@ -174,7 +221,7 @@ function createAggregator(api: PluginApi) {
 
     if (line.startsWith('!!')) {
       const text = line.slice(2).trim();
-      if (!text || isIgnored(text)) return;
+      if (!text) return;
       const critical = KLIPPER_CRITICAL_RE.test(text);
       push(printerId, {
         severity: critical ? 'critical' : 'error',
@@ -187,7 +234,7 @@ function createAggregator(api: PluginApi) {
 
     if (line.startsWith('// Unknown')) {
       const text = line.slice(2).trim();
-      if (!text || isIgnored(text)) return;
+      if (!text) return;
       push(printerId, {
         severity: 'error',
         source: 'gcode',
@@ -210,7 +257,6 @@ function createAggregator(api: PluginApi) {
     const text = reason
       ? api.i18n.t('system.notifications.klipperShutdownReason', { reason })
       : api.i18n.t('system.notifications.klipperShutdown');
-    if (isIgnored(text)) return;
     push(printerId, { severity: 'critical', source: 'klippy', text, sticky: true });
   }
 
@@ -232,7 +278,6 @@ function createAggregator(api: PluginApi) {
       for (const f of cur) {
         if (!prev.has(f)) {
           const text = api.i18n.t('system.notifications.tmcFlag', { name, flag: f });
-          if (isIgnored(text)) continue;
           const critical = TMC_CRITICAL_FLAGS.has(f);
           push(printerId, {
             severity: critical ? 'critical' : 'error',
@@ -346,12 +391,10 @@ function createAggregator(api: PluginApi) {
 
   function pushAlerts(printerId: string, alerts: HealthAlert[]): void {
     for (const a of alerts) {
-      const text = alertText(a);
-      if (isIgnored(text)) continue;
       push(printerId, {
         severity: a.severity,
         source: a.kind === 'throttle' ? 'host' : 'mcu',
-        text,
+        text: alertText(a),
         sticky: a.sticky,
       });
     }
@@ -592,7 +635,12 @@ function createAggregator(api: PluginApi) {
   function start(): void {
     loadSettings();
 
-    offs.push(api.onPrintersChange(() => syncPrinters()));
+    offs.push(
+      api.onPrintersChange(() => {
+        syncPrinters();
+        loadSettings(); // паттерны читаются объединением по принтерам
+      }),
+    );
 
     offSettings = api.settings.onChange(() => loadSettings());
     offs.push(
@@ -641,6 +689,7 @@ function createAggregator(api: PluginApi) {
     dismissAll,
     markSeen,
     setIgnoredPatterns,
+    ignoreText,
     setSoundEnabled,
   };
 

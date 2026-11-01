@@ -186,7 +186,9 @@ export const ru = {
       settings: 'Настройки',
       soundEnabled: 'Звуковой сигнал на критических уведомлениях',
       ignoredPatterns: 'Игнорируемые паттерны (regex)',
-      patternPlaceholder: 'regex паттерн для игнорирования',
+      patternPlaceholder: 'regex для игнорирования, напр. tmc\\d+ stepper_\\w+: ol[ab]',
+      ignore: 'Игнорировать это уведомление',
+      ignoredHint: 'Без учёта регистра; ищется в любом месте текста. Действует для всех принтеров.',
       addPattern: 'Добавить',
       remove: 'Удалить',
       sev: {

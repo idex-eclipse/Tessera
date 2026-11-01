@@ -193,6 +193,7 @@
         </label>
 
         <div class="pat-title">{i18n.t('system.notifications.ignoredPatterns')}</div>
+        <div class="pat-hint">{i18n.t('system.notifications.ignoredHint')}</div>
 
         {#if store.settings.ignoredPatterns.length > 0}
           <div class="pat-list">
@@ -232,6 +233,14 @@
                 {printerName(n.printerId)}
               </span>
               <span class="time">{fmtTime(n.time)}</span>
+              <button
+                class="icon-btn"
+                title={i18n.t('system.notifications.ignore')}
+                aria-label={i18n.t('system.notifications.ignore')}
+                onclick={() => store.ignoreText(n.text)}
+              >
+                <Icon name="filter" size={12} />
+              </button>
               <button
                 class="icon-btn"
                 title={i18n.t('system.notifications.dismiss')}
@@ -405,6 +414,11 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .pat-hint {
+    font-size: 11px;
     color: var(--text-muted);
   }
 
