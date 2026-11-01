@@ -171,7 +171,7 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 - **Settings sync** — opt-in per plugin, device-global
 - **Themes** — light & dark, every color a CSS variable; accent customization and custom background images are supported
 - **i18n** — English & Russian, RTL-ready layout
-- **Narrow screens** — below 768px the side panels open as full-width overlays, the dashboard becomes one column (each widget keeps its row height), banners group into a summary row and chips fold into an accordion; pages and widgets adapt to their own width, not just the window's
+- **Narrow screens** — below 768px the side panels open as full-width overlays, the dashboard becomes one column (each widget keeps its row height), banners are collapsed by default and chips fold into a two-row scrolling strip, both collapsing on scroll down; pages and widgets adapt to their own width, not just the window's
 
 <a id="hotkeys"></a>
 ### Hotkeys
@@ -368,6 +368,7 @@ interface PluginManifest {
   chips?: ChipContribution[];        // quick-access strip: element + pickerElement
   overlays?: OverlayContribution[];  // floating windows (visibility = plugin's call)
   banners?: BannerContribution[];    // in-flow blocks above main
+  collapsedBanners?: CollapsedBannerContribution[]; // collapsed banner view
   rightPanel?: RightPanelContribution; // unique slot — accepted from @core/system only
   printerPanels?: PrinterPanelContribution[]; // fleet cards: one instance per printer
   hotkeys?: HotkeyContribution[];    // keyboard shortcuts: global / dashboard / plugin-page scope

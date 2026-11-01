@@ -9,6 +9,7 @@ container); the plugin owns the content.
 | [Page](#1-pages) | `pages[]` | the main area, a sidebar entry | the user (Settings → Pages) | yes |
 | [Widget](#2-widgets) | `widgets[]` | the dashboard grid | the user (dashboard layout) | yes |
 | [Banner](#3-banners) | `banners[]` | top of main, in flow | the **plugin** | yes |
+| [Collapsed banner](#collapsed-view) | `collapsedBanners[]` | the row of a collapsed banner | the **plugin** | yes |
 | [Overlay](#4-overlays) | `overlays[]` | above main and the right panel | the **plugin** | yes |
 | [Chip](#5-quick-access-chips) | `chips[]` | the strip under the banners | the user (edit mode) | yes |
 | [Fleet panel](#6-fleet-panels) | `printerPanels[]` | a printer card in fleet mode | the user (panel editor) | yes |
@@ -160,24 +161,70 @@ in registration order and **push** the content down (they do not cover it).
   there is nothing to report, the element must render *nothing* (empty content
   without height).
 - `params = { mode, route, narrow }`:
-  - `mode` — `'expanded'` or `'collapsed'`; the host collapses banners on scroll
-    down (threshold 32px) and expands them when scrolling back to the top;
+  - `mode` — `'expanded'` or `'collapsed'`: `'collapsed'` while the host shows the
+    [collapsed view](#collapsed-view) instead of this banner. On a wide screen also
+    while scrolled down (threshold 32px, back to `'expanded'` at the top), although
+    the banner stays on screen then;
   - `route` — `'dashboard'` | `'plugin-page'` | `'settings'`;
   - `narrow` — `'true'` | `'false'`, see [Narrow screens](#9-narrow-screens).
 - The `scope` field is declared in the type but is not applied by the host —
   filter by `params.route` yourself.
 - **Manual control.** A banner can request the expanded or collapsed state with
-  bubbling events (it is enough for the event to bubble up to main):
+  bubbling events:
 
   ```js
   this.dispatchEvent(new CustomEvent('mpu:banner-expand',   { bubbles: true, composed: true }));
   this.dispatchEvent(new CustomEvent('mpu:banner-collapse', { bubbles: true, composed: true }));
   ```
 
-  After `expand` the host keeps the expanded state until the user scrolls back to
-  the top; after `collapse`, until the next `expand`.
+  `expand` shows this banner in full even when the host would collapse it, like a tap
+  on its collapsed row; `collapse` returns it to what the host decides. They do not
+  affect other banners. On a wide screen they also hold `mode`: after `expand` until
+  the user scrolls back to the top, after `collapse` until the next `expand`.
 - A banner **does not duplicate** the offline overlay: a banner is the state of
   Klipper/the plugin, the offline overlay is the connection to Moonraker.
+
+### When the host collapses banners
+
+The host tries to keep banners visible and removes them step by step, measuring against
+the height of main. Each step applies only if the previous one was not enough:
+
+| Step | Condition | Result |
+|---|---|---|
+| 1 | a banner is taller than 35% | that banner is collapsed |
+| 2 | the banners together take more than 40% | **all** of them are collapsed, so the styles do not diverge |
+| 3 | the collapsed rows take more than 25% (two or more banners) | all of them go under a closed "Banners (N)" accordion |
+
+On a narrow screen banners are always collapsed by default, and two or more are always
+under the accordion (see [Narrow screens](#9-narrow-screens)).
+
+A tap on a collapsed row expands only that banner; a thin button attached to its bottom
+edge collapses it back. For that the host removes the bottom margin and bottom corner
+radius of the element's root, so keep your banner's frame on the root. The state changes are animated, so a banner must not rely on its height being
+final the moment it is shown.
+
+### Collapsed view
+
+```json
+{
+  "banners": [ { "id": "acme-warn", "element": "acme-warn-banner" } ],
+  "collapsedBanners": [
+    { "id": "acme-warn-collapsed", "banner": "acme-warn", "element": "acme-warn-banner-collapsed" }
+  ]
+}
+```
+
+While a banner is collapsed, the host shows a row with its collapsed view instead.
+`banner` is the `id` of a banner of the same plugin; a contribution pointing to an unknown
+banner is dropped with a warning.
+
+- `params = { route, narrow }`. Like the banner, the element is always mounted.
+- It is shown only while its banner has a non-zero height; render *nothing* when
+  there is nothing to report.
+- It is **display-only**: one line, no chrome of its own (the row provides it). A click
+  bubbles up to the host and expands the banner; call `stopPropagation()` if you
+  really need a control of your own.
+- A banner without a collapsed view gets a row with the plugin's name.
 
 ---
 
@@ -280,10 +327,15 @@ interpret it. What items exist and how they look is up to the plugin.
   that same item `id`; `chipLabel` is the user's label.
 - The chip root stretches to the full slot height (**80px**), width follows
   content; limit it on the plugin side (`max-width` + `text-overflow: ellipsis`).
+- When the chips take more than 25% of the height of main on a wide screen, the host
+  folds them into a closed "Quick access" accordion (never in edit mode). Unlike on a
+  narrow screen, scrolling does not close it.
 - Reveal the action with a **popover**, not by expanding the chip in place
   (otherwise the strip reflows). Open it **downward** by default (the strip sits under the
   banners and the header): `shouldOpenAbove()` and `shouldAlignToEnd()` from
   `plugins/shared/popover-align.ts` decide the side and the alignment (LTR/RTL).
+  On a narrow screen the strip scrolls and clips its content, so the popover must be
+  `position: fixed`: `placeChipPopover()` from the same file returns its coordinates.
 - When `edit === '1'` (dashboard edit mode) the host draws its own affordances
   (frame, "+", close buttons, drag-and-drop). The chip must not perform actions in
   this mode.
@@ -412,10 +464,13 @@ What the host does by itself in narrow mode:
   an always-mounted surface (an overlay) and must not depend on the panel's DOM.
   The `R` and `L` hotkeys toggle the right panel and the left menu: on a wide
   screen they collapse/expand them, on a narrow one they open/close the overlay.
-- **Banners.** If several banners are visible at once, the host groups them under
-  a "Notifications: N" row. A banner counts as visible when its height is non-zero,
-  so keep rendering *nothing* when there is nothing to report. Tapping the row
-  sends the same `mpu:banner-expand` / `mpu:banner-collapse` events.
+- **Banners** are [collapsed](#collapsed-view) by default, even a single one; two or more
+  are always under a closed "Banners (N)" accordion. A banner counts as visible when its
+  height is non-zero, so keep rendering *nothing* when there is nothing to report.
 - **Chips** are folded into a "Quick access" accordion (collapsed by default, open
-  in edit mode); on touch the order is changed with buttons, not drag-and-drop.
-  The chip height is unchanged (80px).
+  in edit mode). Open, they form a horizontally scrolling two-row strip. On touch the
+  order is changed with buttons, not drag-and-drop. The chip height is unchanged (80px).
+- **Collapsing on scroll.** Scrolling down (threshold 32px) collapses both banners and
+  chips; only a tap on them expands them again, scrolling back to the top does not.
+  Scrolling of page-level inner containers counts too, but not of small lists inside
+  widgets or scrolling without user input (such as a console log following new lines).
