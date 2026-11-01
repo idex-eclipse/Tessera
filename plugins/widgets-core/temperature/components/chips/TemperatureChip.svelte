@@ -3,7 +3,7 @@
   import { useTemperatureData, useTemperaturePrefs } from '../../use-temperature.svelte';
   import { parseHoldMinutes } from '../../hold-timer';
   import HoldInput from '../HoldInput.svelte';
-  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
+  import { placeChipPopover } from '../../../../shared/popover-align';
   import TempKindIcon from '../TempKindIcon.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
@@ -43,7 +43,7 @@
   // popover
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
+  let popoverStyle = $state('');
   let inputEl = $state<HTMLInputElement | null>(null);
 
   // «Время включения» — опциональная функция (колонка в настройках виджета): пока она выключена,
@@ -62,10 +62,7 @@
     if (rect) {
       // поповер выравнивается по начальному краю чипа (в RTL — по правому)
       const need = showHold ? POPOVER_HEIGHT_HOLD : POPOVER_HEIGHT;
-      placement = {
-        above: shouldOpenAbove(rect, need, window.innerHeight),
-        alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()),
-      };
+      popoverStyle = placeChipPopover(rect, { width: 220, height: need });
     }
     popoverOpen = true;
   }
@@ -148,7 +145,7 @@
 
   {#if popoverOpen && sensor}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
-    <div class="chip-popover" class:below={!placement.above} class:align-right={placement.alignRight}>
+    <div class="chip-popover" style={popoverStyle}>
       <form onsubmit={handleSetTarget}>
         <label>
           <span>
@@ -317,9 +314,8 @@
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
 
   .chip-popover {
-    position: absolute; 
-    bottom: calc(100% + 6px);
-    inset-inline-start: 0; z-index: 1001;
+    position: fixed;
+    z-index: 1001;
     background: var(--bg-surface); 
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md); 
@@ -327,10 +323,6 @@
     padding: var(--space-sm); 
     min-width: 200px;
   }
-
-  .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-
-  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .chip-popover label,
   .hold-row {

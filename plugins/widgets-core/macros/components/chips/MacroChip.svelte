@@ -7,7 +7,7 @@
   import MacroParamsMenu from '../MacroParamsMenu.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
   import { buildMacroScript } from '../../../../shared/macro-params';
-  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
+  import { placeChipPopover } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -50,7 +50,7 @@
 
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
+  let popoverStyle = $state('');
 
   let paramsMenuOpen = $state(false);
   let paramsAnchor = $state<{ left: number; right: number; top: number; bottom: number } | null>(null);
@@ -64,7 +64,7 @@
       paramsAnchor = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
       paramsMenuOpen = true;
     } else {
-      placement = { above: shouldOpenAbove(rect, 180, window.innerHeight), alignRight: shouldAlignToEnd(rect, 220, window.innerWidth, isRtl()) };
+      popoverStyle = placeChipPopover(rect, { width: 220, height: 180 });
       popoverOpen = true;
     }
   }
@@ -144,7 +144,7 @@
 
   {#if popoverOpen && known && !hasParams}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
-    <div class="chip-popover" class:below={!placement.above} class:align-right={placement.alignRight}>
+    <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{macroName}</div>
       <button class="pop-btn primary" onclick={() => requestRun({})}>
         {i18n.t('widgets.macros.run')}
@@ -242,9 +242,7 @@
 
   .chip-popover-backdrop { position: fixed; inset: 0; z-index: 1000; }
   .chip-popover {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    inset-inline-start: 0;
+    position: fixed;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -256,8 +254,6 @@
     flex-direction: column;
     gap: var(--space-xs);
   }
-  .chip-popover.below { bottom: auto; top: calc(100% + 6px); }
-  .chip-popover.align-right { inset-inline-start: auto; inset-inline-end: 0; }
 
   .pop-title {
     font-family: ui-monospace, monospace;

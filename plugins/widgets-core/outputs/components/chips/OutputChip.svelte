@@ -5,7 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
-  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
+  import { placeChipPopover } from '../../../../shared/popover-align';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -55,13 +55,13 @@
   // --- поповер ---
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
+  let popoverStyle = $state('');
 
   function openPopover(): void {
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: shouldOpenAbove(rect, 180, window.innerHeight), alignRight: shouldAlignToEnd(rect, 240, window.innerWidth, isRtl()) };
+      popoverStyle = placeChipPopover(rect, { width: 240, height: 180 });
     }
     popoverOpen = true;
   }
@@ -172,7 +172,7 @@
 
   {#if popoverOpen && item}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
-    <div class="chip-popover" class:below={!placement.above} class:align-right={placement.alignRight}>
+    <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{label}</div>
 
       {#if readOnly}
@@ -355,9 +355,7 @@
   }
 
   .chip-popover {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    inset-inline-start: 0;
+    position: fixed;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -368,16 +366,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
-  }
-
-  .chip-popover.below {
-    bottom: auto;
-    top: calc(100% + 6px);
-  }
-
-  .chip-popover.align-right {
-    inset-inline-start: auto;
-    inset-inline-end: 0;
   }
 
   .pop-title {

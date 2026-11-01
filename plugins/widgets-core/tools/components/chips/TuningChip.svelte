@@ -5,7 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
-  import { isRtl, shouldAlignToEnd, shouldOpenAbove } from '../../../../shared/popover-align';
+  import { placeChipPopover } from '../../../../shared/popover-align';
 
   type Subject = 'pressure_advance' | 'retraction' | 'flow' | 'speed';
 
@@ -159,7 +159,7 @@
     if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
-      placement = { above: shouldOpenAbove(rect, 220, window.innerHeight), alignRight: shouldAlignToEnd(rect, 260, window.innerWidth, isRtl()) };
+      popoverStyle = placeChipPopover(rect, { width: 260, height: 220 });
     }
     popoverOpen = true;
     if (subject === 'pressure_advance') {
@@ -200,7 +200,7 @@
   //popover
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
-  let placement = $state<{ above: boolean; alignRight: boolean }>({ above: false, alignRight: false });
+  let popoverStyle = $state('');
 
   let label = $derived.by(() => {
     if (customLabel) return customLabel;
@@ -276,7 +276,7 @@
 
   {#if popoverOpen && subject && !missing}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
-    <div class="chip-popover" class:below={!placement.above} class:align-right={placement.alignRight}>
+    <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{label}</div>
 
       {#if subject === 'pressure_advance'}
@@ -501,9 +501,7 @@
   }
 
   .chip-popover {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    inset-inline-start: 0;
+    position: fixed;
     z-index: 1001;
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -515,16 +513,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
-  }
-
-  .chip-popover.below {
-    bottom: auto;
-    top: calc(100% + 6px);
-  }
-
-  .chip-popover.align-right {
-    inset-inline-start: auto;
-    inset-inline-end: 0;
   }
 
   .pop-title {
