@@ -164,6 +164,8 @@ export const en = {
       accel: 'Acceleration',
       scv: 'Square corner velocity',
       mcr: 'Min. cruise ratio',
+      groupSpeed: 'Speed & acceleration',
+      groupCorners: 'Corners & cruising',
     },
     outputs: {
       title: 'Fans & outputs',

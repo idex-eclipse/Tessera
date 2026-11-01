@@ -6,7 +6,7 @@ export const limitsWidgets: WidgetContribution[] = [
     provider: '@core/widgets',
     titleKey: 'widgets.limits.title',
     element: 'mpu-widgets-limits',
-    defaultSize: { w: 4, h: 2 },
+    defaultSize: { w: 4, h: 3 },
     minSize: { w: 3, h: 3 },
   },
 ];
