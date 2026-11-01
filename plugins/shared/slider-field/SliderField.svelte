@@ -137,12 +137,14 @@
 
   .sf-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-xs);
   }
 
+  /* Совсем нет места: поле уходит на вторую строку, а не наезжает на подпись */
   .sf-label {
-    flex: 1;
+    flex: 1 1 64px;
     min-width: 0;
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
@@ -174,6 +176,8 @@
     margin-top: 0;
     padding: 3px 8px;
     width: 120px;
+    max-width: 100%;
+    min-width: 0;
     flex: none;
   }
 
