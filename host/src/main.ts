@@ -1,6 +1,6 @@
 import 'drag-drop-touch';
 
-import { mount, unmount } from 'svelte';
+import { mount } from 'svelte';
 
 import App from './App.svelte';
 
@@ -15,7 +15,6 @@ import { guardAgent } from './core/guard-agent';
 
 import { registerCoreLocales } from './i18n/index.ts';
 
-import Loader from '../../plugins/shared/loader/Loader.svelte';
 import { defineTesseraLoaderElement } from '../../plugins/shared/loader/tessera-loader-element';
 
 import { widgetsCoreManifest } from '../../plugins/widgets-core/manifest';
@@ -99,14 +98,34 @@ addPluginLocales(systemLocales);
 
 defineTesseraLoaderElement();
 
+/**
+ * Плавно убирает стартовый экран. Приложение уже смонтировано под ним, поэтому
+ * затухание просто открывает готовый интерфейс; после него экран удаляется из DOM
+ * (его цикл анимации останавливается сам).
+ */
+function dismissBoot(): void {
+  const boot = document.querySelector<HTMLElement>('.boot');
+  if (!boot) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    boot.remove();
+    return;
+  }
+  // Два кадра, чтобы приложение успело отрисоваться до начала затухания.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      boot.addEventListener('transitionend', (e) => {
+        if (e.target === boot) boot.remove();
+      });
+      // Страховка: transitionend не придёт, если переход не запустился.
+      setTimeout(() => boot.remove(), 2000);
+      boot.classList.add('boot-leaving');
+    }),
+  );
+}
+
 async function startup(): Promise<void> {
+  // Стартовый экран из index.html (вращающийся тессеракт) лежит поверх страницы, пока грузятся плагины.
   const target = document.getElementById('app')!;
-  // Заменяет статичный сплэш из index.html на анимированный, пока грузятся плагины.
-  target.replaceChildren();
-  const splash = mount(Loader, {
-    target,
-    props: { size: 'lg', block: true, text: i18n.t('common.loading') },
-  });
 
   try {
     await loader.loadEnabledPlugins();
@@ -119,7 +138,6 @@ async function startup(): Promise<void> {
   // документация и точка расширения (если в будущем появится ленивая оценка).
   loader.eagerActivateSurfacePlugins();
 
-  unmount(splash);
   mount(App, {
     target,
     props: {
@@ -132,6 +150,7 @@ async function startup(): Promise<void> {
       router,
     },
   });
+  dismissBoot();
 }
 
 startup();

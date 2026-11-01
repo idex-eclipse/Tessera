@@ -5,26 +5,108 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tessera</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Тема и акцент из сохранённых настроек (читаются так же, как в settings-store:
+      // тёмная только при theme === 'dark', иначе светлая), чтобы стартовый экран
+      // не мигал белым на тёмной теме. Без настроек хост тоже стартует со светлой.
+      (function () {
+        var root = document.documentElement, ui = {};
+        try { ui = JSON.parse(localStorage.getItem('mpu:v2:ui')) || {}; } catch (e) {}
+        root.setAttribute('data-theme', ui.theme === 'dark' ? 'dark' : 'light');
+        if (typeof ui.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(ui.accent)) {
+          root.style.setProperty('--accent', ui.accent.toLowerCase());
+        }
+      })();
+    </script>
     <style>
-      .boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #4285f4; }
-      .boot svg { animation: boot-pulse 1.4s ease-in-out infinite; }
-      @keyframes boot-pulse { 50% { opacity: .35; } }
+      /* Собственные переменные стартового экрана: global.css на этот момент может быть не загружен.
+         Значения совпадают с --bg-app / --text-primary / --text-secondary / --accent темы. */
+      :root { color-scheme: light; --boot-bg: #f0f2f5; --boot-fg: #1a1a1a; --boot-muted: #5f6368; --boot-accent: #4285f4; }
+      :root[data-theme='dark'] { color-scheme: dark; --boot-bg: #121212; --boot-fg: #e0e0e0; --boot-muted: #9aa0a6; --boot-accent: #669df6; }
+      html { background: var(--boot-bg); }
+      .boot {
+        position: fixed; inset: 0; z-index: 10000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 1.25rem; padding: 0 16px; text-align: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        background: var(--boot-bg); color: var(--boot-fg);
+      }
+      /* 80% меньшей стороны окна, но так, чтобы вместе с подписью всё помещалось по высоте */
+      .boot-cube {
+        --size: max(96px, min(80vw, calc(80vh - 7rem)));
+        width: var(--size); height: var(--size); flex-shrink: 0;
+        overflow: visible; color: var(--accent, var(--boot-accent));
+      }
+      .boot-cube line {
+        stroke: currentColor; stroke-linecap: round;
+        vector-effect: non-scaling-stroke; stroke-width: clamp(2px, 0.5vmin, 5px);
+      }
+      .boot-title { font-weight: 700; font-size: clamp(1.5rem, 5vmin, 2.5rem); letter-spacing: 0.3em; text-indent: 0.3em; }
+      .boot-tagline { margin-top: -0.75rem; font-size: clamp(0.9rem, 2.4vmin, 1.2rem); color: var(--boot-muted); }
+      /* Уход экрана: main.ts вешает класс, когда приложение уже смонтировано под ним.
+         Длительность 1.1s должна быть меньше страховочного таймера в main.ts (dismissBoot). */
+      .boot-leaving { opacity: 0; pointer-events: none; transition: opacity 1.1s cubic-bezier(0.4, 0, 0.2, 1); }
+      .boot-leaving .boot-cube { transform: scale(1.2); transition: transform 1.1s cubic-bezier(0.4, 0, 0.2, 1); }
+      .boot-leaving .boot-title, .boot-leaving .boot-tagline { transform: translateY(8px); transition: transform 1.1s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
   </head>
   <body>
     <div id="app">
-      <!-- Сплэш до загрузки JS; main.ts заменяет его анимированным Loader -->
-      <div class="boot">
-        <svg viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor"
-             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polygon points="32,5 54.5,18 54.5,44 32,57 9.5,44 9.5,18"/>
-          <path d="M32 31 32 5M32 31 54.5 18M32 31 54.5 44M32 31 32 57M32 31 9.5 44M32 31 9.5 18"/>
-          <polygon points="32,22.5 42.8,28.8 42.8,41.2 32,47.5 21.2,41.2 21.2,28.8"/>
-          <path d="M32 35 32 22.5M32 35 42.8 28.8M32 35 42.8 41.2M32 35 32 47.5M32 35 21.2 41.2M32 35 21.2 28.8"/>
-          <path d="M32 5v17.5M54.5 18 42.8 28.8M54.5 44 42.8 41.2M32 57v-9.5M9.5 44 21.2 41.2M9.5 18 21.2 28.8M32 31v4"/>
-        </svg>
+      <!-- Стартовый экран: лежит поверх приложения, пока main.ts не смонтирует App и не уберёт его плавно -->
+      <div class="boot" role="status" aria-label="Tessera">
+        <svg class="boot-cube" viewBox="0 0 100 100" aria-hidden="true" focusable="false"></svg>
+        <div class="boot-title">TESSERA</div>
+        <div class="boot-tagline">Modular UI for modular printers</div>
       </div>
     </div>
+    <script>
+      // Копия математики из plugins/shared/loader/tesseract.ts (тот же тессеракт, те же
+      // повороты и камеры), чтобы вращение шло ещё до загрузки основного бандла.
+      // Меняете одно — меняйте и другое. Цикл сам останавливается, когда svg убран из DOM.
+      (function () {
+        var svg = document.querySelector('.boot-cube');
+        if (!svg) return;
+        var NS = 'http://www.w3.org/2000/svg';
+        var V = [], E = [], i, bit;
+        for (i = 0; i < 16; i++) V.push([i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1, i & 8 ? 1 : -1]);
+        for (i = 0; i < 16; i++) for (bit = 1; bit < 16; bit <<= 1) if ((i ^ bit) > i) E.push([i, i ^ bit]);
+        var lines = E.map(function () {
+          var l = document.createElementNS(NS, 'line');
+          svg.appendChild(l);
+          return l;
+        });
+        function rot(a, b, angle) {
+          var c = Math.cos(angle), s = Math.sin(angle);
+          return [a * c - b * s, a * s + b * c];
+        }
+        var t0 = 0;
+        function frame(now) {
+          if (!svg.isConnected) return;
+          if (!t0) t0 = now;
+          var t = (now - t0) / 1000;
+          var P = V.map(function (v) {
+            var x = v[0], y = v[1], z = v[2], w = v[3], r;
+            r = rot(x, w, t * 0.9); x = r[0]; w = r[1];
+            r = rot(z, w, t * 0.55); z = r[0]; w = r[1];
+            r = rot(x, z, t * 0.35); x = r[0]; z = r[1];
+            r = rot(y, z, t * 0.22); y = r[0]; z = r[1];
+            var k4 = 1 / (3 - w), x3 = x * k4, y3 = y * k4, z3 = z * k4;
+            var k3 = 1 / (2.4 - z3), s = 50 * 2.4 * k3;
+            return { x: 50 + x3 * s, y: 50 + y3 * s, d: Math.min(1, Math.max(0, (z3 + 0.8) / 1.6)) };
+          });
+          for (var j = 0; j < E.length; j++) {
+            var a = P[E[j][0]], b = P[E[j][1]], l = lines[j];
+            l.setAttribute('x1', a.x.toFixed(2));
+            l.setAttribute('y1', a.y.toFixed(2));
+            l.setAttribute('x2', b.x.toFixed(2));
+            l.setAttribute('y2', b.y.toFixed(2));
+            l.setAttribute('stroke-opacity', (0.25 + 0.75 * (a.d + b.d) / 2).toFixed(2));
+          }
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
