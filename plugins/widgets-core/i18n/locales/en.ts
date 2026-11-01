@@ -100,6 +100,7 @@ export const en = {
       forceMoveWarn: 'Force move bypasses kinematics and limits — wrong moves can damage the printer. Continue?',
       forceMoveNote: 'Force move: steppers move individually, no limits. Homing disabled.',
       styleCross: 'Cross pad', styleRows: 'Rows',
+      rowsNoFit: 'Rows do not fit in the widget, showing the cross pad.',
       step: 'Step, mm', feeds: 'Axes feed', feedXY: 'XY feed, mm/s', feedZ: 'Z feed, mm/s',
       extrudeLen: 'Extrude length, mm', extrudeSpeed: 'Extrude speed, mm/s',
       speed: 'Speed', flow: 'Flow',

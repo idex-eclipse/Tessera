@@ -117,7 +117,11 @@
       </select>
     </label>
 
-    {#if store.ui.style === 'cross'}
+    {#if store.ui.style !== store.effectiveStyle}
+      <p class="menu-hint">{i18n.t('widgets.tools.rowsNoFit')}</p>
+    {/if}
+
+    {#if store.effectiveStyle === 'cross'}
       <div class="menu-title">{i18n.t('widgets.tools.invert')}</div>
       <div class="invert-row">
         {#each (['x', 'y', 'z'] as const) as axis (axis)}

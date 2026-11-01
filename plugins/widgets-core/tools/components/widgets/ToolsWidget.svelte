@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
 
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../shared/icons/Icon.svelte';
@@ -12,7 +12,13 @@
   import { useToolhead, DEFAULT_STEPS } from '../../use-toolhead.svelte.ts';
   import { isRtl } from '../../../../shared/popover-align';
 
+  import SectionAccordion from '../../../../shared/accordion/SectionAccordion.svelte';
+  import { useAccordionState } from '../../../../shared/accordion/use-accordion-state.svelte.ts';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
+  import SliderGrid from '../../../../shared/slider-field/SliderGrid.svelte';
+  import { sliderColumns } from '../../../../shared/slider-field/slider-layout';
+  import { observeWidgetBox, type WidgetBox } from '../../../../shared/responsive/observe-widget-box';
+  import { forceMoveRowFit, rowsFit } from '../../tools-layout';
 
   import '../../../../shared/input/inputs.css';
 
@@ -21,6 +27,17 @@
   const store = useToolhead(api);
 
   const klippy = useKlippyState(api);
+
+  // ---------------- раскладка по размеру виджета ----------------
+  const sections = useAccordionState(api, 'tools.sections');
+
+  let box = $state<WidgetBox>({ width: 0, height: 0, narrow: false });
+  let columns = $derived(sliderColumns(box.width, box.narrow));
+
+  $effect(() => {
+    store.setRowsFit(rowsFit(box.width, store.ui.steps.length));
+    return () => store.setRowsFit(true);
+  });
 
   // ---------------- режимы dual_carriage ----------------
   let modeMenu = $state<{ carriage: string; pos: { top: number; left: number } } | null>(null);
@@ -84,7 +101,7 @@
     if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
   }
 
-  let style = $derived(store.ui.style);
+  let style = $derived(store.effectiveStyle);
   let steps = $derived(store.ui.steps);
 
   let fmSteps = $derived([...steps].sort((a, b) => a - b).slice(0, 3));
@@ -165,6 +182,16 @@
 {#if !klippy.ready}
   <KlipperNotReady />
 {:else}
+  {#snippet section(id: string, title: string, children: Snippet)}
+    <SectionAccordion
+      {title}
+      open={sections.isOpen(id, box.narrow, !box.narrow)}
+      onToggle={() => sections.toggle(id, box.narrow, !box.narrow)}
+      {children}
+    />
+  {/snippet}
+
+  <div class="tools-box" use:observeWidgetBox={(b) => (box = b)}>
   <div class="tools">
     <!-- Тулы -->
     {#if store.meta.tools.length > 0}
@@ -219,7 +246,7 @@
 
       <div class="rows">
         {#each store.meta.steppers as st (st)}
-          <div class="axis-row">
+          <div class="axis-row fm-row" class:stacked={!forceMoveRowFit(box.width)}>
             {#each fmStepsDesc as s (s)}
               <button class="btn rsq" onclick={() => store.forceMoveStepper(st, -s)}>
                 −{fmt(s)}
@@ -556,8 +583,7 @@
     {/if}
 
     <!-- Extruder -->
-    <div class="ret-title">{i18n.t('widgets.tools.extrude')}</div>
-    {#if store.meta.extruders.length > 0}
+    {#snippet extrudeBody()}
       <div class="ext">
         {#if store.meta.extruders.length > 1}
           <div class="row chips">
@@ -621,72 +647,82 @@
           </button>
         </div>
       </div>
+    {/snippet}
+    {#if store.meta.extruders.length > 0}
+      {@render section('extrude', i18n.t('widgets.tools.extrude'), extrudeBody)}
     {/if}
 
     <!-- Speed / Flow -->
-    <div class="ret-title">{i18n.t('widgets.tools.speed-flow')}</div>
-    <div class="sf-grid">
-      <SliderField
-        label={i18n.t('widgets.tools.speed')}
-        value={speedView} min={1} max={200} step={1} unit="%"
-        onCommit={(v) => store.setSpeed(v)}
-        onReset={() => store.setSpeed(100)}
-      />
-      <SliderField
-        label={i18n.t('widgets.tools.flow')}
-        value={flowView} min={1} max={200} step={1} unit="%"
-        onCommit={(v) => store.setFlow(v)}
-        onReset={() => store.setFlow(100)}
-      />
-    </div>
+    {#snippet speedFlowBody()}
+      <SliderGrid {columns}>
+        <SliderField
+          label={i18n.t('widgets.tools.speed')}
+          value={speedView} min={1} max={200} step={1} unit="%"
+          onCommit={(v) => store.setSpeed(v)}
+          onReset={() => store.setSpeed(100)}
+        />
+        <SliderField
+          label={i18n.t('widgets.tools.flow')}
+          value={flowView} min={1} max={200} step={1} unit="%"
+          onCommit={(v) => store.setFlow(v)}
+          onReset={() => store.setFlow(100)}
+        />
+      </SliderGrid>
+    {/snippet}
+    {@render section('speedFlow', i18n.t('widgets.tools.speed-flow'), speedFlowBody)}
 
     <!-- PA -->
-    <div class="ret-title">{i18n.t('widgets.tools.pa')}</div>
-    <div class="sf-grid">
-      <SliderField
-        label={i18n.t('widgets.tools.pa')}
-        value={paVal.advance} min={0} max={2} step={0.001} unit="s" decimals={3}
-        onCommit={(v) => store.setPA({ advance: v })}
-        onReset={() => store.setPA({ advance: paDef.advance })}
-      />
-      <SliderField
-        label={i18n.t('widgets.tools.paSmooth')}
-        value={paVal.smooth} min={0} max={0.2} step={0.001} unit="s" decimals={3}
-        onCommit={(v) => store.setPA({ smooth: v })}
-        onReset={() => store.setPA({ smooth: paDef.smooth })}
-      />
-    </div>
+    {#snippet paBody()}
+      <SliderGrid {columns}>
+        <SliderField
+          label={i18n.t('widgets.tools.pa')}
+          value={paVal.advance} min={0} max={2} step={0.001} unit="s" decimals={3}
+          onCommit={(v) => store.setPA({ advance: v })}
+          onReset={() => store.setPA({ advance: paDef.advance })}
+        />
+        <SliderField
+          label={i18n.t('widgets.tools.paSmooth')}
+          value={paVal.smooth} min={0} max={0.2} step={0.001} unit="s" decimals={3}
+          onCommit={(v) => store.setPA({ smooth: v })}
+          onReset={() => store.setPA({ smooth: paDef.smooth })}
+        />
+      </SliderGrid>
+    {/snippet}
+    {@render section('pa', i18n.t('widgets.tools.pa'), paBody)}
 
     <!-- Retracts only if [firmware_retraction] -->
     {#if store.meta.hasRetraction}
-      <div class="ret-title">{i18n.t('widgets.tools.retraction')}</div>
-      <div class="sf-grid">
-        <SliderField
-          label={i18n.t('widgets.tools.retractLength')}
-          value={store.th.retraction.length} min={0} max={5} step={0.05} unit="mm" decimals={2}
-          onCommit={(v) => store.setRetraction({ length: v })}
-          onReset={() => store.setRetraction({ length: store.meta.defaults.retraction.length })}
-        />
-        <SliderField
-          label={i18n.t('widgets.tools.retractSpeed')}
-          value={store.th.retraction.speed} min={1} max={100} step={1} unit="mm/s"
-          onCommit={(v) => store.setRetraction({ speed: v })}
-          onReset={() => store.setRetraction({ speed: store.meta.defaults.retraction.speed })}
-        />
-        <SliderField
-          label={i18n.t('widgets.tools.unretractExtra')}
-          value={store.th.retraction.extra} min={0} max={5} step={0.05} unit="mm" decimals={2}
-          onCommit={(v) => store.setRetraction({ extra: v })}
-          onReset={() => store.setRetraction({ extra: store.meta.defaults.retraction.extra })}
-        />
-        <SliderField
-          label={i18n.t('widgets.tools.unretractSpeed')}
-          value={store.th.retraction.unspeed} min={1} max={100} step={1} unit="mm/s"
-          onCommit={(v) => store.setRetraction({ unspeed: v })}
-          onReset={() => store.setRetraction({ unspeed: store.meta.defaults.retraction.unspeed })}
-        />
-      </div>
+      {#snippet retractionBody()}
+        <SliderGrid {columns}>
+          <SliderField
+            label={i18n.t('widgets.tools.retractLength')}
+            value={store.th.retraction.length} min={0} max={5} step={0.05} unit="mm" decimals={2}
+            onCommit={(v) => store.setRetraction({ length: v })}
+            onReset={() => store.setRetraction({ length: store.meta.defaults.retraction.length })}
+          />
+          <SliderField
+            label={i18n.t('widgets.tools.retractSpeed')}
+            value={store.th.retraction.speed} min={1} max={100} step={1} unit="mm/s"
+            onCommit={(v) => store.setRetraction({ speed: v })}
+            onReset={() => store.setRetraction({ speed: store.meta.defaults.retraction.speed })}
+          />
+          <SliderField
+            label={i18n.t('widgets.tools.unretractExtra')}
+            value={store.th.retraction.extra} min={0} max={5} step={0.05} unit="mm" decimals={2}
+            onCommit={(v) => store.setRetraction({ extra: v })}
+            onReset={() => store.setRetraction({ extra: store.meta.defaults.retraction.extra })}
+          />
+          <SliderField
+            label={i18n.t('widgets.tools.unretractSpeed')}
+            value={store.th.retraction.unspeed} min={1} max={100} step={1} unit="mm/s"
+            onCommit={(v) => store.setRetraction({ unspeed: v })}
+            onReset={() => store.setRetraction({ unspeed: store.meta.defaults.retraction.unspeed })}
+          />
+        </SliderGrid>
+      {/snippet}
+      {@render section('retraction', i18n.t('widgets.tools.retraction'), retractionBody)}
     {/if}
+  </div>
   </div>
 
   {#if modeMenu}
@@ -788,6 +824,13 @@
     flex-wrap: nowrap;
   }
 
+  .tools-box {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+    padding: var(--space-xs);
+  }
+
   .tools {
     display: flex;
     flex-direction: column;
@@ -795,7 +838,6 @@
     height: 100%;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--space-xs);
   }
 
   .row {
@@ -847,6 +889,7 @@
 
   .move-area {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-sm);
     align-items: flex-start;
   }
@@ -1059,16 +1102,17 @@
 
   .pos-row {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-sm);
   }
 
   .pos-field {
-    flex: 1;
+    flex: 1 1 100px;
   }
 
   .ext-grid {
     display: grid;
-    grid-template-columns: 1fr 150px;
+    grid-template-columns: minmax(100px, 1fr) minmax(0, 150px);
     gap: var(--space-sm);
     align-items: stretch;
   }
@@ -1078,23 +1122,20 @@
     justify-content: space-between;
   }
 
-  .sf-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-sm) var(--space-md);
-  }
-
-  .ret-title {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-muted);
-    margin-top: var(--space-md);
-  }
-
   .home-row {
     flex-wrap: wrap;
+  }
+
+  /* Force move в узком виджете: имя шаговика сверху, под ним ряды −шагов и +шагов */
+  .fm-row.stacked {
+    display: grid;
+    grid-template-columns: repeat(3, 44px);
+    gap: 2px;
+  }
+
+  .fm-row.stacked .fm-name {
+    grid-column: 1 / -1;
+    order: -1;
   }
 
   .fm-name {

@@ -563,6 +563,13 @@ function createToolheadCore(api: PluginApi, printerId: string) {
     settingsApi.set('tools.style', s);
   }
 
+  // Строки шире виджета: показываем крест, выбор пользователя в настройках не меняется.
+  let rowsFit = $state(true);
+
+  function setRowsFit(fit: boolean): void {
+    rowsFit = fit;
+  }
+
   function setInvert(axis: 'x' | 'y' | 'z', v: boolean): void {
     ui.invert = { ...ui.invert, [axis]: v };
     settingsApi.set('tools.invert', ui.invert);
@@ -776,6 +783,7 @@ function createToolheadCore(api: PluginApi, printerId: string) {
     get th() { return th; },
     get forceMove() { return forceMove; },
     get ui() { return ui; },
+    get effectiveStyle(): 'cross' | 'rows' { return rowsFit ? ui.style : 'cross'; },
     get activeTool() { return resolveActiveTool(); },
     get isDirectActive() {
       return Object.values(th.dcModes).some((m) => m === 'DIRECT')
@@ -793,6 +801,7 @@ function createToolheadCore(api: PluginApi, printerId: string) {
     get hasZTilt() { return meta.hasZTilt; },
 
     setStyle,
+    setRowsFit,
     setInvert,
     setSteps,
     setFeed,
