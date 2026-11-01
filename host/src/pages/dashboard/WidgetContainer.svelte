@@ -10,6 +10,7 @@
   import { getAppContext } from '../../app-context';
   import { getPluginApi } from '../../core/plugin-api-cache';
   import PluginElementHost from '../../components/plugin-element-host.svelte';
+  import { headerNeedsStacking } from './widget-header-fit';
 
   let {
     item,
@@ -48,24 +49,66 @@
 
   let headerTag = $derived(widget?.contribution.headerElement ?? '');
 
+  // ---------- Шапка: не помещается в строку — заголовок и действия на двух строках ----------
+  let titleText = $derived(widget ? i18n.t(widget.contribution.titleKey) : '');
+
+  let headerEl = $state<HTMLDivElement | null>(null);
+  let titleEl = $state<HTMLSpanElement | null>(null);
+  let headerActionsEl = $state<HTMLDivElement | null>(null);
+  let widgetActionsEl = $state<HTMLDivElement | null>(null);
+  let stacked = $state(false);
+
+  function measureHeader(): void {
+    if (!headerEl || !titleEl) return;
+    const style = getComputedStyle(headerEl);
+    const available =
+      headerEl.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+
+    // Ширины не зависят от раскладки шапки, поэтому режимы не переключаются по кругу.
+    // У блоков действий — размер рамки: открытый поповер плагина не должен влиять на шапку.
+    stacked = headerNeedsStacking(
+      available,
+      [
+        titleEl.scrollWidth,
+        headerActionsEl?.offsetWidth ?? 0,
+        widgetActionsEl?.offsetWidth ?? 0,
+      ],
+      parseFloat(style.columnGap) || 0,
+    );
+  }
+
+  $effect(() => {
+    void titleText;
+    measureHeader();
+
+    if (!headerEl || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measureHeader);
+    ro.observe(headerEl);
+    if (headerActionsEl) ro.observe(headerActionsEl);
+    if (widgetActionsEl) ro.observe(widgetActionsEl);
+    return () => ro.disconnect();
+  });
 </script>
 
 <div class="widget-container" style={gridStyle}>
-  <div class="widget-header">
+  <div class="widget-header" class:stacked bind:this={headerEl}>
     {#if widget && pluginApi}
-      <span class="widget-title">{i18n.t(widget.contribution.titleKey)}</span>
+      <span class="widget-title">
+        <span class="widget-title-text" title={titleText} bind:this={titleEl}>{titleText}</span>
+      </span>
 
       {#if headerTag}
-        <div class="widget-header-actions">
+        <div class="widget-header-actions" bind:this={headerActionsEl}>
           <PluginElementHost tag={headerTag} api={pluginApi} params={{}} fill={false} />
         </div>
       {/if}
 
-      <div class="widget-actions">
-        {#if hasMultipleProviders}
+      <!-- Без {#if} пустой блок добавил бы зазор и сместил вторую строку от центра -->
+      {#if hasMultipleProviders}
+        <div class="widget-actions" bind:this={widgetActionsEl}>
           <ProviderPicker {registry} {printerId} widgetType={item.type} {i18n} />
-        {/if}
-      </div>
+        </div>
+      {/if}
     {:else}
       <span class="widget-title widget-title-missing">{item.type}</span>
     {/if}
@@ -114,9 +157,24 @@
     color: var(--text-primary);
   }
 
+  /* nowrap: по scrollWidth узнаём полную ширину текста, даже когда он обрезан */
+  .widget-title-text {
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: bottom;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .widget-title-missing {
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  .widget-header-actions {
+    flex: 0 0 auto;
+    max-width: 100%;
   }
 
   .widget-actions {
@@ -125,7 +183,23 @@
     align-items: center;
     gap: var(--space-xs);
     margin-inline-start: auto;     /* действия всегда справа */
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    max-width: 100%;
+  }
+
+  /* Две строки: заголовок, под ним действия; обе по центру */
+  .widget-header.stacked {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .widget-header.stacked .widget-title {
+    flex: 0 0 100%;
+    text-align: center;
+  }
+
+  .widget-header.stacked .widget-actions {
+    margin-inline-start: 0;
   }
 
   .widget-content {
