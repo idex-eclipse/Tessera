@@ -13,23 +13,21 @@
     computeProgress,
     computeEta,
     fmtClock,
-    type ProgressMode,
   } from '../../use-print-status.svelte.ts';
 
   import { readEnabledFields, type StatusFieldId } from '../../use-print-status.svelte.ts';
+  import { useStatusBannerPrefs } from './status-banner-prefs.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = usePrintStatus(api);
 
-  let mode = $state(api.settings.get<ProgressMode>('status.progressMode') ?? 'file');
-  let banner = $state(api.settings.get<boolean>('status.banner') ?? true);
+  const prefs = useStatusBannerPrefs(api);
+  let mode = $derived(prefs.mode);
   let fieldsOpen = $state(api.settings.get<boolean>('status.bannerFieldsOpen') ?? true);
   let fields = $state<StatusFieldId[]>(readEnabledFields(api));
 
   const off = api.settings.onChange((k, v) => {
-    if (k === 'status.progressMode') mode = v as ProgressMode;
-    if (k === 'status.banner') banner = Boolean(v);
     if (k === 'status.bannerFieldsOpen') fieldsOpen = Boolean(v);
   });
   onDestroy(off);
@@ -44,7 +42,7 @@
   let progress = $derived(computeProgress(m, mode));
   let eta = $derived(computeEta(m, mode));
 
-  let visible = $derived(banner && m.klippyReady);
+  let visible = $derived(prefs.banner && m.klippyReady);
 
   // ---------------- pause / resume / cancel ----------------
   let busy = $state('');

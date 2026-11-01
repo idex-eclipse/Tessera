@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const systemManifest = definePlugin({
   id: '@core/system',
   name: 'System',
-  version: '3.0.0',
+  version: '3.1.0',
   entry: '/plugins/system/index.js',
 
   pages: [
@@ -36,6 +36,14 @@ export const systemManifest = definePlugin({
       id: 'klipper-state',
       element: 'mpu-system-state-banner',
       scope: 'all',
+    },
+  ],
+
+  collapsedBanners: [
+    {
+      id: 'klipper-state-collapsed',
+      banner: 'klipper-state',
+      element: 'mpu-system-state-banner-collapsed',
     },
   ],
 

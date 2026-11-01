@@ -5,6 +5,7 @@
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
   import { useSystem } from '../../use-system.svelte.ts';
+  import { isKlipperBannerVisible, klipperBannerTitleKey } from './klipper-banner-state.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -12,18 +13,9 @@
   const klippy = useKlippyState(api); // единственный источник состояния
 
   // видимость — решение плагина (M): только когда Klipper не ready
-  const BAD_STATES = ['error', 'shutdown', 'startup', 'disconnected'];
-  let visible = $derived(BAD_STATES.includes(klippy.state));
+  let visible = $derived(isKlipperBannerVisible(klippy.state));
 
-  let title = $derived(
-    klippy.state === 'error'
-      ? i18n.t('system.klipperBanner.error')
-      : klippy.state === 'shutdown'
-        ? i18n.t('system.klipperBanner.shutdown')
-        : klippy.state === 'startup'
-          ? i18n.t('system.klipperBanner.starting')
-          : i18n.t('system.klipperBanner.disconnected'),
-  );
+  let title = $derived(i18n.t(klipperBannerTitleKey(klippy.state)));
   // ------------------------------------------------------------------
   // Pending-фидбек кнопок рестарта (поведение как во Fluidd):
   // - Klipper restart  → обе кнопки неактивны до state === 'startup';
