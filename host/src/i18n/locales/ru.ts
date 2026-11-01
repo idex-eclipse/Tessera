@@ -52,9 +52,11 @@ const ru: I18nMessages = {
   },
 
   banners: {
-    summary: 'Уведомления: {count}',
-    show: 'Показать уведомления',
-    hide: 'Скрыть уведомления',
+    summary: 'Баннеры ({count})',
+    showAll: 'Показать баннеры',
+    hideAll: 'Скрыть баннеры',
+    show: 'Развернуть баннер',
+    hide: 'Свернуть баннер',
   },
 
   printer: {

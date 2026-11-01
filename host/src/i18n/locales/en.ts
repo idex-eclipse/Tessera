@@ -55,9 +55,11 @@ const en: I18nMessages = {
   },
 
   banners: {
-    summary: 'Notifications: {count}',
-    show: 'Show notifications',
-    hide: 'Hide notifications',
+    summary: 'Banners ({count})',
+    showAll: 'Show banners',
+    hideAll: 'Hide banners',
+    show: 'Expand banner',
+    hide: 'Collapse banner',
   },
 
   printer: {
