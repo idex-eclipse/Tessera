@@ -72,6 +72,8 @@ export const ICONS: Record<string, string> = {
     '<g fill="currentColor" stroke="none"><path d="M4 4v16l16-8z"/></g>',
   'kind-filament':
     '<g fill="currentColor" stroke="none"><circle cx="11" cy="12" r="7" opacity="0.25"/><circle cx="11" cy="12" r="3"/><path d="M15 12h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 15l2 2 3-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>',
+  'kind-led':
+    '<g fill="currentColor" stroke="none"><circle cx="12" cy="12" r="4.5"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="M4.93 4.93l2.12 2.12"/><path d="M16.95 16.95l2.12 2.12"/><path d="M4.93 19.07l2.12-2.12"/><path d="M16.95 7.05l2.12-2.12"/></g></g>',
   'kind-power':
     '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></g>',
 };

@@ -8,6 +8,7 @@ import { ru } from '../i18n/locales/ru';
 import { jobQueueWidgets } from '../job-queue/manifest';
 import { limitsWidgets } from '../limits/manifest';
 import { outputsChips, outputsWidgets } from '../outputs/manifest';
+import { ledsChips, ledsWidgets } from '../leds/manifest';
 
 const flat = (o: Record<string, unknown>, p = '', out: Record<string, unknown> = {}) => {
   for (const [k, v] of Object.entries(o)) {
@@ -49,7 +50,7 @@ describe('locales of widgets-core', () => {
 
 describe('locales of the small widgets', () => {
   // остальные виджеты (macros / temperature / tools) проверяются при их ревью
-  const OWN = /^widgets.(filament|limits|outputs|jobQueue)./;
+  const OWN = /^widgets.(filament|limits|outputs|leds|jobQueue)./;
   const own = (o: Record<string, unknown>) => Object.keys(flat(o)).filter((k) => OWN.test(k)).sort();
 
   it('en and ru define the same keys for these widgets', () => {
@@ -59,9 +60,9 @@ describe('locales of the small widgets', () => {
 
   it('define every title / chip key and every job-queue state and unit', () => {
     const keys = flat(en);
-    const contributions = [...filamentWidgets, ...limitsWidgets, ...outputsWidgets, ...jobQueueWidgets];
+    const contributions = [...filamentWidgets, ...limitsWidgets, ...outputsWidgets, ...ledsWidgets, ...jobQueueWidgets];
     for (const w of contributions) expect(keys[w.titleKey]).toBeTruthy();
-    for (const c of [...filamentChips, ...outputsChips]) expect(keys[c.titleKey]).toBeTruthy();
+    for (const c of [...filamentChips, ...outputsChips, ...ledsChips]) expect(keys[c.titleKey]).toBeTruthy();
 
     for (const s of ['ready', 'loading', 'starting', 'paused', 'unknown']) {
       expect(keys[`widgets.jobQueue.state.${s}`]).toBeTruthy();

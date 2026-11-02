@@ -9,10 +9,13 @@
     value = null,
     onPick,
     i18n,
+    layer = 460,
   }: {
     value: string | null;
     onPick: (hex: string | null) => void;
     i18n: { t: (key: string) => string };
+    /** z-index подложки меню; меню на 1 выше. Внутри поповеров чипов (z 1001) нужен слой выше. */
+    layer?: number;
   } = $props();
 
   const PRESETS = [
@@ -179,9 +182,9 @@
 </button>
 
 {#if open}
-  <div class="cp-backdrop" onclick={() => (open = false)} role="presentation"></div>
+  <div class="cp-backdrop" style:z-index={layer} onclick={() => (open = false)} role="presentation"></div>
 
-  <div class="cp-menu" style:top="{pos.top}px" style:right="{pos.right}px">
+  <div class="cp-menu" style:z-index={layer + 1} style:top="{pos.top}px" style:right="{pos.right}px">
     <!-- пресеты + сброс -->
     <div class="cp-grid">
       <button

@@ -67,6 +67,20 @@ defineMpuElement('mpu-core-widgets-chip-output', OutputChip);
 defineMpuElement('mpu-core-widgets-chip-output-picker', OutputChipPicker);
 
 
+/** LEDS */
+//Widget
+import LedsWidget from './leds/components/widgets/LedsWidget.svelte';
+import LedsHeader from './leds/components/widgets/LedsHeader.svelte';
+defineMpuElement('mpu-widgets-leds', LedsWidget);
+defineMpuElement('mpu-widgets-leds-header', LedsHeader);
+
+// Quick access chip
+import LedChip from './leds/components/chips/LedChip.svelte';
+import LedChipPicker from './leds/components/chips/LedChipPicker.svelte';
+defineMpuElement('mpu-core-widgets-chip-led', LedChip);
+defineMpuElement('mpu-core-widgets-chip-led-picker', LedChipPicker);
+
+
 /** CAMERA */
 //Widget
 import CameraWidget from './camera/components/widgets/CameraWidget.svelte';

@@ -5,6 +5,7 @@ import { macrosChips, macrosWidgets } from './macros/manifest';
 import { toolsChips, toolsFleet, toolsWidgets } from './tools/manifest';
 import { limitsWidgets } from './limits/manifest';
 import { outputsChips, outputsWidgets } from './outputs/manifest';
+import { ledsChips, ledsWidgets } from './leds/manifest';
 import { cameraFleet, cameraWidgets } from './camera/manifest';
 import { filamentChips, filamentWidgets } from './filament-sensors/manifest';
 import { jobQueueWidgets } from './job-queue/manifest';
@@ -12,13 +13,13 @@ import { jobQueueWidgets } from './job-queue/manifest';
 export const widgetsCoreManifest: PluginManifest = {
   id: '@core/widgets',
   name: 'Core Widgets',
-  version: '1.2.0',
+  version: '1.3.0',
   entry: '/plugins/widgets-core/index.js',
   pages: [],
   widgets: [...temperatureWidgets, ...macrosWidgets, 
-    ...toolsWidgets, ...limitsWidgets, ...outputsWidgets, ...cameraWidgets, 
+    ...toolsWidgets, ...limitsWidgets, ...outputsWidgets, ...ledsWidgets, ...cameraWidgets, 
     ...filamentWidgets, ...jobQueueWidgets],
-  chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...toolsChips,
+  chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...ledsChips, ...toolsChips,
     ...filamentChips], 
   printerPanels: [...cameraFleet, ...toolsFleet, ...temperatureFleet],
   locales: ['en', 'ru'],
