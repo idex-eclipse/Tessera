@@ -8,6 +8,7 @@
   import type { CatalogEntry } from '../../core/extensions-catalog.svelte.ts';
   import { createExtensionsInstaller, findHostPrinter } from '../../core/extensions-installer.svelte.ts';
   import type { RegistryPlugin } from '../../core/extensions-installer.svelte.ts';
+  import ExtensionsOverview from './extensions-overview.svelte';
 
   const { settings, loader, printerManager, i18n } = getAppContext();
 
@@ -75,9 +76,17 @@
   let registryPlugins = $derived(installer.plugins.filter((p) => p.state !== 'local' || p.managed));
 
   async function installFromRegistry(plugin: RegistryPlugin): Promise<void> {
+    const deps = installer.dependenciesOf(plugin);
+    const lines = [i18n.t('settings.registryConfirm', { name: plugin.name })];
+    if (deps.install.length > 0) {
+      lines.push(i18n.t('settings.registryDeps', { list: deps.install.map((d) => d.name).join(', ') }));
+    }
+    if (deps.missing.length > 0) {
+      lines.push(i18n.t('settings.registryDepsMissing', { list: deps.missing.join(', ') }));
+    }
     const ok = await confirm({
       title: i18n.t('settings.registry'),
-      message: i18n.t('settings.registryConfirm', { name: plugin.name }),
+      message: lines.join(' '),
     });
     if (ok) await installer.install(plugin);
   }
@@ -319,6 +328,8 @@
       </div>
     {/each}
   </div>
+
+  <ExtensionsOverview />
 </div>
 
 {#if addAdvancedOpen}

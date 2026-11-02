@@ -98,6 +98,7 @@ const DEFAULT_UI_STATE: UiState = {
   fleetPanels: [],
   fleetPanelsCustomized: false,
   hotkeyOverrides: {},
+  extensionResolutions: {},
 };
 
 const LEGACY_UNPREFIXED_KEYS = new Set<string>([
@@ -704,6 +705,30 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   }
 
   // ------------------------------------------------------------------
+  // Extension points: решения конфликтов (device-global), выбор варианта (per-printer)
+  // ------------------------------------------------------------------
+
+  function setExtensionResolution(
+    address: string,
+    resolution: { winners: string[]; candidates: string[] } | null,
+  ): void {
+    const { [address]: _removed, ...rest } = ui.extensionResolutions;
+    patchUi({ extensionResolutions: resolution ? { ...rest, [address]: resolution } : rest });
+  }
+
+  function getExtensionChoice(printerId: string, address: string): string | null | undefined {
+    return ensurePrinterSettings(printerId).extensionChoices[address];
+  }
+
+  /** undefined — сбросить выбор (вернуть default точки). */
+  function setExtensionChoice(printerId: string, address: string, ref: string | null | undefined): void {
+    updatePrinterSettings(printerId, (draft) => {
+      if (ref === undefined) delete draft.extensionChoices[address];
+      else draft.extensionChoices[address] = ref;
+    });
+  }
+
+  // ------------------------------------------------------------------
   // Plugin settings
   // ------------------------------------------------------------------
 
@@ -1010,6 +1035,9 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     setHotkeyOverride,
     clearHotkeyOverride,
     resetHotkeyOverrides,
+    setExtensionResolution,
+    getExtensionChoice,
+    setExtensionChoice,
 
     getPluginSettings,
     getPluginSetting,
@@ -1240,6 +1268,15 @@ function normalizeUiState(value: unknown): UiState {
     }
   }
 
+  const extensionResolutions: UiState['extensionResolutions'] = {};
+  if (isRecord(source.extensionResolutions)) {
+    for (const [address, value] of Object.entries(source.extensionResolutions)) {
+      if (isRecord(value) && isStringArray(value.winners) && isStringArray(value.candidates)) {
+        extensionResolutions[address] = { winners: [...value.winners], candidates: [...value.candidates] };
+      }
+    }
+  }
+
   return {
     theme,
     locale,
@@ -1255,7 +1292,12 @@ function normalizeUiState(value: unknown): UiState {
     fleetPanels,
     fleetPanelsCustomized,
     hotkeyOverrides,
+    extensionResolutions,
   };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((x) => typeof x === 'string');
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -1321,9 +1363,17 @@ function normalizePrinterSettings(value: unknown): PrinterSettingsState {
     }
   }
 
+  const extensionChoices: Record<string, string | null> = {};
+  if (isRecord(source.extensionChoices)) {
+    for (const [address, ref] of Object.entries(source.extensionChoices)) {
+      if (ref === null || typeof ref === 'string') extensionChoices[address] = ref;
+    }
+  }
+
   return {
     pages,
     widgetProviders,
+    extensionChoices,
     dashboardLayout: normalizeDashboardLayout(source.dashboardLayout),
     dashboardLayoutCustomized:
       typeof source.dashboardLayoutCustomized === 'boolean'
@@ -1381,6 +1431,7 @@ function clonePrinterSettings(
   return {
     pages: { ...source.pages },
     widgetProviders: { ...source.widgetProviders },
+    extensionChoices: { ...source.extensionChoices },
     dashboardLayout: source.dashboardLayout.map((item) => ({ ...item })),
     dashboardLayoutCustomized: source.dashboardLayoutCustomized,
     quickChips: source.quickChips.map((item) => ({ ...item })),

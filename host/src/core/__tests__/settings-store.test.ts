@@ -52,6 +52,7 @@ describe('settings-store / base state', () => {
       fleetPanels: [],
       fleetPanelsCustomized: false,
       hotkeyOverrides: {},
+      extensionResolutions: {},
     });
   });
 

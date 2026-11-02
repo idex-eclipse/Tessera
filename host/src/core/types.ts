@@ -78,6 +78,11 @@ export interface UiState {
    * null — клавиша отключена пользователем. Нет ключа — значение по умолчанию.
    */
   hotkeyOverrides: Record<string, string | null>;
+  /**
+   * Решения конфликтов точек расширения (device-global).
+   * Ключ — адрес точки `<owner>#<point>`; winners/candidates — refs `<plugin>/<id>`.
+   */
+  extensionResolutions: Record<string, { winners: string[]; candidates: string[] }>;
 }
 
 /**
@@ -142,6 +147,11 @@ export interface PrinterSettingsState {
   dashboardLayoutCustomized?: boolean;
   quickChips: QuickChipLayoutItem[];
   quickChipsCustomized?: boolean;
+  /**
+   * Выбор варианта в точках alternative: адрес точки → ref вклада,
+   * null — пользователь выбрал оригинал. Нет ключа — выбора не было.
+   */
+  extensionChoices: Record<string, string | null>;
 }
 
 /**

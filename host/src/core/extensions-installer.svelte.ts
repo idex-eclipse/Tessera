@@ -24,6 +24,8 @@ export interface RegistryPlugin {
   /** Установлен из реестра. Папки, положенные вручную, служба не трогает. */
   managed: boolean;
   manifestUrl: string;
+  /** Плагины, в точки которых он встраивается (без @core/*). Нет у старой службы. */
+  requires?: string[];
 }
 
 interface ActionResult {
@@ -31,6 +33,8 @@ interface ActionResult {
   changed: boolean;
   version: string | null;
   manifestUrl: string | null;
+  /** Зависимости, поставленные вместе с плагином. */
+  dependencies?: ActionResult[];
 }
 
 /** Служба ответила ошибкой: status и текст с сервера. */
@@ -174,13 +178,45 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     }
   }
 
+  /**
+   * Зависимости плагина для подтверждения установки: что служба поставит вместе
+   * с ним (есть в реестре, не установлено) и чего нет нигде (вклады будут ждать).
+   */
+  function dependenciesOf(plugin: RegistryPlugin): { install: RegistryPlugin[]; missing: string[] } {
+    const byId = new Map(plugins.map((p) => [p.id, p]));
+    const result = { install: [] as RegistryPlugin[], missing: [] as string[] };
+    const seen = new Set<string>([plugin.id]);
+    const visit = (p: RegistryPlugin) => {
+      for (const id of p.requires ?? []) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const dep = byId.get(id);
+        if (!dep) {
+          result.missing.push(id);
+          continue;
+        }
+        visit(dep);
+        if (dep.state === 'available') result.install.push(dep);
+      }
+    };
+    visit(plugin);
+    return result;
+  }
+
   function install(plugin: RegistryPlugin): Promise<boolean> {
     return run(plugin.id, async () => {
       const result = await call<ActionResult>('install', { id: plugin.id });
-      if (!result.manifestUrl) return;
+      // Включаем в этом браузере и зависимости: без них вклады плагина спят.
+      const added = [...(result.dependencies ?? []), result].filter((r) => r.manifestUrl);
+      if (added.length === 0) return;
       await catalog.refresh();
-      // Как кнопка Install в каталоге: версия обязательна, иначе не появится update-available.
-      settings.addPlugin(absoluteManifestUrl(result.manifestUrl), [], 'catalog', result.version ?? undefined);
+      const enabled = new Set(settings.plugins.map((p) => p.manifestUrl));
+      for (const r of added) {
+        const url = absoluteManifestUrl(r.manifestUrl!);
+        if (enabled.has(url)) continue;
+        // Как кнопка Install в каталоге: версия обязательна, иначе не появится update-available.
+        settings.addPlugin(url, [], 'catalog', r.version ?? undefined);
+      }
       await loader.loadEnabledPlugins();
     });
   }
@@ -238,5 +274,6 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     install,
     update,
     remove,
+    dependenciesOf,
   };
 }
