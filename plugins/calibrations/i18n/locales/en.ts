@@ -9,6 +9,11 @@ export const en = {
     run: 'Run',
     running: 'Running…',
 
+    ext: {
+      tabs: 'Calibration tabs',
+      shaper: 'Input Shaper tab',
+    },
+
     section: {
       shaper: 'Input Shaper',
       probe: 'Probe & Z Offset',

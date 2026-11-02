@@ -9,6 +9,11 @@ export const ru = {
     run: 'Запустить',
     running: 'Идёт прогон…',
 
+    ext: {
+      tabs: 'Вкладки калибровок',
+      shaper: 'Вкладка Input Shaper',
+    },
+
     section: {
       shaper: 'Input Shaper',
       probe: 'Автоуровень',

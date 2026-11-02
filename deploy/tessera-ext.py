@@ -9,7 +9,7 @@ Usage (on the printer usually via the `tessera-ext` command, deploy/install-ext.
   tessera-ext.py list
   tessera-ext.py install <name> [--force]
   tessera-ext.py update [<name> | --all]
-  tessera-ext.py remove <name>
+  tessera-ext.py remove <name> [--force]
   tessera-ext.py sync
   tessera-ext.py branch [<name>]   show / switch the registry branch
   tessera-ext.py serve [--socket <path>]   HTTP API on a unix socket (systemd unit)
@@ -22,6 +22,12 @@ Env:
   TESSERA_REGISTRY_URL   — registry.json (https://, file:// or local path); overrides the branch
   TESSERA_EXT_BRANCH     — branch for this run only
   TESSERA_MOONRAKER      — Moonraker host:port that authorizes `serve` requests
+
+Dependencies: a plugin that extends another plugin's extension point depends on
+it (manifest.extensions[].point = "<owner>#<point>"; the registry lists them in
+`requires`). `install` installs missing dependencies from the registry first;
+`remove` refuses to remove a plugin others depend on unless --force. Core
+plugins (@core/*) are part of Tessera and always present.
 
 Nothing is built or executed on the host: the registry ships prebuilt archives,
 each archive is verified against sha256 from registry.json before it is
@@ -75,6 +81,9 @@ LOCK_FILE = '.lock'
 
 # Major version of the plugin contract (PluginApi + CE contract) this host implements.
 HOST_PLUGIN_API = 1
+
+# Plugins bundled with Tessera: dependencies on them are always satisfied.
+CORE_PLUGIN_PREFIX = '@core/'
 
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 100 * 1024 * 1024
@@ -231,7 +240,9 @@ def load_registry():
         if (not isinstance(p, dict) or
                 not all(isinstance(p.get(k), str) for k in ('id', 'version', 'url', 'sha256', 'dir')) or
                 not DIR_NAME_RE.fullmatch(p['dir']) or
-                not SHA256_RE.fullmatch(p['sha256'])):
+                not SHA256_RE.fullmatch(p['sha256']) or
+                not (p.get('requires') is None or
+                     (isinstance(p['requires'], list) and all(isinstance(r, str) for r in p['requires'])))):
             raise ExtError(f'Invalid registry entry: {clean(json.dumps(p))}', 500)
     return {'url': url, 'plugins': data['plugins']}
 
@@ -253,8 +264,61 @@ def plugin_dirs(extensions_dir=None):
         )
 
 
+def manifest_requires(manifest):
+    """Owners of the extension points the plugin extends: its implicit dependencies."""
+    out = []
+    for item in manifest.get('extensions') or []:
+        point = item.get('point') if isinstance(item, dict) else None
+        if not isinstance(point, str) or '#' not in point:
+            continue
+        owner = point.rsplit('#', 1)[0]
+        if owner and owner != manifest.get('id') and not owner.startswith(CORE_PLUGIN_PREFIX) and owner not in out:
+            out.append(owner)
+    return out
+
+
+def entry_requires(entry):
+    """`requires` of a registry entry without core plugins and itself."""
+    return [
+        r for r in entry.get('requires') or []
+        if r != entry['id'] and not r.startswith(CORE_PLUGIN_PREFIX)
+    ]
+
+
+def dependency_plan(pid, plugins, installed):
+    """
+    (to_install, missing): registry plugins to install before `pid`, deepest
+    first, and dependencies that are neither installed nor in the registry.
+    Cycles are allowed (extensions bind lazily): every id is visited once.
+    """
+    by_id = {p['id']: p for p in plugins}
+    to_install, missing, seen = [], [], set()
+
+    def visit(current):
+        if current in seen:
+            return
+        seen.add(current)
+        entry = by_id.get(current)
+        if entry is None:
+            if current not in installed:
+                missing.append(current)
+            return
+        for dep in entry_requires(entry):
+            visit(dep)
+        if current != pid and current not in installed:
+            to_install.append(current)
+
+    visit(pid)
+    return to_install, missing
+
+
+def dependents(pid, installed):
+    """Installed plugins that extend `pid`."""
+    return sorted(other for other, cur in installed.items() if other != pid and pid in cur['requires'])
+
+
 def scan_installed():
-    """manifest.id → {dir, version, origin} for everything in extensions/."""
+    """manifest.id → {dir, version, origin, requires} for everything in extensions/."""
     result = {}
     if not os.path.isdir(EXTENSIONS_DIR):
         return result
@@ -267,6 +331,7 @@ def scan_installed():
             'dir': name,
             'version': manifest.get('version'),
             'origin': origin,
+            'requires': manifest_requires(manifest),
         }
     return result
 
@@ -542,6 +607,7 @@ def collect_status(plugins, installed):
             'entry': p,
             'dir': cur['dir'] if cur else p['dir'],
             'managed': bool(cur and cur['origin']),
+            'requires': entry_requires(p),
         })
     for pid, cur in installed.items():
         if pid in known:
@@ -556,6 +622,7 @@ def collect_status(plugins, installed):
             'entry': None,
             'dir': cur['dir'],
             'managed': bool(cur['origin']),
+            'requires': list(cur['requires']),
         })
     return rows
 
@@ -606,16 +673,40 @@ def cmd_list():
             print(f'    {row["description"]}')
 
 
+def install_with_dependencies(pid, registry, force=False):
+    """Must run under ExtensionsLock. (changed, ids of dependencies installed now)."""
+    entry = next((p for p in registry['plugins'] if p['id'] == pid), None)
+    if not entry:
+        raise ExtError(f'{clean(pid)} is not in registry {registry["url"]}')
+
+    to_install, missing = dependency_plan(pid, registry['plugins'], scan_installed())
+    for dep in missing:
+        print(
+            f'{clean(pid)} depends on {clean(dep)}, which is not in the registry: '
+            f'its extensions will wait until {clean(dep)} is installed.',
+            file=sys.stderr,
+        )
+
+    changed = False
+    done = []
+    for dep in to_install:
+        dep_entry = next(p for p in registry['plugins'] if p['id'] == dep)
+        print(f'Installing dependency {clean(dep)} of {clean(pid)}')
+        if install(dep_entry, registry['url'], force):
+            changed = True
+            done.append(dep)
+    changed = install(entry, registry['url'], force) or changed
+    return changed, done
+
+
 def cmd_install(query, force=False):
     if not query:
         raise ExtError('Usage: install <id> [--force]')
     registry = load_registry()
     with ExtensionsLock():
         pid = resolve_id(query, registry['plugins'], scan_installed())
-        entry = next((p for p in registry['plugins'] if p['id'] == pid), None)
-        if not entry:
-            raise ExtError(f'{clean(pid)} is not in registry {registry["url"]}')
-        if install(entry, registry['url'], force):
+        changed, _deps = install_with_dependencies(pid, registry, force)
+        if changed:
             scan_extensions()
             print(UI_HINT)
 
@@ -646,26 +737,34 @@ def cmd_update(query, update_all=False, force=False, quiet=False):
     return changed
 
 
-def remove_installed(pid):
+def remove_installed(pid, force=False):
     """Must run under ExtensionsLock."""
-    cur = scan_installed().get(pid)
+    installed = scan_installed()
+    cur = installed.get(pid)
     if not cur:
         raise ExtError(f'{clean(pid)} is not installed')
+    needed_by = dependents(pid, installed)
+    if needed_by and not force:
+        raise ExtError(
+            f'{clean(pid)} is required by {", ".join(clean(d) for d in needed_by)}; '
+            f'remove them first or use --force (their extensions will wait for it).',
+            409,
+        )
     shutil.rmtree(os.path.join(EXTENSIONS_DIR, cur['dir']))
     print(f'Removed {clean(pid)} (extensions/{cur["dir"]})')
     scan_extensions()
 
 
-def cmd_remove(query):
+def cmd_remove(query, force=False):
     if not query:
-        raise ExtError('Usage: remove <id>')
+        raise ExtError('Usage: remove <id> [--force]')
     # Removal must work offline: fall back to installed plugins only.
     try:
         plugins = load_registry()['plugins']
     except ExtError:
         plugins = []
     with ExtensionsLock():
-        remove_installed(resolve_id(query, plugins, scan_installed()))
+        remove_installed(resolve_id(query, plugins, scan_installed()), force)
 
 
 def cmd_branch(name):
@@ -749,6 +848,7 @@ def plugin_view(row):
         # A folder put there by hand is not the UI's to replace or delete.
         'managed': row['managed'],
         'manifestUrl': f'/extensions/{row["dir"]}/manifest.json',
+        'requires': [clean(r) for r in row['requires']],
     }
 
 
@@ -782,12 +882,14 @@ def registry_entry(pid):
 
 
 def api_install(pid):
-    entry, url = registry_entry(pid)
+    registry = load_registry()
     with ExtensionsLock():
-        changed = install(entry, url)
+        changed, deps = install_with_dependencies(pid, registry)
         if changed:
             scan_extensions()
-        return api_result(pid, changed)
+        result = api_result(pid, changed)
+        result['dependencies'] = [api_result(d, True) for d in deps]
+        return result
 
 
 def api_update(pid):
@@ -1209,6 +1311,13 @@ class Menu:
                 scan_extensions()
         return done
 
+    def install_new(self, pid):
+        with ExtensionsLock():
+            done, _deps = install_with_dependencies(pid, self.registry)
+            if done:
+                scan_extensions()
+        return done
+
     def remove_plugin(self, pid):
         with ExtensionsLock():
             remove_installed(pid)
@@ -1319,7 +1428,7 @@ class Menu:
                 if not self.need_registry():
                     continue
                 if r['state'] == 'available':
-                    self.act(lambda: self.install_entry(r['entry']))
+                    self.act(lambda: self.install_new(r['id']))
                 elif self.confirm(f'{r["name"]} is installed. Reinstall?'):
                     self.act(lambda: self.install_entry(r['entry'], force=True))
             elif screen == 'update':
@@ -1371,7 +1480,7 @@ def main(argv):
     elif cmd == 'update':
         cmd_update(arg, update_all='--all' in flags, force=force)
     elif cmd == 'remove':
-        cmd_remove(arg)
+        cmd_remove(arg, force)
     elif cmd == 'sync':
         with ExtensionsLock():
             scan_extensions()

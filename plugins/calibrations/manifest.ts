@@ -84,6 +84,12 @@ export const calibrationsManifest = definePlugin({
     { id: 'probe-abort', scope: 'global', keys: 'Alt+Backspace', handler: 'hotkeyProbeAbort', titleKey: 'calibrations.hotkeys.probeAbort' },
   ],
 
+  // Дополнения (внешние плагины) встраиваются вкладками или альтернативой вкладки Input Shaper.
+  extensionPoints: [
+    { id: 'tabs', kind: 'tab', mode: 'append', version: 1, titleKey: 'calibrations.ext.tabs' },
+    { id: 'shaper', kind: 'tab', mode: 'alternative', version: 1, titleKey: 'calibrations.ext.shaper' },
+  ],
+
   locales: ['en', 'ru'],
 
   defaultSettings: {

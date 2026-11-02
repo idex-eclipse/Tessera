@@ -339,6 +339,78 @@ class InstallTests(Base):
         self.assertTrue(os.path.exists(self.path('hello', 'index.js')))
 
 
+def extension_files(pid, version='1.0.0', points=()):
+    """A plugin whose manifest extends the given extension points."""
+    data = {
+        'id': pid, 'name': pid, 'version': version, 'entry': 'index.js',
+        'extensions': [
+            {'point': point, 'kind': 'tab', 'version': 1, 'id': f'x{i}', 'titleKey': 't', 'element': 'x-el'}
+            for i, point in enumerate(points)
+        ],
+    }
+    return {'manifest.json': json.dumps(data).encode(), 'index.js': b'// extension\n'}
+
+
+class DependencyTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.publish(extension_files('acme/owner'), pid='acme/owner', directory='owner')
+        self.publish(
+            extension_files('acme/addon', points=('acme/owner#tabs', '@core/calibrations#tabs')),
+            pid='acme/addon', directory='addon', requires=['acme/owner', '@core/calibrations'],
+        )
+
+    def run_quiet(self, fn, *args):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            fn(*args)
+        return err.getvalue()
+
+    def test_installs_dependencies_first(self):
+        self.run_quiet(ext.cmd_install, 'addon')
+        installed = ext.scan_installed()
+        self.assertEqual(sorted(installed), ['acme/addon', 'acme/owner'])
+        self.assertEqual(installed['acme/addon']['requires'], ['acme/owner'])
+
+    def test_core_dependencies_are_always_satisfied(self):
+        plan = ext.dependency_plan('acme/addon', self.entries, {})
+        self.assertEqual(plan, (['acme/owner'], []))
+
+    def test_missing_dependency_warns_and_installs(self):
+        self.publish(extension_files('acme/lonely', points=('acme/ghost#x',)),
+                     pid='acme/lonely', directory='lonely', requires=['acme/ghost'])
+        err = self.run_quiet(ext.cmd_install, 'lonely')
+        self.assertIn('acme/ghost', err)
+        self.assertIn('acme/lonely', ext.scan_installed())
+
+    def test_cycles_are_visited_once(self):
+        plugins = [
+            {'id': 'a', 'requires': ['b']},
+            {'id': 'b', 'requires': ['a']},
+        ]
+        self.assertEqual(ext.dependency_plan('a', plugins, {}), (['b'], []))
+
+    def test_remove_refuses_while_others_depend(self):
+        self.run_quiet(ext.cmd_install, 'addon')
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.run_quiet(ext.cmd_remove, 'owner')
+        self.assertIn('acme/addon', str(ctx.exception))
+        self.assertIn('acme/owner', ext.scan_installed())
+
+        self.run_quiet(ext.cmd_remove, 'owner', True)
+        self.assertNotIn('acme/owner', ext.scan_installed())
+
+    def test_status_reports_requires(self):
+        rows = {r['id']: r for r in ext.collect_status(self.entries, {})}
+        self.assertEqual(rows['acme/addon']['requires'], ['acme/owner'])
+        self.assertEqual(ext.plugin_view(rows['acme/addon'])['requires'], ['acme/owner'])
+
+    def test_registry_rejects_bad_requires(self):
+        self.publish(plugin_files(), requires='acme/owner')
+        with self.assertRaises(ext.ExtError):
+            ext.load_registry()
+
+
 class SourceTests(Base):
     def test_only_https_and_local(self):
         for url in ('http://example.com/a', 'ftp://example.com/a'):

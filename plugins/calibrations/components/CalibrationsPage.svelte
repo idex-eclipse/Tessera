@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import type { ExtensionRef } from '../../../plugin-sdk/src/types';
   import { useCalibrations } from '../use-calibrations.svelte.ts';
   import { normalizeConsoleLines } from '../parse.ts';
   import KlipperNotReady from '../../shared/klippy-state/KlippyNotReady.svelte';
@@ -24,8 +25,29 @@
   const store = useCalibrations(api);
   const klippy = useKlippyState(api);
 
-  type Tab = 'mesh' | 'probe' | 'shaper' | 'heaters';
+  type BuiltinTab = 'mesh' | 'probe' | 'shaper' | 'heaters';
+  /** Встроенная вкладка или ref вкладки дополнения (точка tabs). */
+  type Tab = BuiltinTab | string;
   let tab = $state<Tab>('mesh');
+
+  // Точки расширения: tabs (append) — вкладки дополнений, shaper (alternative) —
+  // замена содержимого Input Shaper (например Shake&Tune), выбор — ПКМ по вкладке.
+  let extVersion = $state(0);
+  $effect(() => api.extensions.onChange(() => extVersion++));
+  let extTabs = $derived.by<ExtensionRef[]>(() => {
+    void extVersion;
+    return api.extensions.list('tabs');
+  });
+  let shaperAlternatives = $derived.by(() => {
+    void extVersion;
+    return api.extensions.resolve('shaper').options.length > 0;
+  });
+
+  function onTabContextMenu(e: MouseEvent, id: Tab): void {
+    if (id !== 'shaper' || !shaperAlternatives || e.defaultPrevented) return;
+    e.preventDefault();
+    api.extensions.openChooser('shaper', e.currentTarget as HTMLElement);
+  }
 
   // Seed галереи на уровне страницы: гейт shaper-таба зависит от png.
   // Инвалидация по filelist-событиям. Session-log shaper/belts — live через
@@ -66,7 +88,7 @@
 
   let galleryNotEmpty = $derived(Object.keys(store.shaperState.gallery).length > 0);
   // Гейт: команды ИЛИ уже сгенерированные графики (png в config-руте/shapers)
-  let shaperAvailable = $derived(store.state.hasInputShaper || galleryNotEmpty);
+  let shaperAvailable = $derived(store.state.hasInputShaper || galleryNotEmpty || shaperAlternatives);
   let probeAvailable = $derived(
     store.state.hasProbe || store.state.hasEddy || store.state.hasBltouch ||
       store.state.probeSectionName !== null,
@@ -74,20 +96,21 @@
   let heatersAvailable = $derived(store.state.heaters.length > 0);
   let meshAvailable = $derived(store.state.hasBedMesh);
 
-  let tabs = $derived.by(() =>
-    [
-      { id: 'mesh' as Tab, label: i18n.t('calibrations.section.mesh'), show: meshAvailable },
-      { id: 'probe' as Tab, label: i18n.t('calibrations.section.probe'), show: probeAvailable },
-      { id: 'heaters' as Tab, label: i18n.t('calibrations.section.heaters'), show: heatersAvailable },
-      { id: 'shaper' as Tab, label: i18n.t('calibrations.section.shaper'), show: shaperAvailable },
+  let tabs = $derived.by<Array<{ id: Tab; label: string }>>(() => [
+    ...[
+      { id: 'mesh', label: i18n.t('calibrations.section.mesh'), show: meshAvailable },
+      { id: 'probe', label: i18n.t('calibrations.section.probe'), show: probeAvailable },
+      { id: 'heaters', label: i18n.t('calibrations.section.heaters'), show: heatersAvailable },
+      { id: 'shaper', label: i18n.t('calibrations.section.shaper'), show: shaperAvailable },
     ].filter((t) => t.show),
-  );
+    ...extTabs.map((t) => ({ id: t.ref, label: t.title })),
+  ]);
 
-  // deep-link ?section=…; belts уводит в shaper-таб
+  // deep-link ?section=…; belts уводит в shaper-таб; вкладка дополнения — ?section=<plugin>/<id>
   $effect(() => {
     const s = params.section;
     if (!s) return;
-    const mapped: Tab = s === 'belts' ? 'shaper' : (s as Tab);
+    const mapped: Tab = s === 'belts' ? 'shaper' : s;
     if (tabs.some((t) => t.id === mapped)) tab = mapped;
   });
 
@@ -127,6 +150,7 @@
             role="tab"
             aria-selected={tab === t.id}
             onclick={() => (tab = t.id)}
+            oncontextmenu={(e) => onTabContextMenu(e, t.id)}
           >
             {t.label}
           </button>
@@ -136,16 +160,22 @@
 
     <div class="body">
       {#if tab === 'shaper'}
-        <ShaperContent />
-        {#if store.shaperState.previewUrl}
-          <img class="preview" src={store.shaperState.previewUrl} alt={store.shaperState.selected ?? ''} />
-        {/if}
+        <ExtensionPoint point="shaper">
+          {#snippet original()}
+            <ShaperContent />
+            {#if store.shaperState.previewUrl}
+              <img class="preview" src={store.shaperState.previewUrl} alt={store.shaperState.selected ?? ''} />
+            {/if}
+          {/snippet}
+        </ExtensionPoint>
       {:else if tab === 'probe'}
         <ProbeContent />
       {:else if tab === 'heaters'}
         <HeatersContent />
-      {:else}
+      {:else if tab === 'mesh'}
         <MeshContent />
+      {:else}
+        <ExtensionPoint point="tabs" only={tab} />
       {/if}
     </div>
   </div>
