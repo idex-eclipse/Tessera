@@ -275,6 +275,122 @@ export type GuardDecision =
   | { action: 'freeze' };
 
 /**
+ * Вид точки расширения — контракт того, что дополнение даёт владельцу:
+ * - tab     — содержимое вкладки (element); кнопку вкладки рисует владелец;
+ * - panel   — тело (element) и опц. шапка (headerElement); оболочку панели рисует хост;
+ * - element — свободный элемент без хрома; когда показывать нечего, рендерит пустоту;
+ * - action  — команда без UI: экспорт handler(api, context); кнопку/пункт рисует владелец.
+ */
+export type ExtensionKind = 'tab' | 'panel' | 'element' | 'action';
+
+/**
+ * Режим точки:
+ * - append      — вклады добавляются к оригиналу владельца (до max);
+ * - alternative — оригинал и вклады — варианты, пользователь выбирает (ПКМ → popover хоста);
+ * - replacement — единственный вклад рендерится вместо оригинала, без переключения.
+ */
+export type ExtensionMode = 'append' | 'alternative' | 'replacement';
+
+/**
+ * Точка расширения, объявленная плагином-владельцем.
+ * Адрес точки: `<ownerPluginId>#<id>`. Где точка стоит на экране, решает владелец.
+ */
+export interface ExtensionPointDecl {
+  /** Уникален внутри плагина. */
+  id: string;
+  kind: ExtensionKind;
+  /** По умолчанию 'append'. action бывает только append. */
+  mode?: ExtensionMode;
+  /** Мажор контракта params/context. Вклад с другим мажором отбрасывается. */
+  version: number;
+  /** Только append: ёмкость точки (по умолчанию без ограничения). */
+  max?: number;
+  /** Только alternative: вариант, пока пользователь не выбирал (по умолчанию 'extension'). */
+  default?: 'extension' | 'original';
+  /** Название точки в диалогах хоста и Settings → Plugins. */
+  titleKey?: string;
+}
+
+/**
+ * Вклад дополнения в точку другого (или своего) плагина.
+ */
+export interface ExtensionContribution {
+  /** Адрес точки: `<ownerPluginId>#<pointId>`. */
+  point: string;
+  /** Должен совпадать с kind точки. */
+  kind: ExtensionKind;
+  /** Мажор контракта, под который написан вклад. */
+  version: number;
+  /** Уникален внутри дополнения. */
+  id: string;
+  titleKey: string;
+  /** CE-тег: tab | panel | element. */
+  element?: string;
+  /** CE-тег шапки: только panel. */
+  headerElement?: string;
+  /** Только action: экспорт модуля (api, context) => void | Promise<void>. */
+  handler?: string;
+  /** action: иконка пункта (имя встроенной иконки). */
+  icon?: string;
+  /** Экспорт модуля (api, params) => boolean | Promise<boolean>; нет — доступен всегда. */
+  available?: string;
+  /** Порядок среди вкладов точки (меньше — раньше). По умолчанию 0. */
+  order?: number;
+}
+
+/** Вклад в точке глазами владельца. */
+export interface ExtensionRef {
+  /** `<extPluginId>/<id>` */
+  ref: string;
+  pluginId: string;
+  kind: ExtensionKind;
+  /** Уже переведённый titleKey. */
+  title: string;
+  icon?: string;
+  order: number;
+}
+
+/** Что показывать в точке сейчас (для активного принтера и переданных params). */
+export interface ExtensionPointState {
+  /** Режим точки; null — плагин такую точку не объявлял. */
+  mode: ExtensionMode | null;
+  /** Рендерить ли оригинал владельца (всегда true для append). */
+  original: boolean;
+  /** Активные вклады (append — все, alternative/replacement — не больше одного). */
+  active: ExtensionRef[];
+  /** alternative: все доступные варианты (без оригинала). */
+  options: ExtensionRef[];
+  /** У точки неразрешённый конфликт: её вклады выключены. */
+  conflict: boolean;
+}
+
+/** Смонтированный вклад: обновить params или снять. */
+export interface ExtensionMount {
+  update(params: MpuParams): void;
+  destroy(): void;
+}
+
+/**
+ * API владельца точек (api.extensions). Все pointId — id точек СВОЕГО плагина.
+ */
+export interface PluginExtensionsApi {
+  /** Активные вклады точки, в порядке. */
+  list(pointId: string, params?: MpuParams): ExtensionRef[];
+  resolve(pointId: string, params?: MpuParams): ExtensionPointState;
+  /** Любое изменение: загрузка/выключение плагинов, доступность, выбор, конфликты. */
+  onChange(callback: () => void): () => void;
+  /** Монтирует вклад (tab/panel/element) в контейнер с api дополнения. */
+  mount(container: HTMLElement, ref: string, params?: MpuParams): ExtensionMount;
+  /** Только action. Ошибки handler'а изолированы и логируются. */
+  invoke(ref: string, context?: unknown): Promise<void>;
+  /** alternative: выбранный вклад; null — оригинал; undefined — выбора не было. */
+  choice(pointId: string): string | null | undefined;
+  setChoice(pointId: string, ref: string | null): void;
+  /** alternative: открыть popover выбора хоста у anchor. */
+  openChooser(pointId: string, anchor: HTMLElement | { x: number; y: number }, params?: MpuParams): void;
+}
+
+/**
  * Static plugin manifest.
  */
 export interface PluginManifest {
@@ -299,6 +415,11 @@ export interface PluginManifest {
   hotkeys?: HotkeyContribution[];
 
   guards?: GuardContribution[];
+
+  /** Точки, в которые другие плагины могут встраиваться. */
+  extensionPoints?: ExtensionPointDecl[];
+  /** Вклады в точки других плагинов. */
+  extensions?: ExtensionContribution[];
 }
 
 /**
@@ -458,4 +579,6 @@ export interface PluginApi {
     resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void;
   };
   readonly theme: PluginThemeApi;
+  /** Точки расширения этого плагина (для владельца). */
+  readonly extensions: PluginExtensionsApi;
 }

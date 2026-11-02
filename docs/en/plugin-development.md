@@ -354,6 +354,8 @@ interface PluginManifest {
   printerPanels?: PrinterPanelContribution[];
   hotkeys?: HotkeyContribution[];
   guards?: GuardContribution[];
+  extensionPoints?: ExtensionPointDecl[];   // points other plugins may extend
+  extensions?: ExtensionContribution[];     // contributions to points of other plugins
 
   rightPanel?: RightPanelContribution; // accepted ONLY from '@core/system'
 
@@ -378,6 +380,8 @@ counts as invalid:
 | `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` must parse; `allowInInputs`, if set, is a boolean |
 | `guards[]` | `id`, `handler`, and `match` as an array |
 | `pages[]`, `widgets[]` | not validated structurally (but nothing is rendered without `element`) |
+| `extensionPoints[]` | `id` (no `#`/`/`), `kind`, integer `version`; `mode`/`max`/`default` consistent with each other — see [surfaces.md](surfaces.md#10-extension-points) |
+| `extensions[]` | `point` (`<owner>#<id>`), `kind`, integer `version`, `id`, `titleKey`, and `element` (or `handler` for `action`) |
 
 If the value of `overlays`/`banners`/`collapsedBanners`/`chips`/`printerPanels`/`hotkeys` is not an
 array, it is discarded.

@@ -354,6 +354,8 @@ interface PluginManifest {
   printerPanels?: PrinterPanelContribution[];
   hotkeys?: HotkeyContribution[];
   guards?: GuardContribution[];
+  extensionPoints?: ExtensionPointDecl[];   // точки, в которые могут встраиваться другие плагины
+  extensions?: ExtensionContribution[];     // вклады в точки других плагинов
 
   rightPanel?: RightPanelContribution; // принимается ТОЛЬКО от '@core/system'
 
@@ -378,6 +380,8 @@ interface PluginManifest {
 | `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` должен разбираться; `allowInInputs`, если задан, — boolean |
 | `guards[]` | `id`, `handler` и `match` в виде массива |
 | `pages[]`, `widgets[]` | не валидируются структурно (но без `element` ничего не отрисуется) |
+| `extensionPoints[]` | `id` (без `#`/`/`), `kind`, целая `version`; `mode`/`max`/`default` согласованы — см. [surfaces.md](surfaces.md#10-точки-расширения) |
+| `extensions[]` | `point` (`<owner>#<id>`), `kind`, целая `version`, `id`, `titleKey` и `element` (или `handler` у `action`) |
 
 Если значение `overlays`/`banners`/`collapsedBanners`/`chips`/`printerPanels`/`hotkeys` — не
 массив, оно сбрасывается.

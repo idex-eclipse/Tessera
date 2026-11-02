@@ -15,6 +15,7 @@ container); the plugin owns the content.
 | [Fleet panel](#6-fleet-panels) | `printerPanels[]` | a printer card in fleet mode | the user (panel editor) | yes |
 | [Hotkey](#7-hotkeys) | `hotkeys[]` | global | the user (Settings → Hotkeys) | yes |
 | Right panel | `rightPanel` | the column on the right | — | **no** (`@core/system` only) |
+| [Extension](#10-extension-points) | `extensions[]` | a point of another plugin | the owner places it; mode and the user decide | yes |
 
 Layers, top to bottom:
 
@@ -525,3 +526,138 @@ In the mobile mode (window ≤ 768px) or when the page itself is narrower than 5
 page shows the list of tabs, and a chosen tab replaces it and gets a back button
 (`#/settings` is the list, `#/settings/<id>` is the tab). Otherwise the list sits beside
 the tab, and `#/settings` opens General.
+
+---
+
+## 10. Extension points
+
+A plugin can be **extended by other plugins**. The owner declares *extension points* —
+what may be added to it, of which kind and in which mode — and places them wherever it
+wants in its own pages, widgets or banners. An extension plugin declares *contributions*
+to points of other plugins (or its own). The host keeps the registry, checks versions,
+resolves conflicts and mounts each contribution **with the extension's own api**. Plugins
+still never talk to each other directly.
+
+```json
+{
+  "extensionPoints": [
+    { "id": "tabs",   "kind": "tab", "mode": "append",      "version": 1, "titleKey": "acme.ext.tabs" },
+    { "id": "shaper", "kind": "tab", "mode": "alternative", "version": 1, "titleKey": "acme.ext.shaper" }
+  ]
+}
+```
+
+```json
+{
+  "extensions": [
+    { "point": "@core/calibrations#shaper", "kind": "tab", "version": 1,
+      "id": "shaketune", "titleKey": "st.title", "element": "st-shaper",
+      "available": "hasShakeTune" }
+  ]
+}
+```
+
+| Point field | Description |
+|---|---|
+| `id` | unique within the plugin, no `#` or `/`; the address is `<ownerPluginId>#<id>` |
+| `kind` | `tab` \| `panel` \| `element` \| `action` — the contract of a contribution |
+| `mode` | `append` (default) \| `alternative` \| `replacement`; `action` is append only |
+| `version` | positive integer, the major version of the params/context contract |
+| `max` | append only: how many contributions the point shows (unlimited by default) |
+| `default` | alternative only: `extension` (default — the first available contribution) or `original` |
+| `titleKey` | the point's name in host dialogs and Settings → Plugins |
+
+| Contribution field | Description |
+|---|---|
+| `point` | `<ownerPluginId>#<pointId>` |
+| `kind`, `version` | must equal those of the point; otherwise the contribution is rejected |
+| `id`, `titleKey` | unique within the plugin (no `/`); the title is shown on tabs, panels and menus |
+| `element` | CE tag for `tab`, `panel`, `element` |
+| `headerElement` | `panel` only: CE in the panel header |
+| `handler` | `action` only: module export `(api, context) => void \| Promise<void>` |
+| `icon` | `action`: icon name for the menu item |
+| `available` | module export `(api, params) => boolean \| Promise<boolean>`; none — always available |
+| `order` | ordering among the point's contributions (lower first, default 0) |
+
+### Kinds
+
+| kind | The owner draws | The extension gives |
+|---|---|---|
+| `tab` | the tab button and the place for its body | `element` — the whole tab content |
+| `panel` | the place; the host draws a panel shell (title + `headerElement` + body) | `element`, optional `headerElement` |
+| `element` | a place in the flow, no chrome | `element`; renders *nothing* when there is nothing to show |
+| `action` | a button or menu item from `api.extensions.list()` | `handler(api, context)`; context schema is documented with the point |
+
+### Modes
+
+| mode | Contributions | Owner's original | Choice |
+|---|---|---|---|
+| `append` | up to `max` | stays | — |
+| `alternative` | any number | one of the variants | the user: right-click → host popover |
+| `replacement` | exactly one | not rendered | none |
+
+- **alternative**: right-click, a long press on touch (500 ms) or the ContextMenu key on
+  the point opens the host's popover with "Original" and every available contribution. The
+  choice is stored per printer (like the widget provider choice) and duplicated in
+  Settings → Plugins. The host only reacts when the inner content did not call
+  `preventDefault()` on `contextmenu`.
+- **replacement**: put such points on large elements of your surfaces (widget body
+  sections, page panels, a banner body). If the contribution is unavailable, the original is
+  shown. Do not make emergency or print controls (E-stop, start/pause/cancel) replaceable.
+
+### Availability, versions, sleeping
+
+- `available` is called with the extension's api when the point is rendered, and again on
+  `notify_klippy_ready`, `notify_config_changed` and reconnect. The host never reads the data.
+- A version or kind mismatch rejects the contribution (console warning + Settings → Plugins).
+- A contribution to a point whose owner is not loaded, disabled or has no such point is
+  *sleeping*, not an error: it binds as soon as the point appears.
+
+### Conflicts
+
+A conflict is more applicable contributions than the point's capacity (`replacement`: 1,
+`append`: `max`). It is detected statically (loaded + enabled + applies to the printer,
+`available` is ignored). The host shows a dialog to pick the winners or keep the original;
+**until it is resolved, all conflicting contributions of that point are disabled**.
+"Later" postpones the dialog for the session; Settings → Plugins keeps a "Resolve" button.
+A resolution is stored device-wide and is asked again when the set of candidates changes.
+
+### Owner API
+
+```ts
+api.extensions.list(pointId, params?)        // active contributions (ExtensionRef[])
+api.extensions.resolve(pointId, params?)     // { mode, original, active, options, conflict }
+api.extensions.onChange(cb)                  // → unsubscribe
+api.extensions.mount(container, ref, params?)// → { update(params), destroy() }
+api.extensions.invoke(ref, context?)         // action
+api.extensions.choice(pointId) / setChoice(pointId, ref | null)
+api.extensions.openChooser(pointId, anchorEl | { x, y }, params?)
+```
+
+Render the original only when `resolve(pointId).original` is true. Svelte owners use the
+SDK wrapper, which does all of the above:
+
+```svelte
+<script>
+  import { ExtensionPoint } from '@sdk/svelte';
+</script>
+
+<ExtensionPoint point="shaper">
+  {#snippet original()}<ShaperContent />{/snippet}
+</ExtensionPoint>
+<ExtensionPoint point="tabs" only={activeTabRef} />
+```
+
+### Other rules
+
+- Hotkeys of an extension with `scope: 'plugin'` also work where its contribution is
+  mounted; the page owner's hotkeys win on the same combination.
+- Guards are not inherited: an extension declares guards for its own commands.
+- Deep links to an extension tab: `?section=<extPluginId>/<id>`, resolved by the owner.
+- Dependencies: the owners of the points an extension uses are its dependencies.
+  `tessera-ext install` installs them from the registry (`requires` in `registry.json`);
+  `remove` refuses to remove a plugin others depend on without `--force`. `@core/*` are
+  always present.
+
+Points of the built-in plugins: `@core/calibrations#tabs` (tab, append) and
+`@core/calibrations#shaper` (tab, alternative, the Input Shaper tab).

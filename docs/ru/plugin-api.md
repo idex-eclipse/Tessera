@@ -261,6 +261,14 @@ api.i18n.locale;                                  // 'ru'
 
 ---
 
+## Дополнения
+
+`api.extensions` — сторона владельца [точек расширения](surfaces.md#10-точки-расширения):
+`list`, `resolve`, `onChange`, `mount`, `invoke`, `choice` / `setChoice`, `openChooser`.
+Каждый `pointId` — id точки, объявленной **вашим** плагином. Вклад, смонтированный через
+`mount`, получает api дополнения, а не ваш. Владельцам на Svelte — `ExtensionPoint` из
+`@sdk/svelte`.
+
 ## Типичные шаблоны
 
 ### Подписка с переподпиской при смене принтера

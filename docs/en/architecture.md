@@ -16,7 +16,7 @@ installs registry plugins when you press a button in the UI.
 | **MoonrakerProxy** | the connection pool (one WebSocket per printer), snapshot/TTL cache, pub/sub, subscription dedup, poll | is not read by the host to render its own UI |
 | **GuardAgent** | the preflight pipeline of `request()`: polls plugin guards | is not a bus; plugins do not talk to each other |
 | **HotkeyManager** | listens to `keydown`, matches plugin and host hotkeys, resolves conflicts | does not make decisions for a plugin |
-| **Plugin** | a self-contained contribution: pages, widgets, banners, overlays, chips, fleet panels, guards, hotkeys | does not talk to other plugins |
+| **Plugin** | a self-contained contribution: pages, widgets, banners, overlays, chips, fleet panels, guards, hotkeys, extension points and contributions to them | does not talk to other plugins directly — only through [extension points](surfaces.md#10-extension-points) kept by the host |
 | **Plugin SDK** | a thin wrapper: `PluginApi`, types, `defineMpuElement`, Svelte hooks | — |
 
 ## Diagram

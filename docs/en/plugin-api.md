@@ -262,6 +262,14 @@ expired token is ignored (the host writes a console warning). More in
 
 ---
 
+## Extensions
+
+`api.extensions` is the owner side of [extension points](surfaces.md#10-extension-points):
+`list`, `resolve`, `onChange`, `mount`, `invoke`, `choice` / `setChoice`, `openChooser`.
+Every `pointId` is an id of a point declared by **your** plugin. A contribution mounted
+through `mount` gets the extension's own api, not yours. Svelte owners use
+`ExtensionPoint` from `@sdk/svelte`.
+
 ## Typical patterns
 
 ### Subscribe and re-subscribe when the printer changes
