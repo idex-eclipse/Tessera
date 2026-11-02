@@ -8,6 +8,8 @@ import {
   type RegisteredBanner,
   type RegisteredCollapsedBanner,
   type RegisteredChip,
+  type RegisteredExtension,
+  type RegisteredExtensionPoint,
   type RegisteredHotkey,
   type RegisteredOverlay,
   type RegisteredPage,
@@ -52,6 +54,8 @@ export type {
   RegisteredBanner,
   RegisteredCollapsedBanner,
   RegisteredChip,
+  RegisteredExtension,
+  RegisteredExtensionPoint,
   RegisteredHotkey,
   RegisteredOverlay,
   RegisteredPage,
@@ -82,6 +86,8 @@ export function createPluginRegistry(settings: SettingsStore) {
     chips: [],
     printerPanels: [],
     hotkeys: [],
+    extensionPoints: [],
+    extensions: [],
   });
 
   let surfaces = $state<SurfaceStore>(emptyStore());
@@ -180,6 +186,14 @@ export function createPluginRegistry(settings: SettingsStore) {
 
   function getHotkeys(): RegisteredHotkey[] {
     return surfaces.hotkeys;
+  }
+
+  function getExtensionPoints(): RegisteredExtensionPoint[] {
+    return surfaces.extensionPoints;
+  }
+
+  function getExtensions(): RegisteredExtension[] {
+    return surfaces.extensions;
   }
 
   function getRightPanel(): RegisteredRightPanel | undefined {
@@ -370,6 +384,8 @@ function getDashboardLayout(printerId: string): DashboardWidgetLayoutItem[] {
     getChips,
     getPrinterPanels,
     getHotkeys,
+    getExtensionPoints,
+    getExtensions,
 
     // Per-printer: page visibility
     getVisiblePages,

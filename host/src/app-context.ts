@@ -1,5 +1,6 @@
 import { getContext, setContext } from 'svelte';
 
+import type { ExtensionHost } from './core/extension-host.svelte.ts';
 import type { HotkeyManager } from './core/hotkey-manager.svelte.ts';
 import type { LayoutEditor } from './core/layout-editor.svelte.ts';
 import type { FleetIndex } from './core/fleet-index.svelte.ts';
@@ -26,6 +27,7 @@ export interface AppContext {
   hotkeys: HotkeyManager;
   fleetIndex: FleetIndex;
   editor: LayoutEditor;
+  extensions: ExtensionHost;
 }
 
 const APP_CONTEXT_KEY = Symbol('app-context');

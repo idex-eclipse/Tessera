@@ -39,11 +39,18 @@
       return;
     }
 
-    current = document.createElement(tag) as MpuElement;
-    current.api = api;
-    current.params = params;
-    syncDataset(current, params);
-    hostEl.appendChild(current);
+    // Исключение в конструкторе/connectedCallback чужого CE не должно ронять хост
+    try {
+      current = document.createElement(tag) as MpuElement;
+      current.api = api;
+      current.params = params;
+      syncDataset(current, params);
+      hostEl.appendChild(current);
+    } catch (error) {
+      console.error(`[plugin-element-host] <${tag}> failed to mount`, error);
+      cleanup();
+      hostEl.innerHTML = `<div class="plugin-error">Element failed: ${tag}</div>`;
+    }
   }
 
   $effect(() => {

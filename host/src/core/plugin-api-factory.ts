@@ -1,6 +1,8 @@
 import type {
+  ExtensionPointState,
   FleetIndexEntry,
   MoonrakerProxyHandle,
+  PluginExtensionsApi,
   PluginApi,
   PluginManifest,
   PrinterInfo,
@@ -158,6 +160,45 @@ function createGuardedHandleFor(
         return () => {};
       }
       return handle.onConnectionStatusChange(cb);
+    },
+  };
+}
+
+const NO_EXTENSIONS: ExtensionPointState = { mode: null, original: true, active: [], options: [], conflict: false };
+
+/**
+ * api.extensions владельца: pointId — id точки СВОЕГО плагина. Хост расширений
+ * резолвится на каждом вызове (контекст тестов может его не иметь — тогда
+ * точки пусты и рендерится только оригинал).
+ */
+function createExtensionsApi(ctx: AppContext, pluginId: string): PluginExtensionsApi {
+  const host = () => ctx.extensions as AppContext['extensions'] | undefined;
+  return {
+    list(pointId, params) {
+      return host()?.resolve(pluginId, pointId, params).active ?? [];
+    },
+    resolve(pointId, params) {
+      return host()?.resolve(pluginId, pointId, params) ?? NO_EXTENSIONS;
+    },
+    onChange(cb) {
+      return host()?.onChange(cb) ?? (() => {});
+    },
+    mount(container, ref, params) {
+      const h = host();
+      if (!h) return { update() {}, destroy() {} };
+      return h.mount(container, ref, params);
+    },
+    invoke(ref, context) {
+      return host()?.invoke(pluginId, ref, context) ?? Promise.resolve();
+    },
+    choice(pointId) {
+      return host()?.getChoice(pluginId, pointId);
+    },
+    setChoice(pointId, ref) {
+      host()?.setChoice(pluginId, pointId, ref);
+    },
+    openChooser(pointId, anchor, params) {
+      host()?.openChooser(pluginId, pointId, anchor, params);
     },
   };
 }
@@ -367,6 +408,8 @@ export function createPluginApi(
         guardAgent.resume(token, decision, reasonKey);
       },
     },
+
+    extensions: createExtensionsApi(ctx, pluginId),
   };
 
   return api;

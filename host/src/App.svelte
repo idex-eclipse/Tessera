@@ -15,6 +15,7 @@
   import { createFleetIndex } from './core/fleet-index.svelte.ts';
   import { createLayoutEditor } from './core/layout-editor.svelte.ts';
   import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
+  import { createExtensionHost } from './core/extension-host.svelte.ts';
   import { createHostHotkeys } from './core/host-hotkeys.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
 
@@ -29,6 +30,8 @@
 
   import OfflineOverlay from './components/offline-overlay/OfflineOverlay.svelte';
   import ConfirmDialog from './components/confirm/ConfirmDialog.svelte';
+  import ExtensionChooser from './components/extensions/ExtensionChooser.svelte';
+  import ExtensionConflictDialog from './components/extensions/ExtensionConflictDialog.svelte';
 
   import { detectLegacy } from './core/legacy-settings.ts';
   import MigrationDialog from './components/legacy/MigrationDialog.svelte';
@@ -81,17 +84,24 @@
       loader.pluginAppliesToPrinter(pluginId, printerManager.activePrinterId ?? ''),
     isFleetOpen: () => ui.fleetOpen,
     getOverrides: () => settings.ui.hotkeyOverrides,
+    isExtensionMounted: (pluginId) => extensions.isMounted(pluginId),
     hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route, editor }),
   });
 
   const fleetIndex = createFleetIndex();
 
+  const extensions = createExtensionHost({
+    registry, loader, settings, printerManager, i18n,
+    getApi: (pluginId) => getPluginApi(ctx, pluginId),
+  });
+
   const ctx: AppContext = {
-    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex, editor,
+    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex, editor, extensions,
   };
   provideAppContext(ctx);
 
   onMount(() => hotkeys.start());
+  onMount(() => extensions.start());
 
   // Сессия редактирования дашборда (снимок на входе, история) следует за адресом и принтером.
   $effect(() => {
@@ -179,6 +189,8 @@
   {/if}
 
   <ConfirmDialog />
+  <ExtensionChooser />
+  <ExtensionConflictDialog />
   <MigrationDialog open={legacyOpen} onClose={() => (legacyOpen = false)} />
   <AddPrinterDialog />
   <PluginOverlaysLayer />

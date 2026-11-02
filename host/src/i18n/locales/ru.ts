@@ -154,6 +154,8 @@ const ru: I18nMessages = {
 
     registry: 'Реестр плагинов',
     registryConfirm: 'Плагин получает полный доступ к принтеру. Установить {name} из реестра?',
+    registryDeps: 'Также будут установлены: {list}.',
+    registryDepsMissing: 'Нужен {list}, которого нет в реестре: его дополнения будут ждать.',
     registryRemoveConfirm: 'Удалить {name} с этого принтера? Он пропадёт и в других браузерах.',
     registryUnauthorized: 'Войдите на принтер этого хоста, чтобы управлять плагинами.',
     registryUnreachable: 'Реестр недоступен: {error}',
@@ -256,6 +258,44 @@ const ru: I18nMessages = {
     count: '{shown} из {total}',
     noMatches: 'Нет подходящих принтеров',
     resetFilters: 'Сбросить',
+  },
+
+  extensions: {
+    chooser: {
+      title: 'Вариант',
+      original: 'Оригинал',
+      none: 'Для этого принтера нет альтернатив',
+    },
+    conflict: {
+      title: 'Конфликт дополнений',
+      messageReplacement: 'Несколько плагинов хотят заменить этот элемент. Выберите, какой использовать, или оставьте оригинал.',
+      messageAppend: 'Сюда хотят встроиться больше плагинов, чем помещается (до {max}). Выберите, какие показывать.',
+      hint: 'Пока конфликт не разрешён, все конфликтующие дополнения выключены.',
+      keepOriginal: 'Оставить оригинал',
+      apply: 'Применить',
+      later: 'Позже',
+    },
+    settings: {
+      title: 'Дополнения',
+      points: 'Точки расширения',
+      contributes: 'Встраивается в',
+      active: 'активно',
+      sleeping: 'ожидает {owner}',
+      rejectedKind: 'несовместимый вид',
+      rejectedVersion: 'несовместимая версия (нужна v{need}, у точки v{have})',
+      rejectedDuplicate: 'повтор id',
+      conflict: 'конфликт',
+      resolve: 'Разрешить',
+      resetResolution: 'Сбросить выбор',
+      variant: 'Вариант',
+      variantDefault: 'По умолчанию',
+      original: 'Оригинал',
+      modes: {
+        append: 'добавляет',
+        alternative: 'альтернатива',
+        replacement: 'заменяет',
+      },
+    },
   },
 };
 

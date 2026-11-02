@@ -56,6 +56,12 @@ export interface HotkeyManagerDeps {
    * комбинация или null (отключено). Читается реактивно (settings.ui).
    */
   getOverrides?(): Record<string, string | null>;
+  /**
+   * Смонтирован ли сейчас вклад плагина в чужую точку расширения: его hotkeys
+   * со scope 'plugin' работают и там (хоткеи владельца страницы приоритетнее —
+   * они раньше в порядке регистрации).
+   */
+  isExtensionMounted?(pluginId: string): boolean;
   /** Хостовые hotkeys (навигация). Конфликтуют с плагинными по общим правилам. */
   hostHotkeys?: readonly HostHotkey[];
   /** Подписка на keydown; по умолчанию window. */
@@ -194,7 +200,8 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
 
     const route = deps.getRoute();
     if (scope === 'dashboard') return route.kind === 'dashboard';
-    return route.kind === 'plugin-page' && pageOwner(route.pageId) === binding.pluginId;
+    if (route.kind === 'plugin-page' && pageOwner(route.pageId) === binding.pluginId) return true;
+    return deps.isExtensionMounted?.(binding.pluginId) ?? false;
   }
 
   function resolveHandler(binding: HotkeyBinding): HotkeyHandlerFn | null {

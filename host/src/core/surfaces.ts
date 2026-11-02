@@ -3,6 +3,8 @@ import type {
   BannerContribution,
   ChipContribution,
   CollapsedBannerContribution,
+  ExtensionContribution,
+  ExtensionPointDecl,
   HotkeyContribution,
   OverlayContribution,
   PageContribution,
@@ -40,6 +42,8 @@ export interface SurfaceContributionMap {
   chips: ChipContribution;
   printerPanels: PrinterPanelContribution;
   hotkeys: HotkeyContribution;
+  extensionPoints: ExtensionPointDecl;
+  extensions: ExtensionContribution;
 }
 
 /** Уникальные поверхности: ключ = поле манифеста. */
@@ -62,6 +66,8 @@ export type RegisteredCollapsedBanner = Registered<'collapsedBanners'>;
 export type RegisteredChip = Registered<'chips'>;
 export type RegisteredPrinterPanel = Registered<'printerPanels'>;
 export type RegisteredHotkey = Registered<'hotkeys'>;
+export type RegisteredExtensionPoint = Registered<'extensionPoints'>;
+export type RegisteredExtension = Registered<'extensions'>;
 export type RegisteredRightPanel = RegisteredSingleton<'rightPanel'>;
 
 /** Порядок = порядок регистрации/санитайза. */
@@ -74,6 +80,8 @@ export const SURFACE_KINDS = [
   'chips',
   'printerPanels',
   'hotkeys',
+  'extensionPoints',
+  'extensions',
 ] as const satisfies readonly SurfaceKind[];
 
 export const SINGLETON_SURFACES = ['rightPanel'] as const satisfies readonly SingletonSurfaceKind[];
@@ -117,6 +125,45 @@ function isValidHotkey(value: unknown): boolean {
   );
 }
 
+const EXTENSION_KINDS = ['tab', 'panel', 'element', 'action'] as const;
+const EXTENSION_MODES = ['append', 'alternative', 'replacement'] as const;
+
+/** id точки/вклада входит в адреса `<plugin>#<point>` и `<plugin>/<id>`. */
+const LOCAL_ID = /^[^#/]+$/;
+
+function isPositiveInt(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isValidExtensionPoint(value: unknown): boolean {
+  if (!hasStrings(value, ['id', 'kind'])) return false;
+  const p = value as Record<string, unknown>;
+  if (!LOCAL_ID.test(p.id as string)) return false;
+  if (!(EXTENSION_KINDS as readonly unknown[]).includes(p.kind)) return false;
+  const mode = p.mode ?? 'append';
+  if (!(EXTENSION_MODES as readonly unknown[]).includes(mode)) return false;
+  // action — команда без UI: заменять или выбирать нечего
+  if (p.kind === 'action' && mode !== 'append') return false;
+  if (!isPositiveInt(p.version)) return false;
+  if (p.max !== undefined && (mode !== 'append' || !isPositiveInt(p.max))) return false;
+  if (p.default !== undefined && (mode !== 'alternative' || (p.default !== 'extension' && p.default !== 'original'))) {
+    return false;
+  }
+  return p.titleKey === undefined || isNonEmptyString(p.titleKey);
+}
+
+function isValidExtension(value: unknown): boolean {
+  if (!hasStrings(value, ['point', 'kind', 'id', 'titleKey'])) return false;
+  const e = value as Record<string, unknown>;
+  if (!LOCAL_ID.test(e.id as string) || !/^[^#]+#[^#/]+$/.test(e.point as string)) return false;
+  if (!(EXTENSION_KINDS as readonly unknown[]).includes(e.kind)) return false;
+  if (!isPositiveInt(e.version)) return false;
+  if (e.kind === 'action' ? !isNonEmptyString(e.handler) : !isNonEmptyString(e.element)) return false;
+  if (e.headerElement !== undefined && (e.kind !== 'panel' || !isNonEmptyString(e.headerElement))) return false;
+  if (e.available !== undefined && !isNonEmptyString(e.available)) return false;
+  return e.order === undefined || (typeof e.order === 'number' && Number.isFinite(e.order));
+}
+
 export const SURFACE_SPECS: Record<SurfaceKind, SurfaceSpec> = {
   pages: { label: 'page', persistent: false },
   widgets: { label: 'widget', persistent: false },
@@ -149,6 +196,16 @@ export const SURFACE_SPECS: Record<SurfaceKind, SurfaceSpec> = {
     label: 'hotkey',
     validate: isValidHotkey,
     persistent: true,
+  },
+  extensionPoints: {
+    label: 'extensionPoint',
+    validate: isValidExtensionPoint,
+    persistent: false,
+  },
+  extensions: {
+    label: 'extension',
+    validate: isValidExtension,
+    persistent: false,
   },
 };
 

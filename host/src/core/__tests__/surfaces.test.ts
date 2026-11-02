@@ -35,6 +35,34 @@ describe('surfaces', () => {
     expect(collapsed({ id: 'a', element: 'x-a' })).toBe(false);
   });
 
+  it('validates extension points', () => {
+    const point = SURFACE_SPECS.extensionPoints.validate!;
+    expect(point({ id: 'tabs', kind: 'tab', version: 1 })).toBe(true);
+    expect(point({ id: 'shaper', kind: 'tab', mode: 'alternative', version: 1, default: 'original' })).toBe(true);
+    expect(point({ id: 'side', kind: 'panel', mode: 'append', version: 2, max: 2 })).toBe(true);
+    expect(point({ id: 'x', kind: 'tab' })).toBe(false); // без версии
+    expect(point({ id: 'x', kind: 'tab', version: 1.5 })).toBe(false);
+    expect(point({ id: 'x', kind: 'menu', version: 1 })).toBe(false);
+    expect(point({ id: 'x#y', kind: 'tab', version: 1 })).toBe(false);
+    expect(point({ id: 'x', kind: 'action', mode: 'replacement', version: 1 })).toBe(false);
+    expect(point({ id: 'x', kind: 'tab', mode: 'replacement', version: 1, max: 2 })).toBe(false);
+    expect(point({ id: 'x', kind: 'tab', version: 1, default: 'extension' })).toBe(false);
+  });
+
+  it('validates extension contributions', () => {
+    const ext = SURFACE_SPECS.extensions.validate!;
+    const tab = { point: '@core/calibrations#tabs', kind: 'tab', version: 1, id: 'st', titleKey: 'k', element: 'x-st' };
+    expect(ext(tab)).toBe(true);
+    expect(ext({ ...tab, point: 'no-hash' })).toBe(false);
+    expect(ext({ ...tab, id: 'a/b' })).toBe(false);
+    expect(ext({ ...tab, element: undefined })).toBe(false);
+    expect(ext({ ...tab, headerElement: 'x-h' })).toBe(false); // только panel
+    expect(ext({ ...tab, kind: 'panel', headerElement: 'x-h' })).toBe(true);
+    expect(ext({ ...tab, kind: 'action', element: undefined, handler: 'run' })).toBe(true);
+    expect(ext({ ...tab, kind: 'action', element: undefined })).toBe(false);
+    expect(ext({ ...tab, version: 0 })).toBe(false);
+  });
+
   it('contributionsOf returns [] for missing kinds', () => {
     expect(contributionsOf(base, 'banners')).toEqual([]);
   });

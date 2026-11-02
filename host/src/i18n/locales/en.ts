@@ -157,6 +157,8 @@ const en: I18nMessages = {
 
     registry: 'Plugin registry',
     registryConfirm: 'A plugin gets full access to the printer. Install {name} from the registry?',
+    registryDeps: 'Will also be installed: {list}.',
+    registryDepsMissing: 'Needs {list}, which is not in the registry: its extensions will wait for it.',
     registryRemoveConfirm: 'Delete {name} from this printer? Other browsers will lose it too.',
     registryUnauthorized: 'Log in to the printer on this host to manage plugins.',
     registryUnreachable: 'Registry is unreachable: {error}',
@@ -259,6 +261,44 @@ const en: I18nMessages = {
     count: '{shown} of {total}',
     noMatches: 'No printers match',
     resetFilters: 'Reset',
+  },
+
+  extensions: {
+    chooser: {
+      title: 'Variant',
+      original: 'Original',
+      none: 'No alternatives available for this printer',
+    },
+    conflict: {
+      title: 'Extension conflict',
+      messageReplacement: 'Several plugins want to replace this element. Choose which one to use or keep the original.',
+      messageAppend: 'More plugins want to add here than the place allows (up to {max}). Choose which ones to show.',
+      hint: 'Until the conflict is resolved, all conflicting extensions are disabled.',
+      keepOriginal: 'Keep the original',
+      apply: 'Apply',
+      later: 'Later',
+    },
+    settings: {
+      title: 'Extensions',
+      points: 'Extension points',
+      contributes: 'Extends',
+      active: 'active',
+      sleeping: 'waiting for {owner}',
+      rejectedKind: 'incompatible kind',
+      rejectedVersion: 'incompatible version (needs v{need}, point is v{have})',
+      rejectedDuplicate: 'duplicate id',
+      conflict: 'conflict',
+      resolve: 'Resolve',
+      resetResolution: 'Reset choice',
+      variant: 'Variant',
+      variantDefault: 'Default',
+      original: 'Original',
+      modes: {
+        append: 'adds',
+        alternative: 'alternative',
+        replacement: 'replaces',
+      },
+    },
   },
 };
 
