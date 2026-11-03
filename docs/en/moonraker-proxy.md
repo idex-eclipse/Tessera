@@ -264,6 +264,45 @@ Rules:
   detected, so never poll them;
 - `poll` bypasses GuardAgent (it is an internal refresh, reads only).
 
+## `klippyStream(method, params, onData, onStatus?)`
+
+A declaration that "I need a Klipper bulk stream". Such data (currently
+`load_cell/dump_force`, the force sensor samples) is not served by Moonraker's regular
+`/websocket`, only by the raw `/klippysocket` bridge. A plugin opens no socket: the proxy
+opens and keeps one socket per printer on the same origin as the main socket, with the same
+token. Returns a cancel function.
+
+```ts
+const stop = api.moonraker().klippyStream(
+  'load_cell/dump_force',
+  { load_cell: 'my_cell' },
+  (batch) => {
+    // { data: [[time, force_g | null, counts, tare | null], …] }
+  },
+  (status) => { /* 'connecting' | 'live' | 'unavailable' */ },
+);
+// …
+stop();
+```
+
+Rules:
+
+- only the methods of the host's list are allowed (now `load_cell/dump_force`); others are
+  refused with a console warning and `klippyStream` returns an empty function;
+- the socket opens with the first subscription; subscriptions with the same
+  `method+params` share one Klipper stream;
+- Klipper has no unsubscribe: a stream runs while the socket is open. The last cancel
+  closes the socket; if one of several groups is cancelled, the socket is recreated and the
+  others subscribe again. **Cancel when the data is not needed** (graph hidden, tab left):
+  a continuous stream of every sample loads Klipper;
+- `onStatus` is called at once with the current state and on every change. `unavailable`
+  means there is no bridge (no `location /klippysocket` in nginx, mixed content, old
+  Moonraker) or Klipper rejected the subscription (no such `load_cell`). The proxy retries
+  itself (1 s → 2 s → … up to 30 s) and resubscribes; the plugin only has to show a
+  fallback (for example, `subscribe` to a status object);
+- `klippyStream` bypasses GuardAgent (reads only);
+- available with `pluginApi: "0.9"` and newer: a plugin that requires it writes `"0.9"`.
+
 ---
 
 ## Connection state

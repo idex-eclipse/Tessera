@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { createKlippyStream, toKlippySocketUrl } from './klippy-stream';
 import type {
   ConnectionStatus,
   MoonrakerEventParams,
@@ -303,6 +304,22 @@ export function createMoonrakerProxy(
   let nextPollId = 1;
   const pollRecords = new Map<number, PollRecord>();
   const pollSchedule = new Map<string, PollScheduleEntry>();
+
+  /**
+   * Bulk-потоки Klipper через /klippysocket (klippyStream). Сокет ленивый:
+   * открывается с первой подписки плагина, адрес и токен берутся на момент подключения.
+   */
+  const klippyStream = createKlippyStream({
+    url: () => {
+      const base = toKlippySocketUrl(wsUrl);
+      return authToken
+        ? `${base}${base.includes('?') ? '&' : '?'}token=${encodeURIComponent(authToken)}`
+        : base;
+    },
+    webSocketFactory,
+    baseReconnectDelay,
+    maxReconnectDelay,
+  });
 
   connect();
 
@@ -1229,6 +1246,7 @@ function request<T = unknown>(method: string, params?: unknown): Promise<T> {
     }
     pollSchedule.clear();
     pollRecords.clear();
+    klippyStream.dispose();
 
     readyState = 'closed';
 
@@ -1240,6 +1258,7 @@ function request<T = unknown>(method: string, params?: unknown): Promise<T> {
     subscribe,
     onNotify,
     poll,
+    klippyStream: klippyStream.subscribe,
 
     get httpBaseUrl() {
       return httpBaseUrl;

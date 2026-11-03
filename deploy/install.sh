@@ -689,6 +689,18 @@ server {
         proxy_read_timeout 86400;
     }
 
+    # Raw Klippy bridge: bulk streams (load_cell/dump_force) for the graph of plugins.
+    location /klippysocket {
+        proxy_pass http://@MOONRAKER@/klippysocket;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 86400;
+    }
+
     location ~ ^/(printer|api|access|machine|server)/ {
         proxy_pass http://@MOONRAKER@$request_uri;
         proxy_http_version 1.1;

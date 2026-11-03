@@ -66,6 +66,12 @@ function createFakeProxy(url: string): FakeProxy {
       };
     },
 
+    klippyStream: () => {
+      return () => {
+        // no-op
+      };
+    },
+
     onAuthRequired(callback: () => void): () => void {
       return () => {
         // no-op

@@ -50,6 +50,10 @@ function createGuardedHandle(
       return resolveHandle().poll(method, params, intervalMs);
     },
 
+    klippyStream(method, params, onData, onStatus) {
+      return resolveHandle().klippyStream(method, params, onData, onStatus);
+    },
+
     get httpBaseUrl() {
       return resolveHandle().httpBaseUrl;
     },
@@ -132,6 +136,15 @@ function createGuardedHandleFor(
       const handle = live();
       if (!handle) return () => {};
       return handle.poll(method, params, intervalMs);
+    },
+
+    klippyStream(method, params, onData, onStatus) {
+      const handle = live();
+      if (!handle) {
+        onStatus?.('unavailable');
+        return () => {};
+      }
+      return handle.klippyStream(method, params, onData, onStatus);
     },
 
     get httpBaseUrl() {

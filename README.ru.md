@@ -208,6 +208,7 @@ regex-фильтры сообщений и настройки reverse/autoscroll
 | Расширение Klipper `gcode_shell_command` | PNG-графики shaper / belts (ставится вручную через kiauh) |
 | crowsnest / mjpegstreamer / ustreamer | виджеты камер |
 | Spoolman (через Moonraker) | необязательный плагин `tessera/spoolman` из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): катушка на каждый инструмент, проверка филамента перед печатью |
+| Датчик усилия в сопле + Klipper `pa_tester` | необязательный плагин `tessera/pa-tester` из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): вкладка Pressure Advance в калибровках с живым графиком датчика усилия |
 
 <a id="installation"></a>
 ## Установка

@@ -512,7 +512,34 @@ export interface MoonrakerProxyHandle {
    * Возвращает unreg; поллинг останавливается с последней регистрацией.
    */
   poll(method: string, params: unknown, intervalMs: number): () => void;
+
+  /**
+   * Декларация потребности в bulk-потоке Klipper (raw-мост Moonraker
+   * `/klippysocket`, того же origin, что и основной сокет). Сокет открывает и
+   * ведёт хост: плагин своих сокетов не создаёт. Подписки с одинаковым
+   * method+params делят один поток (refcount); поток идёт, пока есть
+   * слушатели, с последней отменой сокет закрывается (у Klipper нет отписки),
+   * поэтому отменяйте, когда данные не нужны (скрытый график, ушли с вкладки).
+   * Обходит GuardAgent (только чтение). Разрешены методы из списка хоста
+   * (сейчас `load_cell/dump_force`, params `{ load_cell: '<имя>' }`); другие
+   * отклоняются с предупреждением, возвращается пустая функция.
+   *
+   * `onData` получает `params` каждого сообщения потока, для `load_cell/dump_force`:
+   * `{ data: [[time, force_g | null, counts, tare | null], …] }`.
+   * `onStatus`: сразу текущее состояние, затем при каждом изменении; `unavailable` —
+   * моста нет (nginx без `/klippysocket`, mixed content) или Klipper отклонил подписку;
+   * хост повторяет подключение сам с паузой, плагину достаточно показать запасной вариант.
+   * Возвращает unreg.
+   */
+  klippyStream(
+    method: string,
+    params: Record<string, unknown>,
+    onData: (data: unknown) => void,
+    onStatus?: (status: KlippyStreamStatus) => void,
+  ): () => void;
 }
+
+export type KlippyStreamStatus = 'connecting' | 'live' | 'unavailable';
 
 /**
  * Фильтр-тег fleet-индекса. Хост не знает смысла `id`: он только строит из

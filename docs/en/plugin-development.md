@@ -373,7 +373,7 @@ manifest; the host itself ignores them, and they are not in the SDK type.
 
 `pluginApi` is the version of the plugin contract the plugin needs: `PluginApi`, the
 manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-level.ts`
-(`PLUGIN_API`, now `0.8`; Settings → About shows it).
+(`PLUGIN_API`, now `0.9`; Settings → About shows it).
 
 - **MINOR** grows with every backward-compatible addition: a new `PluginApi` method, a
   manifest field or surface. **MAJOR** is reserved for incompatible changes.
@@ -391,6 +391,7 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 |---|---|
 | `0.7` | the base contract |
 | `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `dependencies` |
+| `0.9` | `handle.klippyStream`: Klipper bulk streams (`load_cell/dump_force`) via `/klippysocket` |
 
 ### Dependencies
 

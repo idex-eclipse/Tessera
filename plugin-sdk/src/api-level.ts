@@ -17,8 +17,9 @@
  * История:
  *   0.7 — базовый контракт (до точек расширения)
  *   0.8 — extensionPoints / extensions, api.extensions, manifest.dependencies
+ *   0.9 — handle.klippyStream: bulk-потоки Klipper (load_cell/dump_force) через /klippysocket
  */
-export const PLUGIN_API = '0.8';
+export const PLUGIN_API = '0.9';
 
 export const LEGACY_PLUGIN_API = '0.7';
 

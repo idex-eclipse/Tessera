@@ -209,6 +209,7 @@ Optional companions:
 | `gcode_shell_command` Klipper extension | shaper / belt PNG graphs (install manually via kiauh) |
 | crowsnest / mjpegstreamer / ustreamer | camera widgets |
 | Spoolman (via Moonraker) | optional `tessera/spoolman` plugin from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry: spool per tool, pre-print filament check |
+| Load cell in the nozzle + Klipper `pa_tester` | optional `tessera/pa-tester` plugin from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry: Pressure Advance tab in Calibrations with a live load cell graph |
 
 <a id="installation"></a>
 ## Installation

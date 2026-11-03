@@ -86,7 +86,7 @@ LOCK_FILE = '.lock'
 # "MAJOR.MINOR". A plugin fits when MAJOR is the same and its MINOR is not above ours.
 # Same value as PLUGIN_API in plugin-sdk/src/api-level.ts. Extension points are not part of
 # it: they come with the owner's version (manifest.dependencies).
-HOST_PLUGIN_API = '0.8'
+HOST_PLUGIN_API = '0.9'
 # Registry entries without pluginApi or with the integer 1 of the first registries.
 LEGACY_PLUGIN_API = '0.7'
 PLUGIN_API_RE = re.compile(r'(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})')
