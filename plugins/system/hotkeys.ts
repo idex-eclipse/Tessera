@@ -9,18 +9,9 @@ export const MACHINE_PAGE_ID = 'machine';
 /**
  * Hotkey-обработчики @core/system (manifest.hotkeys[].handler).
  *
- * Центр уведомлений — оверлей этого плагина и может быть открыт на любой странице,
- * поэтому клавиша глобальная. Состояние (открыт/закрыт) принадлежит плагину, а не
- * хосту, — поэтому hotkey объявлен здесь, а не среди хостовых.
- *
  * Аварийная остановка (M112) намеренно БЕЗ горячей клавиши: действие необратимо
  * и слишком опасно для случайного нажатия.
  */
-
-/** N: показать / скрыть центр уведомлений. */
-export function hotkeyToggleNotifications(): void {
-  systemUiState.notificationsOpen = !systemUiState.notificationsOpen;
-}
 
 /** M: открыть страницу «Система» активного принтера. */
 export function hotkeyOpenMachine(api: PluginApi): void {

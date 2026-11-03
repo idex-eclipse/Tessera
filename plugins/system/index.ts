@@ -4,7 +4,7 @@ import SystemPage from './components/pages/SystemPage.svelte';
 import SystemRightPanel from './components/right-panel/SystemRightPanel.svelte';
 import StateBanner from './components/banners/SystemBanner.svelte';
 import StateBannerCollapsed from './components/banners/SystemBannerCollapsed.svelte';
-import SystemNotificationsOverlay from './components/overlays/SystemNotificationsOverlay.svelte';
+import NotificationProducers from './components/overlays/NotificationProducers.svelte';
 import PowerChip from './components/chips/PowerChip.svelte';
 import PowerChipPicker from './components/chips/PowerChipPicker.svelte';
 
@@ -16,7 +16,6 @@ export const pageIcons: Record<string, string> = {
 
 export { guardSystemPrintSafety } from './guards.ts';
 export {
-  hotkeyToggleNotifications,
   hotkeyOpenMachine,
   hotkeyRefreshMachine,
   hotkeyUploadFile,
@@ -30,7 +29,7 @@ defineMpuElement('mpu-system-page', SystemPage);
 defineMpuElement('mpu-system-right-panel', SystemRightPanel);
 defineMpuElement('mpu-system-state-banner', StateBanner);
 defineMpuElement('mpu-system-state-banner-collapsed', StateBannerCollapsed);
-defineMpuElement('mpu-system-notifications', SystemNotificationsOverlay);
+defineMpuElement('mpu-system-notifications', NotificationProducers);
 defineMpuElement('mpu-core-system-chip-power', PowerChip);
 defineMpuElement('mpu-core-system-chip-power-picker', PowerChipPicker);
 

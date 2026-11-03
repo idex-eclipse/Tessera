@@ -2,7 +2,6 @@ export const en = {
   system: {
     pageTitle: 'Machine',
     hotkeys: {
-      toggleNotifications: 'Show / hide the notification center',
       openMachine: 'Open the Machine page',
       uploadFile: 'Upload a G-code file…',
       togglePrintAfter: 'Toggle "Start print after upload"',
@@ -175,43 +174,23 @@ export const en = {
       confirmStart: 'Start service "{name}"?',
     },
 
-    // Notifications
+    // Notifications: the center itself (list, toasts, filters) is in the host;
+    // here are only the texts and source labels of the Klipper-bound producers
     notifications: {
-      title: 'Notifications',
       klipperShutdown: 'Klipper shutdown',
       klipperShutdownReason: 'Klipper shutdown: {reason}',
       tmcFlag: 'TMC {name}: {flag}',
       throttle: 'Host: {flag}',
       mcuLink: 'MCU {name}: {reason}',
       canbus: 'MCU {name}: CAN bus {state}',
-      empty: 'No notifications',
-      dismiss: 'Dismiss',
-      dismissAll: 'Dismiss all',
-      filterAll: 'All',
-      settings: 'Settings',
-      soundEnabled: 'Play sound on critical notifications',
-      ignoredPatterns: 'Ignored patterns (regex)',
-      patternPlaceholder: 'regex to ignore, e.g. tmc\\d+ stepper_\\w+: ol[ab]',
-      ignore: 'Ignore this notification',
-      ignoredHint: 'Case-insensitive; matches anywhere in the text. Applies to all printers.',
-      addPattern: 'Add',
-      remove: 'Remove',
-      sev: {
-        critical: 'Critical',
-        error: 'Error',
-        info: 'Info',
-      },
-      src: { 
-        gcode: 'G-code response', 
-        klippy: 'Klipper', 
+      src: {
+        gcode: 'G-code response',
+        macro: 'Klipper macro',
+        klippy: 'Klipper',
         tmc: 'TMC driver',
         host: 'Host',
         mcu: 'MCU',
-        guard: 'Guard agent' 
       },
-      guardDecisionTimeout: 'Guard {guard} ({plugin}) did not decide in time — {method} denied',
-      guardParkTimeout: 'Confirmation for {method} expired — request denied',
-      guardDenied: 'Request {method} denied by guard of {plugin}',
     },
 
     // Accounts / auth

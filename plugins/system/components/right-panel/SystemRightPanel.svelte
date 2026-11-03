@@ -16,20 +16,11 @@
   import { useSystem } from '../../use-system.svelte.ts';
   import { systemUiState } from '../../system-ui-state.svelte.ts';
 
-  import { useNotifications } from '../../use-notifications.svelte.ts';
-  import ToastStack from '../overlays/ToastStack.svelte';
-  import { useNarrow } from '../../use-narrow.svelte.ts';
-
   let { params = {} }: { params?: Record<string, string> } = $props();
-
-  // На узком экране панель смонтирована только пока открыта, поэтому тосты
-  // показывает оверлей уведомлений (всегда смонтирован), а не панель.
-  const narrow = useNarrow();
 
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = useSystem(api);
-  const notifications = useNotifications(api);
   const klippy = useKlippyState(api);
 
   // ------------------------------------------------------------------
@@ -344,12 +335,6 @@
     const f = e.dataTransfer?.files?.[0];
     if (f) startUpload(f);
   }
-
-  function openNotifications(): void {
-    systemUiState.notificationsOpen = !systemUiState.notificationsOpen;
-  }
-
-  let unseenCount = $derived(notifications.unseenCount);
 
   // Для оверлея инспектора: canPrint = klippy.ready && не печатает
   let canPrint = $derived(klippy.ready && !printing);
@@ -731,23 +716,7 @@
       {/if}
     </div>
   {/if}
-  <div class="sys-bottom">
-    <button class="nav-item" class:collapsed onclick={openNotifications}>
-      <span class="nav-icon">
-        <Icon name="bell" size={20} />
-        {#if unseenCount > 0}
-          <span class="nav-badge">{unseenCount > 99 ? '99+' : unseenCount}</span>
-        {/if}
-      </span>
-      {#if !collapsed}
-        <span class="nav-label">{i18n.t('system.notifications.title')}</span>
-      {/if}
-    </button>
-  </div>
 </div>
-{#if !narrow.value}
-  <ToastStack />
-{/if}
 
 <input
   type="file"
@@ -808,11 +777,6 @@
     gap: var(--space-md);
     padding: var(--space-md);
     animation: fade-in var(--transition-normal);
-  }
-
-  .sys-bottom {
-    flex-shrink: 0;
-    padding: 0 var(--space-sm);   /* низ больше не двойной: низ даёт футер хоста */
   }
 
   /* ======== точная копия паттерна plugin-sidebar ======== */

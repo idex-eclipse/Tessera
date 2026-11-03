@@ -8,26 +8,17 @@ import { systemManifest } from '../manifest';
 import { systemUiState } from '../system-ui-state.svelte';
 
 afterEach(() => {
-  systemUiState.notificationsOpen = false;
   systemUiState.activeTab = 'overview';
 });
 
 describe('system hotkeys', () => {
-  it('N toggles the notification center', () => {
-    expect(systemUiState.notificationsOpen).toBe(false);
-    hotkeys.hotkeyToggleNotifications();
-    expect(systemUiState.notificationsOpen).toBe(true);
-    hotkeys.hotkeyToggleNotifications();
-    expect(systemUiState.notificationsOpen).toBe(false);
+  it('does not declare N: the notification center belongs to the host, which owns its hotkey', () => {
+    expect((systemManifest.hotkeys ?? []).map((h) => h.keys as string)).not.toContain('N');
+    expect((hotkeys as Record<string, unknown>).hotkeyToggleNotifications).toBeUndefined();
   });
 
-  it('is declared as a global hotkey on N with an exported handler, and does not conflict with the host keys', () => {
-    const declared = (systemManifest.hotkeys ?? []).filter((h) => h.id === 'toggle-notifications');
-    expect(declared).toHaveLength(1);
-    expect(declared[0]).toMatchObject({ scope: 'global', keys: 'N', handler: 'hotkeyToggleNotifications' });
-    expect(typeof (hotkeys as Record<string, unknown>)[declared[0]!.handler]).toBe('function');
-
-    const host = createHostHotkeys(fakeHostHotkeyDeps()).map((h) => ({
+  it('declared hotkeys do not conflict with the host keys', () => {
+    const host = createHostHotkeys({ ...fakeHostHotkeyDeps(), notifications: { toggle: () => {} } }).map((h) => ({
       pluginId: '@host',
       contribution: { id: h.id, keys: h.keys, scope: 'global' as const, handler: h.id },
     }));

@@ -74,7 +74,6 @@ function fakeApi(printerIds: string[], queryState?: string) {
 
 afterEach(() => {
   stopPrintTracker();
-  systemUiState.notificationsOpen = false;
   systemUiState.refreshSeq = 0;
   vi.unstubAllGlobals();
 });
@@ -205,11 +204,9 @@ describe('hotkeys', () => {
     expect(systemManifest.pages?.some((p) => p.id === hotkeys.MACHINE_PAGE_ID)).toBe(true);
   });
 
-  it('Alt+R bumps the refresh request; N toggles the notification center', () => {
+  it('Alt+R bumps the refresh request', () => {
     hotkeys.hotkeyRefreshMachine();
     expect(systemUiState.refreshSeq).toBe(1);
-    hotkeys.hotkeyToggleNotifications();
-    expect(systemUiState.notificationsOpen).toBe(true);
   });
 
   it('every guard and hotkey handler is exported', () => {
@@ -288,7 +285,7 @@ describe('locales', () => {
     for (const k of [
       'system.guard.print_in_progress', 'system.units.h', 'system.units.m', 'system.units.s',
       'system.errors.actionFailed', 'system.hotkeys.openMachine', 'system.hotkeys.refresh',
-      'system.hotkeys.toggleNotifications', 'system.notifications.klipperShutdown',
+      'system.notifications.klipperShutdown',
       'system.notifications.klipperShutdownReason', 'system.notifications.tmcFlag',
     ]) {
       expect(keys[k], k).toBeTypeOf('string');
@@ -306,7 +303,7 @@ describe('locales', () => {
       ...['ot', 'otpw', 's2ga', 's2gb', 's2vsa', 's2vsb', 'ola', 'olb', 't120', 't143', 't150', 't157'].map(
         (f) => `system.tmc.flag.${f}`,
       ),
-      ...['host', 'mcu', 'tmc'].map((s) => `system.notifications.src.${s}`),
+      ...['gcode', 'macro', 'klippy', 'host', 'mcu', 'tmc'].map((s) => `system.notifications.src.${s}`),
       'system.units.d', 'system.notifications.throttle', 'system.notifications.mcuLink',
       'system.notifications.canbus', 'system.tmc.idle', 'system.tmc.idleHint', 'system.health.idle',
       'system.hotkeys.tabOverview', 'system.hotkeys.tabMonitoring',

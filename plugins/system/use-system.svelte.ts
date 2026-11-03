@@ -6,7 +6,6 @@ import {
   createDelegateStore,
 } from '../shared/core-keeper/core-keeper';
 import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte';
-import { notifyLocal } from './use-notifications.svelte.ts';
 
 // ------------------------------------------------------------------
 // Модели
@@ -209,15 +208,14 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
     throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`);
   }
 
-  /** Ошибка действия → центр уведомлений (отказ гарда уже показан событием guard-notify). */
+  /** Ошибка действия → центр уведомлений (отказ гарда уже показал хост). */
   function reportActionError(action: string, e: unknown): void {
     if ((e as { rejection?: unknown } | null)?.rejection) return;
     const detail = e instanceof Error ? e.message : String(e);
-    notifyLocal(printerId ?? api.printer.id, {
+    api.notifications.push({
+      printerId: printerId ?? api.printer.id,
       severity: 'error',
-      source: 'plugin',
       text: api.i18n.t('system.errors.actionFailed', { action, detail }),
-      sticky: false,
     });
   }
 

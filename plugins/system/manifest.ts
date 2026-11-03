@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const systemManifest = definePlugin({
   id: '@core/system',
   name: 'System',
-  version: '3.1.0',
+  version: '3.2.0',
   entry: '/plugins/system/index.js',
 
   pages: [
@@ -88,14 +88,6 @@ export const systemManifest = definePlugin({
   ],
 
   hotkeys: [
-    // N: открыть / закрыть центр уведомлений (в полях ввода не срабатывает)
-    {
-      id: 'toggle-notifications',
-      scope: 'global',
-      keys: 'N',
-      handler: 'hotkeyToggleNotifications',
-      titleKey: 'system.hotkeys.toggleNotifications',
-    },
     // M: страница «Система» откуда угодно; Alt+R — обновить её данные
     {
       id: 'open-machine',

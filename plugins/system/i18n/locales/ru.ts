@@ -1,7 +1,6 @@
 export const ru = {
   system: {
     hotkeys: {
-      toggleNotifications: 'Показать / скрыть центр уведомлений',
       openMachine: 'Открыть страницу «Система»',
       uploadFile: 'Загрузить G-code файл…',
       togglePrintAfter: 'Переключить «Начать печать после загрузки»',
@@ -171,42 +170,23 @@ export const ru = {
       confirmStart: 'Запустить сервис "{name}"?',
     },
 
+    // Центр уведомлений (список, тосты, фильтры) — в хосте; здесь только тексты и
+    // подписи источников продюсеров, завязанных на Klipper
     notifications: {
-      title: 'Уведомления',
       klipperShutdown: 'Остановка Klipper',
       klipperShutdownReason: 'Остановка Klipper: {reason}',
       tmcFlag: 'TMC {name}: {flag}',
       throttle: 'Хост: {flag}',
       mcuLink: 'MCU {name}: {reason}',
       canbus: 'MCU {name}: шина CAN — {state}',
-      empty: 'Нет уведомлений',
-      dismiss: 'Закрыть',
-      dismissAll: 'Закрыть все',
-      filterAll: 'Все',
-      settings: 'Настройки',
-      soundEnabled: 'Звуковой сигнал на критических уведомлениях',
-      ignoredPatterns: 'Игнорируемые паттерны (regex)',
-      patternPlaceholder: 'regex для игнорирования, напр. tmc\\d+ stepper_\\w+: ol[ab]',
-      ignore: 'Игнорировать это уведомление',
-      ignoredHint: 'Без учёта регистра; ищется в любом месте текста. Действует для всех принтеров.',
-      addPattern: 'Добавить',
-      remove: 'Удалить',
-      sev: {
-        critical: 'Критично',
-        error: 'Ошибка',
-        info: 'Инфо',
-      },
-      src: { 
-        gcode: 'Ответ G-code', 
-        klippy: 'Klipper', 
+      src: {
+        gcode: 'Ответ G-code',
+        macro: 'Макрос Klipper',
+        klippy: 'Klipper',
         tmc: 'Драйвер TMC',
         host: 'Хост',
         mcu: 'MCU',
-        guard: 'Агент гардов' 
       },
-      guardDecisionTimeout: 'Гард {guard} ({plugin}) не ответил вовремя — {method} отклонён',
-      guardParkTimeout: 'Подтверждение для {method} истекло — запрос отклонён',
-      guardDenied: 'Запрос {method} отклонён гардом плагина {plugin}',
     },
 
     auth: {
