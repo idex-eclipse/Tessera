@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import type { ExtensionRef } from '../../../../plugin-sdk/src/types';
   import { useCalibrations } from '../../use-calibrations.svelte.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
   import KlipperNotReady from '../../../shared/klippy-state/KlippyNotReady.svelte';
@@ -10,24 +11,33 @@
 
   import PidContent from '../panels/Heaters/PidContent.svelte';
 
-  import MeshContent from '../panels/Mesh/MeshContent.svelte';
-
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = useCalibrations(api);
   const klippy = useKlippyState(api);
 
-  type Tab = 'probe' | 'livez' | 'pid';
+  type BuiltinTab = 'probe' | 'livez' | 'pid';
+  /** Встроенная вкладка или ref вкладки дополнения (точка widget-tabs). */
+  type Tab = BuiltinTab | string;
   let tab = $state<Tab>('livez');
 
+  // Точка widget-tabs (append) — вкладки дополнений.
+  let extVersion = $state(0);
+  $effect(() => api.extensions.onChange(() => extVersion++));
+  let extTabs = $derived.by<ExtensionRef[]>(() => {
+    void extVersion;
+    return api.extensions.list('widget-tabs');
+  });
+
   // шейперов в виджете нет: графикам там не место
-  let tabs = $derived.by(() =>
-    [
-      { id: 'livez' as Tab, label: i18n.t('calibrations.liveZ.tab'), show: true },
-      { id: 'probe' as Tab, label: i18n.t('calibrations.section.probe'), show: true },
-      { id: 'pid' as Tab, label: i18n.t('calibrations.section.pid'), show: store.state.hasPid && store.state.heaters.length > 0 },
+  let tabs = $derived.by<Array<{ id: Tab; label: string }>>(() => [
+    ...[
+      { id: 'livez', label: i18n.t('calibrations.liveZ.tab'), show: true },
+      { id: 'probe', label: i18n.t('calibrations.section.probe'), show: true },
+      { id: 'pid', label: i18n.t('calibrations.section.pid'), show: store.state.hasPid && store.state.heaters.length > 0 },
     ].filter((t) => t.show),
-  );
+    ...extTabs.map((t) => ({ id: t.ref, label: t.title })),
+  ]);
 
   $effect(() => {
     if (!tabs.some((t) => t.id === tab)) tab = tabs[0]?.id ?? 'probe';
@@ -55,10 +65,20 @@
     </div>
 
     <div class="body">
-      {#if tab === 'probe'}<ProbeContent />
-      {:else if tab === 'livez'}<LiveZContent />
-      {:else if tab === 'pid'}<PidContent />
-      {:else}<MeshContent />
+      {#if tab === 'probe'}
+        <ExtensionPoint point="widget-probe">
+          {#snippet original()}<ProbeContent />{/snippet}
+        </ExtensionPoint>
+      {:else if tab === 'livez'}
+        <ExtensionPoint point="widget-livez">
+          {#snippet original()}<LiveZContent />{/snippet}
+        </ExtensionPoint>
+      {:else if tab === 'pid'}
+        <ExtensionPoint point="widget-pid">
+          {#snippet original()}<PidContent />{/snippet}
+        </ExtensionPoint>
+      {:else}
+        <ExtensionPoint point="widget-tabs" only={tab} />
       {/if}
     </div>
   {/if}

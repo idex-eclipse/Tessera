@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../../shared/icons/Icon.svelte';
   import MeshViewer3D from './components/MeshViewer3D.svelte';
@@ -173,6 +173,8 @@
 
 <div class="mesh-content">
   <!-- -------------------------------------------- Карта стола -->
+  <ExtensionPoint point="panel-mesh-map">
+  {#snippet original()}
   <section class="panel panel-map">
     <header class="panel-header">
       <span class="panel-title">{i18n.t('bedMesh.map.title')}</span>
@@ -328,26 +330,38 @@
       </div>
     </div>
   </section>
+  {/snippet}
+  </ExtensionPoint>
 
   <!-- -------------------------------------------- правая колонка -->
   <div class="side-col">
-    <section class="panel">
-      <header class="panel-header">
-        <span class="panel-title">{i18n.t('bedMesh.profiles.title')}</span>
-      </header>
-      <div class="panel-body">
-        <ProfilesPanel store={store} />
-      </div>
-    </section>
+    <ExtensionPoint point="panel-mesh-profiles">
+      {#snippet original()}
+        <section class="panel panel-profiles">
+          <header class="panel-header">
+            <span class="panel-title">{i18n.t('bedMesh.profiles.title')}</span>
+          </header>
+          <div class="panel-body">
+            <ProfilesPanel store={store} />
+          </div>
+        </section>
+      {/snippet}
+    </ExtensionPoint>
 
-    <section class="panel">
-      <header class="panel-header">
-        <span class="panel-title">{i18n.t('bedMesh.tools.title')}</span>
-      </header>
-      <div class="panel-body">
-        <ToolsPanel store={store} />
-      </div>
-    </section>
+    <ExtensionPoint point="panel-mesh-tools">
+      {#snippet original()}
+        <section class="panel">
+          <header class="panel-header">
+            <span class="panel-title">{i18n.t('bedMesh.tools.title')}</span>
+          </header>
+          <div class="panel-body">
+            <ToolsPanel store={store} />
+          </div>
+        </section>
+      {/snippet}
+    </ExtensionPoint>
+
+    <ExtensionPoint point="panels-mesh" />
   </div>
 </div>
 
@@ -378,13 +392,14 @@
     min-height: 0;
   }
 
-  .side-col > .panel {
+  /* панели лежат внутри display:contents-обёрток точек расширения, поэтому потомковый селектор */
+  .side-col .panel {
     display: flex;
     flex-direction: column;
     min-height: 0;
   }
 
-  .side-col > .panel:first-child {
+  .side-col .panel-profiles {
     flex: 1;
   }
 

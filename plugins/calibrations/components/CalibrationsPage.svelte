@@ -169,9 +169,15 @@
           {/snippet}
         </ExtensionPoint>
       {:else if tab === 'probe'}
-        <ProbeContent />
+        <ExtensionPoint point="panel-probe">
+          {#snippet original()}<ProbeContent />{/snippet}
+        </ExtensionPoint>
+        <ExtensionPoint point="panels-probe" />
       {:else if tab === 'heaters'}
-        <HeatersContent />
+        <ExtensionPoint point="panel-heaters">
+          {#snippet original()}<HeatersContent />{/snippet}
+        </ExtensionPoint>
+        <ExtensionPoint point="panels-heaters" />
       {:else if tab === 'mesh'}
         <MeshContent />
       {:else}

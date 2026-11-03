@@ -1,6 +1,6 @@
 <script lang="ts">
   import Loader from '../../../../shared/loader/Loader.svelte';
-  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
   import '../../../../shared/responsive/card-table.css';
   import { useCalibrations } from '../../../use-calibrations.svelte.ts';
   import { gcode, runGcode } from '../../../commands.ts';
@@ -223,6 +223,8 @@
 
 <div class="stack">
   <!-- ============ Панель Shapers ============ -->
+  <ExtensionPoint point="panel-shaper">
+  {#snippet original()}
   <section class="panel">
     <header class="panel-header">
       <span class="panel-title">{i18n.t('calibrations.section.shaper')}</span>
@@ -424,9 +426,13 @@
       {/if}
     </div>
   </section>
+  {/snippet}
+  </ExtensionPoint>
 
   <!-- ============ Панель Belts (авто по кинематике) ============ -->
   {#if beltsVisible}
+    <ExtensionPoint point="panel-belts">
+    {#snippet original()}
     <section class="panel">
       <header class="panel-header">
         <span class="panel-title">{i18n.t('calibrations.belts.title')}</span>
@@ -484,9 +490,13 @@
         <BeltsContent />
       </div>
     </section>
+    {/snippet}
+    </ExtensionPoint>
   {/if}
 
   <!-- ============ Панель Graphs ============ -->
+  <ExtensionPoint point="panel-graphs">
+  {#snippet original()}
   <section class="panel">
     <header class="panel-header">
       <span class="panel-title">{i18n.t('calibrations.graphs.title')}</span>
@@ -508,6 +518,10 @@
       <GraphsContent />
     </div>
   </section>
+  {/snippet}
+  </ExtensionPoint>
+
+  <ExtensionPoint point="panels-shaper" />
 </div>
 
 {#if saveOpen}

@@ -1,7 +1,7 @@
 import type { PluginManifest } from '../../plugin-sdk/src/types';
 
 export const historyManifest: PluginManifest = {
-  id: 'history',
+  id: '@core/history',
   name: 'History',
   version: '2.0.0',
   entry: '/plugins/history/index.js',

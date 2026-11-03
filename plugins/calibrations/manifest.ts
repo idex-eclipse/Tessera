@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const calibrationsManifest = definePlugin({
   id: '@core/calibrations',
   name: 'Calibrations',
-  version: '2.1.0',
+  version: '3.0.0',
   entry: '/plugins/calibrations/index.js',
 
   pages: [
@@ -84,10 +84,41 @@ export const calibrationsManifest = definePlugin({
     { id: 'probe-abort', scope: 'global', keys: 'Alt+Backspace', handler: 'hotkeyProbeAbort', titleKey: 'calibrations.hotkeys.probeAbort' },
   ],
 
-  // Дополнения (внешние плагины) встраиваются вкладками или альтернативой вкладки Input Shaper.
+  // Дополнения (внешние плагины) встраиваются вкладками, панелями, телами виджетов и оверлеями.
   extensionPoints: [
+    // страница: вкладки
     { id: 'tabs', kind: 'tab', mode: 'append', version: 1, titleKey: 'calibrations.ext.tabs' },
     { id: 'shaper', kind: 'tab', mode: 'alternative', version: 1, titleKey: 'calibrations.ext.shaper' },
+
+    // страница: замена панели целиком
+    { id: 'panel-mesh-map', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.panelMeshMap' },
+    { id: 'panel-mesh-profiles', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.panelMeshProfiles' },
+    { id: 'panel-mesh-tools', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.panelMeshTools' },
+    { id: 'panel-probe', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.panelProbe' },
+    { id: 'panel-heaters', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.panelHeaters' },
+    // вкладка шейперов: панели дополняют друг друга и штатные калибровки Klipper, поэтому выбор, а не замена
+    { id: 'panel-shaper', kind: 'panel', mode: 'alternative', version: 1, titleKey: 'calibrations.ext.panelShaper' },
+    { id: 'panel-belts', kind: 'panel', mode: 'alternative', version: 1, titleKey: 'calibrations.ext.panelBelts' },
+    { id: 'panel-graphs', kind: 'panel', mode: 'alternative', version: 1, titleKey: 'calibrations.ext.panelGraphs' },
+
+    // страница: свои панели рядом с имеющимися, по вкладке
+    { id: 'panels-mesh', kind: 'panel', mode: 'append', version: 1, titleKey: 'calibrations.ext.panelsMesh' },
+    { id: 'panels-probe', kind: 'panel', mode: 'append', version: 1, titleKey: 'calibrations.ext.panelsProbe' },
+    { id: 'panels-heaters', kind: 'panel', mode: 'append', version: 1, titleKey: 'calibrations.ext.panelsHeaters' },
+    { id: 'panels-shaper', kind: 'panel', mode: 'append', version: 1, titleKey: 'calibrations.ext.panelsShaper' },
+
+    // виджет Calibrations: тела вкладок и свои вкладки
+    { id: 'widget-livez', kind: 'element', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.widgetLivez' },
+    { id: 'widget-probe', kind: 'element', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.widgetProbe' },
+    { id: 'widget-pid', kind: 'element', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.widgetPid' },
+    { id: 'widget-tabs', kind: 'tab', mode: 'append', version: 1, titleKey: 'calibrations.ext.widgetTabs' },
+
+    // виджет bed-mesh: всё содержимое
+    { id: 'widget-bed-mesh', kind: 'element', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.widgetBedMesh' },
+
+    // оверлеи: всё содержимое (видимостью управляет плагин)
+    { id: 'overlay-test-z', kind: 'element', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.overlayTestZ' },
+    { id: 'overlay-screws-tilt', kind: 'element', mode: 'replacement', version: 1, titleKey: 'calibrations.ext.overlayScrewsTilt' },
   ],
 
   locales: ['en', 'ru'],

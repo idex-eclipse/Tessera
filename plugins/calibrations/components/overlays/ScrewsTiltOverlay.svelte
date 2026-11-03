@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../shared/icons/Icon.svelte';
   import '../../../shared/responsive/card-table.css';
 
@@ -37,6 +37,8 @@
 </script>
 
 {#if open}
+  <ExtensionPoint point="overlay-screws-tilt">
+  {#snippet original()}
   <div class="overlay-backdrop" onclick={close} role="presentation"></div>
 
   <div
@@ -114,6 +116,8 @@
       <button class="btn" onclick={close}>{i18n.t('bedMesh.screws.close')}</button>
     </footer>
   </div>
+  {/snippet}
+  </ExtensionPoint>
 {/if}
 
 <style>

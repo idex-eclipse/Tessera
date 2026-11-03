@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
   import { useBedMesh } from '../../../use-bed-mesh.svelte.ts';
   import { computeStats, deviationColor } from '../../panels/Mesh/mesh-math.ts';
@@ -324,6 +324,8 @@
 </script>
 
 <div class="widget">
+  <ExtensionPoint point="widget-bed-mesh">
+  {#snippet original()}
   {#if !klippy.ready}
     <KlipperNotReady />
   {:else if store.hasMesh && stats && fullBounds}
@@ -363,6 +365,8 @@
   {:else}
     <p class="empty">{i18n.t('bedMesh.widget.noMesh')}</p>
   {/if}
+  {/snippet}
+  </ExtensionPoint>
 </div>
 
 <style>

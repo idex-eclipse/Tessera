@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { useBedMesh } from '../../use-bed-mesh.svelte.ts';
   import { gcode, runGcode } from '../../commands.ts';
@@ -43,6 +43,8 @@
 </script>
 
 {#if open}
+  <ExtensionPoint point="overlay-test-z">
+  {#snippet original()}
   <div class="overlay-backdrop" role="presentation"></div>
 
   <div
@@ -114,6 +116,8 @@
       </button>
     </footer>
   </div>
+  {/snippet}
+  </ExtensionPoint>
 {/if}
 
 <style>

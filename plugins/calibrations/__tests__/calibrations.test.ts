@@ -7,6 +7,9 @@ import { createHostHotkeys } from '../../../host/src/core/host-hotkeys';
 import { guardCalibPrintStart, guardCalibScript, scriptCommands } from '../guards';
 import * as hotkeys from '../hotkeys';
 import { calibrationsManifest } from '../manifest';
+import { SURFACE_SPECS } from '../../../host/src/core/surfaces';
+import { en } from '../i18n/locales/en';
+import { ru } from '../i18n/locales/ru';
 import { pageUi } from '../page-ui-state.svelte';
 import { ensurePrinterTracker, stopPrinterTracker } from '../printer-tracker';
 
@@ -261,5 +264,30 @@ describe('manifest', () => {
     expect(analysis.invalid).toEqual([]);
     expect(analysis.conflicts).toEqual([]);
     expect(new Set(entries.map((e) => e.contribution.id)).size).toBe(entries.length);
+  });
+});
+
+describe('calibrations / extension points', () => {
+  const points = calibrationsManifest.extensionPoints ?? [];
+
+  it('declares valid points with unique ids', () => {
+    const validate = SURFACE_SPECS.extensionPoints.validate!;
+    for (const p of points) expect(validate(p), p.id).toBe(true);
+    expect(new Set(points.map((p) => p.id)).size).toBe(points.length);
+  });
+
+  it('every point title exists in en and ru', () => {
+    for (const p of points) {
+      const key = p.titleKey!.replace(/^calibrations\./, '').split('.');
+      const pick = (root: unknown) => key.reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], root);
+      expect(pick((en as { calibrations?: unknown }).calibrations ?? en), `en ${p.id}`).toBeTypeOf('string');
+      expect(pick((ru as { calibrations?: unknown }).calibrations ?? ru), `ru ${p.id}`).toBeTypeOf('string');
+    }
+  });
+
+  it('shaper tab panels are alternatives, never replacements', () => {
+    for (const id of ['panel-shaper', 'panel-belts', 'panel-graphs']) {
+      expect(points.find((p) => p.id === id)?.mode).toBe('alternative');
+    }
   });
 });
