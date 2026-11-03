@@ -84,9 +84,7 @@ export interface GuardNotifyDetail {
   reasonKey?: string;
 }
 
-/** Транспорт fail-closed уведомлений: хост диспатчит, @core/system слушает.
- *  Дублируется строкой в use-notifications (плагины не импортируют host-core). */
-export const GUARD_NOTIFY_EVENT = 'mpu:guard-notify';
+export type GuardNotifySink = (detail: GuardNotifyDetail) => void;
 
 export interface GuardAgentOptions {
   now?: () => number;
@@ -124,7 +122,7 @@ interface ParkedChain {
 
 export function createGuardAgent(options: GuardAgentOptions = {}) {
   const now = options.now ?? (() => Date.now());
-  const onNotifySink = options.onNotify;
+  let onNotifySink: GuardNotifySink | null = options.onNotify ?? null;
   const decisionTimeoutMs = options.decisionTimeoutMs ?? 10_000;
   const parkTimeoutMs = options.parkTimeoutMs ?? 10 * 60_000;
   const newToken = options.newToken ?? defaultNewToken;
@@ -145,13 +143,17 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
     }
   }
   
+  /** Приёмник fail-closed уведомлений (хост подключает центр уведомлений); null — отключить. */
+  function setNotifySink(sink: GuardNotifySink | null): void {
+    onNotifySink = sink;
+  }
+
   function notify(detail: GuardNotifyDetail): void {
-    if (onNotifySink) {
+    if (!onNotifySink) return;
+    try {
       onNotifySink(detail);
-      return;
-    }
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      window.dispatchEvent(new CustomEvent(GUARD_NOTIFY_EVENT, { detail }));
+    } catch (e) {
+      console.error('[guard-agent] notify sink error', e);
     }
   }
 
@@ -488,6 +490,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
     getRegisteredGuards,
     getParkedChains,
     onChange,
+    setNotifySink,
   };
 }
 

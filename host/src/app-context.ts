@@ -3,6 +3,7 @@ import { getContext, setContext } from 'svelte';
 import type { ExtensionHost } from './core/extension-host.svelte.ts';
 import type { HotkeyManager } from './core/hotkey-manager.svelte.ts';
 import type { LayoutEditor } from './core/layout-editor.svelte.ts';
+import type { NotificationCenter } from './core/notification-center.svelte.ts';
 import type { FleetIndex } from './core/fleet-index.svelte.ts';
 import type { HostI18n } from './core/host-i18n.svelte.ts';
 import type { PluginLoader } from './core/plugin-loader.svelte.ts';
@@ -28,6 +29,7 @@ export interface AppContext {
   fleetIndex: FleetIndex;
   editor: LayoutEditor;
   extensions: ExtensionHost;
+  notifications: NotificationCenter;
 }
 
 const APP_CONTEXT_KEY = Symbol('app-context');

@@ -61,6 +61,33 @@ const ru: I18nMessages = {
     hide: 'Свернуть баннер',
   },
 
+  notifications: {
+    title: 'Уведомления',
+    empty: 'Нет уведомлений',
+    dismiss: 'Закрыть',
+    dismissAll: 'Закрыть все',
+    filterAll: 'Все',
+    settings: 'Настройки',
+    soundEnabled: 'Звуковой сигнал на критических уведомлениях',
+    ignoredPatterns: 'Игнорируемые паттерны (regex)',
+    patternPlaceholder: 'regex для игнорирования, напр. tmc\\d+ stepper_\\w+: ol[ab]',
+    ignore: 'Игнорировать это уведомление',
+    ignoredHint: 'Без учёта регистра; ищется в любом месте текста. Действует для всех принтеров.',
+    addPattern: 'Добавить',
+    remove: 'Удалить',
+    sev: {
+      critical: 'Критично',
+      error: 'Ошибка',
+      info: 'Инфо',
+    },
+    guard: {
+      source: 'Агент гардов',
+      decisionTimeout: 'Гард {guard} ({plugin}) не ответил вовремя — {method} отклонён',
+      parkTimeout: 'Подтверждение для {method} истекло — запрос отклонён',
+      denied: 'Запрос {method} отклонён гардом плагина {plugin}',
+    },
+  },
+
   printer: {
     statusConnecting: 'Подключение',
     statusOffline: 'Не в сети',
@@ -106,6 +133,7 @@ const ru: I18nMessages = {
         printerPrev: 'Предыдущий принтер',
         dashboard: 'Открыть панель управления активного принтера',
         toggleRightPanel: 'Показать / скрыть правую панель',
+        toggleNotifications: 'Показать / скрыть центр уведомлений',
         toggleSidebar: 'Показать / скрыть левое меню',
         pageNext: 'Следующая страница (в порядке сайдбара)',
         pagePrev: 'Предыдущая страница (в порядке сайдбара)',

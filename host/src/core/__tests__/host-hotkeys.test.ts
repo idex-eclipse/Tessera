@@ -208,6 +208,39 @@ describe('right panel and page navigation hotkeys', () => {
     expect(ui.toggleRightPanel).toHaveBeenCalledTimes(1);
   });
 
+  it('N toggles the notification center; Shift+N and typing in a field do not', () => {
+    const notifications = { toggle: vi.fn() };
+    const manager = createHotkeyManager({
+      registry: createPluginRegistry(createSettingsStore({ storage: new MemoryStorage() })),
+      getRoute: () => ({ kind: 'dashboard', printerId: 'a', query: {} }),
+      getModule: () => undefined,
+      getApi: (id) => ({ pluginId: id }) as unknown as PluginApi,
+      appliesToActivePrinter: () => true,
+      hostHotkeys: createHostHotkeys({
+        router: { navigateToPrinter: vi.fn(), navigateToDashboard: vi.fn(), navigateToPluginPage: vi.fn() },
+        printerManager: { printers: [], activePrinterId: null } as never,
+        ui: { toggleFleet: vi.fn(), setFleet: vi.fn(), toggleRightPanel: vi.fn(), toggleSidebar: vi.fn() },
+        registry: { getVisiblePages: () => [] },
+        getRoute: () => ({ kind: 'dashboard', printerId: 'a', query: {} }),
+        notifications,
+      }),
+      warn: vi.fn(),
+    });
+
+    expect(manager.handleKeydown(ev({ code: 'KeyN', key: 'n' }))).toBe(true);
+    expect(notifications.toggle).toHaveBeenCalledTimes(1);
+
+    expect(manager.handleKeydown(ev({ code: 'KeyN', key: 'N', shiftKey: true }))).toBe(false);
+    const target = { tagName: 'INPUT' } as unknown as EventTarget;
+    expect(manager.handleKeydown(ev({ code: 'KeyN', key: 'n', target }))).toBe(false);
+    expect(notifications.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('without a notification center there is no N hotkey', () => {
+    const { manager } = setup();
+    expect(manager.handleKeydown(ev({ code: 'KeyN', key: 'n' }))).toBe(false);
+  });
+
   it('L toggles the left menu; Shift+L and typing in a field do not', () => {
     const { manager, ui } = setup();
     expect(manager.handleKeydown(ev({ code: 'KeyL', key: 'l' }))).toBe(true);

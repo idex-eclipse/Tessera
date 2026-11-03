@@ -53,6 +53,7 @@ describe('settings-store / base state', () => {
       fleetPanelsCustomized: false,
       hotkeyOverrides: {},
       extensionResolutions: {},
+      notifications: { ignoredPatterns: [], soundEnabled: false },
     });
   });
 

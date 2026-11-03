@@ -99,6 +99,7 @@ const DEFAULT_UI_STATE: UiState = {
   fleetPanelsCustomized: false,
   hotkeyOverrides: {},
   extensionResolutions: {},
+  notifications: { ignoredPatterns: [], soundEnabled: false },
 };
 
 const LEGACY_UNPREFIXED_KEYS = new Set<string>([
@@ -708,6 +709,10 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   // Extension points: решения конфликтов (device-global), выбор варианта (per-printer)
   // ------------------------------------------------------------------
 
+  function setNotificationSettings(patch: Partial<UiState['notifications']>): void {
+    patchUi({ notifications: { ...ui.notifications, ...patch } });
+  }
+
   function setExtensionResolution(
     address: string,
     resolution: { winners: string[]; candidates: string[] } | null,
@@ -1035,6 +1040,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     setHotkeyOverride,
     clearHotkeyOverride,
     resetHotkeyOverrides,
+    setNotificationSettings,
     setExtensionResolution,
     getExtensionChoice,
     setExtensionChoice,
@@ -1277,6 +1283,17 @@ function normalizeUiState(value: unknown): UiState {
     }
   }
 
+  const notificationsSource = isRecord(source.notifications) ? source.notifications : {};
+  const notifications: UiState['notifications'] = {
+    ignoredPatterns: isStringArray(notificationsSource.ignoredPatterns)
+      ? [...notificationsSource.ignoredPatterns]
+      : [],
+    soundEnabled:
+      typeof notificationsSource.soundEnabled === 'boolean'
+        ? notificationsSource.soundEnabled
+        : DEFAULT_UI_STATE.notifications.soundEnabled,
+  };
+
   return {
     theme,
     locale,
@@ -1293,6 +1310,7 @@ function normalizeUiState(value: unknown): UiState {
     fleetPanelsCustomized,
     hotkeyOverrides,
     extensionResolutions,
+    notifications,
   };
 }
 

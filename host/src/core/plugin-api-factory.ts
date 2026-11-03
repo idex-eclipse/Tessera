@@ -2,6 +2,7 @@ import type {
   ExtensionPointState,
   FleetIndexEntry,
   MoonrakerProxyHandle,
+  NotificationInput,
   PluginExtensionsApi,
   PluginApi,
   PluginManifest,
@@ -413,6 +414,22 @@ export function createPluginApi(
 
       retract(printerId: string): void {
         ctx.fleetIndex.retract(pluginId, printerId);
+      },
+    },
+
+    notifications: {
+      push(n: NotificationInput): void {
+        // центр резолвится на каждом вызове: контекст тестов может его не иметь
+        const center = ctx.notifications as AppContext['notifications'] | undefined;
+        if (!center || !n || typeof n !== 'object') return;
+        center.push({
+          printerId: typeof n.printerId === 'string' && n.printerId ? n.printerId : getPrinterId(),
+          // автора проставляет хост: плагин не может выдать себя за другого
+          pluginId,
+          severity: n.severity,
+          text: n.text,
+          label: n.label,
+        });
       },
     },
 

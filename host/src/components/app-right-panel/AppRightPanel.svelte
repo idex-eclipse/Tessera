@@ -3,6 +3,7 @@
   import { getPluginApi } from '../../core/plugin-api-cache';
   import PluginElementHost from '../plugin-element-host.svelte';
   import Icon from '../icons/Icon.svelte';
+  import NotificationBell from '../notifications/NotificationBell.svelte';
 
   const ctx = getAppContext();
 
@@ -113,9 +114,10 @@
       />
     </div>
 
-    <!-- кнопка сворачивания — ВСЕГДА внизу, в обоих состояниях (кроме узкого экрана) -->
-    {#if !narrow}
+    <!-- колокольчик центра уведомлений — над кнопкой сворачивания; на узком экране остаётся один -->
     <footer class="right-panel-footer">
+      <NotificationBell collapsed={isCollapsed} />
+      {#if !narrow}
       <button
         class="nav-item"
         class:collapsed
@@ -134,8 +136,10 @@
           </span>
         {/if}
       </button>
+      {/if}
     </footer>
 
+    {#if !narrow}
     <div
       class="resize-handle"
       role="separator"

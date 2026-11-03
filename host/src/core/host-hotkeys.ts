@@ -1,4 +1,5 @@
 import type { LayoutEditor } from './layout-editor.svelte.ts';
+import type { NotificationCenter } from './notification-center.svelte.ts';
 import type { PluginRegistry } from './plugin-registry.svelte.ts';
 import type { PrinterManager } from './printer-manager.svelte.ts';
 import type { Route, Router } from './router.svelte.ts';
@@ -38,8 +39,10 @@ export function createHostHotkeys(deps: {
   getRoute(): Route;
   /** Редактор дашборда: без него клавиши отмены/повтора правок не регистрируются. */
   editor?: Pick<LayoutEditor, 'active' | 'undo' | 'redo'>;
+  /** Центр уведомлений: без него клавиша открытия списка не регистрируется. */
+  notifications?: Pick<NotificationCenter, 'toggle'>;
 }): HostHotkey[] {
-  const { router, printerManager, ui, registry, getRoute, editor } = deps;
+  const { router, printerManager, ui, registry, getRoute, editor, notifications } = deps;
 
   function goTo(printerId: string | undefined): void {
     if (!printerId) return;
@@ -132,6 +135,16 @@ export function createHostHotkeys(deps: {
       titleKey: 'settings.about.hostHotkeys.toggleRightPanel',
       run: () => ui.toggleRightPanel(),
     },
+    ...(notifications
+      ? [
+          {
+            id: 'toggle-notifications',
+            keys: 'N',
+            titleKey: 'settings.about.hostHotkeys.toggleNotifications',
+            run: () => notifications.toggle(),
+          },
+        ]
+      : []),
     {
       id: 'toggle-sidebar',
       keys: 'L',

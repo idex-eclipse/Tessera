@@ -64,6 +64,33 @@ const en: I18nMessages = {
     hide: 'Collapse banner',
   },
 
+  notifications: {
+    title: 'Notifications',
+    empty: 'No notifications',
+    dismiss: 'Dismiss',
+    dismissAll: 'Dismiss all',
+    filterAll: 'All',
+    settings: 'Settings',
+    soundEnabled: 'Play sound on critical notifications',
+    ignoredPatterns: 'Ignored patterns (regex)',
+    patternPlaceholder: 'regex to ignore, e.g. tmc\\d+ stepper_\\w+: ol[ab]',
+    ignore: 'Ignore this notification',
+    ignoredHint: 'Case-insensitive; matches anywhere in the text. Applies to all printers.',
+    addPattern: 'Add',
+    remove: 'Remove',
+    sev: {
+      critical: 'Critical',
+      error: 'Error',
+      info: 'Info',
+    },
+    guard: {
+      source: 'Guard agent',
+      decisionTimeout: 'Guard {guard} ({plugin}) did not decide in time — {method} denied',
+      parkTimeout: 'Confirmation for {method} expired — request denied',
+      denied: 'Request {method} denied by guard of {plugin}',
+    },
+  },
+
   printer: {
     statusConnecting: 'Connecting',
     statusOffline: 'Offline',
@@ -109,6 +136,7 @@ const en: I18nMessages = {
         printerPrev: 'Previous printer',
         dashboard: 'Open active printer dashboard',
         toggleRightPanel: 'Show / hide the right panel',
+        toggleNotifications: 'Show / hide the notification center',
         toggleSidebar: 'Show / hide the left menu',
         pageNext: 'Next page (sidebar order)',
         pagePrev: 'Previous page (sidebar order)',

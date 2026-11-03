@@ -83,6 +83,8 @@ export interface UiState {
    * Ключ — адрес точки `<owner>#<point>`; winners/candidates — refs `<plugin>/<id>`.
    */
   extensionResolutions: Record<string, { winners: string[]; candidates: string[] }>;
+  /** Центр уведомлений (device-global): фильтр по regex и звук для critical. */
+  notifications: { ignoredPatterns: string[]; soundEnabled: boolean };
 }
 
 /**

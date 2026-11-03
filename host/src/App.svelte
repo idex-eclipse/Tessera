@@ -17,6 +17,9 @@
   import { createHotkeyManager } from './core/hotkey-manager.svelte.ts';
   import { createExtensionHost } from './core/extension-host.svelte.ts';
   import { createHostHotkeys } from './core/host-hotkeys.ts';
+  import { guardAgent } from './core/guard-agent.ts';
+  import { createNotificationCenter } from './core/notification-center.svelte.ts';
+  import { guardNotification } from './core/guard-notification.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
 
   import AppHeader from './components/layout/AppHeader.svelte';
@@ -27,6 +30,8 @@
   import PluginOverlaysLayer from './components/plugin-overlays-layer/PluginOverlaysLayer.svelte';
   import AppRightPanel from './components/app-right-panel/AppRightPanel.svelte';
   import FleetMode from './components/fleet/FleetMode.svelte';
+  import NotificationsPanel from './components/notifications/NotificationsPanel.svelte';
+  import ToastStack from './components/notifications/ToastStack.svelte';
 
   import OfflineOverlay from './components/offline-overlay/OfflineOverlay.svelte';
   import ConfirmDialog from './components/confirm/ConfirmDialog.svelte';
@@ -75,6 +80,14 @@
     leave: () => window.location.replace(window.location.hash.split('?')[0] || '#/'),
   });
 
+  const notifications = createNotificationCenter(settings);
+
+  // Fail-closed события гардов (таймауты, отказ) — хостовые уведомления, без window-событий
+  $effect(() => {
+    guardAgent.setNotifySink((d) => notifications.push(guardNotification(d, i18n)));
+    return () => guardAgent.setNotifySink(null);
+  });
+
   const hotkeys = createHotkeyManager({
     registry,
     getRoute: () => router.route,
@@ -85,7 +98,7 @@
     isFleetOpen: () => ui.fleetOpen,
     getOverrides: () => settings.ui.hotkeyOverrides,
     isExtensionMounted: (pluginId) => extensions.isMounted(pluginId),
-    hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route, editor }),
+    hostHotkeys: createHostHotkeys({ router, printerManager, ui, registry, getRoute: () => router.route, editor, notifications }),
   });
 
   const fleetIndex = createFleetIndex();
@@ -96,7 +109,7 @@
   });
 
   const ctx: AppContext = {
-    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex, editor, extensions,
+    settings, printerManager, registry, ui, i18n, loader, router, hotkeys, fleetIndex, editor, extensions, notifications,
   };
   provideAppContext(ctx);
 
@@ -194,6 +207,8 @@
   <MigrationDialog open={legacyOpen} onClose={() => (legacyOpen = false)} />
   <AddPrinterDialog />
   <PluginOverlaysLayer />
+  <NotificationsPanel />
+  <ToastStack />
   <AuthOverlay />
   {#if ui.fleetOpen}
     <FleetMode {printerManager} {registry} {ui} {i18n} {router}/>

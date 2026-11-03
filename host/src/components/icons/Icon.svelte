@@ -52,6 +52,14 @@
   {:else if name === 'x'}
     <line x1="18" y1="6" x2="6" y2="18"></line>
     <line x1="6" y1="6" x2="18" y2="18"></line>
+  {:else if name === 'bell'}
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+  {:else if name === 'trash'}
+    <polyline points="3 6 5 6 21 6"></polyline>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+  {:else if name === 'filter'}
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
   {:else if name === 'sliders'}
     <line x1="4" y1="21" x2="4" y2="14"></line>
     <line x1="4" y1="10" x2="4" y2="3"></line>

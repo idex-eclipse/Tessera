@@ -332,6 +332,62 @@ describe('plugin-api-factory / multi-printer API', () => {
     ]);
   });
 });
+describe('plugin-api-factory / notifications', () => {
+  function setupNotifications() {
+    const manager = createFakeManager();
+    manager.add('a', 'Printer A', 'http://a.local');
+    manager.add('b', 'Printer B', 'http://b.local');
+    manager.setActivePrinter('a');
+    const push = vi.fn();
+    const ctx = { ...createCtx(manager), notifications: { push } } as unknown as AppContext;
+    return { manager, push, ctx };
+  }
+
+  it('push attributes the notification to the calling plugin and the active printer', () => {
+    const { ctx, push } = setupNotifications();
+    const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+
+    api.notifications.push({ severity: 'error', text: 'Heater drifts', label: 'Heaters' });
+
+    expect(push).toHaveBeenCalledWith({
+      printerId: 'a',
+      pluginId: 'plugin-one',
+      severity: 'error',
+      text: 'Heater drifts',
+      label: 'Heaters',
+    });
+  });
+
+  it('push honours an explicit printerId', () => {
+    const { ctx, push } = setupNotifications();
+    const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+
+    api.notifications.push({ severity: 'info', text: 'done', printerId: 'b' });
+
+    expect(push.mock.calls[0]![0]).toMatchObject({ printerId: 'b', pluginId: 'plugin-one' });
+  });
+
+  it('a plugin cannot pass itself off as another author', () => {
+    const { ctx, push } = setupNotifications();
+    const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+
+    api.notifications.push({ severity: 'info', text: 'x', pluginId: '@host' } as never);
+
+    expect(push.mock.calls[0]![0].pluginId).toBe('plugin-one');
+  });
+
+  it('push is a no-op when the context has no notification center, and ignores junk', () => {
+    const manager = createFakeManager();
+    const api = createPluginApi(createCtx(manager), 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+    expect(() => api.notifications.push({ severity: 'info', text: 'x' })).not.toThrow();
+
+    const { ctx, push } = setupNotifications();
+    const api2 = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+    expect(() => api2.notifications.push(null as never)).not.toThrow();
+    expect(push).not.toHaveBeenCalled();
+  });
+});
+
 describe('plugin-api-factory / fleet index', () => {
   const entry = {
     tags: [{ id: 'printing', labelKey: 'k.printing' }],
