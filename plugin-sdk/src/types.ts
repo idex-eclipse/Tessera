@@ -403,6 +403,12 @@ export interface PluginManifest {
    * Хост с другим MAJOR или меньшим MINOR плагин не грузит и не ставит.
    */
   pluginApi?: string;
+  /**
+   * Минимальные версии плагинов, от которых зависит этот: `{ "<pluginId>": "X.Y.Z" }` (>=).
+   * Владельцы точек из `extensions` — зависимости и без записи (любая версия); запись
+   * нужна, когда точка появилась в определённой версии владельца (см. dependencies.ts).
+   */
+  dependencies?: Record<string, string>;
 
   pages?: PageContribution[];
   widgets?: WidgetContribution[];

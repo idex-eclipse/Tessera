@@ -345,6 +345,7 @@ interface PluginManifest {
   version: string;       // required, a string (compared as a string!)
   entry: string;         // required, path to the ES module relative to the manifest
   pluginApi?: string;    // "MAJOR.MINOR" of the plugin contract you need; none = "0.7"
+  dependencies?: Record<string, string>; // minimal versions of other plugins, see "Dependencies"
 
   pages?: PageContribution[];
   widgets?: WidgetContribution[];
@@ -371,17 +372,17 @@ manifest; the host itself ignores them, and they are not in the SDK type.
 ### Plugin API version
 
 `pluginApi` is the version of the plugin contract the plugin needs: `PluginApi`, the
-manifest, the CE contract and the extension points of the built-in plugins. The host
-keeps its own in `plugin-sdk/src/api-level.ts` (`PLUGIN_API`, now `0.8`; Settings →
-About shows it).
+manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-level.ts`
+(`PLUGIN_API`, now `0.8`; Settings → About shows it).
 
 - **MINOR** grows with every backward-compatible addition: a new `PluginApi` method, a
-  manifest field or surface, a new extension point (or point version) of a built-in
-  plugin. **MAJOR** is reserved for incompatible changes.
+  manifest field or surface. **MAJOR** is reserved for incompatible changes.
+- Extension points are not part of the plugin API: the set of points belongs to the
+  owner's version, built-in plugins included (see [Dependencies](#dependencies)).
 - A plugin fits when its MAJOR equals the host's and its MINOR is not above it.
 - Put the version where everything you use first appeared. A plugin without the field
-  is `0.7` (the contract before extension points); one that extends `@core/*` points
-  needs at least `0.8`.
+  is `0.7` (the contract before extension points); one that extends points or states
+  `dependencies` needs at least `0.8`.
 - An incompatible plugin is not installed (`tessera-ext`, the registry block refuses it)
   and not loaded (the host does not import it and lists it under "Not loaded" in
   Settings → Plugins with "update Tessera").
@@ -389,7 +390,34 @@ About shows it).
 | Version | What appeared |
 |---|---|
 | `0.7` | the base contract |
-| `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `@core/calibrations#tabs` and `#shaper` |
+| `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `dependencies` |
+
+### Dependencies
+
+`dependencies` lists minimal versions of other plugins (semver `X.Y.Z`, "at least"):
+
+```json
+{
+  "id": "tessera/shaketune",
+  "pluginApi": "0.8",
+  "dependencies": { "@core/calibrations": "3.0.0" },
+  "extensions": [{ "point": "@core/calibrations#panel-graphs", "kind": "panel", "version": 1, … }]
+}
+```
+
+- The owners of the points in `extensions` are dependencies even without an entry (any
+  version fits). Add one when the point (or its version) appeared in a certain owner
+  version: the owner raises its `version`, the plugin API stays. For built-in plugins the
+  versions the points exist since are listed in [surfaces.md](surfaces.md#points-of-the-built-in-plugins).
+- There is no upper bound: an incompatible point contract is caught by the point's `version`.
+- Host: if the loaded owner is older, the extension's contributions to its points are
+  rejected ("needs X ≥ N, installed M" in Settings → Plugins); the rest of the plugin works.
+- `tessera-ext`: installs or updates the dependency from the registry, and refuses when
+  the registry has no fitting version or this Tessera's `@core/*` is older than needed
+  (`--force` installs anyway). The build writes the `@core/*` versions to
+  `host/dist/core-plugins.json`.
+- An invalid entry (not semver, empty id, `#` in the id) is dropped with a console
+  warning; `registry-pack` refuses to pack such a manifest.
 
 The host checks the four required fields (`id`, `name`, `version`,
 `entry` — non-empty strings) and `pluginApi`. Everything else is sanitized on load: **an invalid
