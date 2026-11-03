@@ -883,6 +883,8 @@ def registry_entry(pid):
 
 def api_install(pid):
     registry = load_registry()
+    if not any(p['id'] == pid for p in registry['plugins']):
+        raise ExtError(f'{clean(pid)} is not in the registry')
     with ExtensionsLock():
         changed, deps = install_with_dependencies(pid, registry)
         if changed:
