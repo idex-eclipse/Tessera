@@ -291,6 +291,44 @@ To turn it off, use the menu: `tessera` → **S) Settings** → **3) Plugins fro
 
 ---
 
+## The `tessera-update-manager` service: updating Tessera from the UI
+
+Settings → About shows whether a newer build of the configured branch is published and has an
+**Update Tessera** button. The browser cannot replace its own files, so a second small service
+does it. It is separate from `tessera-ext` on purpose: replacing the UI needs write access to
+the installation directory, while `tessera-ext` may write `extensions/` only.
+
+- **Same model as `tessera-ext`.** `tessera-update-manager.socket` listens on
+  `/run/tessera-update-manager.sock`, systemd starts `deploy/tessera-update-manager.py serve` on
+  the first request and the process exits after 5 idle minutes. nginx proxies `/tessera-update/`.
+  Moonraker checks permissions the same way (same code), POST requires `application/json`,
+  `Origin` must match `Host`.
+- **The request has no parameters.** `GET /tessera-update/v1/status` (add `?refresh=1` to skip
+  the 10-minute cache) and `POST /tessera-update/v1/update` with the body `{}`. The branch and
+  the repository come from `install.conf`; nothing is taken from the request.
+- **The same build as the installer.** The service downloads `build-info` and the archive of the
+  rolling release `build-<branch>` over `https://` only, checks the sha256, unpacks into a
+  staging folder, rejects links and unsafe paths, and only then swaps `host/`, `deploy/` and
+  `build-info` (a killed update is rolled back on the next start). A failure leaves the working
+  UI in place; `extensions/` is never touched.
+- **Sandbox.** It runs as the printer user, not root, with `ProtectSystem=strict`,
+  `ProtectHome=tmpfs` and `NoNewPrivileges`; it may write the installation directory and nothing
+  else.
+- **What it cannot do.** nginx, systemd units and the Klipper config need root and stay with
+  `tessera update`. If a release needs such a change, its release notes say so. A source checkout
+  (`.git`) is not updated from the UI: `tessera update` asks before replacing it.
+- **After an update, reload the page.** The new files have new chunk names. A running
+  `tessera-ext` keeps the previous `deploy/` mounted until it exits (up to 5 minutes).
+
+Installations made before this service existed need one `tessera update` on the printer to get
+the units and the nginx location. Logs: `journalctl -u tessera-update-manager`.
+
+To turn it off: `tessera` → **S) Settings** → **4) Update from UI** (or `TESSERA_UI_UPDATE=0`):
+the units are removed, nginx answers 502 on `/tessera-update/`, and the UI shows a hint to use the
+`tessera` command instead.
+
+---
+
 ## Installing the host: `deploy/install.sh`
 
 A script for Armbian/Debian: downloads the prebuilt UI, configures nginx (including
@@ -309,8 +347,8 @@ After installation the `tessera` command opens the same menu.
 |---|---|
 | **1) Install** | asks the directory, nginx port, Moonraker address and Klipper config directory; installs dependencies (`curl`, `tar`, `nginx`, `python3`), downloads the build, configures nginx and Klipper, creates the `tessera` and `tessera-ext` commands |
 | **2) Update** | shows the installed commit and the commit of the branch's published build. *Update Tessera* — download → nginx → Klipper config, no questions. *Reinstall* — download the build again even if it is current and rewrite the nginx config |
-| **3) Remove** | lists what will be removed and asks for confirmation: the nginx site and its logs, `[include tessera-shell.cfg]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`) and `tessera-shell.cfg`, the `tessera`/`tessera-ext` commands, the service units, the installation directory, `install.conf`, and the nginx upgrade map unless another site uses it. Installed extensions can be kept: they are moved to `~/tessera-extensions-backup`. Packages (nginx, python3) and the `shapers/` graphs stay |
-| **S) Settings** | branch (list of branches with a published build; Update is offered after a change), plugins by URL and installing from the UI (applied at once) |
+| **3) Remove** | lists what will be removed and asks for confirmation: the nginx site and its logs, `[include tessera-shell.cfg]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`) and `tessera-shell.cfg`, the `tessera`/`tessera-ext` commands, the service units (`tessera-ext`, `tessera-update-manager`), the installation directory, `install.conf`, and the nginx upgrade map unless another site uses it. Installed extensions can be kept: they are moved to `~/tessera-extensions-backup`. Packages (nginx, python3) and the `shapers/` graphs stay |
+| **S) Settings** | branch (list of branches with a published build; Update is offered after a change), plugins by URL, installing plugins from the UI and updating Tessera from the UI (applied at once) |
 | **E) Extensions** | the `tessera-ext` plugin manager |
 
 Navigation works like kiauh: type a letter or number, then press Enter. Each action
@@ -364,6 +402,7 @@ Environment variables override `install.conf`:
 | `TESSERA_NO_PROMPT` | `0` | ask no questions |
 | `TESSERA_ALLOW_REMOTE_PLUGINS` | previous choice (`0` on first install) | `1` = allow install by URL (no CSP); `0` = only `/extensions/` |
 | `TESSERA_UI_INSTALL` | previous choice (`1` on first install) | `1` = install plugins from the UI (the `tessera-ext` service); `0` = CLI only |
+| `TESSERA_UI_UPDATE` | previous choice (`1` on first install) | `1` = update Tessera from the UI (the `tessera-update-manager` service); `0` = `tessera` command only |
 | `TESSERA_ARCHIVE` | none | install from this file instead of the published build |
 
 The script does not run as root. Every install and update regenerates

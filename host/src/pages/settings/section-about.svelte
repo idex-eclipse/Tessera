@@ -4,6 +4,11 @@
   import { onMount } from 'svelte';
   import { guardAgent, type ParkedChainView, type RegisteredGuardView } from '../../core/guard-agent';
   import { BUILD_INFO } from '../../core/build-info';
+  import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
+  import { readStoredAuth } from '../../core/auth-store.svelte.ts';
+  import { findHostPrinter } from '../../core/extensions-installer.svelte.ts';
+  import { createUiUpdater, type UiBuild } from '../../core/ui-updater.svelte.ts';
+  import Loader from '../../../../plugins/shared/loader/Loader.svelte';
 
   let guards = $state<RegisteredGuardView[]>([]);
   let parked = $state<ParkedChainView[]>([]);
@@ -18,10 +23,39 @@
   });
 
 
-  const { loader, i18n, hotkeys } = getAppContext();
+  const { loader, i18n, hotkeys, printerManager } = getAppContext();
 
   let loaded = $derived(loader.getLoadedPlugins());
   let importError = $state(false);
+
+  // Update of Tessera itself: the block is shown only when the tessera-update-manager
+  // service answers (see core/ui-updater.svelte.ts); otherwise a hint about the CLI is shown.
+  const updater = createUiUpdater({
+    getToken: () => {
+      const host = findHostPrinter(printerManager.printers, window.location);
+      return host ? (readStoredAuth(host.id)?.token ?? null) : null;
+    },
+  });
+  void updater.refresh();
+
+  // import() caches modules and chunk names change per build: the new build runs after a reload only.
+  let updated = $state(false);
+
+  /** "v1.2.3 (abc1234)", whichever parts the service knows. */
+  function describeBuild(build: UiBuild | null | undefined): string {
+    if (!build) return '?';
+    const parts = [build.version ? `v${build.version}` : null, build.commit ? `(${build.commit})` : null];
+    return parts.filter(Boolean).join(' ') || '?';
+  }
+
+  async function runUpdate(): Promise<void> {
+    const ok = await confirm({
+      title: i18n.t('settings.about.update.title'),
+      message: i18n.t('settings.about.update.confirm', { branch: updater.status?.branch ?? '' }),
+    });
+    if (!ok) return;
+    if (await updater.update()) updated = true;
+  }
 
   function exportSettings(): void {
     const data: Record<string, unknown> = {};
@@ -95,6 +129,59 @@
     <span class="about-label">{i18n.t('settings.about.pluginApi')}</span>
     <span class="about-value">{BUILD_INFO.pluginApi}</span>
   </div>
+
+  <!-- Update of Tessera itself -->
+  <div class="about-sub">{i18n.t('settings.about.update.title')}</div>
+  {#if updated}
+    <div class="about-row">
+      <span class="notice">{i18n.t('settings.about.update.done', { to: describeBuild(updater.status?.installed) })}</span>
+      <button class="btn btn-primary" onclick={() => location.reload()}>
+        {i18n.t('settings.about.update.reload')}
+      </button>
+    </div>
+  {:else if updater.loading && !updater.status && !updater.error}
+    <Loader block text={i18n.t('common.loading')} />
+  {:else if !updater.available}
+    <p class="about-empty">{i18n.t('settings.about.update.unavailable')}</p>
+  {:else}
+    {@const status = updater.status}
+    <div class="about-row">
+      <span class="about-label">
+        {#if status?.updateAvailable}
+          {i18n.t('settings.about.update.available')}
+        {:else if status && status.canUpdate && !status.remoteError}
+          {i18n.t('settings.about.update.upToDate')}
+        {/if}
+      </span>
+      {#if status?.updateAvailable}
+        <!-- Build ids are LTR content: keep them isolated in RTL. -->
+        <span class="about-value" dir="ltr">{describeBuild(status.installed)} → {describeBuild(status.remote)}</span>
+      {/if}
+    </div>
+    {#if status && !status.canUpdate}
+      <p class="about-empty">{i18n.t('settings.about.update.sourceCheckout')}</p>
+    {/if}
+    {#if status?.remoteError}
+      <p class="error">{i18n.t('settings.about.update.remoteError', { error: status.remoteError })}</p>
+    {/if}
+    {#if updater.error}
+      <p class="error">
+        {updater.error.status === 401 ? i18n.t('settings.about.update.unauthorized') : updater.error.message}
+      </p>
+    {/if}
+    <div class="about-actions">
+      {#if updater.busy}
+        <Loader size="md" inline text={i18n.t('settings.about.update.working')} />
+      {:else}
+        {#if status?.updateAvailable}
+          <button class="btn btn-primary" onclick={runUpdate}>{i18n.t('settings.about.update.run')}</button>
+        {/if}
+        <button class="btn btn-secondary" onclick={() => updater.refresh(true)} disabled={updater.loading}>
+          {i18n.t('settings.about.update.check')}
+        </button>
+      {/if}
+    </div>
+  {/if}
 
   <div class="plugin-list">
     {#if guards.length > 0}
@@ -181,6 +268,9 @@
   .error { color: var(--danger); font-size: var(--font-size-sm); }
   .btn { padding: var(--space-sm) var(--space-lg); border: none; border-radius: var(--radius-md); font-size: var(--font-size-md); cursor: pointer; }
   .btn-secondary { background: var(--bg-surface-hover); color: var(--text-primary); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+  .notice { min-width: 0; overflow-wrap: anywhere; }
 
   .about-sub { font-weight: 600; margin-top: var(--space-xs); }
   .about-disabled { opacity: 0.55; }

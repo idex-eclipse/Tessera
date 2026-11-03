@@ -31,7 +31,7 @@ trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$STAGE/host" "$STAGE/deploy"
 cp -R "$ROOT/host/dist" "$STAGE/host/dist"
-cp "$ROOT/deploy/install.sh" "$ROOT/deploy/install-ext.sh" "$ROOT/deploy/tessera-ext.py" "$STAGE/deploy/"
+cp "$ROOT/deploy/install.sh" "$ROOT/deploy/install-ext.sh" "$ROOT/deploy/tessera-ext.py" "$ROOT/deploy/tessera-update-manager.py" "$STAGE/deploy/"
 printf 'COMMIT=%s\nBRANCH=%s\nDATE=%s\nVERSION=%s\n' "$COMMIT" "$BRANCH" "$DATE" "$VERSION" > "$STAGE/build-info"
 chmod -R a+rX,go-w "$STAGE"
 

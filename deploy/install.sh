@@ -150,6 +150,9 @@ CMD_MENU=/usr/local/bin/tessera
 CMD_EXT=/usr/local/bin/tessera-ext
 UNIT_SOCKET=/etc/systemd/system/tessera-ext.socket
 UNIT_SERVICE=/etc/systemd/system/tessera-ext.service
+# Separate service for "Update Tessera" in the UI: it may write the installation directory.
+UNIT_UPD_SOCKET=/etc/systemd/system/tessera-update-manager.socket
+UNIT_UPD_SERVICE=/etc/systemd/system/tessera-update-manager.service
 
 as_user() { # as_user "cmd" — always run as the printer owner
   # Since running as root is forbidden, we are always the target user
@@ -163,7 +166,7 @@ nginx_paths() {
 
 # ---------------------------------------------------------------- settings
 # Precedence: TESSERA_* env (first load only) > install.conf > existing installation > default.
-CONF_KEYS="INSTALL_DIR BRANCH REPO_URL PORT MOONRAKER KLIPPER_CFG_DIR KLIPPER_DIR ALLOW_REMOTE UI_INSTALL"
+CONF_KEYS="INSTALL_DIR BRANCH REPO_URL PORT MOONRAKER KLIPPER_CFG_DIR KLIPPER_DIR ALLOW_REMOTE UI_INSTALL UI_UPDATE"
 USE_ENV=1
 
 load_settings() {
@@ -179,15 +182,17 @@ load_settings() {
   fi
   # e_* — environment (first load only); p_* — values of the previous load, so a
   # reload after an action without install.conf does not fall back to defaults.
-  local e_dir='' e_branch='' e_port='' e_moon='' e_cfg='' e_kdir='' e_remote='' e_repo='' e_ui=''
-  local p_dir='' p_branch='' p_port='' p_moon='' p_cfg='' p_kdir='' p_remote='' p_repo='' p_ui=''
+  local e_dir='' e_branch='' e_port='' e_moon='' e_cfg='' e_kdir='' e_remote='' e_repo='' e_ui='' e_upd=''
+  local p_dir='' p_branch='' p_port='' p_moon='' p_cfg='' p_kdir='' p_remote='' p_repo='' p_ui='' p_upd=''
   if [ "$USE_ENV" = 1 ]; then
     e_dir="${TESSERA_DIR:-}" e_branch="${TESSERA_BRANCH:-}" e_port="${TESSERA_PORT:-}"
     e_moon="${TESSERA_MOONRAKER:-}" e_cfg="${TESSERA_KLIPPER_CFG:-}" e_kdir="${TESSERA_KLIPPER_DIR:-}"
     e_remote="${TESSERA_ALLOW_REMOTE_PLUGINS:-}" e_repo="${TESSERA_REPO:-}" e_ui="${TESSERA_UI_INSTALL:-}"
+    e_upd="${TESSERA_UI_UPDATE:-}"
   else
     p_dir="$INSTALL_DIR" p_branch="$BRANCH" p_port="$PORT" p_moon="$MOONRAKER"
     p_cfg="$KLIPPER_CFG_DIR" p_kdir="$KLIPPER_DIR" p_remote="$ALLOW_REMOTE" p_repo="$REPO_URL" p_ui="$UI_INSTALL"
+    p_upd="$UI_UPDATE"
   fi
   INSTALL_DIR="${e_dir:-${conf[INSTALL_DIR]:-${p_dir:-$REAL_HOME/tessera}}}"
   # install.conf describes one installation: ignore it for another directory.
@@ -219,6 +224,7 @@ load_settings() {
   ALLOW_REMOTE="${e_remote:-${conf[ALLOW_REMOTE]:-${p_remote:-${d_remote:-0}}}}"
   REPO_URL="${e_repo:-${conf[REPO_URL]:-${p_repo:-${d_repo:-$DEFAULT_REPO_URL}}}}"
   UI_INSTALL="${e_ui:-${conf[UI_INSTALL]:-${p_ui:-1}}}"
+  UI_UPDATE="${e_upd:-${conf[UI_UPDATE]:-${p_upd:-1}}}"
   USE_ENV=0
 }
 
@@ -456,7 +462,7 @@ step_fetch() {
   # --touch: the archive has zero mtimes for reproducibility, and nginx builds ETag from mtime.
   tar -xzf "$file" -C "$tree" --no-same-owner --no-same-permissions --touch
   local must
-  for must in host/dist/index.html deploy/install.sh deploy/install-ext.sh deploy/tessera-ext.py build-info; do
+  for must in host/dist/index.html deploy/install.sh deploy/install-ext.sh deploy/tessera-ext.py deploy/tessera-update-manager.py build-info; do
     [ -f "$tree/$must" ] || die "archive has no $must"
   done
   chmod -R a+rX "$tree"
@@ -597,6 +603,92 @@ SERVICE
   fi
 }
 
+ui_update_summary() {
+  if [ "$UI_UPDATE" = 1 ]; then echo "enabled"; else echo "disabled"; fi
+}
+
+disable_update_service() {
+  dry "disable and remove tessera-update-manager.socket, tessera-update-manager.service" && return 0
+  [ -f "$UNIT_UPD_SOCKET" ] || [ -f "$UNIT_UPD_SERVICE" ] || return 0
+  $SUDO systemctl disable --now tessera-update-manager.socket 2>/dev/null || true
+  $SUDO systemctl stop tessera-update-manager.service 2>/dev/null || true
+  $SUDO rm -f "$UNIT_UPD_SOCKET" "$UNIT_UPD_SERVICE"
+  $SUDO systemctl daemon-reload 2>/dev/null || true
+}
+
+# "Update Tessera" button in Settings → About. A service of its own, not part of tessera-ext:
+# replacing the UI needs write access to the installation directory, and tessera-ext may
+# write extensions/ only. It never runs sudo: nginx and unit changes stay with `tessera update`.
+step_update_service() {
+  if [ "$UI_UPDATE" != 1 ]; then disable_update_service; return 0; fi
+  dry "write and enable tessera-update-manager.socket, tessera-update-manager.service" && return 0
+
+  local python group cfg_dir
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "no systemd: Tessera can be updated with the tessera command only, not from the UI"; return 0
+  fi
+  python="$(command -v python3 || true)"
+  if [ -z "$python" ] || ! "$python" -c 'import sys; sys.exit(sys.version_info < (3, 7))' 2>/dev/null; then
+    warn "no python3 >= 3.7: Tessera cannot be updated from the UI"; return 0
+  fi
+  case "$INSTALL_DIR" in
+    *[[:space:]]*) warn "spaces in $INSTALL_DIR: Tessera cannot be updated from the UI"; return 0;;
+  esac
+  group="$(nginx_group)" || { warn "cannot find the nginx user: Tessera cannot be updated from the UI"; return 0; }
+  cfg_dir="$(dirname "$CONF_FILE")"
+  mkdir -p "$cfg_dir"
+
+  cat > /tmp/tessera-update-manager.socket <<SOCKET
+[Unit]
+Description=Tessera update manager API socket
+
+[Socket]
+ListenStream=/run/tessera-update-manager.sock
+SocketGroup=$group
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target
+SOCKET
+
+  cat > /tmp/tessera-update-manager.service <<SERVICE
+[Unit]
+Description=Tessera update manager (update the UI from its settings)
+Requires=tessera-update-manager.socket
+
+[Service]
+Type=simple
+User=$REAL_USER
+ExecStart=$python $INSTALL_DIR/deploy/tessera-update-manager.py serve
+Environment=TESSERA_MOONRAKER=$MOONRAKER
+Environment=TESSERA_DIR=$INSTALL_DIR
+Environment=XDG_CONFIG_HOME=$(dirname "$cfg_dir")
+UMask=0022
+# Writes the installation directory (host/, deploy/, build-info) and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindPaths=$INSTALL_DIR
+BindReadOnlyPaths=$cfg_dir
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+SERVICE
+
+  $SUDO install -m 644 /tmp/tessera-update-manager.socket "$UNIT_UPD_SOCKET"
+  $SUDO install -m 644 /tmp/tessera-update-manager.service "$UNIT_UPD_SERVICE"
+  rm -f /tmp/tessera-update-manager.socket /tmp/tessera-update-manager.service
+  if $SUDO systemctl daemon-reload &&
+     $SUDO systemctl enable tessera-update-manager.socket >/dev/null 2>&1 &&
+     $SUDO systemctl restart tessera-update-manager.socket; then
+    # A running service still has the previous build mounted.
+    $SUDO systemctl try-restart tessera-update-manager.service || true
+    log "update from the UI: enabled"
+  else
+    warn "cannot start tessera-update-manager.socket: Tessera can be updated with the tessera command only"
+  fi
+}
+
 step_nginx() {
   if [ "$SKIP_NGINX" = 1 ]; then
     warn "SKIP_NGINX=1: configure dist serving and proxy yourself (root=$BUILD_DIR)"
@@ -664,6 +756,18 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_read_timeout 180s;
+        proxy_request_buffering on;
+        client_max_body_size 16k;
+    }
+
+    # tessera-update-manager service: "Update Tessera" in Settings → About. Same Moonraker
+    # authorization as above; no service → 502, the UI does not offer the button.
+    location /tessera-update/ {
+        proxy_pass http://unix:/run/tessera-update-manager.sock;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;         # downloading and unpacking a build
         proxy_request_buffering on;
         client_max_body_size 16k;
     }
@@ -819,6 +923,7 @@ do_install() {
   step_fetch
   step_extensions
   step_service
+  step_update_service
   step_nginx
   step_klipper
   step_summary
@@ -834,6 +939,7 @@ do_update() {
   step_fetch
   step_extensions
   step_service
+  step_update_service
   step_nginx
   step_klipper
   step_summary
@@ -847,6 +953,7 @@ do_reinstall() {
   step_fetch
   step_extensions
   step_service
+  step_update_service
   step_nginx
   log "reinstall done — reload the UI page"
 }
@@ -874,6 +981,7 @@ do_remove() {
   echo "The following will be removed:"
   is_installed && echo "  - $INSTALL_DIR (build, $n_ext extension(s))"
   [ -f "$UNIT_SOCKET" ] && echo "  - systemd units tessera-ext.socket, tessera-ext.service"
+  [ -f "$UNIT_UPD_SOCKET" ] && echo "  - systemd units tessera-update-manager.socket, tessera-update-manager.service"
   [ -f "$site" ] && echo "  - nginx site $site${NGINX_EN:+ and $NGINX_EN/tessera}, nginx logs tessera-*.log"
   [ -f /etc/nginx/conf.d/tessera-upgrade-map.conf ] && echo "  - /etc/nginx/conf.d/tessera-upgrade-map.conf (if no other site uses it)"
   grep -qsF "$KLIPPER_INCLUDE" "$pcfg" && echo "  - $KLIPPER_INCLUDE from $pcfg (backup: printer.cfg.tessera-bak)"
@@ -892,6 +1000,7 @@ do_remove() {
 
   # service: it has extensions/ mounted
   disable_service
+  disable_update_service
 
   # nginx
   if [ -f "$site" ] || { [ -n "$NGINX_EN" ] && [ -L "$NGINX_EN/tessera" ]; }; then
@@ -999,6 +1108,29 @@ apply_ui_install() {
   is_installed || { log "plugins from the UI: $(ui_install_summary) — applied on install"; return 0; }
   step_service
   log "plugins from the UI: $(ui_install_summary). Reload the UI page."
+}
+
+apply_ui_update() {
+  is_installed || { log "update from the UI: $(ui_update_summary) — applied on install"; return 0; }
+  step_update_service
+  log "update from the UI: $(ui_update_summary). Reload the UI page."
+}
+
+set_ui_update() {
+  echo
+  echo "Update from the UI: Settings → About shows when a new build is published and updates Tessera."
+  echo "A small service (tessera-update-manager.socket) does the work and runs only while it is being used."
+  echo "It asks Moonraker who may do this and takes no parameters: the build comes from the configured branch."
+  echo "It may write the installation directory (not nginx or systemd): some builds still need 'tessera update'."
+  if [ "$UI_UPDATE" = 1 ]; then
+    confirm "Disable it (Tessera is then updated with the tessera command only)?" || return 0
+    UI_UPDATE=0
+  else
+    confirm "Enable it?" || return 0
+    UI_UPDATE=1
+  fi
+  save_conf
+  run_action apply_ui_update
 }
 
 set_ui_install() {
@@ -1113,10 +1245,11 @@ menu_update() {
 }
 
 menu_settings() {
-  local a remote ui
+  local a remote ui upd
   while :; do
     if [ "$ALLOW_REMOTE" = 1 ]; then remote="${C_Y}allowed${C_0}"; else remote="${C_G}blocked${C_0}"; fi
     if [ "$UI_INSTALL" = 1 ]; then ui="${C_G}enabled${C_0}"; else ui="${C_D}disabled${C_0}"; fi
+    if [ "$UI_UPDATE" = 1 ]; then upd="${C_G}enabled${C_0}"; else upd="${C_D}disabled${C_0}"; fi
     box_top
     title 'Settings'
     rule
@@ -1124,6 +1257,7 @@ menu_settings() {
     row "  1) [Branch]          ${C_C}$BRANCH${C_0}"
     row "  2) [Plugins by URL]  $remote"
     row "  3) [Plugins from UI] $ui"
+    row "  4) [Update from UI]  $upd"
     row ''
     row "  ${C_D}Saved in $CONF_FILE${C_0}"
     rule
@@ -1134,6 +1268,7 @@ menu_settings() {
       1) set_branch ;;
       2) set_plugins_policy ;;
       3) set_ui_install ;;
+      4) set_ui_update ;;
       b) return 0 ;;
       *) invalid ;;
     esac
