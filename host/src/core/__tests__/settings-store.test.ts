@@ -54,7 +54,34 @@ describe('settings-store / base state', () => {
       hotkeyOverrides: {},
       extensionResolutions: {},
       notifications: { ignoredPatterns: [], soundEnabled: false },
+      updateCheck: { intervalHours: 4, lastCheckedAt: 0, notified: {} },
     });
+  });
+
+  it('keeps the update check interval between 1 and 168 hours', () => {
+    const store = createSettingsStore({ storage: new MemoryStorage() });
+
+    expect(store.ui.updateCheck.intervalHours).toBe(4);
+    store.setUpdateCheckSettings({ intervalHours: 0 });
+    expect(store.ui.updateCheck.intervalHours).toBe(1);
+    store.setUpdateCheckSettings({ intervalHours: 9999 });
+    expect(store.ui.updateCheck.intervalHours).toBe(168);
+    store.setUpdateCheckSettings({ intervalHours: Number.NaN });
+    expect(store.ui.updateCheck.intervalHours).toBe(4);
+    store.setUpdateCheckSettings({ intervalHours: 6.4 });
+    expect(store.ui.updateCheck.intervalHours).toBe(6);
+  });
+
+  it('repairs a stored update check state', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      SETTINGS_STORAGE_KEYS.ui,
+      JSON.stringify({ updateCheck: { intervalHours: 0.2, lastCheckedAt: -5, notified: { ui: 'abc', bad: 1 } } }),
+    );
+
+    const store = createSettingsStore({ storage });
+
+    expect(store.ui.updateCheck).toEqual({ intervalHours: 1, lastCheckedAt: 0, notified: { ui: 'abc' } });
   });
 
   it('falls back to defaults on corrupted storage', () => {

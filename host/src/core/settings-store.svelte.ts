@@ -100,6 +100,7 @@ const DEFAULT_UI_STATE: UiState = {
   hotkeyOverrides: {},
   extensionResolutions: {},
   notifications: { ignoredPatterns: [], soundEnabled: false },
+  updateCheck: { intervalHours: 4, lastCheckedAt: 0, notified: {} },
 };
 
 const LEGACY_UNPREFIXED_KEYS = new Set<string>([
@@ -114,6 +115,17 @@ const LEGACY_UNPREFIXED_KEYS = new Set<string>([
 export const RIGHT_PANEL_MIN_WIDTH = 240;
 export const RIGHT_PANEL_MAX_WIDTH = 560;
 export const RIGHT_PANEL_DEFAULT_WIDTH = 320;
+
+/** Интервал проверки обновлений, часы: по умолчанию 4, не чаще раза в час (не нагружаем GitHub). */
+export const UPDATE_CHECK_DEFAULT_HOURS = 4;
+export const UPDATE_CHECK_MIN_HOURS = 1;
+export const UPDATE_CHECK_MAX_HOURS = 168;
+
+/** Целое число часов в допустимых границах; мусор из хранилища → значение по умолчанию. */
+export function normalizeUpdateCheckHours(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return UPDATE_CHECK_DEFAULT_HOURS;
+  return clamp(Math.round(value), UPDATE_CHECK_MIN_HOURS, UPDATE_CHECK_MAX_HOURS);
+}
 
 export type SettingsStore = ReturnType<typeof createSettingsStore>;
 
@@ -713,6 +725,13 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     patchUi({ notifications: { ...ui.notifications, ...patch } });
   }
 
+  function setUpdateCheckSettings(patch: Partial<UiState['updateCheck']>): void {
+    const next = { ...ui.updateCheck, ...patch };
+    // Интервал нормализуем здесь, а не в UI: нижняя граница — защита от частых запросов.
+    next.intervalHours = normalizeUpdateCheckHours(next.intervalHours);
+    patchUi({ updateCheck: next });
+  }
+
   function setExtensionResolution(
     address: string,
     resolution: { winners: string[]; candidates: string[] } | null,
@@ -1041,6 +1060,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     clearHotkeyOverride,
     resetHotkeyOverrides,
     setNotificationSettings,
+    setUpdateCheckSettings,
     setExtensionResolution,
     getExtensionChoice,
     setExtensionChoice,
@@ -1294,6 +1314,24 @@ function normalizeUiState(value: unknown): UiState {
         : DEFAULT_UI_STATE.notifications.soundEnabled,
   };
 
+  const updateCheckSource = isRecord(source.updateCheck) ? source.updateCheck : {};
+  const notified: Record<string, string> = {};
+  if (isRecord(updateCheckSource.notified)) {
+    for (const [key, value] of Object.entries(updateCheckSource.notified)) {
+      if (typeof value === 'string') notified[key] = value;
+    }
+  }
+  const updateCheck: UiState['updateCheck'] = {
+    intervalHours: normalizeUpdateCheckHours(updateCheckSource.intervalHours),
+    lastCheckedAt:
+      typeof updateCheckSource.lastCheckedAt === 'number' &&
+      Number.isFinite(updateCheckSource.lastCheckedAt) &&
+      updateCheckSource.lastCheckedAt > 0
+        ? updateCheckSource.lastCheckedAt
+        : 0,
+    notified,
+  };
+
   return {
     theme,
     locale,
@@ -1311,6 +1349,7 @@ function normalizeUiState(value: unknown): UiState {
     hotkeyOverrides,
     extensionResolutions,
     notifications,
+    updateCheck,
   };
 }
 

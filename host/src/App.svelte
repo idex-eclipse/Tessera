@@ -21,6 +21,10 @@
   import { createNotificationCenter } from './core/notification-center.svelte.ts';
   import { guardNotification } from './core/guard-notification.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
+  import { readStoredAuth } from './core/auth-store.svelte.ts';
+  import { createExtensionsInstaller, findHostPrinter } from './core/extensions-installer.svelte.ts';
+  import { createUiUpdater } from './core/ui-updater.svelte.ts';
+  import { runUpdateCheck } from './core/update-check.ts';
 
   import AppHeader from './components/layout/AppHeader.svelte';
   import AppSidebar from './components/layout/AppSidebar.svelte';
@@ -115,6 +119,38 @@
 
   onMount(() => hotkeys.start());
   onMount(() => extensions.start());
+
+  // Новости об обновлениях Tessera и плагинов при открытии UI (не чаще интервала из настроек).
+  // Нет служб обновления (CLI-установка, dev-сервер) → тихо ничего не происходит.
+  onMount(() => {
+    const getToken = () => {
+      const host = findHostPrinter(printerManager.printers, window.location);
+      return host ? (readStoredAuth(host.id)?.token ?? null) : null;
+    };
+    const updater = createUiUpdater({ getToken });
+    // Каталог не нужен: для проверки служба только читает статус. Заглушка вместо
+    // extensions-catalog, чтобы не читать /extensions/index.json при каждом открытии.
+    const installer = createExtensionsInstaller({
+      getToken,
+      catalog: { refresh: async () => {} },
+      settings,
+      loader,
+    });
+    void runUpdateCheck({
+      settings,
+      notifications,
+      i18n,
+      loadUi: async () => {
+        await updater.refresh();
+        return updater.status;
+      },
+      loadPlugins: async () => {
+        await installer.refresh();
+        // Отказ службы (401) — не «обновлений нет»: проверку считаем несостоявшейся.
+        return installer.available && !installer.error && !installer.registryError ? installer.plugins : null;
+      },
+    });
+  });
 
   // Сессия редактирования дашборда (снимок на входе, история) следует за адресом и принтером.
   $effect(() => {

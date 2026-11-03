@@ -80,6 +80,12 @@ const ru: I18nMessages = {
       error: 'Ошибка',
       info: 'Инфо',
     },
+    update: {
+      source: 'Обновления',
+      ui: 'Доступно обновление Tessera: {to}. Настройки → О программе',
+      plugins: 'Доступны обновления плагинов: {list}. Настройки → Плагины',
+      pluginsNeedUi: 'Обновлениям плагинов нужна более новая Tessera: {list}. Сначала обновите Tessera (Настройки → О программе)',
+    },
     guard: {
       source: 'Агент гардов',
       decisionTimeout: 'Гард {guard} ({plugin}) не ответил вовремя — {method} отклонён',
@@ -123,6 +129,8 @@ const ru: I18nMessages = {
       pluginApi: 'Plugin API',
       update: {
         title: 'Обновление',
+        interval: 'Проверять обновления при открытии UI не чаще, чем раз в',
+        hours: 'ч (1–168)',
         upToDate: 'Установлена последняя версия Tessera',
         available: 'Доступно обновление',
         check: 'Проверить обновления',

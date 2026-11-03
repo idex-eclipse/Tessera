@@ -8,6 +8,11 @@
   import { readStoredAuth } from '../../core/auth-store.svelte.ts';
   import { findHostPrinter } from '../../core/extensions-installer.svelte.ts';
   import { createUiUpdater, type UiBuild } from '../../core/ui-updater.svelte.ts';
+  import {
+    UPDATE_CHECK_MAX_HOURS,
+    UPDATE_CHECK_MIN_HOURS,
+    normalizeUpdateCheckHours,
+  } from '../../core/settings-store.svelte.ts';
   import Loader from '../../../../plugins/shared/loader/Loader.svelte';
 
   let guards = $state<RegisteredGuardView[]>([]);
@@ -23,7 +28,7 @@
   });
 
 
-  const { loader, i18n, hotkeys, printerManager } = getAppContext();
+  const { loader, i18n, hotkeys, printerManager, settings } = getAppContext();
 
   let loaded = $derived(loader.getLoadedPlugins());
   let importError = $state(false);
@@ -46,6 +51,14 @@
     if (!build) return '?';
     const parts = [build.version ? `v${build.version}` : null, build.commit ? `(${build.commit})` : null];
     return parts.filter(Boolean).join(' ') || '?';
+  }
+
+  // The store clamps the value (1..168 h); the input is rewritten so it never shows a rejected number.
+  function setCheckInterval(e: Event): void {
+    const input = e.currentTarget as HTMLInputElement;
+    const hours = normalizeUpdateCheckHours(input.valueAsNumber);
+    settings.setUpdateCheckSettings({ intervalHours: hours });
+    input.value = String(hours);
   }
 
   async function runUpdate(): Promise<void> {
@@ -132,6 +145,22 @@
 
   <!-- Update of Tessera itself -->
   <div class="about-sub">{i18n.t('settings.about.update.title')}</div>
+  <div class="about-row">
+    <label class="about-label" for="update-check-hours">{i18n.t('settings.about.update.interval')}</label>
+    <span class="interval">
+      <input
+        id="update-check-hours"
+        type="number"
+        inputmode="numeric"
+        min={UPDATE_CHECK_MIN_HOURS}
+        max={UPDATE_CHECK_MAX_HOURS}
+        step="1"
+        value={settings.ui.updateCheck.intervalHours}
+        onchange={setCheckInterval}
+      />
+      <span class="about-value">{i18n.t('settings.about.update.hours')}</span>
+    </span>
+  </div>
   {#if updated}
     <div class="about-row">
       <span class="notice">{i18n.t('settings.about.update.done', { to: describeBuild(updater.status?.installed) })}</span>
@@ -271,6 +300,18 @@
   .btn-primary { background: var(--accent); color: #fff; }
   .btn:disabled { opacity: 0.55; cursor: default; }
   .notice { min-width: 0; overflow-wrap: anywhere; }
+  /* Touch-sized input; the row wraps on narrow screens and follows the text direction in RTL. */
+  .interval { display: inline-flex; align-items: center; gap: var(--space-sm); }
+  .interval input {
+    width: 5.5rem;
+    min-height: 2.5rem;
+    padding: var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    text-align: start;
+  }
 
   .about-sub { font-weight: 600; margin-top: var(--space-xs); }
   .about-disabled { opacity: 0.55; }

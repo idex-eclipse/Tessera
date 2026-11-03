@@ -320,6 +320,15 @@ the installation directory, while `tessera-ext` may write `extensions/` only.
 - **After an update, reload the page.** The new files have new chunk names. A running
   `tessera-ext` keeps the previous `deploy/` mounted until it exits (up to 5 minutes).
 
+**Update notices.** When the UI opens it asks both services (this one and `tessera-ext`) whether
+Tessera or a registry plugin has a newer version and, if so, puts one text notice per kind
+into the host notification center (source "Updates"; no links or buttons). It does this at most
+once every **4 hours** by default; change it in Settings → About (1 to 168 hours, never less
+than an hour, so GitHub is not asked on every page open). Each version is announced once per
+browser. A plugin update that needs a newer plugin API than this Tessera provides is reported
+separately ("update Tessera first"). With neither service installed nothing happens, and the
+next page open tries again. The check runs on page open only, not on a timer.
+
 Installations made before this service existed need one `tessera update` on the printer to get
 the units and the nginx location. Logs: `journalctl -u tessera-update-manager`.
 

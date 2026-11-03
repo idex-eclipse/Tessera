@@ -85,6 +85,14 @@ export interface UiState {
   extensionResolutions: Record<string, { winners: string[]; candidates: string[] }>;
   /** Центр уведомлений (device-global): фильтр по regex и звук для critical. */
   notifications: { ignoredPatterns: string[]; soundEnabled: boolean };
+  /**
+   * Проверка обновлений Tessera и плагинов при открытии UI (device-global).
+   * intervalHours — не чаще чем раз в столько часов (UPDATE_CHECK_MIN_HOURS..MAX);
+   * lastCheckedAt — unix ms последней удавшейся проверки; notified — о каких версиях
+   * уже сообщили (ключ `ui` или `plugin:<id>[:needs-ui]` → версия), чтобы не повторять
+   * одно и то же при каждой перезагрузке страницы.
+   */
+  updateCheck: { intervalHours: number; lastCheckedAt: number; notified: Record<string, string> };
 }
 
 /**

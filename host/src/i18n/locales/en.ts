@@ -83,6 +83,12 @@ const en: I18nMessages = {
       error: 'Error',
       info: 'Info',
     },
+    update: {
+      source: 'Updates',
+      ui: 'Tessera update available: {to}. Settings → About',
+      plugins: 'Plugin updates available: {list}. Settings → Plugins',
+      pluginsNeedUi: 'Plugin updates need a newer Tessera: {list}. Update Tessera first (Settings → About)',
+    },
     guard: {
       source: 'Guard agent',
       decisionTimeout: 'Guard {guard} ({plugin}) did not decide in time — {method} denied',
@@ -126,6 +132,8 @@ const en: I18nMessages = {
       pluginApi: 'Plugin API',
       update: {
         title: 'Update',
+        interval: 'Check for updates when the UI opens, at most once every',
+        hours: 'h (1–168)',
         upToDate: 'Tessera is up to date',
         available: 'Update available',
         check: 'Check for updates',
