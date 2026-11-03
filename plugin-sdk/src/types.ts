@@ -9,7 +9,7 @@
  * - No shared state
  *   (the only plugin → host channel is the opaque fleet index, api.fleet:
  *   the host stores tags/searchText for fleet search and filters and never
- *   interprets them)
+ *   interprets them; api.notifications is write-only into the host notification center)
  * - No permissions
  * - No capabilities/priority
  * - Widgets are described only by type + provider
@@ -575,6 +575,33 @@ export interface PluginFleetApi {
   retract(printerId: string): void;
 }
 
+export type NotificationSeverity = 'critical' | 'error' | 'info';
+
+/**
+ * Уведомление в центр уведомлений хоста (api.notifications.push).
+ */
+export interface NotificationInput {
+  severity: NotificationSeverity;
+  /** Уже локализованный текст (плагин сам вызывает api.i18n.t). Свыше 240 символов обрезается. */
+  text: string;
+  /**
+   * Короткая локализованная подпись источника (например, «TMC»). Без неё хост
+   * показывает название плагина.
+   */
+  label?: string;
+  /** Принтер, к которому относится уведомление. По умолчанию — активный принтер. */
+  printerId?: string;
+}
+
+/**
+ * Центр уведомлений хоста: общий для всех плагинов. Только запись — плагины не
+ * читают чужие уведомления (это был бы канал между плагинами). Автора
+ * (pluginId) проставляет хост. Доступно с pluginApi "0.10".
+ */
+export interface PluginNotificationsApi {
+  push(notification: NotificationInput): void;
+}
+
 /**
  * Runtime API handed to a plugin.
  */
@@ -613,6 +640,8 @@ export interface PluginApi {
   i18n: PluginI18nApi;
   /** Fleet-индекс: публикация тегов и текста для поиска/фильтров fleet-режима. */
   readonly fleet: PluginFleetApi;
+  /** Центр уведомлений хоста (только запись). */
+  readonly notifications: PluginNotificationsApi;
   guards: {
     resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void;
   };

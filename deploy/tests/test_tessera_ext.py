@@ -369,6 +369,8 @@ class InstallTests(Base):
         self.assertEqual(ext.plugin_api_problem('1.0', '0.8'), 'major')
         self.assertEqual(ext.plugin_api_problem(True, '0.8'), 'invalid')
         self.assertEqual(ext.plugin_api_problem('08.1', '0.8'), 'invalid')
+        self.assertEqual(ext.plugin_api_problem('0.10', '0.9'), 'newer')
+        self.assertIsNone(ext.plugin_api_problem('0.9', '0.10'))
 
     def test_registry_text_cannot_reach_the_terminal(self):
         self.publish(plugin_files(), name='Evil\x1b[2J', description='a\x07b')

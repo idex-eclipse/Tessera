@@ -24,6 +24,12 @@ describe('plugin API version', () => {
     expect(checkPluginApi('x', '0.8')).toBe('invalid');
   });
 
+  it('compares MINOR numerically: 0.10 is newer than 0.9', () => {
+    expect(checkPluginApi('0.10', '0.9')).toBe('newer');
+    expect(checkPluginApi('0.9', '0.10')).toBe('ok');
+    expect(checkPluginApi('0.10', '0.10')).toBe('ok');
+  });
+
   it('the host version is valid and not below the legacy one', () => {
     expect(parsePluginApi(PLUGIN_API)).not.toBeNull();
     expect(checkPluginApi(LEGACY_PLUGIN_API)).toBe('ok');
