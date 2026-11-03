@@ -93,6 +93,9 @@
     if (deps.install.length > 0) {
       lines.push(i18n.t('settings.registryDeps', { list: deps.install.map((d) => d.name).join(', ') }));
     }
+    if (deps.update.length > 0) {
+      lines.push(i18n.t('settings.registryDepsUpdate', { list: deps.update.map((d) => `${d.name} ${d.version}`).join(', ') }));
+    }
     if (deps.missing.length > 0) {
       lines.push(i18n.t('settings.registryDepsMissing', { list: deps.missing.join(', ') }));
     }
@@ -100,7 +103,7 @@
       title: i18n.t('settings.registry'),
       message: lines.join(' '),
     });
-    if (ok) await installer.install(plugin);
+    if (ok) await installer.install(plugin, () => (reloadRequired = true));
   }
 
   async function updateFromRegistry(plugin: RegistryPlugin): Promise<void> {

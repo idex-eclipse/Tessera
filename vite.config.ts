@@ -6,6 +6,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 
+import { corePluginVersions } from './host/src/core-manifests';
+
+/**
+ * core-plugins.json в сборке: версии встроенных плагинов для deploy/tessera-ext.py
+ * (manifest.dependencies дополнений на @core/* проверяются до установки).
+ */
+function emitCorePlugins(): Plugin {
+  return {
+    name: 'emit-core-plugins',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'core-plugins.json',
+        source: JSON.stringify(corePluginVersions(), null, 2) + '\n',
+      });
+    },
+  };
+}
+
 /** Раздача <project>/extensions/ в dev: те же URL, что в prod через nginx. */
 function serveExtensions(): Plugin {
   const root = path.resolve(process.cwd(), 'extensions');
@@ -76,7 +96,8 @@ export default defineConfig({
         handler(warning);
       },
     }), 
-    serveExtensions()
+    serveExtensions(),
+    emitCorePlugins(),
   ],
   root: 'host',
 

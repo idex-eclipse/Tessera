@@ -1,3 +1,4 @@
+import { pointOwner, satisfiesMin } from '../../../plugin-sdk/src/dependencies';
 import type { ExtensionMode, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 
 import type { RegisteredExtension, RegisteredExtensionPoint } from './surfaces';
@@ -16,10 +17,25 @@ export interface ExtensionResolution {
 }
 
 /**
+ * owner-version — владелец загружен, но его версия ниже manifest.dependencies дополнения.
  * missing-point — владелец загружен, но такой точки не объявляет: его версия старше, чем
- * нужна вкладу (для @core/* — старая Tessera). Ждать бесполезно, нужно обновление.
+ * нужна вкладу, а дополнение этого не указало в dependencies.
+ * В обоих случаях ждать бесполезно, нужно обновить владельца (для @core/* — Tessera).
  */
-export type ExtensionRejectReason = 'kind-mismatch' | 'version-mismatch' | 'duplicate' | 'missing-point';
+export type ExtensionRejectReason =
+  | 'kind-mismatch'
+  | 'version-mismatch'
+  | 'duplicate'
+  | 'missing-point'
+  | 'owner-version';
+
+export interface ExtensionRejection {
+  ext: RegisteredExtension;
+  reason: ExtensionRejectReason;
+  /** owner-version: нужная минимальная и загруженная версии владельца. */
+  need?: string;
+  have?: string;
+}
 
 export interface ResolvedPoint {
   /** `<owner>#<point>` */
@@ -40,7 +56,7 @@ export interface ExtensionGraph {
   points: Map<string, ResolvedPoint>;
   /** Владельца точки нет (не установлен или выключен): вклад ждёт. */
   sleeping: RegisteredExtension[];
-  rejected: Array<{ ext: RegisteredExtension; reason: ExtensionRejectReason }>;
+  rejected: ExtensionRejection[];
 }
 
 export interface ExtensionGraphInput {
@@ -50,6 +66,10 @@ export interface ExtensionGraphInput {
   applies: (pluginId: string) => boolean;
   /** Плагин загружен и включён. Нет функции — вклад без точки всегда «спит». */
   ownerLoaded?: (pluginId: string) => boolean;
+  /** Версия загруженного плагина (manifest.version). */
+  pluginVersion?: (pluginId: string) => string | undefined;
+  /** Минимальная версия `ownerId`, которую требует плагин-дополнение (manifest.dependencies). */
+  requiredVersion?: (extPluginId: string, ownerId: string) => string | undefined;
   resolutions: Record<string, ExtensionResolution>;
 }
 
@@ -112,10 +132,23 @@ export function buildExtensionGraph(input: ExtensionGraphInput): ExtensionGraph 
     }
     seen.add(ref);
 
+    const owner = pointOwner(ext.contribution.point) ?? '';
+    const ownerLoaded = input.ownerLoaded?.(owner) ?? false;
+
+    // Версия владельца ниже нужной: сообщаем её, даже если точка нашлась (её контракт
+    // мог измениться в той же версии) или не нашлась (точнее, чем missing-point).
+    if (ownerLoaded) {
+      const need = input.requiredVersion?.(ext.pluginId, owner);
+      const have = input.pluginVersion?.(owner);
+      if (!satisfiesMin(have, need)) {
+        rejected.push({ ext, reason: 'owner-version', need, have });
+        return;
+      }
+    }
+
     const point = points.get(ext.contribution.point);
     if (!point) {
-      const owner = ext.contribution.point.slice(0, ext.contribution.point.lastIndexOf('#'));
-      if (input.ownerLoaded?.(owner)) rejected.push({ ext, reason: 'missing-point' });
+      if (ownerLoaded) rejected.push({ ext, reason: 'missing-point' });
       else sleeping.push(ext);
       return;
     }

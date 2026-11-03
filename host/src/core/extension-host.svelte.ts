@@ -76,6 +76,9 @@ export function createExtensionHost(deps: ExtensionHostDeps) {
       extensions: registry.getExtensions(),
       applies: (pluginId) => loader.pluginAppliesToPrinter(pluginId, printerId),
       ownerLoaded: (pluginId) => loader.isLoaded(pluginId),
+      pluginVersion: (pluginId) => loader.getLoadedPlugin(pluginId)?.manifest.version,
+      requiredVersion: (extPluginId, ownerId) =>
+        loader.getLoadedPlugin(extPluginId)?.manifest.dependencies?.[ownerId],
       resolutions: settings.ui.extensionResolutions,
     });
   }

@@ -1,3 +1,5 @@
+import { satisfiesMin } from '../../../plugin-sdk/src/dependencies.ts';
+
 import { absoluteManifestUrl } from './extensions-catalog.svelte.ts';
 
 /**
@@ -26,6 +28,8 @@ export interface RegistryPlugin {
   manifestUrl: string;
   /** Плагины, в точки которых он встраивается (без @core/*). Нет у старой службы. */
   requires?: string[];
+  /** id → минимальная версия (null — любая), с @core/*. Нет у старой службы. */
+  dependencies?: Record<string, string | null>;
   /** Версия контракта "MAJOR.MINOR" из реестра. Нет у старой службы и у 'local'. */
   pluginApi?: string;
 }
@@ -182,11 +186,17 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
 
   /**
    * Зависимости плагина для подтверждения установки: что служба поставит вместе
-   * с ним (есть в реестре, не установлено) и чего нет нигде (вклады будут ждать).
+   * с ним (есть в реестре, не установлено), что обновит (установлено, но старше
+   * manifest.dependencies) и чего нет нигде (вклады будут ждать).
+   * Несовместимость с @core/* служба сообщит ошибкой установки.
    */
-  function dependenciesOf(plugin: RegistryPlugin): { install: RegistryPlugin[]; missing: string[] } {
+  function dependenciesOf(plugin: RegistryPlugin): {
+    install: RegistryPlugin[];
+    update: RegistryPlugin[];
+    missing: string[];
+  } {
     const byId = new Map(plugins.map((p) => [p.id, p]));
-    const result = { install: [] as RegistryPlugin[], missing: [] as string[] };
+    const result = { install: [] as RegistryPlugin[], update: [] as RegistryPlugin[], missing: [] as string[] };
     const seen = new Set<string>([plugin.id]);
     const visit = (p: RegistryPlugin) => {
       for (const id of p.requires ?? []) {
@@ -198,14 +208,22 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
           continue;
         }
         visit(dep);
+        const need = p.dependencies?.[id] ?? undefined;
         if (dep.state === 'available') result.install.push(dep);
+        else if (dep.installedVersion && !satisfiesMin(dep.installedVersion, need) && satisfiesMin(dep.version, need)) {
+          result.update.push(dep);
+        }
       }
     };
     visit(plugin);
     return result;
   }
 
-  function install(plugin: RegistryPlugin): Promise<boolean> {
+  /**
+   * onReloadRequired — служба обновила уже включённую зависимость: её новый код
+   * будет только после перезагрузки страницы (import() кэшируется по URL).
+   */
+  function install(plugin: RegistryPlugin, onReloadRequired?: () => void): Promise<boolean> {
     return run(plugin.id, async () => {
       const result = await call<ActionResult>('install', { id: plugin.id });
       // Включаем в этом браузере и зависимости: без них вклады плагина спят.
@@ -215,7 +233,14 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
       const enabled = new Set(settings.plugins.map((p) => p.manifestUrl));
       for (const r of added) {
         const url = absoluteManifestUrl(r.manifestUrl!);
-        if (enabled.has(url)) continue;
+        if (enabled.has(url)) {
+          // Зависимость уже была включена и служба её обновила (старше нужной версии).
+          if (r !== result && r.changed) {
+            await loader.reloadRemotePlugin(url);
+            onReloadRequired?.();
+          }
+          continue;
+        }
         // Как кнопка Install в каталоге: версия обязательна, иначе не появится update-available.
         settings.addPlugin(url, [], 'catalog', r.version ?? undefined);
       }

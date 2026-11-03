@@ -77,6 +77,49 @@ describe('buildExtensionGraph', () => {
     expect(g.sleeping).toEqual([e2]);
   });
 
+  it('rejects extensions whose loaded owner is older than manifest.dependencies', () => {
+    const e1 = ext('a', { id: 'x', point: `${OWNER}#tabs` });
+    const e2 = ext('a', { id: 'y', point: `${OWNER}#nope` });
+    const e3 = ext('b', { id: 'z', point: `${OWNER}#tabs` });
+    const need: Record<string, string> = { a: '3.0.0', b: '2.0.0' };
+    const build = (ownerVersion: string) =>
+      buildExtensionGraph({
+        points: [point({ id: 'tabs' })],
+        extensions: [e1, e2, e3],
+        applies: all,
+        ownerLoaded: (id) => id === OWNER,
+        pluginVersion: (id) => (id === OWNER ? ownerVersion : undefined),
+        requiredVersion: (extId, ownerId) => (ownerId === OWNER ? need[extId] : undefined),
+        resolutions: {},
+      });
+
+    const old = build('2.1.0');
+    expect(old.rejected).toEqual([
+      { ext: e1, reason: 'owner-version', need: '3.0.0', have: '2.1.0' },
+      { ext: e2, reason: 'owner-version', need: '3.0.0', have: '2.1.0' },
+    ]);
+    expect(old.points.get(`${OWNER}#tabs`)?.enabled).toEqual([e3]);
+
+    const fresh = build('3.0.0');
+    expect(fresh.rejected).toEqual([{ ext: e2, reason: 'missing-point' }]);
+    expect(fresh.points.get(`${OWNER}#tabs`)?.enabled).toEqual([e1, e3]);
+  });
+
+  it('keeps a contribution sleeping while its owner is not loaded, whatever it requires', () => {
+    const e1 = ext('a', { id: 'x', point: `${OWNER}#tabs` });
+    const g = buildExtensionGraph({
+      points: [],
+      extensions: [e1],
+      applies: all,
+      ownerLoaded: () => false,
+      pluginVersion: () => undefined,
+      requiredVersion: () => '9.0.0',
+      resolutions: {},
+    });
+    expect(g.sleeping).toEqual([e1]);
+    expect(g.rejected).toEqual([]);
+  });
+
   it('rejects kind and version mismatches and duplicates', () => {
     const e1 = ext('a', { id: 'k', point: `${OWNER}#tabs`, kind: 'panel' });
     const e2 = ext('a', { id: 'v', point: `${OWNER}#tabs`, version: 2 });

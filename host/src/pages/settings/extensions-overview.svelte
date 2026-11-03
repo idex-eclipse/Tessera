@@ -114,6 +114,13 @@
             {i18n.t('extensions.settings.rejectedVersion', { need: r.ext.contribution.version, have: point?.decl.version ?? '?' })}
           {:else if r.reason === 'kind-mismatch'}
             {i18n.t('extensions.settings.rejectedKind')}
+          {:else if r.reason === 'owner-version'}
+            {@const owner = ownerOf(r.ext.contribution.point)}
+            {#if owner.startsWith('@core/')}
+              {i18n.t('extensions.settings.ownerVersionCore', { owner, need: r.need ?? '?', have: r.have ?? '?' })}
+            {:else}
+              {i18n.t('extensions.settings.ownerVersion', { owner: pluginName(owner), need: r.need ?? '?', have: r.have ?? '?' })}
+            {/if}
           {:else if r.reason === 'missing-point'}
             {@const owner = ownerOf(r.ext.contribution.point)}
             {#if owner.startsWith('@core/')}

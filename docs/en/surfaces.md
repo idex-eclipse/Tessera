@@ -612,11 +612,16 @@ still never talk to each other directly.
 - A version or kind mismatch rejects the contribution (console warning + Settings → Plugins).
 - A contribution to a point whose owner is not loaded or disabled is *sleeping*, not an
   error: it binds as soon as the owner appears.
-- If the owner is loaded but has no such point, its version is older than the contribution
-  needs: Settings → Plugins says what to update (Tessera for `@core/*`, otherwise the
-  owner). A new point or point version in a built-in plugin raises the MINOR of the
-  [plugin API](plugin-development.md#plugin-api-version), so an extension of it states
-  that version in `pluginApi` and is not installed on an older Tessera at all.
+- The set of points is part of the **owner's version**, not of the
+  [plugin API](plugin-development.md#plugin-api-version): a new point or point version
+  raises the owner's `version` (built-in plugins included). An extension states the owner
+  version it needs in [`dependencies`](plugin-development.md#dependencies)
+  (`{ "@core/calibrations": "3.0.0" }`, a minimum). If the loaded owner is older, all
+  contributions of that extension to the owner are rejected, and Settings → Plugins says
+  what to update (Tessera for `@core/*`, otherwise the owner); `tessera-ext` refuses to
+  install it on such a Tessera, or updates the owner from the registry.
+- If the owner is loaded, satisfies `dependencies` (or there is no entry) but has no such
+  point, the contribution is rejected the same way: the owner is older than it needs.
 
 ### Conflicts
 
@@ -659,10 +664,11 @@ SDK wrapper, which does all of the above:
   mounted; the page owner's hotkeys win on the same combination.
 - Guards are not inherited: an extension declares guards for its own commands.
 - Deep links to an extension tab: `?section=<extPluginId>/<id>`, resolved by the owner.
-- Dependencies: the owners of the points an extension uses are its dependencies.
-  `tessera-ext install` installs them from the registry (`requires` in `registry.json`);
-  `remove` refuses to remove a plugin others depend on without `--force`. `@core/*` are
-  always present.
+- Dependencies: the owners of the points an extension uses are its dependencies, with
+  the minimal versions from `dependencies`. `tessera-ext install` installs or updates
+  them from the registry (`requires` and `dependencies` in `registry.json`); `remove`
+  refuses to remove a plugin others depend on without `--force`. `@core/*` come with
+  Tessera: their versions are in `host/dist/core-plugins.json` of the build.
 - Popups, menus and lightboxes of a contribution must live in the browser's **top layer**
   (`<dialog>.showModal()` or the Popover API: `popover="auto"` + `popovertarget`). A
   contribution is mounted inside the owner's page: its panels often have
@@ -671,5 +677,23 @@ SDK wrapper, which does all of the above:
   Shake&Tune plugin (Lit, `tessera-ext`) is the reference: its help is a `[popover]`
   positioned from JS, its graph lightbox a `<dialog>`.
 
-Points of the built-in plugins: `@core/calibrations#tabs` (tab, append) and
-`@core/calibrations#shaper` (tab, alternative, the Input Shaper tab).
+### Points of the built-in plugins
+
+`@core/calibrations` (all `version: 1`, no params; a contribution gets only its own api).
+"Since" is the owner version to put in `dependencies`:
+
+| Point | kind | mode | Since | Where |
+|---|---|---|---|---|
+| `tabs` | tab | append | 2.1.0 | page: extra tabs |
+| `shaper` | tab | alternative | 2.1.0 | page: the whole Input Shaper tab |
+| `panel-mesh-map`, `panel-mesh-profiles`, `panel-mesh-tools` | panel | replacement | 3.0.0 | Mesh tab: the bed map, profiles and tools panels |
+| `panel-probe`, `panel-heaters` | panel | replacement | 3.0.0 | the Probe and Heaters tabs |
+| `panel-shaper`, `panel-belts`, `panel-graphs` | panel | alternative | 3.0.0 | Input Shaper tab panels (they complement each other and Klipper's own calibration, so the user chooses, the original is not hidden for good) |
+| `panels-mesh`, `panels-probe`, `panels-heaters`, `panels-shaper` | panel | append | 3.0.0 | extra panels at the end of the respective tab |
+| `widget-livez`, `widget-probe`, `widget-pid` | element | replacement | 3.0.0 | bodies of the Calibrations widget tabs |
+| `widget-tabs` | tab | append | 3.0.0 | extra tabs of the Calibrations widget |
+| `widget-bed-mesh` | element | replacement | 3.0.0 | the whole content of the bed-mesh widget (its header stays) |
+| `overlay-test-z`, `overlay-screws-tilt` | element | replacement | 3.0.0 | the whole overlay (backdrop and dialog); the plugin still decides **when** it is shown |
+
+A replacement of `overlay-test-z` takes over the manual probe Accept/Abort controls: it
+must provide them itself.

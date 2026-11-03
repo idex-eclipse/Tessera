@@ -1,5 +1,6 @@
 import type { PluginManifest } from '../../../plugin-sdk/src/types.ts';
 import { PLUGIN_API, checkPluginApi, formatPluginApi } from '../../../plugin-sdk/src/api-level.ts';
+import { sanitizeDependencies } from '../../../plugin-sdk/src/dependencies.ts';
 
 import type { PluginRegistry } from './plugin-registry.svelte.ts';
 import type { SettingsStore } from './settings-store.svelte.ts';
@@ -150,6 +151,12 @@ function prepareManifest(
 
   normalizeContribs(prepared, module);
   sanitizeSurfaceContributions(prepared);
+
+  const { dependencies, invalid } = sanitizeDependencies(manifest.dependencies);
+  prepared.dependencies = dependencies;
+  for (const [id, min] of invalid) {
+    console.warn(`[plugin-loader] Plugin "${manifest.id}" has invalid dependency`, id, min);
+  }
 
   return prepared;
 }
