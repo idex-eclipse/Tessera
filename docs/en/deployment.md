@@ -237,9 +237,10 @@ or deleted from the UI.
 
 **Plugin sources** (in the same block) lists the built-in registry and the added ones with
 their errors, removes an added one and adds a new one by the address of its `registry.json`
-(see [Additional registries](#from-the-plugin-registry-recommended)). The form is hidden when
-the server blocks remote plugins (`/extensions/policy.json`) or when the service is older and
-does not know registries. A plugin from an added registry is labeled with its name instead
+(see [Additional registries](#from-the-plugin-registry-recommended)). The block is hidden when the
+service is older and does not know registries (run `tessera update`). It does not depend on
+`/extensions/policy.json`: that policy is about modules from other origins, and plugins of an
+added registry are served from this origin like any other. A plugin from an added registry is labeled with its name instead
 of the *verified* badge.
 
 ### By URL (advanced)

@@ -123,9 +123,10 @@
   }
 
   // Additional registries. Shown only when the service knows them (`sources` is null for an older
-  // service) and remote plugins are allowed: adding a registry is the same trust decision as
-  // adding a plugin by URL.
-  let canManageSources = $derived(installer.sources !== null && catalog.catalog.allowRemotePlugins);
+  // service). Not tied to allowRemotePlugins: that policy is about modules loaded from other
+  // origins (CSP script-src), while registry plugins are unpacked into extensions/ and served
+  // from this origin, exactly like the plugins of the built-in registry.
+  let canManageSources = $derived(installer.sources !== null);
   let sourceUrl = $state('');
   let sourceName = $state('');
 
