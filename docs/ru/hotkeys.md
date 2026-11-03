@@ -150,6 +150,7 @@ Apple (macOS, iPhone, iPad) и `Ctrl` на остальных. Рекоменд�
 | `Ctrl+Y`, `Ctrl+Shift+Z` (`Cmd+Shift+Z` на платформах Apple) | вернуть отменённый шаг |
 | `R` | показать / скрыть правую панель |
 | `L` | показать / скрыть левое меню |
+| `N` | показать / скрыть центр уведомлений |
 
 Переход закрывает fleet, чтобы результат был виден. `R` и `L` на широком экране
 сворачивают/разворачивают панели, на узком — открывают/закрывают оверлей на всю ширину
@@ -162,7 +163,7 @@ Apple (macOS, iPhone, iPad) и `Ctrl` на остальных. Рекоменд�
 
 Чтобы переназначить клавишу хоста, используйте ключ `@host:<id>` с такими id: `toggle-fleet`,
 `printer-1` … `printer-9`, `printer-next`, `printer-prev`, `dashboard`,
-`toggle-right-panel`, `toggle-sidebar`, `page-next`, `page-prev`, `layout-undo`,
+`toggle-right-panel`, `toggle-notifications`, `toggle-sidebar`, `page-next`, `page-prev`, `layout-undo`,
 `layout-redo`, `layout-redo-shift`, а на платформах Apple `layout-undo-cmd` и
 `layout-redo-cmd`.
 

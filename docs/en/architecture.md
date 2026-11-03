@@ -59,7 +59,7 @@ Offline **does not break loading**: connections come up in the background.
 
 An object with dependencies that `App.svelte` puts into the Svelte context:
 `settings`, `printerManager`, `registry`, `ui`, `i18n`, `loader`, `router`,
-`hotkeys`, `fleetIndex`, `editor`. Host components get it through `getAppContext()`. Plugins **do not see**
+`hotkeys`, `fleetIndex`, `editor`, `extensions`, `notifications`. Host components get it through `getAppContext()`. Plugins **do not see**
 it: they have only `PluginApi`.
 
 ## The core layer ([`host/src/core/`](../../host/src/core))
@@ -74,6 +74,8 @@ it: they have only `PluginApi`.
 | `plugin-api-cache.ts` | the single `PluginApi` cache: one api per plugin until the manifest changes |
 | `moonraker-proxy.ts` | the proxy pool, WebSocket, caches, subscriptions, polling |
 | `guard-agent.ts` | the guard pipeline |
+| `notification-center.svelte.ts` | the notification center: history, dedup, ignore filter, toasts, the open flag |
+| `guard-notification.ts` | turning the guard agent's fail-closed events into notifications |
 | `hotkeys.ts` | pure logic: parsing combinations, matching events, conflicts |
 | `hotkey-manager.svelte.ts` | the `keydown` listener, context (route/page/fleet), overrides |
 | `host-hotkeys.ts` | the host's keys: navigation, and undo/redo in dashboard edit mode |
@@ -190,7 +192,8 @@ tab leads to that printer's dashboard.
 
 Search and filters in fleet mode (by printer name, by the file being printed, by
 "printing / idle / Klipper error") need data the host does not have. This is the
-**only** data channel from plugin to host, and it is deliberately narrow:
+data channel from plugin to host for fleet mode (the other one, write-only, is the
+[notification center](#notification-center)), and it is deliberately narrow:
 
 - A fleet panel publishes `api.fleet.publish(printerId, { tags, searchText })`
   and withdraws it with `api.fleet.retract(printerId)`.
@@ -209,11 +212,32 @@ The system plugin publishes the tags `printing`, `idle` and `klippy-error` and t
 name of the file being printed from its fleet status panel. See
 [plugin-api.md](plugin-api.md#fleet).
 
+## Notification center
+
+One place for everything the user should notice, whoever produced it. The host
+([`notification-center.svelte.ts`](../../host/src/core/notification-center.svelte.ts))
+owns the storage and the interface: toasts, the bell above the right panel's "Collapse
+menu" button, the list beside the panel, the `N` hotkey. It does not know where a
+notification comes from or what Klipper is.
+
+- A plugin writes with `api.notifications.push({ severity, text, label?, printerId? })`
+  and **reads nothing**: the center is not a channel between plugins. The author
+  (`pluginId`) is set by the host, so a plugin cannot sign as another one.
+- The host itself writes the fail-closed events of the guard agent.
+- `@core/system` is an ordinary producer for everything bound to Klipper: `!!` errors,
+  shutdowns, TMC flags, host throttling, MCU and CAN problems, and the
+  `M118 MPU_NOTIFY` macro echo for the user's own macros (see
+  [plugin-api.md](plugin-api.md#notifications)).
+- Dedup (100 ms), the history cap (200), the toast cap (5), the ignore patterns
+  and the sound for `critical` live in the center and apply to every author alike.
+  Patterns and the sound flag are device-global (`settings.ui.notifications`); the
+  history lives in memory.
+
 ## What is deliberately not in the host
 
-- a shared bus between plugins, shared state, `emit/on` (the fleet index above is a
-  one-way plugin → host publication of opaque strings, not a bus: plugins do not
-  read each other's records);
+- a shared bus between plugins, shared state, `emit/on` (the fleet index and the
+  notification center above are one-way plugin → host publications, not a bus:
+  plugins do not read each other's records);
 - granular permissions, capabilities, priority, "best provider";
 - request mutation by guards and guard priorities;
 - auto-updating remote plugins from the network;

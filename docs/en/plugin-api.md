@@ -39,8 +39,18 @@ interface PluginApi {
     retract(printerId: string): void;
   };
 
+  // notification center (write only, 0.10)
+  readonly notifications: { push(n: NotificationInput): void };
+
   // guards
   guards: { resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void };
+}
+
+interface NotificationInput {
+  severity: 'critical' | 'error' | 'info';
+  text: string;          // already translated
+  label?: string;        // short source caption, translated; defaults to the plugin name
+  printerId?: string;    // defaults to the active printer
 }
 
 interface FleetTag { id: string; labelKey: string; icon?: string; order?: number }
@@ -184,8 +194,8 @@ api.settings.onChange((_key, all) => {
 <a id="fleet"></a>
 
 `api.fleet` lets a **fleet panel** (see [surfaces.md](surfaces.md#6-fleet-panels))
-feed the search box and filter buttons of fleet mode. It is the only plugin → host
-data channel (the others are signals: `mpu:banner-expand`, `mpu:banner-collapse`,
+feed the search box and filter buttons of fleet mode. It is a plugin → host data
+channel (the other one is [`api.notifications`](#notifications), write only; the rest are signals: `mpu:banner-expand`, `mpu:banner-collapse`,
 `mpu:auth-logout`); the host stores the values and never interprets them.
 
 ```ts
@@ -208,6 +218,54 @@ api.fleet.retract(printerId);   // when the panel goes away
   printers are ignored. Limits: 16 tags, 512 characters of text.
 - Do not publish what is not useful for search or filtering — the index is shared,
   not a storage.
+
+---
+
+## Notifications
+
+<a id="notifications"></a>
+
+`api.notifications` puts a message into the **host notification center**: a toast, a
+badge on the bell above the right panel's "Collapse menu" button, and an entry in the
+list. It is available with `pluginApi: "0.10"` and newer.
+
+```ts
+api.notifications.push({
+  severity: 'error',                                   // 'critical' | 'error' | 'info'
+  text: api.i18n.t('acme.heater.drift', { heater }),   // already translated
+  label: api.i18n.t('acme.heater.source'),             // optional
+});
+```
+
+- Only writing exists. A plugin cannot read, list or subscribe to notifications: the
+  center is not a channel between plugins. The author is set by the host, so the
+  entry is signed with your plugin's name when there is no `label`.
+- `text` is translated by the caller at the moment of the call and is not retranslated
+  when the language changes. Newlines become spaces; over 240 characters it is cut
+  with `…`. An empty text is dropped.
+- `label` is a short caption of the source (at most 40 characters), for plugins
+  that report several kinds of events.
+- `printerId` attributes the message to a printer; by default it is the active one.
+  A background monitor that watches several printers must pass it explicitly.
+- The same text from the same plugin for the same printer within 100 ms is shown
+  once. The user can filter messages by regular expression and enable a sound for
+  `critical`; both apply to all plugins.
+- Do not use it for chatter: every call adds a toast and a history entry. Report what
+  the user must notice (an alarm, a failure), not progress.
+
+### From Klipper macros: `M118 MPU_NOTIFY`
+
+A Klipper macro, which is not a plugin, can raise a notification too:
+
+```
+M118 MPU_NOTIFY <critical|error|info> <text>
+```
+
+Klipper echoes `M118` as `echo: MPU_NOTIFY …` in `notify_gcode_response`, and
+`@core/system` turns that line into a notification (the caption is "Klipper macro").
+The severity is case-insensitive, and the text is the rest of the line. This is an
+input from outside the browser and works only while `@core/system` is enabled and the
+printer is connected. A plugin should use `api.notifications.push`, not this route.
 
 ---
 

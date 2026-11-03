@@ -149,7 +149,7 @@ Long-running calibrations survive tab switches and printer switching — activit
 ### System & notifications
 
 - **Right panel** (always available): emergency stop, service restarts, power devices, host shutdown/reboot, upload-and-print, Moonraker accounts
-- **Notification center** — toasts + a filterable side panel, aggregated across all configured printers with per-printer badges; fed by Klipper responses, shutdowns, **TMC driver flags** (over-temperature / stall, edge-detected), **host throttling and MCU link / CAN bus problems** (debounced), guard denials, and plugin notifications (`M118 MPU_NOTIFY …` convention)
+- **Notification center** — owned by the host and open to every plugin (`api.notifications.push`): toasts + a filterable side panel, aggregated across all configured printers with per-printer badges; fed by Klipper responses, shutdowns, **TMC driver flags** (over-temperature / stall, edge-detected), **host throttling and MCU link / CAN bus problems** (debounced), guard denials, plugin notifications, and your own Klipper macros (`M118 MPU_NOTIFY …`)
 - **Machine page** with tabs (`Alt+1/2/3`) and a health strip (host · MCU · drivers) above them:
   - **System** — system info, SD card, live host load charts
   - **Monitoring** — host throttling / under-voltage (Raspberry Pi) and CPU temperature; per-MCU load, retransmit and round-trip charts, CAN bus state; TMC driver status table with decoded flags and "seen earlier" history
@@ -185,7 +185,7 @@ A view over Moonraker's g-code store with command autocomplete (including **macr
 
 Keyboard navigation plus shortcuts contributed by plugins, all remappable in **Settings → Hotkeys**:
 
-- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `Ctrl+↑` / `Ctrl+↓` cycle through sections, `D` opens the dashboard, `R` / `L` toggle the right panel and the left menu
+- **Navigation** — `F` toggles fleet mode, `Ctrl+1` … `Ctrl+9` jump to the printer with that number, `Ctrl+←` / `Ctrl+→` cycle through printers, `Ctrl+↑` / `Ctrl+↓` cycle through sections, `D` opens the dashboard, `R` / `L` toggle the right panel and the left menu, `N` the notification center
 - **Editing the layout** — `Ctrl+Z` undoes a step, `Ctrl+Y` or `Ctrl+Shift+Z` redoes it
 - **Plugin shortcuts** — a plugin declares them in its manifest with a scope: *global* (everywhere), *dashboard* (only on the dashboard) or *plugin* (only on that plugin's own page)
 - **Layout-independent** — letters and digits match the physical key, so `Ctrl+K` works on a Russian layout too; modifiers are `Ctrl`, `Alt`, `Shift`, `Cmd`/`Meta`, and `Mod` means Cmd on Apple platforms and Ctrl elsewhere

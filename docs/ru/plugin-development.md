@@ -373,7 +373,7 @@ interface PluginManifest {
 
 `pluginApi` — версия контракта плагинов, которая нужна плагину: `PluginApi`, манифест и
 CE-контракт. Своя версия у хоста — в `plugin-sdk/src/api-level.ts` (`PLUGIN_API`,
-сейчас `0.9`; её показывает Settings → About).
+сейчас `0.10`; её показывает Settings → About).
 
 - **MINOR** растёт при каждом обратно совместимом добавлении: новый метод `PluginApi`,
   поле или поверхность манифеста. **MAJOR** зарезервирован для несовместимых изменений.
@@ -392,6 +392,7 @@ CE-контракт. Своя версия у хоста — в `plugin-sdk/src/
 | `0.7` | базовый контракт |
 | `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `dependencies` |
 | `0.9` | `handle.klippyStream`: bulk-потоки Klipper (`load_cell/dump_force`) через `/klippysocket` |
+| `0.10` | `api.notifications.push`: центр уведомлений хоста (только запись) |
 
 ### Зависимости
 

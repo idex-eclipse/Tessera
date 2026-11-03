@@ -196,11 +196,12 @@ key of any loaded plugin resolves for every initiator; give it a unique prefix.
 
 ## Notifications
 
-On a veto, a decision timeout and a parking timeout the host sends the `window`
-event `mpu:guard-notify` (`detail`: `{ kind: 'denied' | 'decision_timeout' |
-'park_timeout', pluginId, guardId, method, targetPrinterId, reasonKey? }`), which
-is shown in the notification center. This is an infrastructure transport, not a
-channel for plugins.
+On a veto, a decision timeout and a parking timeout the host itself puts an `error`
+notification into its [notification center](plugin-api.md#notifications), attributed
+to the target printer and labelled "Guard agent". For a veto with a `reasonKey`, the
+text is that translated reason. Plugins do not receive these events: the agent hands
+them straight to the center (`guardAgent.setNotifySink`), and there is no `window`
+event any more.
 
 ---
 

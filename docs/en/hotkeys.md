@@ -148,6 +148,7 @@ The host also does not call the handler if the event is already handled
 | `Ctrl+Y`, `Ctrl+Shift+Z` (`Cmd+Shift+Z` on Apple platforms) | redo the step |
 | `R` | show / hide the right panel |
 | `L` | show / hide the left menu |
+| `N` | show / hide the notification center |
 
 A switch closes fleet so that the result is visible. `R` and `L` collapse/expand the
 panels on a wide screen and open/close the full-width overlay on a narrow one
@@ -160,7 +161,7 @@ combinations in plugins, like the others: both sides would be disabled.
 
 To override a host key, use the key `@host:<id>` with these ids: `toggle-fleet`,
 `printer-1` … `printer-9`, `printer-next`, `printer-prev`, `dashboard`,
-`toggle-right-panel`, `toggle-sidebar`, `page-next`, `page-prev`, `layout-undo`,
+`toggle-right-panel`, `toggle-notifications`, `toggle-sidebar`, `page-next`, `page-prev`, `layout-undo`,
 `layout-redo`, `layout-redo-shift`, and on Apple platforms `layout-undo-cmd` and
 `layout-redo-cmd`.
 

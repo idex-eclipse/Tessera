@@ -21,6 +21,8 @@ Layers, top to bottom:
 
 ```
 auth overlay          — 900, login prompt (host only)
+toasts                — 550, notification center (host only)
+notification center   — 450, the list beside the right panel (host only)
 host dialogs          — 300, confirmations and settings dialogs
 printer tabs menu     — 250
 fleet mode            — 200, full-screen drawer
@@ -476,8 +478,10 @@ size, so use container queries for that (see below).
   the header; at most one is open. The right panel always receives
   `collapsed: 'false'`; the saved "collapsed" state and width are ignored.
 - **Mounting.** A side panel is mounted only while it is open. Anything that must
-  work with the panel closed (notifications, toasts, hotkey handlers) must live in
+  work with the panel closed (background sources, hotkey handlers) must live in
   an always-mounted surface (an overlay) and must not depend on the panel's DOM.
+  The notification center and its toasts are not such code: they belong to the host
+  and are always mounted (see [`api.notifications`](plugin-api.md#notifications)).
   The `R` and `L` hotkeys toggle the right panel and the left menu: on a wide
   screen they collapse/expand them, on a narrow one they open/close the overlay.
 - **Banners** are [collapsed](#collapsed-view) by default, even a single one; two or more
