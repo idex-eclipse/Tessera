@@ -481,6 +481,30 @@ describe('plugin-loader / reload', () => {
     expect(settings.plugins[0]!.installedVersion).toBe('1.1.0');
     expect(settings.plugins[0]!.source).toBe('catalog');
   });
+
+  it('keeps the working version when the new manifest cannot be loaded', async () => {
+    let fail = false;
+
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => {
+        if (fail) throw new Error('boom');
+        return createTestManifest({ id: '@third/graph', version: '1.0.0' });
+      }),
+    });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json', [], 'catalog');
+
+    fail = true;
+    await expect(
+      loader.reloadRemotePlugin('http://plugin.example.com/manifest.json'),
+    ).rejects.toThrow('boom');
+
+    // The old version stays active and recorded, and is not listed as a load failure.
+    expect(loader.isLoaded('@third/graph')).toBe(true);
+    expect(settings.plugins).toHaveLength(1);
+    expect(settings.plugins[0]!.installedVersion).toBe('1.0.0');
+    expect(loader.getLoadFailures()).toHaveLength(0);
+  });
 });
 
 // ------------------------------------------------------------------

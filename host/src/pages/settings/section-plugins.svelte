@@ -262,6 +262,7 @@
     <div class="plugin-list">
       {#each catalogEntries as entry (entry.id)}
         {@const status = catalogStatus(entry)}
+        {@const catalogApiProblem = entry.pluginApi === undefined ? null : pluginApiProblem(entry.pluginApi)}
         <div class="plugin-row">
           <div class="plugin-info">
             <span class="plugin-name">{entry.name}</span>
@@ -274,17 +275,23 @@
             {#if entry.description}
               <span class="plugin-description">{entry.description}</span>
             {/if}
+            {#if catalogApiProblem && status.status !== 'installed'}
+              <span class="warning">{catalogApiProblem}</span>
+            {/if}
           </div>
           <div class="plugin-actions">
             {#if status.status === 'not-installed'}
-              <button class="btn btn-primary" onclick={() => installFromCatalog(entry)}>
+              <button class="btn btn-primary" onclick={() => installFromCatalog(entry)} disabled={catalogApiProblem !== null}>
                 {i18n.t('common.install')}
               </button>
             {:else if status.status === 'update-available'}
               <span class="badge update">v{status.installedVersion} → v{status.catalogVersion}</span>
-              <button class="btn btn-primary" onclick={() => updateFromCatalog(entry)}>
-                {i18n.t('settings.update')}
-              </button>
+              <!-- Same rule as the registry block: no Update button for an incompatible version. -->
+              {#if !catalogApiProblem}
+                <button class="btn btn-primary" onclick={() => updateFromCatalog(entry)}>
+                  {i18n.t('settings.update')}
+                </button>
+              {/if}
             {/if}
           </div>
         </div>

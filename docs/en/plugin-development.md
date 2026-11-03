@@ -385,7 +385,9 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
   `dependencies` needs at least `0.8`.
 - An incompatible plugin is not installed (`tessera-ext`, the registry block refuses it)
   and not loaded (the host does not import it and lists it under "Not loaded" in
-  Settings → Plugins with "update Tessera").
+  Settings → Plugins with "update Tessera"). The catalog behaves like the registry
+  block: no Update button for an incompatible version, and a failed update leaves the
+  running version untouched.
 
 | Version | What appeared |
 |---|---|

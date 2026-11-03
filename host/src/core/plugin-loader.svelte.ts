@@ -410,7 +410,9 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
   }
 
   /**
-   * Reloads a remote plugin: uninstall + install.
+   * Reloads a remote plugin: fetch + validate the new version, then swap it in.
+   * If the new version cannot be loaded, the error is thrown and the currently
+   * running version is left untouched.
    * Useful for hot-reload during development.
    */
   async function reloadRemotePlugin(manifestUrl: string): Promise<void> {
@@ -422,8 +424,18 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     const printerIds = record?.printerIds ?? [];
     const source = record?.source ?? 'url';
 
+    // Validate and import the new version BEFORE touching the old one: an update that
+    // is incompatible (pluginApi, bad manifest, import error) must leave the working
+    // version in place. fetchRemoteUnchecked is used on purpose so a failed update is
+    // not recorded in loadFailures ("Not loaded") while the old version keeps running.
+    const next = findByManifestUrl(manifestUrl)
+      ? await fetchRemoteUnchecked(manifestUrl)
+      : await fetchRemote(manifestUrl);
+
     uninstallRemotePlugin(manifestUrl);
-    await installRemotePlugin(manifestUrl, printerIds, source);
+    loadFailures.delete(manifestUrl);
+    activate(next.loaded);
+    settings.addPlugin(manifestUrl, printerIds, source, next.version);
 
     if (!wasEnabled) {
       setPluginEnabled(manifestUrl, false);

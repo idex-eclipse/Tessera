@@ -499,6 +499,9 @@ def scan_extensions():
         if manifest.get('description'):
             entry['description'] = manifest['description']
         entry['origin'] = 'registry' if origin is not None else 'local'
+        # Lets the UI block an incompatible update before touching the working version.
+        if 'pluginApi' in manifest:
+            entry['pluginApi'] = manifest['pluginApi']
         if isinstance(origin, dict) and origin.get('sha256'):
             entry['sha256'] = origin['sha256']
         entries.append(entry)

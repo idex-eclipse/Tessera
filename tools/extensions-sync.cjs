@@ -63,6 +63,8 @@ function scanExtensions(extensionsDir = EXTENSIONS_DIR, log = console) {
         icon: manifest.icon || undefined,
         description: manifest.description || undefined,
         origin: origin ? 'registry' : 'local',
+        // Lets the UI block an incompatible update before touching the working version.
+        pluginApi: manifest.pluginApi,
         sha256: origin?.sha256 || undefined,
       });
     } catch (e) {
