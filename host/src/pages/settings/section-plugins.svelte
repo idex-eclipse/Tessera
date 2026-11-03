@@ -47,7 +47,10 @@
 //catalog
 
   const catalog = useExtensionsCatalog();
-  let catalogEntries = $derived(catalog.catalog.entries);
+  // Установленные без обновления в каталоге не нужны: они уже в списке установленных.
+  let catalogEntries = $derived(
+    catalog.catalog.entries.filter((entry) => catalog.getStatus(entry, remotePlugins).status !== 'installed'),
+  );
   let catalogLoading = $derived(catalog.catalog.loading);
   let catalogError = $derived(catalog.catalog.error);
 
@@ -212,7 +215,7 @@
             </div>
             <div class="plugin-actions">
               {#if installer.busyId === plugin.id}
-                <Loader size="sm" inline text={i18n.t('settings.registryWorking')} />
+                <Loader size="md" inline text={i18n.t('settings.registryWorking')} />
               {:else if plugin.state === 'available'}
                 <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null || apiProblem !== null}>
                   {i18n.t('common.install')}
@@ -277,8 +280,6 @@
               <button class="btn btn-primary" onclick={() => installFromCatalog(entry)}>
                 {i18n.t('common.install')}
               </button>
-            {:else if status.status === 'installed'}
-              <span class="badge installed">{i18n.t('settings.installed')}</span>
             {:else if status.status === 'update-available'}
               <span class="badge update">v{status.installedVersion} → v{status.catalogVersion}</span>
               <button class="btn btn-primary" onclick={() => updateFromCatalog(entry)}>

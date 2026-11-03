@@ -249,7 +249,7 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
    * Internal state: all loaded plugins (core + remote).
    * Key: plugin id (manifest.id)
    */
-  let loadedPlugins = $state<Map<string, LoadedPlugin>>(new Map());
+  const loadedPlugins = new SvelteMap<string, LoadedPlugin>();
 
   /** Key: manifestUrl. Очищается при успешной загрузке или удалении плагина. */
   const loadFailures = new SvelteMap<string, PluginLoadFailure>();
