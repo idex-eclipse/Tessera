@@ -99,6 +99,45 @@ failed update leaves the previous version in place. Registry plugins get an
 `.tessera-origin.json` file next to the manifest. The CLI refuses to overwrite a
 folder you put there by hand unless you pass `--force`.
 
+**Additional registries.** Besides the built-in registry you can add registries of other
+authors: any `registry.json` in the same format (schema 1, see
+[Publishing to the registry](#publishing-to-the-registry)) served over `https://`.
+
+```bash
+tessera-ext repo                                        # the built-in registry and the added ones
+tessera-ext repo add https://example.com/registry.json  # optional second argument: a name
+tessera-ext repo remove example.com
+tessera-ext install hello --source example.com         # when several registries offer "acme/hello"
+```
+
+The same is in the menu (**S) Settings → Registries**) and in the UI (Settings → Plugins →
+**Plugin sources**).
+
+- **Where the list lives.** `extensions/.tessera-sources.json`, not `tessera-ext.conf`:
+  the service may write `extensions/` and nothing else, and it adds registries on behalf of
+  the UI. A registry is read once when added; one that is not a valid `registry.json` is not
+  saved. At most 10 additional registries; a name is 1-32 characters of `a-z 0-9 . _ -`
+  (`official` is the built-in registry and is reserved). A name is generated from the address
+  when you do not give one.
+- **One plugin, one registry.** Every plugin row shows where it comes from. The same id may be
+  offered by several registries. A plugin is updated only from the registry it was installed
+  from (the address is recorded in `.tessera-origin.json`); the entry of another registry is
+  shown as *installed from another registry* and cannot be installed until the installed copy
+  is removed. Installing an id that several registries offer needs `--source <name>` (the UI
+  always sends the registry of the row).
+- **Removing a registry** leaves its plugins installed and working, but they are not updated
+  any more, and no other registry can take them over until you remove the plugin.
+- **Dependencies** (`requires`) are taken from the registry of the plugin that needs them,
+  then from the built-in one. A dependency that only a third registry has is reported as
+  missing and is not installed: code never comes from a registry you did not choose for
+  that plugin.
+- **A registry that cannot be read** shows its error and does not hide the others.
+- **Trust.** Everything that applies to the built-in registry still applies (sha256, archive
+  limits, `pluginApi`, matching `id`/`version`), but these checks prove that the download is
+  what the registry published, not that its owner is honest. A plugin runs inside the UI with
+  full access to the printer. Add only registries whose owners you trust; the UI asks for a
+  confirmation first.
+
 **Registry branch.** The CLI reads `registry/registry.json` from the `main` branch of
 `Tessera-Ext`. Another branch (for example `dev`, with versions that are not released
 yet) is chosen in the menu (**S) Settings → Branch**, a list of branches from GitHub)
@@ -196,6 +235,13 @@ record. The block is shown only when the service is available; without it everyt
 works as before, through `tessera-ext`. Folders put in place by hand cannot be replaced
 or deleted from the UI.
 
+**Plugin sources** (in the same block) lists the built-in registry and the added ones with
+their errors, removes an added one and adds a new one by the address of its `registry.json`
+(see [Additional registries](#from-the-plugin-registry-recommended)). The form is hidden when
+the server blocks remote plugins (`/extensions/policy.json`) or when the service is older and
+does not know registries. A plugin from an added registry is labeled with its name instead
+of the *verified* badge.
+
 ### By URL (advanced)
 
 Only this dialog can limit a plugin to a set of printers (`printerIds`); an empty list
@@ -265,11 +311,18 @@ write to `extensions/`.
 - **A process exists only while it works.** `tessera-ext.socket` listens on
   `/run/tessera-ext.sock`, systemd starts `deploy/tessera-ext.py serve` on the first
   request, and the process exits after 5 idle minutes.
-- **The client passes a plugin id and nothing else.** `POST /tessera-api/v1/{install,update,remove}`
-  with the body `{"id": "acme/hello"}`, plus `GET /tessera-api/v1/status`. URLs, paths and
-  `--force` cannot be passed through the API. The service finds the registry address itself
-  and reads it over `https://` only (`TESSERA_REGISTRY_URL` does not affect it; the branch
-  comes from `tessera-ext branch`).
+- **The client passes a plugin id (and a registry name) and nothing else.**
+  `POST /tessera-api/v1/{install,update,remove}` with the body `{"id": "acme/hello"}`
+  (`install` and `update` also accept `"source": "<registry name>"`), plus
+  `GET /tessera-api/v1/status`. Paths, archive URLs and `--force` cannot be passed through the
+  API. The service finds the registry addresses itself and reads them over `https://` only
+  (`TESSERA_REGISTRY_URL` does not affect it; the branch comes from `tessera-ext branch`).
+- **One exception: adding a registry.** `POST /tessera-api/v1/repo-add` takes
+  `{"url": "https://…", "name": "optional"}` and `repo-remove` takes `{"name": "…"}`. This is
+  the only place where an address comes from a request, so it is narrow: `https://` only, no
+  login or password in the address, no `localhost` or private IP address, at most 300
+  characters, and the registry must parse as a valid `registry.json` before it is saved. The
+  same Moonraker check, `Origin` check and `application/json` rule apply as for installs.
 - **Moonraker checks permissions.** For each request the service forwards `Authorization`,
   `X-Api-Key`, `X-Real-IP` and `X-Forwarded-For` to `GET /access/user`. Anything but 200 is
   a refusal. JWT, API keys, `trusted_clients` and `force_logins` work as they do in
@@ -475,6 +528,14 @@ archives elsewhere.
 Then commit the archive together with `registry.json`: the CLI refuses an archive
 whose sha256 differs from the index. Printers get the new version with
 `tessera-ext update --all` (or the menu), and users reload the UI page.
+
+**Your own registry.** Anyone can publish a registry of their own: put `registry.json` and the
+archives next to it on any `https://` host (GitHub raw or Pages, a web server) and give users
+the address; they add it with `tessera-ext repo add <address>` or in Settings → Plugins →
+Plugin sources (see [Additional registries](#from-the-plugin-registry-recommended)). The format
+and the checks are the same as above; `id` must be unique within your registry, and a plugin
+whose `id` also exists elsewhere is installed only on an explicit choice of the registry.
+Entries with `@core/*` ids are refused.
 
 Planned registry workflow: an author opens a PR that pins their plugin's source
 commit; a reviewer reads the diff; after merge, CI checks out that commit, builds it,

@@ -6,7 +6,7 @@
   import { useExtensionsCatalog } from '../../core/extensions-catalog.svelte.ts';
   import { absoluteManifestUrl } from '../../core/extensions-catalog.svelte.ts';
   import type { CatalogEntry } from '../../core/extensions-catalog.svelte.ts';
-  import { createExtensionsInstaller, findHostPrinter } from '../../core/extensions-installer.svelte.ts';
+  import { createExtensionsInstaller, findHostPrinter, pluginKey, SOURCES_BUSY } from '../../core/extensions-installer.svelte.ts';
   import type { RegistryPlugin } from '../../core/extensions-installer.svelte.ts';
   import ExtensionsOverview from './extensions-overview.svelte';
   import { PLUGIN_API, checkPluginApi, formatPluginApi } from '../../../../plugin-sdk/src/api-level.ts';
@@ -122,6 +122,37 @@
     if (ok) await installer.remove(plugin);
   }
 
+  // Additional registries. Shown only when the service knows them (`sources` is null for an older
+  // service) and remote plugins are allowed: adding a registry is the same trust decision as
+  // adding a plugin by URL.
+  let canManageSources = $derived(installer.sources !== null && catalog.catalog.allowRemotePlugins);
+  let sourceUrl = $state('');
+  let sourceName = $state('');
+
+  async function addSource(): Promise<void> {
+    const url = sourceUrl.trim();
+    if (!url) return;
+    const ok = await confirm({
+      title: i18n.t('settings.sourceAddTitle'),
+      message: i18n.t('settings.sourceAddConfirm'),
+      danger: true,
+    });
+    if (!ok) return;
+    if (await installer.addSource(url, sourceName.trim() || undefined)) {
+      sourceUrl = '';
+      sourceName = '';
+    }
+  }
+
+  async function removeSource(name: string): Promise<void> {
+    const ok = await confirm({
+      title: i18n.t('settings.sources'),
+      message: i18n.t('settings.sourceRemoveConfirm', { name }),
+      danger: true,
+    });
+    if (ok) await installer.removeSource(name);
+  }
+
   let addAdvancedOpen = $state(false);
   let advancedUrl = $state('');
   let advancedScope = $state<string[]>([]);
@@ -191,20 +222,77 @@
       <p class="error">{i18n.t('settings.registryUnreachable', { error: installer.registryError })}</p>
     {/if}
 
+    {#if canManageSources && installer.sources}
+      <div class="sources">
+        <h4>{i18n.t('settings.sources')}</h4>
+        <p class="field-hint">{i18n.t('settings.sourcesHint')}</p>
+        {#each installer.sources as src (src.name)}
+          <div class="plugin-row source-row">
+            <div class="plugin-info">
+              <span class="plugin-name">
+                {src.name}
+                {#if src.official}<span class="badge">{i18n.t('settings.sourceOfficial')}</span>{/if}
+                <span class="plugin-count">{i18n.t('settings.sourcePlugins', { count: src.plugins })}</span>
+              </span>
+              <!-- Addresses are LTR text whatever the UI direction is; long ones wrap anywhere. -->
+              <span class="plugin-meta source-url" dir="ltr">{src.url}</span>
+              {#if src.error}
+                <span class="error" dir="auto">{i18n.t('settings.sourceErrorLabel', { error: src.error })}</span>
+              {/if}
+            </div>
+            {#if !src.official}
+              <div class="plugin-actions">
+                <button class="btn btn-danger" onclick={() => removeSource(src.name)} disabled={installer.busyId !== null}>
+                  {i18n.t('settings.sourceRemove')}
+                </button>
+              </div>
+            {/if}
+          </div>
+        {/each}
+
+        <form class="source-form" onsubmit={(e) => { e.preventDefault(); void addSource(); }}>
+          <label class="field">
+            {i18n.t('settings.sourceUrl')}
+            <input type="url" dir="ltr" bind:value={sourceUrl} placeholder="https://example.com/registry.json" autocomplete="off" />
+            <span class="field-hint">{i18n.t('settings.sourceUrlHint')}</span>
+          </label>
+          <label class="field">
+            {i18n.t('settings.sourceName')}
+            <input type="text" dir="ltr" bind:value={sourceName} maxlength="32" autocomplete="off" />
+            <span class="field-hint">{i18n.t('settings.sourceNameHint')}</span>
+          </label>
+          <div class="source-form-actions">
+            <button class="btn btn-secondary" type="submit" disabled={installer.busyId !== null || !sourceUrl.trim()}>
+              {i18n.t('settings.sourceAdd')}
+            </button>
+            {#if installer.busyId === SOURCES_BUSY}
+              <Loader size="md" inline text={i18n.t('settings.registryWorking')} />
+            {/if}
+          </div>
+        </form>
+      </div>
+    {/if}
+
     {#if registryPlugins.length === 0}
       {#if !installer.loading && !installer.error && !installer.registryError}
         <p class="empty">{i18n.t('settings.registryEmpty')}</p>
       {/if}
     {:else}
       <div class="plugin-list">
-        {#each registryPlugins as plugin (plugin.id)}
+        {#each registryPlugins as plugin (pluginKey(plugin))}
           {@const apiProblem = plugin.state === 'available' || plugin.state === 'update' ? pluginApiProblem(plugin.pluginApi) : null}
+          {@const key = pluginKey(plugin)}
           <div class="plugin-row">
             <div class="plugin-info">
               <span class="plugin-name">{plugin.name}</span>
               <span class="plugin-meta">
                 {plugin.id} · v{plugin.version}
-                <span class="badge verified">{i18n.t('settings.verified')}</span>
+                {#if !plugin.source || plugin.source === 'official'}
+                  <span class="badge verified">{i18n.t('settings.verified')}</span>
+                {:else}
+                  <!-- A third-party registry: name it instead of vouching for it. -->
+                  <span class="badge source">{i18n.t('settings.sourceFrom', { name: plugin.source })}</span>
+                {/if}
               </span>
               {#if plugin.description}
                 <span class="plugin-description">{plugin.description}</span>
@@ -212,10 +300,15 @@
               {#if apiProblem}
                 <span class="warning">{apiProblem}</span>
               {/if}
+              {#if plugin.state === 'conflict'}
+                <span class="warning">{i18n.t('settings.sourceConflict')}</span>
+              {/if}
             </div>
             <div class="plugin-actions">
-              {#if installer.busyId === plugin.id}
+              {#if installer.busyId === key}
                 <Loader size="md" inline text={i18n.t('settings.registryWorking')} />
+              {:else if plugin.state === 'conflict'}
+                <!-- Nothing to offer: the installed copy belongs to another registry. -->
               {:else if plugin.state === 'available'}
                 <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null || apiProblem !== null}>
                   {i18n.t('common.install')}
@@ -481,5 +574,18 @@
 .warning { color: var(--warning); font-size: var(--font-size-sm); }
 .reload-notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border: 1px solid var(--warning); border-radius: var(--radius-md); }
 .btn-danger { background: var(--danger); color: #fff; }
+.badge.source { background: var(--text-muted); color: #fff; font-size: 10px; overflow-wrap: anywhere; }
+
+/* Registry sources. Rows wrap on narrow screens instead of pushing the page sideways. */
+.sources { display: flex; flex-direction: column; gap: var(--space-sm); }
+.sources h4 { font-size: var(--font-size-md); font-weight: 600; }
+.source-row { flex-wrap: wrap; }
+.source-row .plugin-info { flex: 1 1 14rem; }
+.plugin-count { color: var(--text-muted); font-size: var(--font-size-sm); font-weight: 400; margin-inline-start: var(--space-sm); }
+/* Addresses are long and unbreakable: wrap anywhere, never overflow the row. */
+.source-url { overflow-wrap: anywhere; text-align: start; }
+.source-form { display: flex; flex-direction: column; gap: var(--space-sm); }
+.source-form-actions { display: flex; align-items: center; gap: var(--space-md); }
+.source-form .field input { min-width: 0; width: 100%; box-sizing: border-box; }
 
 </style>

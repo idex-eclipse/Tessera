@@ -591,6 +591,332 @@ class SourceTests(Base):
             ext.set_branch('nope', ['main', 'dev'])
 
 
+class ExtraRegistry:
+    """A second registry.json in its own folder, as a third party would publish it."""
+
+    def __init__(self, root, name):
+        self.dir = os.path.join(root, name)
+        os.makedirs(self.dir)
+        self.entries = []
+        self.write()
+
+    @property
+    def path(self):
+        return os.path.join(self.dir, 'registry.json')
+
+    @property
+    def url(self):
+        # resolve(): the normalizer does too (Windows temp paths are 8.3 names)
+        return pathlib.Path(self.path).resolve().as_uri()
+
+    def write(self):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            json.dump({'schema': 1, 'plugins': self.entries}, f)
+
+    def publish(self, files, pid='acme/hello', version='1.0.0', directory='hello', **extra):
+        data = make_tar(files)
+        name = f'{directory}-{version}.tar.gz'
+        with open(os.path.join(self.dir, name), 'wb') as f:
+            f.write(data)
+        entry = {
+            'id': pid, 'dir': directory, 'name': pid, 'version': version,
+            'pluginApi': '0.7', 'url': name, 'sha256': hashlib.sha256(data).hexdigest(),
+        }
+        entry.update(extra)
+        self.entries = [e for e in self.entries if e['id'] != pid] + [entry]
+        self.write()
+
+
+class AdditionalRegistryTests(Base):
+    """Registries added with `repo add` next to the built-in one."""
+
+    def setUp(self):
+        super().setUp()
+        self.extra = ExtraRegistry(self.tmp, 'extra')
+
+    def run_quiet(self, fn, *args, **kw):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            fn(*args, **kw)
+        return err.getvalue()
+
+    def add(self, name='extra'):
+        with ext.ExtensionsLock():
+            return ext.add_source(self.extra.url, name)
+
+    # -- the list of registries
+
+    def test_add_list_remove(self):
+        self.extra.publish(plugin_files('acme/one'), pid='acme/one', directory='one')
+        added = self.add()
+        self.assertEqual((added['name'], added['plugins']), ('extra', 1))
+        self.assertEqual([s['name'] for s in ext.configured_sources()], ['official', 'extra'])
+        self.assertTrue(ext.configured_sources()[0]['official'])
+
+        with ext.ExtensionsLock():
+            self.assertEqual(ext.remove_source('extra'), [])
+        self.assertEqual([s['name'] for s in ext.configured_sources()], ['official'])
+
+    def test_the_list_is_kept_in_extensions(self):
+        self.add()
+        self.assertEqual(json.loads(self.read(ext.SOURCES_FILE))['sources'][0]['name'], 'extra')
+        # a hidden file is not a plugin folder
+        self.assertEqual(ext.plugin_dirs(), [])
+
+    def test_name_is_suggested_from_the_address(self):
+        name = lambda url, taken=(): ext.suggest_source_name(url, set(taken))
+        self.assertEqual(name('https://raw.githubusercontent.com/Acme/Plugins/main/registry.json'), 'acme-plugins')
+        self.assertEqual(name('https://acme.github.io/registry.json'), 'acme')
+        self.assertEqual(name('https://plugins.example.com/r.json'), 'plugins.example.com')
+        self.assertEqual(name('https://acme.github.io/registry.json', ['acme']), 'acme-2')
+        self.assertEqual(name('https://official/registry.json'), 'official-2')
+        for url in ('https://acme.github.io/r.json', 'file:///tmp/r.json'):
+            self.assertTrue(ext.valid_source_name(name(url)))
+
+    def test_refuses_bad_names_and_duplicates(self):
+        for bad in ('official', 'Upper', '-x', 'a b', 'a' * 33, ''):
+            with self.subTest(name=bad), self.assertRaises(ext.ExtError):
+                self.add(bad)
+        self.add()
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.add('other')
+        self.assertEqual(ctx.exception.status, 409)
+        other = ExtraRegistry(self.tmp, 'other')
+        with self.assertRaises(ext.ExtError):
+            with ext.ExtensionsLock():
+                ext.add_source(other.url, 'extra')
+        self.publish(plugin_files())
+        with self.assertRaises(ext.ExtError) as dup:
+            with ext.ExtensionsLock():
+                ext.add_source(pathlib.Path(self.registry, 'registry.json').resolve().as_uri(), 'again')
+        self.assertIn('already added', str(dup.exception))
+
+    def test_at_most_ten(self):
+        for i in range(ext.MAX_SOURCES):
+            registry = ExtraRegistry(self.tmp, f'r{i}')
+            with ext.ExtensionsLock():
+                ext.add_source(registry.url, f'r{i}')
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.add()
+        self.assertEqual(ctx.exception.status, 409)
+
+    def test_an_unreadable_registry_is_not_saved(self):
+        os.remove(self.extra.path)
+        with self.assertRaises(ext.ExtError):
+            self.add()
+        with open(self.extra.path, 'w', encoding='utf-8') as f:
+            f.write('{"schema": 2, "plugins": []}')
+        with self.assertRaises(ext.ExtError):
+            self.add()
+        self.assertEqual(ext.read_sources(), [])
+
+    def test_a_broken_list_file_is_empty(self):
+        for text in ('{', '[]', '{"sources": "x"}', '{"sources": [{"name": "official", "url": "u"}, 5, {"name": "ok"}]}'):
+            with self.subTest(text=text):
+                with open(self.path(ext.SOURCES_FILE), 'w', encoding='utf-8') as f:
+                    f.write(text)
+                self.assertEqual(ext.read_sources(), [])
+
+    def test_service_takes_https_addresses_only(self):
+        ext.local_sources_allowed = False
+        good = 'https://plugins.example.com/registry.json'
+        self.assertEqual(ext.normalize_source_url(good), good)
+        bad = (
+            'http://plugins.example.com/r.json', 'file:///etc/passwd', '/etc/passwd', 'ftp://example.com/r.json',
+            'https://user:pw@example.com/r.json', 'https://localhost/r.json', 'https://foo.localhost/r.json',
+            'https://127.0.0.1/r.json', 'https://192.168.1.5/r.json', 'https://10.0.0.1/r.json',
+            'https://169.254.1.1/r.json', 'https://[::1]/r.json', 'https://0.0.0.0/r.json',
+            'https://example.com/a b', 'https://example.com/\x07', '', '   ', 'https://' + 'a' * 400 + '.com/r.json',
+        )
+        for url in bad:
+            with self.subTest(url=url), self.assertRaises(ext.ExtError):
+                ext.normalize_source_url(url)
+
+    def test_cli_also_takes_local_files(self):
+        self.assertEqual(ext.normalize_source_url(self.extra.path), self.extra.url)
+
+    # -- plugins from several registries
+
+    def test_lists_plugins_of_every_registry_and_survives_a_failing_one(self):
+        self.publish(plugin_files())
+        self.extra.publish(plugin_files('acme/one'), pid='acme/one', directory='one')
+        self.add()
+        registry = ext.load_registries()
+        self.assertEqual({(p['id'], p['_source']) for p in registry['plugins']},
+                         {('acme/hello', 'official'), ('acme/one', 'extra')})
+
+        os.remove(self.extra.path)
+        with self.quiet():
+            registry = ext.load_registries()
+        self.assertEqual([p['id'] for p in registry['plugins']], ['acme/hello'])
+        self.assertIsNone(registry['sources'][0]['error'])
+        self.assertTrue(registry['sources'][1]['error'])
+
+    def test_all_registries_failing_is_an_error_for_the_cli_only(self):
+        self.publish(plugin_files())
+        self.add()
+        os.remove(self.extra.path)
+        os.remove(os.path.join(self.registry, 'registry.json'))
+        with self.assertRaises(ext.ExtError), self.quiet():
+            ext.load_registries()
+        self.assertEqual(len(ext.load_registries(strict=False)['sources']), 2)
+
+    def test_installs_from_an_additional_registry(self):
+        self.extra.publish(plugin_files('acme/one'), pid='acme/one', directory='one')
+        self.add()
+        self.run_quiet(ext.cmd_install, 'one')
+        self.assertEqual(ext.scan_installed()['acme/one']['origin']['registry'], self.extra.url)
+        index = json.loads(self.read('index.json'))
+        self.assertEqual(index[0]['origin'], 'registry')
+
+    def test_one_id_in_two_registries_must_be_chosen(self):
+        self.publish(plugin_files(version='1.0.0'))
+        self.extra.publish(plugin_files(version='7.0.0'), version='7.0.0')
+        self.add()
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.run_quiet(ext.cmd_install, 'hello')
+        self.assertIn('--source', str(ctx.exception))
+        self.assertEqual(ext.scan_installed(), {})
+
+        self.run_quiet(ext.cmd_install, 'hello', source='extra')
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '7.0.0')
+
+    def test_unknown_source_name_is_an_error(self):
+        self.publish(plugin_files())
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.run_quiet(ext.cmd_install, 'hello', source='nope')
+        self.assertIn('No registry named', str(ctx.exception))
+
+    def test_the_other_registry_is_a_conflict_in_status(self):
+        self.publish(plugin_files(version='1.0.0'))
+        self.extra.publish(plugin_files(version='7.0.0'), version='7.0.0')
+        self.add()
+        self.run_quiet(ext.cmd_install, 'hello', source='official')
+
+        registry = ext.load_registries()
+        rows = {r['source']: r for r in ext.collect_status(registry['plugins'], ext.scan_installed(), registry['sources'])}
+        self.assertEqual(rows['official']['state'], 'installed')
+        self.assertTrue(rows['official']['managed'])
+        self.assertEqual(rows['extra']['state'], 'conflict')
+        self.assertFalse(rows['extra']['managed'])
+        self.assertEqual(ext.plugin_view(rows['extra'])['source'], 'extra')
+
+        # the install is refused by the installer too, with or without a name
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.run_quiet(ext.cmd_install, 'hello', source='extra')
+        self.assertIn('installed from registry "official"', str(ctx.exception))
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '1.0.0')
+
+    def test_update_comes_from_the_registry_of_the_install(self):
+        self.publish(plugin_files(version='1.0.0'))
+        self.extra.publish(plugin_files(version='1.0.0'))
+        self.add()
+        self.run_quiet(ext.cmd_install, 'hello', source='extra')
+
+        # both registries publish a newer version: only the owner's counts
+        self.publish(plugin_files(version='2.0.0'), version='2.0.0')
+        self.extra.publish(plugin_files(version='3.0.0'), version='3.0.0')
+        self.run_quiet(ext.cmd_update, 'hello')
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '3.0.0')
+
+    def test_a_removed_registry_leaves_the_plugin_working_but_not_replaceable(self):
+        self.publish(plugin_files(version='1.0.0'))
+        self.extra.publish(plugin_files(version='1.0.0'))
+        self.add()
+        self.run_quiet(ext.cmd_install, 'hello', source='extra')
+        with ext.ExtensionsLock():
+            self.assertEqual(ext.remove_source('extra'), ['acme/hello'])
+
+        self.publish(plugin_files(version='2.0.0'), version='2.0.0')
+        err = self.run_quiet(ext.cmd_update, None, update_all=True)
+        self.assertIn('skipped', err)
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '1.0.0')
+
+        # the built-in registry may not take the plugin over by name either
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.run_quiet(ext.cmd_install, 'hello', source='official')
+        self.assertIn('not configured any more', str(ctx.exception))
+        registry = ext.load_registries()
+        rows = ext.collect_status(registry['plugins'], ext.scan_installed(), registry['sources'])
+        self.assertEqual([r['state'] for r in rows if r['id'] == 'acme/hello'], ['conflict', 'local'])
+
+    def test_a_branch_switch_keeps_official_plugins_updatable(self):
+        sources = [{'name': 'official', 'url': 'https://example.com/main.json', 'official': True}]
+        origin = lambda url: {'origin': {'registry': url}}
+        self.assertEqual(ext.installed_source(
+            origin('https://raw.githubusercontent.com/idex-eclipse/Tessera-Ext/dev/registry/registry.json'), sources), 'official')
+        self.assertEqual(ext.installed_source(origin('https://elsewhere.example/r.json'), sources), '')
+        self.assertIsNone(ext.installed_source({'origin': None}, sources))
+
+    def test_dependencies_come_from_the_same_registry_then_the_built_in_one_never_a_third(self):
+        self.publish(extension_files('acme/owner', version='1.0.0'), pid='acme/owner', directory='owner')
+        self.extra.publish(extension_files('acme/owner', version='9.0.0'), pid='acme/owner', version='9.0.0', directory='owner')
+        self.extra.publish(
+            extension_files('acme/addon', points=('acme/owner#tabs',)),
+            pid='acme/addon', directory='addon', requires=['acme/owner'])
+        third = ExtraRegistry(self.tmp, 'third')
+        third.publish(extension_files('acme/only-third'), pid='acme/only-third', directory='third-only')
+        self.extra.publish(
+            extension_files('acme/wants-third', points=('acme/only-third#tabs',)),
+            pid='acme/wants-third', directory='wants', requires=['acme/only-third'])
+        self.add()
+        with ext.ExtensionsLock():
+            ext.add_source(third.url, 'third')
+
+        registry = ext.load_registries()
+        chosen = {}
+        plan = ext.dependency_plan('acme/addon', registry['plugins'], {}, 'extra', chosen)
+        self.assertEqual(plan[0], ['acme/owner'])
+        self.assertEqual(chosen['acme/owner']['_source'], 'extra')
+
+        # a dependency only a third registry has is reported missing, not pulled in
+        plan = ext.dependency_plan('acme/wants-third', registry['plugins'], {}, 'extra', {})
+        self.assertEqual(plan, ([], ['acme/only-third'], []))
+
+        self.run_quiet(ext.cmd_install, 'addon')
+        self.assertEqual(ext.scan_installed()['acme/owner']['version'], '9.0.0')
+
+    def test_dependency_falls_back_to_the_built_in_registry(self):
+        self.publish(extension_files('acme/owner'), pid='acme/owner', directory='owner')
+        self.extra.publish(
+            extension_files('acme/addon', points=('acme/owner#tabs',)),
+            pid='acme/addon', directory='addon', requires=['acme/owner'])
+        self.add()
+        self.run_quiet(ext.cmd_install, 'addon')
+        installed = ext.scan_installed()
+        self.assertEqual(installed['acme/owner']['origin']['registry'], pathlib.Path(self.registry, 'registry.json').resolve().as_uri())
+        self.assertEqual(installed['acme/addon']['origin']['registry'], self.extra.url)
+
+    def test_core_ids_cannot_come_from_a_registry(self):
+        self.extra.publish(plugin_files('@core/console'), pid='@core/console', directory='console')
+        self.add()
+        with self.assertRaises(ext.ExtError) as ctx:
+            self.run_quiet(ext.cmd_install, 'console')
+        self.assertIn('part of Tessera', str(ctx.exception))
+        self.assertEqual(ext.scan_installed(), {})
+
+    def test_cli_repo_commands(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            ext.cmd_repo(['add', self.extra.path, 'mine'])
+            ext.cmd_repo([])
+            ext.cmd_repo(['remove', 'mine'])
+        text = out.getvalue()
+        self.assertIn('Added registry "mine"', text)
+        self.assertIn('mine  ' + self.extra.url, text)
+        self.assertIn('Removed registry "mine"', text)
+        self.assertEqual(ext.read_sources(), [])
+        for bad in (['add'], ['remove'], ['bogus'], ['remove', 'nope']):
+            with self.subTest(args=bad), self.assertRaises(ext.ExtError):
+                ext.cmd_repo(bad)
+
+    def test_source_flag_needs_a_value(self):
+        with self.assertRaises(ext.ExtError):
+            ext.main(['install', 'hello', '--source'])
+        with self.assertRaises(ext.ExtError):
+            ext.main(['install', 'hello', '--source', '--force'])
+
+
 @unittest.skipUnless(shutil.which('node'), 'node is needed for tools/extensions-sync.cjs')
 class IndexParityTests(Base):
     def test_same_as_extensions_sync(self):
@@ -665,7 +991,18 @@ class ApiTests(Base):
         real_fetch = ext.fetch_bytes
         registry = self.registry
 
+        self.remote = {}  # https address of an additional registry -> file on disk
+
         def fake_fetch(url):
+            for remote_url, remote_file in self.remote.items():
+                # the registry itself and the archives next to it
+                base = remote_url.rsplit('/', 1)[0] + '/'
+                if url.startswith(base):
+                    ext_allowed, ext.local_sources_allowed = ext.local_sources_allowed, True
+                    try:
+                        return real_fetch(pathlib.Path(os.path.dirname(remote_file), url[len(base):]).as_uri())
+                    finally:
+                        ext.local_sources_allowed = ext_allowed
             name = url.rsplit('/', 1)[-1]
             ext_allowed, ext.local_sources_allowed = ext.local_sources_allowed, True
             try:
@@ -844,6 +1181,127 @@ class ApiTests(Base):
         self.assertEqual(self.call('GET', 'nope')[0], 404)
         self.assertEqual(self.call('POST', 'status', {'id': 'x'})[0], 404)
         self.assertEqual(self.call('POST', '../install', {'id': 'x'})[0], 404)
+
+    # -- additional registries
+
+    def add_remote(self, name='extra', url=None):
+        """A second registry reachable at an https address; returns (registry, address)."""
+        registry = ExtraRegistry(self.tmp, name)
+        url = url or f'https://{name}.example.com/registry.json'
+        self.remote[url] = registry.path
+        return registry, url
+
+    def test_repo_add_and_remove(self):
+        registry, url = self.add_remote()
+        registry.publish(plugin_files('acme/one'), pid='acme/one', directory='one')
+
+        code, body = self.call('POST', 'repo-add', {'url': url, 'name': 'mine'})
+        self.assertEqual((code, body['name'], body['plugins']), (200, 'mine', 1))
+        self.assertEqual(json.loads(self.read(ext.SOURCES_FILE))['sources'], [{'name': 'mine', 'url': url}])
+
+        code, body = self.call('GET', 'status')
+        self.assertEqual([(s['name'], s['official'], s['error']) for s in body['sources']],
+                         [('official', True, None), ('mine', False, None)])
+        plugin = next(p for p in body['plugins'] if p['id'] == 'acme/one')
+        self.assertEqual((plugin['source'], plugin['state']), ('mine', 'available'))
+
+        code, body = self.call('POST', 'install', {'id': 'acme/one', 'source': 'mine'})
+        self.assertEqual((code, body.get('version'), body.get('error')), (200, '1.0.0', None))
+
+        code, body = self.call('POST', 'repo-remove', {'name': 'mine'})
+        self.assertEqual((code, body['orphaned']), (200, ['acme/one']))
+        self.assertEqual(self.call('POST', 'update', {'id': 'acme/one'})[0], 400)
+        self.assertEqual(self.read('one', 'index.js'), '// 1.0.0\n')
+        self.assertEqual(self.call('POST', 'repo-remove', {'name': 'mine'})[0], 404)
+
+    def test_repo_add_name_is_optional(self):
+        _, url = self.add_remote('plugins')
+        code, body = self.call('POST', 'repo-add', {'url': url})
+        self.assertEqual((code, body['name']), (200, 'plugins.example.com'))
+
+    def test_repo_add_refuses_unsafe_addresses(self):
+        bad = ('http://plugins.example.com/r.json', 'file:///etc/passwd', 'https://localhost/r.json',
+               'https://127.0.0.1/r.json', 'https://192.168.0.2/r.json', 'https://u:p@example.com/r.json')
+        for url in bad:
+            with self.subTest(url=url):
+                self.assertEqual(self.call('POST', 'repo-add', {'url': url})[0], 400)
+        self.assertFalse(os.path.exists(self.path(ext.SOURCES_FILE)))
+
+    def test_repo_add_refuses_what_is_not_a_registry(self):
+        url = 'https://nothing.example.com/missing.json'
+        code, _ = self.call('POST', 'repo-add', {'url': url})
+        self.assertGreaterEqual(code, 400)
+        self.assertFalse(os.path.exists(self.path(ext.SOURCES_FILE)))
+
+    def test_repo_bodies_are_strict(self):
+        _, url = self.add_remote()
+        for action, body in (
+            ('repo-add', {}),
+            ('repo-add', {'url': url, 'force': True}),
+            ('repo-add', {'url': 5}),
+            ('repo-add', {'url': url, 'name': 'Bad Name'}),
+            ('repo-add', {'url': url, 'name': 'official'}),
+            ('repo-add', {'name': 'x'}),
+            ('repo-remove', {'name': 'official'}),
+            ('repo-remove', {'name': 'x', 'url': url}),
+            ('repo-remove', {}),
+            ('install', {'id': 'acme/hello', 'name': 'x'}),
+            ('install', {'id': 'acme/hello', 'source': 'Bad Name'}),
+            ('install', {'id': 'acme/hello', 'source': 1}),
+            ('remove', {'id': 'acme/hello', 'source': 'extra'}),
+        ):
+            with self.subTest(action=action, body=body):
+                self.assertEqual(self.call('POST', action, body)[0], 400)
+        self.assertFalse(os.path.exists(self.path(ext.SOURCES_FILE)))
+
+    def test_repo_add_needs_the_same_protection_as_installs(self):
+        _, url = self.add_remote()
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url}, {'Origin': 'http://evil.example'})[0], 403)
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url}, {'Content-Type': 'text/plain'})[0], 415)
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url}, {'X-Real-IP': None})[0], 403)
+        FakeMoonraker.status = 401
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url})[0], 401)
+        self.assertEqual(self.call('POST', 'repo-remove', {'name': 'x'})[0], 401)
+        self.assertFalse(os.path.exists(self.path(ext.SOURCES_FILE)))
+
+    def test_install_names_a_registry_never_an_address(self):
+        registry, url = self.add_remote()
+        registry.publish(plugin_files('acme/one'), pid='acme/one', directory='one')
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url, 'name': 'mine'})[0], 200)
+        for source in (url, 'nope'):
+            with self.subTest(source=source):
+                self.assertEqual(self.call('POST', 'install', {'id': 'acme/one', 'source': source})[0], 400)
+        self.assertFalse(os.path.exists(self.path('one')))
+
+    def test_same_id_in_two_registries(self):
+        self.publish(plugin_files(version='1.0.0'))
+        registry, url = self.add_remote()
+        registry.publish(plugin_files(version='7.0.0'), version='7.0.0')
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url, 'name': 'mine'})[0], 200)
+
+        # the UI always sends the registry; a request without one is refused as ambiguous
+        code, body = self.call('POST', 'install', {'id': 'acme/hello'})
+        self.assertEqual(code, 400)
+        self.assertIn('--source', body['error'])
+
+        self.assertEqual(self.call('POST', 'install', {'id': 'acme/hello', 'source': 'mine'})[1]['version'], '7.0.0')
+        code, _ = self.call('POST', 'install', {'id': 'acme/hello', 'source': 'official'})
+        self.assertEqual(code, 409)
+        self.assertEqual(self.read('hello', 'index.js'), '// 7.0.0\n')
+
+        states = {p['source']: p['state'] for p in self.call('GET', 'status')[1]['plugins'] if p['id'] == 'acme/hello'}
+        self.assertEqual(states, {'official': 'conflict', 'mine': 'installed'})
+
+    def test_a_failing_registry_does_not_hide_the_others(self):
+        self.publish(plugin_files())
+        registry, url = self.add_remote()
+        self.assertEqual(self.call('POST', 'repo-add', {'url': url, 'name': 'mine'})[0], 200)
+        os.remove(registry.path)
+        code, body = self.call('GET', 'status')
+        self.assertEqual(code, 200)
+        self.assertIsNone(body['registryError'])
+        self.assertTrue(body['sources'][1]['error'])
+        self.assertEqual([p['id'] for p in body['plugins']], ['acme/hello'])
 
     def test_idle_exit(self):
         server = ext.ApiServer(os.path.join(self.tmp, 'idle'))

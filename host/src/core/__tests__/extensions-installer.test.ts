@@ -242,3 +242,111 @@ describe('findHostPrinter', () => {
     expect(findHostPrinter([{ id: 'a', url: 'http://other:7125' }, { id: 'b', url: 'not a url' }], location)).toBeNull();
   });
 });
+
+describe('extensions-installer / additional registries', () => {
+  const official: RegistryPlugin = { ...plugin, source: 'official' };
+  const mine: RegistryPlugin = { ...plugin, version: '7.0.0', source: 'mine' };
+  const sources = [
+    { name: 'official', url: 'https://raw.example/official.json', official: true, plugins: 1, error: null },
+    { name: 'mine', url: 'https://mine.example/registry.json', official: false, plugins: 1, error: null },
+  ];
+  const statusWith = (plugins: RegistryPlugin[]) => () => json(200, { plugins, registryError: null, sources });
+
+  it('keeps the registries of the service', async () => {
+    const { installer } = setup(statusWith([official, mine]));
+    await installer.refresh();
+    expect(installer.sources).toEqual(sources);
+  });
+
+  it('an older service has no registries: sources stay null so the UI hides them', async () => {
+    const { installer } = setup(okStatus);
+    await installer.refresh();
+    expect(installer.sources).toBeNull();
+  });
+
+  it('names the registry in install and update requests, never an address', async () => {
+    const { installer, fetchMock } = setup((path) => (path === 'status' ? statusWith([official, mine])() : okAction()));
+    await installer.install(mine);
+    await installer.update(mine);
+    const bodies = fetchMock.mock.calls
+      .filter(([url]) => !String(url).endsWith('status'))
+      .map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies).toEqual([
+      { id: 'acme/hello', source: 'mine' },
+      { id: 'acme/hello', source: 'mine' },
+    ]);
+  });
+
+  it('the same id from two registries is two rows: the busy marker tells them apart', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { installer } = setup(async (path) => {
+      if (path === 'status') return statusWith([official, mine])();
+      await gate;
+      return okAction();
+    });
+    const running = installer.install(mine);
+    expect(installer.busyId).toBe('mine:acme/hello');
+    release();
+    await running;
+  });
+
+  it('adds a registry by address, with an optional name, then rereads the status', async () => {
+    const { installer, fetchMock } = setup((path) =>
+      path === 'status' ? statusWith([official])() : json(200, { changed: true, name: 'mine', plugins: 1 }),
+    );
+    await expect(installer.addSource('https://mine.example/registry.json', 'mine')).resolves.toBe(true);
+    await expect(installer.addSource('https://other.example/r.json')).resolves.toBe(true);
+    const adds = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('repo-add')).map(([, i]) => JSON.parse(String(i?.body)));
+    expect(adds).toEqual([{ url: 'https://mine.example/registry.json', name: 'mine' }, { url: 'https://other.example/r.json' }]);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('status'))).toHaveLength(2);
+    expect(installer.busyId).toBeNull();
+  });
+
+  it('a refused registry is reported and nothing else changes', async () => {
+    const { installer, settings } = setup((path) =>
+      path === 'status' ? statusWith([official])() : json(400, { error: 'A registry address must start with https://' }),
+    );
+    await expect(installer.addSource('http://x.example/r.json')).resolves.toBe(false);
+    expect(installer.error?.message).toContain('https://');
+    expect(settings.addPlugin).not.toHaveBeenCalled();
+  });
+
+  it('removes a registry by name', async () => {
+    const { installer, fetchMock } = setup((path) =>
+      path === 'status' ? statusWith([official])() : json(200, { changed: true, name: 'mine', orphaned: [] }),
+    );
+    await expect(installer.removeSource('mine')).resolves.toBe(true);
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'mine' });
+  });
+
+  it('dependencies come from the same registry, then the built-in one, never a third', async () => {
+    const dep = (source: string, state: RegistryPlugin['state'] = 'available'): RegistryPlugin => ({
+      ...plugin,
+      id: 'acme/owner',
+      name: `Owner@${source}`,
+      source,
+      state,
+      manifestUrl: `/extensions/owner-${source}/manifest.json`,
+    });
+    const addon: RegistryPlugin = { ...plugin, id: 'acme/addon', name: 'Addon', source: 'mine', requires: ['acme/owner', 'acme/third'] };
+    const third: RegistryPlugin = { ...plugin, id: 'acme/third', name: 'Third', source: 'other' };
+    const { installer } = setup(statusWith([dep('official'), dep('mine'), addon, third]));
+    await installer.refresh();
+
+    const deps = installer.dependenciesOf(addon);
+    expect(deps.install.map((d) => d.name)).toEqual(['Owner@mine']);
+    expect(deps.missing).toEqual(['acme/third']);
+  });
+
+  it('an entry blocked by another registry is not a dependency candidate', async () => {
+    const blocked: RegistryPlugin = { ...plugin, id: 'acme/owner', source: 'official', state: 'conflict' };
+    const addon: RegistryPlugin = { ...plugin, id: 'acme/addon', source: 'official', requires: ['acme/owner'] };
+    const { installer } = setup(statusWith([blocked, addon]));
+    await installer.refresh();
+    expect(installer.dependenciesOf(addon).missing).toEqual(['acme/owner']);
+  });
+});

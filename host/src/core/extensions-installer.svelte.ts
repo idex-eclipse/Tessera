@@ -20,8 +20,11 @@ export interface RegistryPlugin {
   name: string;
   version: string;
   installedVersion: string | null;
-  /** 'local' — установлен, но в реестре его нет. */
-  state: 'available' | 'installed' | 'update' | 'local';
+  /**
+   * 'local' — установлен, но в реестре его нет. 'conflict' — тот же id установлен из другого
+   * реестра: эта запись недоступна, пока тот плагин не удалён.
+   */
+  state: 'available' | 'installed' | 'update' | 'local' | 'conflict';
   description: string;
   /** Установлен из реестра. Папки, положенные вручную, служба не трогает. */
   managed: boolean;
@@ -32,6 +35,30 @@ export interface RegistryPlugin {
   dependencies?: Record<string, string | null>;
   /** Версия контракта "MAJOR.MINOR" из реестра. Нет у старой службы и у 'local'. */
   pluginApi?: string;
+  /**
+   * Name of the registry the entry comes from ('official' or a name chosen on `repo add`);
+   * null for a plugin installed by hand. Absent in answers of an older service.
+   */
+  source?: string | null;
+}
+
+/** An additional or built-in registry as the service reports it. */
+export interface RegistrySource {
+  name: string;
+  url: string;
+  /** The built-in registry: it cannot be removed. */
+  official: boolean;
+  plugins: number;
+  /** Why this registry could not be read; null when it is fine. */
+  error: string | null;
+}
+
+/**
+ * Identity of a row: the same plugin id can be offered by several registries, so the id alone
+ * does not tell the rows apart (list keys, "busy" marker).
+ */
+export function pluginKey(plugin: Pick<RegistryPlugin, 'id' | 'source'>): string {
+  return plugin.source ? `${plugin.source}:${plugin.id}` : plugin.id;
 }
 
 interface ActionResult {
@@ -53,6 +80,12 @@ export class InstallerError extends Error {
     this.name = 'InstallerError';
   }
 }
+
+/** Name of the built-in registry (OFFICIAL_SOURCE in deploy/tessera-ext.py). */
+const OFFICIAL_SOURCE = 'official';
+
+/** `busyId` while a registry is being added or removed. Not a valid plugin key (no source has '@'). */
+export const SOURCES_BUSY = '@sources';
 
 /** Ответил не наш JSON или никто (404/502 от nginx, HTML от dev-сервера, сеть). */
 class ServiceUnavailableError extends Error {}
@@ -106,11 +139,13 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
   let loading = $state(false);
   let plugins = $state<RegistryPlugin[]>([]);
   let registryError = $state<string | null>(null);
-  /** id плагина, над которым идёт действие. Служба выполняет их по очереди. */
+  /** Registries; null while the service predates additional registries (the UI then hides them). */
+  let sources = $state<RegistrySource[] | null>(null);
+  /** pluginKey() of the plugin being changed, or SOURCES_BUSY. The service runs one action at a time. */
   let busyId = $state<string | null>(null);
   let error = $state<InstallerError | null>(null);
 
-  async function call<T>(path: string, body?: { id: string }): Promise<T> {
+  async function call<T>(path: string, body?: Record<string, string>): Promise<T> {
     const headers: Record<string, string> = {};
     if (body) headers['Content-Type'] = 'application/json';
     const token = getToken();
@@ -145,20 +180,25 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
   async function reload(): Promise<void> {
     loading = true;
     try {
-      const status = await call<{ plugins: RegistryPlugin[]; registryError: string | null }>('status');
+      const status = await call<{ plugins: RegistryPlugin[]; registryError: string | null; sources?: RegistrySource[] }>(
+        'status',
+      );
       available = true;
       plugins = status.plugins;
       registryError = status.registryError;
+      sources = Array.isArray(status.sources) ? status.sources : null;
     } catch (e) {
       if (e instanceof InstallerError) {
         // Служба есть, но отказала (например, 401): показать причину, а не прятать блок.
         available = true;
         plugins = [];
         registryError = null;
+        sources = null;
         error = e;
       } else {
         available = false;
         plugins = [];
+        sources = null;
       }
     } finally {
       loading = false;
@@ -184,6 +224,11 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     }
   }
 
+  /** Request body for install/update: the registry is named so that a shared id is unambiguous. */
+  function target(plugin: RegistryPlugin): Record<string, string> {
+    return plugin.source ? { id: plugin.id, source: plugin.source } : { id: plugin.id };
+  }
+
   /**
    * Зависимости плагина для подтверждения установки: что служба поставит вместе
    * с ним (есть в реестре, не установлено), что обновит (установлено, но старше
@@ -195,14 +240,23 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     update: RegistryPlugin[];
     missing: string[];
   } {
-    const byId = new Map(plugins.map((p) => [p.id, p]));
+    // Same rule as the service: a dependency comes from the registry of the plugin that needs
+    // it, else from the built-in one. A third registry is never used.
+    const find = (id: string, prefer: string | null | undefined): RegistryPlugin | undefined => {
+      const found = plugins.filter((p) => p.id === id && p.state !== 'conflict');
+      return (
+        found.find((p) => p.source === prefer) ??
+        found.find((p) => p.source === OFFICIAL_SOURCE) ??
+        found.find((p) => p.source === undefined)
+      );
+    };
     const result = { install: [] as RegistryPlugin[], update: [] as RegistryPlugin[], missing: [] as string[] };
     const seen = new Set<string>([plugin.id]);
     const visit = (p: RegistryPlugin) => {
       for (const id of p.requires ?? []) {
         if (seen.has(id)) continue;
         seen.add(id);
-        const dep = byId.get(id);
+        const dep = find(id, p.source);
         if (!dep) {
           result.missing.push(id);
           continue;
@@ -224,8 +278,8 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
    * будет только после перезагрузки страницы (import() кэшируется по URL).
    */
   function install(plugin: RegistryPlugin, onReloadRequired?: () => void): Promise<boolean> {
-    return run(plugin.id, async () => {
-      const result = await call<ActionResult>('install', { id: plugin.id });
+    return run(pluginKey(plugin), async () => {
+      const result = await call<ActionResult>('install', target(plugin));
       // Включаем в этом браузере и зависимости: без них вклады плагина спят.
       const added = [...(result.dependencies ?? []), result].filter((r) => r.manifestUrl);
       if (added.length === 0) return;
@@ -251,8 +305,8 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
   /** true — новый код получит только перезагрузка страницы: import() кэшируется по URL. */
   async function update(plugin: RegistryPlugin): Promise<boolean> {
     let reloadRequired = false;
-    await run(plugin.id, async () => {
-      const result = await call<ActionResult>('update', { id: plugin.id });
+    await run(pluginKey(plugin), async () => {
+      const result = await call<ActionResult>('update', target(plugin));
       if (!result.changed || !result.manifestUrl) return;
       await catalog.refresh();
       const url = absoluteManifestUrl(result.manifestUrl);
@@ -266,11 +320,28 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
   }
 
   function remove(plugin: RegistryPlugin): Promise<boolean> {
-    return run(plugin.id, async () => {
+    return run(pluginKey(plugin), async () => {
       // Сначала файлы: если служба откажет, в этом браузере ничего не изменится.
       await call<{ changed: boolean }>('remove', { id: plugin.id });
       settings.removePlugin(absoluteManifestUrl(plugin.manifestUrl));
       await loader.loadEnabledPlugins();
+    });
+  }
+
+  /**
+   * Adds a registry by the address of its registry.json. The service reads it once and keeps it
+   * only if it is a valid registry; false means it refused (reason in `error`).
+   */
+  function addSource(url: string, name?: string): Promise<boolean> {
+    return run(SOURCES_BUSY, async () => {
+      await call('repo-add', name ? { url, name } : { url });
+    });
+  }
+
+  /** Forgets an added registry. Plugins installed from it stay, but are not updated any more. */
+  function removeSource(name: string): Promise<boolean> {
+    return run(SOURCES_BUSY, async () => {
+      await call('repo-remove', { name });
     });
   }
 
@@ -287,6 +358,9 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     get registryError() {
       return registryError;
     },
+    get sources() {
+      return sources;
+    },
     get busyId() {
       return busyId;
     },
@@ -301,6 +375,8 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     install,
     update,
     remove,
+    addSource,
+    removeSource,
     dependenciesOf,
   };
 }

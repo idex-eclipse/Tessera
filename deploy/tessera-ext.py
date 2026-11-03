@@ -12,11 +12,15 @@ Usage (on the printer usually via the `tessera-ext` command, deploy/install-ext.
   tessera-ext.py remove <name> [--force]
   tessera-ext.py sync
   tessera-ext.py branch [<name>]   show / switch the registry branch
+  tessera-ext.py repo [list | add <url> [<name>] | remove <name>]   additional registries
   tessera-ext.py serve [--socket <path>]   HTTP API on a unix socket (systemd unit)
 <name> is the plugin id ("tessera/spoolman") or its short name ("spoolman").
+install / update take --source <name> when a plugin id exists in several registries.
 
 Registry: registry/registry.json of the Tessera-Ext repository on the chosen
-branch (default main; saved in ~/.config/tessera/tessera-ext.conf).
+branch (default main; saved in ~/.config/tessera/tessera-ext.conf). Additional
+registries (same format) are listed in extensions/.tessera-sources.json; a plugin
+is updated only from the registry it was installed from.
 Env:
   TESSERA_EXTENSIONS_DIR — extensions directory (default: ../extensions)
   TESSERA_REGISTRY_URL   — registry.json (https://, file:// or local path); overrides the branch
@@ -35,14 +39,16 @@ newer one than host/dist/core-plugins.json lists is refused ("update Tessera").
 Nothing is built or executed on the host: the registry ships prebuilt archives,
 each archive is verified against sha256 from registry.json before it is
 unpacked. Only plain files and directories are accepted from archives.
-`serve` accepts nothing but a plugin id: the registry address is never taken
-from a request, and it uses https only.
+`serve` takes a registry address from a request only for `repo add` (https only,
+no credentials, no local addresses); installs name a registry by its saved name,
+never by an address.
 """
 
 import datetime
 import hashlib
 import http.client
 import http.server
+import ipaddress
 import json
 import os
 import pathlib
@@ -81,6 +87,15 @@ CONF_FILE = os.path.join(
 # Written next to manifest.json of registry plugins.
 ORIGIN_FILE = '.tessera-origin.json'
 LOCK_FILE = '.lock'
+# Additional registries added with `repo add` / from the UI. It lives in extensions/ on
+# purpose: the service may write nothing else (its config folder is mounted read-only),
+# and a list of public registry addresses is not a secret.
+SOURCES_FILE = '.tessera-sources.json'
+# Name of the built-in registry (Tessera-Ext or TESSERA_REGISTRY_URL); it cannot be removed.
+OFFICIAL_SOURCE = 'official'
+MAX_SOURCES = 10
+MAX_SOURCE_URL = 300
+SOURCE_NAME_RE = re.compile(r'[a-z0-9][a-z0-9._-]{0,31}')
 
 # Version of the plugin contract (PluginApi, manifest, CE contract) this host implements,
 # "MAJOR.MINOR". A plugin fits when MAJOR is the same and its MINOR is not above ours.
@@ -247,8 +262,9 @@ def fetch_bytes(url):
     return data
 
 
-def load_registry():
-    url = to_url(registry_source()['url'])
+def load_registry(url=None):
+    """One registry.json: the built-in one, or the address of an additional source."""
+    url = to_url(url or registry_source()['url'])
     try:
         data = json.loads(fetch_bytes(url).decode('utf-8'))
     except ValueError as e:
@@ -265,6 +281,214 @@ def load_registry():
                 not (p.get('dependencies') is None or valid_dependencies(p['dependencies']))):
             raise ExtError(f'Invalid registry entry: {clean(json.dumps(p))}', 500)
     return {'url': url, 'plugins': data['plugins']}
+
+
+# ------------------------------------------------------------------
+# Additional registries ("sources")
+# ------------------------------------------------------------------
+
+def valid_source_name(name):
+    return isinstance(name, str) and name != OFFICIAL_SOURCE and bool(SOURCE_NAME_RE.fullmatch(name))
+
+
+def read_sources():
+    """[{name, url}] saved by add_source(). The file is data: anything odd in it is skipped."""
+    data = read_json_safe(os.path.join(EXTENSIONS_DIR, SOURCES_FILE))
+    out = []
+    if isinstance(data, dict) and isinstance(data.get('sources'), list):
+        for item in data['sources']:
+            if (isinstance(item, dict) and valid_source_name(item.get('name')) and isinstance(item.get('url'), str)
+                    and not any(s['name'] == item['name'] for s in out)):
+                out.append({'name': item['name'], 'url': item['url']})
+    return out[:MAX_SOURCES]
+
+
+def write_sources(sources):
+    os.makedirs(EXTENSIONS_DIR, exist_ok=True)
+    write_text_atomic(
+        os.path.join(EXTENSIONS_DIR, SOURCES_FILE),
+        json.dumps({'schema': 1, 'sources': sources}, indent=2),
+    )
+
+
+def private_host(host):
+    """
+    localhost and IP literals of this machine / the local network. `serve` refuses them:
+    a request must not make the service probe the printer's own network. A DNS name that
+    resolves to a private address is not caught here (the answer is only parsed as a
+    registry, never shown), and the caller is an authorized Moonraker user anyway.
+    """
+    host = host.lower().rstrip('.')
+    if host == 'localhost' or host.endswith('.localhost'):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_reserved
+
+
+def normalize_source_url(url):
+    """The address as it is stored; the CLI also takes file:// and local paths, `serve` only https."""
+    if not isinstance(url, str):
+        raise ExtError('Invalid registry address')
+    url = url.strip()
+    if not url or len(url) > MAX_SOURCE_URL or CONTROL_RE.search(url) or any(c.isspace() for c in url):
+        raise ExtError('Invalid registry address')
+    if local_sources_allowed:
+        url = to_url(url)
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname
+    except ValueError as e:
+        raise ExtError('Invalid registry address') from e
+    scheme = parts.scheme.lower()
+    if scheme == 'file' and local_sources_allowed:
+        return url
+    if scheme != 'https' or not host:
+        raise ExtError('A registry address must start with https://')
+    if parts.username or parts.password:
+        raise ExtError('A registry address must not contain a login or password')
+    if not local_sources_allowed and private_host(host):
+        raise ExtError('A registry address must not point at this machine or a local network')
+    return url
+
+
+def suggest_source_name(url, taken):
+    """A readable unique name from the address: owner-repo for GitHub, else the host."""
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or '').lower()
+    segments = [s for s in parts.path.split('/') if s]
+    if parts.scheme == 'file':
+        base = 'local'
+    elif host == 'raw.githubusercontent.com' and len(segments) >= 2:
+        base = f'{segments[0]}-{segments[1]}'
+    elif host.endswith('.github.io'):
+        base = host[:-len('.github.io')]
+    else:
+        base = host
+    base = re.sub(r'[^a-z0-9._-]+', '-', base.lower()).strip('-._')[:28] or 'repo'
+    name, n = base, 1
+    while name == OFFICIAL_SOURCE or name in taken:
+        n += 1
+        name = f'{base}-{n}'
+    return name
+
+
+def configured_sources():
+    """The built-in registry first, then the additional ones: [{name, url, official}]."""
+    official = to_url(registry_source()['url'])
+    out = [{'name': OFFICIAL_SOURCE, 'url': official, 'official': True}]
+    out += [{'name': s['name'], 'url': s['url'], 'official': False} for s in read_sources()]
+    return out
+
+
+def add_source(url, name=None):
+    """
+    Saves an additional registry after reading it once: an address that does not serve a valid
+    registry.json is not kept. Must run under ExtensionsLock. Returns {name, url, plugins}.
+    """
+    url = normalize_source_url(url)
+    sources = read_sources()
+    if len(sources) >= MAX_SOURCES:
+        raise ExtError(f'At most {MAX_SOURCES} additional registries; remove one first', 409)
+    if any(s['url'] == url for s in sources) or url == to_url(registry_source()['url']):
+        raise ExtError('This registry is already added', 409)
+    taken = {s['name'] for s in sources}
+    if name is None:
+        name = suggest_source_name(url, taken)
+    elif not valid_source_name(name):
+        raise ExtError('Invalid registry name: use 1-32 characters a-z 0-9 . _ - ("official" is reserved)')
+    elif name in taken:
+        raise ExtError(f'A registry named "{name}" already exists', 409)
+    registry = load_registry(url)
+    sources.append({'name': name, 'url': url})
+    write_sources(sources)
+    return {'name': name, 'url': url, 'plugins': len(registry['plugins'])}
+
+
+def remove_source(name):
+    """
+    Forgets an additional registry. Plugins installed from it stay (they work), but cannot
+    be updated any more. Must run under ExtensionsLock. Returns the ids left without updates.
+    """
+    sources = read_sources()
+    source = next((s for s in sources if s['name'] == name), None)
+    if not source:
+        raise ExtError(f'No additional registry named "{clean(name)}"', 404)
+    write_sources([s for s in sources if s is not source])
+    return sorted(pid for pid, cur in scan_installed().items()
+                  if cur['origin'] and cur['origin'].get('registry') == source['url'])
+
+
+def load_registries(strict=True):
+    """
+    Every configured registry: {url (the built-in one), plugins, sources}. Each plugin entry
+    gets `_source` (registry name) and `_registry` (its address). One unreachable registry
+    does not hide the others: its error is kept in sources[i]['error']. strict: raises when
+    nothing at all could be read (the CLI), otherwise returns what there is (the status API).
+    """
+    plugins, sources = [], []
+    for src in configured_sources():
+        info = dict(src, error=None, count=0)
+        try:
+            registry = load_registry(src['url'])
+            info['count'] = len(registry['plugins'])
+            plugins += [dict(p, _source=src['name'], _registry=registry['url']) for p in registry['plugins']]
+        except ExtError as e:
+            info['error'] = str(e)
+            if strict:
+                print(f'[tessera-ext] registry {src["name"]}: {e}', file=sys.stderr)
+        sources.append(info)
+    if strict and all(s['error'] for s in sources):
+        raise ExtError(sources[0]['error'], 500)
+    return {'url': sources[0]['url'], 'plugins': plugins, 'sources': sources}
+
+
+def is_official_registry(url, official_url):
+    """An origin address of the built-in registry: the current one, or another branch of Tessera-Ext."""
+    return url == official_url or url.startswith(f'https://raw.githubusercontent.com/{REGISTRY_REPO}/')
+
+
+def installed_source(cur, sources):
+    """
+    Name of the registry an installed plugin came from: None for a folder put there by hand,
+    '' when its registry is not configured any more (an additional one was removed).
+    """
+    if not cur or not cur['origin']:
+        return None
+    url = cur['origin'].get('registry')
+    if not isinstance(url, str):
+        return ''
+    for s in sources:
+        if s['official']:
+            if is_official_registry(url, s['url']):
+                return s['name']
+        elif s['url'] == url:
+            return s['name']
+    return ''
+
+
+def find_entry(plugins, pid, source=None, cur=None, sources=None):
+    """
+    The registry entry of `pid`. `source` picks one explicitly. Without it, an installed plugin
+    keeps its own registry (None when that one is gone: nothing may replace it silently), and
+    an id that several registries offer must be chosen by the caller.
+    """
+    found = [p for p in plugins if p['id'] == pid]
+    if source is not None:
+        return next((p for p in found if p.get('_source') == source), None)
+    if len(found) > 1:
+        owner = installed_source(cur, sources or []) if cur else None
+        if owner is not None:
+            return next((p for p in found if p.get('_source') == owner), None)
+        names = ', '.join(clean(p.get('_source')) for p in found)
+        raise ExtError(f'{clean(pid)} exists in several registries ({names}): choose one with --source <name>')
+    if found and cur and sources is not None:
+        owner = installed_source(cur, sources)
+        if owner is not None and found[0].get('_source') != owner:
+            return None
+    return found[0] if found else None
 
 
 def read_json_safe(path):
@@ -382,22 +606,36 @@ def core_problems(entry, core_versions):
     return problems
 
 
-def dependency_plan(pid, plugins, installed):
+def pick_dependency(plugins, pid, prefer=None):
+    """
+    Entry for a dependency: from the registry of the plugin that needs it, else from the built-in
+    one. A third registry is never searched: installing code from a registry the user chose
+    for something else would be a surprise. Entries without `_source` (one registry) match any.
+    """
+    found = [p for p in plugins if p['id'] == pid]
+    for want in (prefer, OFFICIAL_SOURCE, None):
+        entry = next((p for p in found if p.get('_source') == want), None)
+        if entry:
+            return entry
+    return None
+
+
+def dependency_plan(pid, plugins, installed, source=None, chosen=None):
     """
     (to_install, missing, outdated): registry plugins to install or update before `pid`,
     deepest first; dependencies that are neither installed nor in the registry; and
     messages for dependencies that exist only in a version below what is needed.
     Cycles are allowed (extensions bind lazily): every id is visited once.
-    Core plugins are not planned here (see core_problems).
+    Core plugins are not planned here (see core_problems). `source` is the registry of `pid`;
+    `chosen`, when given, receives id → the registry entry each planned plugin comes from.
     """
-    by_id = {p['id']: p for p in plugins}
     to_install, missing, outdated, seen = [], [], [], set()
 
-    def visit(current, need=None, needed_by=None):
+    def visit(current, need=None, needed_by=None, prefer=None):
         if current in seen:
             return
         seen.add(current)
-        entry = by_id.get(current)
+        entry = pick_dependency(plugins, current, prefer)
         cur = installed.get(current)
         # pid itself is installed by the caller; a dependency only when absent or too old
         ok = current == pid or (cur is not None and satisfies_min(cur['version'], need))
@@ -418,11 +656,13 @@ def dependency_plan(pid, plugins, installed):
             return
         for dep, dep_need in entry_dependencies(entry).items():
             if not is_core(dep):
-                visit(dep, dep_need, current)
+                visit(dep, dep_need, current, entry.get('_source'))
         if not ok:
             to_install.append(current)
+            if chosen is not None:
+                chosen[current] = entry
 
-    visit(pid)
+    visit(pid, prefer=source)
     return to_install, missing, outdated
 
 
@@ -648,6 +888,11 @@ def archive_url(entry, registry_url):
 
 def install(entry, registry_url, force=False):
     """Must run under ExtensionsLock. True when extensions/ changed."""
+    # An entry from load_registries() knows its own registry; the argument is for a single one.
+    registry_url = entry.get('_registry') or registry_url
+    if is_core(entry['id']):
+        # @core/* ships with Tessera: no registry may install or replace it.
+        raise ExtError(f'{clean(entry["id"])} is part of Tessera and cannot come from a registry')
     plugin_api = entry.get('pluginApi')
     problem = plugin_api_problem(plugin_api)
     if problem == 'invalid':
@@ -671,6 +916,14 @@ def install(entry, registry_url, force=False):
         raise ExtError(f'extensions/{entry["dir"]} already exists and is not {clean(entry["id"])}.', 409)
     if current and not current['origin'] and not force:
         raise ExtError(f'{clean(entry["id"])} in extensions/{entry["dir"]} was installed manually; use --force to replace it.', 409)
+    if current and current['origin'] and entry.get('_source') and not force:
+        # Another registry must not take over a plugin silently (same id, other code).
+        owner = installed_source(current, configured_sources())
+        if owner != entry['_source']:
+            came_from = f'registry "{clean(owner)}"' if owner else 'a registry that is not configured any more'
+            raise ExtError(
+                f'{clean(entry["id"])} was installed from {came_from}; remove it first to install it '
+                f'from "{clean(entry["_source"])}".', 409)
     if current and current['version'] == entry['version'] and not force:
         print(f'{clean(entry["id"])}@{clean(entry["version"])} is up to date')
         return False
@@ -728,18 +981,27 @@ def install(entry, registry_url, force=False):
     return True
 
 
-def collect_status(plugins, installed):
+def collect_status(plugins, installed, sources=None):
     """
     One row per known plugin: registry entries first, then installed plugins
     the registry does not know (put there by hand, or dropped from the registry).
-    state: 'available' | 'installed' | 'update' | 'local'
+    state: 'available' | 'installed' | 'update' | 'local' | 'conflict'
+    'conflict': the same id is installed from another registry, so this entry is not
+    offered (`sources` = configured_sources(); without it every entry is the owner's).
     """
     rows = []
     known = set()
     for p in plugins:
-        known.add(p['id'])
         cur = installed.get(p['id'])
-        if not cur:
+        conflict = bool(
+            cur and cur['origin'] and sources is not None and p.get('_source') is not None
+            and installed_source(cur, sources) != p['_source']
+        )
+        if not conflict:
+            known.add(p['id'])
+        if conflict:
+            state = 'conflict'
+        elif not cur:
             state = 'available'
         elif cur['version'] == p['version']:
             state = 'installed'
@@ -754,7 +1016,9 @@ def collect_status(plugins, installed):
             'description': clean(p.get('description') or ''),
             'entry': p,
             'dir': cur['dir'] if cur else p['dir'],
-            'managed': bool(cur and cur['origin']),
+            # The installed copy belongs to the row of its own registry, not to a conflicting one.
+            'managed': bool(cur and cur['origin']) and not conflict,
+            'source': p.get('_source'),
             'requires': entry_requires(p),
             'dependencies': entry_dependencies(p),
         })
@@ -771,6 +1035,7 @@ def collect_status(plugins, installed):
             'entry': None,
             'dir': cur['dir'],
             'managed': bool(cur['origin']),
+            'source': None,
             'requires': list(cur['requires']),
             'dependencies': dict(cur['dependencies']),
         })
@@ -782,6 +1047,8 @@ def state_label(row):
         return 'installed'
     if row['state'] == 'update':
         return f'update {row["installed_version"]} → {row["version"]}'
+    if row['state'] == 'conflict':
+        return 'installed from another registry'
     if row['state'] == 'local':
         return 'local'
     return ''
@@ -815,21 +1082,30 @@ def resolve_id(query, plugins, installed):
 
 
 def cmd_list():
-    registry = load_registry()
-    for row in collect_status(registry['plugins'], scan_installed()):
+    registry = load_registries()
+    several = len(registry['sources']) > 1
+    for row in collect_status(registry['plugins'], scan_installed(), registry['sources']):
         state = state_label(row)
-        print(f'{clean(row["id"])}@{row["version"]}  {row["name"]}{f"  [{state}]" if state else ""}')
+        origin = f'  <{clean(row["source"])}>' if several and row['source'] else ''
+        print(f'{clean(row["id"])}@{row["version"]}  {row["name"]}{origin}{f"  [{state}]" if state else ""}')
         if row['description']:
             print(f'    {row["description"]}')
 
 
-def install_with_dependencies(pid, registry, force=False):
-    """Must run under ExtensionsLock. (changed, ids of dependencies installed now)."""
-    entry = next((p for p in registry['plugins'] if p['id'] == pid), None)
+def install_with_dependencies(pid, registry, force=False, source=None):
+    """
+    Must run under ExtensionsLock. (changed, ids of dependencies installed now).
+    `source`: registry name, needed when several registries offer `pid`.
+    """
+    installed = scan_installed()
+    entry = find_entry(registry['plugins'], pid, source, installed.get(pid), registry.get('sources'))
     if not entry:
-        raise ExtError(f'{clean(pid)} is not in registry {registry["url"]}')
+        where = f'registry "{clean(source)}"' if source else f'registry {registry["url"]}'
+        raise ExtError(f'{clean(pid)} is not in {where}')
 
-    to_install, missing, outdated = dependency_plan(pid, registry['plugins'], scan_installed())
+    chosen = {}
+    to_install, missing, outdated = dependency_plan(
+        pid, registry['plugins'], installed, entry.get('_source'), chosen)
     if outdated:
         if not force:
             raise ExtError(' '.join(outdated))
@@ -846,7 +1122,7 @@ def install_with_dependencies(pid, registry, force=False):
     done = []
     installed = scan_installed()
     for dep in to_install:
-        dep_entry = next(p for p in registry['plugins'] if p['id'] == dep)
+        dep_entry = chosen[dep]
         verb = 'Updating' if dep in installed else 'Installing'
         print(f'{verb} dependency {clean(dep)} of {clean(pid)}')
         if install(dep_entry, registry['url'], force):
@@ -856,20 +1132,29 @@ def install_with_dependencies(pid, registry, force=False):
     return changed, done
 
 
-def cmd_install(query, force=False):
+def check_source_name(source, registry):
+    """--source must name a configured registry: a typo is an error, not "no such plugin"."""
+    if source is not None and not any(s['name'] == source for s in registry['sources']):
+        known = ', '.join(s['name'] for s in registry['sources'])
+        raise ExtError(f'No registry named "{clean(source)}". Known: {known}')
+
+
+def cmd_install(query, force=False, source=None):
     if not query:
-        raise ExtError('Usage: install <id> [--force]')
-    registry = load_registry()
+        raise ExtError('Usage: install <id> [--source <name>] [--force]')
+    registry = load_registries()
+    check_source_name(source, registry)
     with ExtensionsLock():
         pid = resolve_id(query, registry['plugins'], scan_installed())
-        changed, _deps = install_with_dependencies(pid, registry, force)
+        changed, _deps = install_with_dependencies(pid, registry, force, source)
         if changed:
             scan_extensions()
             print(UI_HINT)
 
 
-def cmd_update(query, update_all=False, force=False, quiet=False):
-    registry = load_registry()
+def cmd_update(query, update_all=False, force=False, quiet=False, source=None):
+    registry = load_registries()
+    check_source_name(source, registry)
     changed = False
     with ExtensionsLock():
         installed = scan_installed()
@@ -879,9 +1164,10 @@ def cmd_update(query, update_all=False, force=False, quiet=False):
             ids = [resolve_id(query, registry['plugins'], installed)]
 
         for pid in ids:
-            entry = next((p for p in registry['plugins'] if p['id'] == pid), None)
+            # An installed plugin is updated from the registry it came from, never from another.
+            entry = find_entry(registry['plugins'], pid, source, installed.get(pid), registry['sources'])
             if not entry:
-                print(f'{clean(pid)} not found in registry, skipped', file=sys.stderr)
+                print(f'{clean(pid)} not found in its registry, skipped', file=sys.stderr)
                 continue
             if pid not in installed:
                 print(f'{clean(pid)} is not installed, skipped (use install)', file=sys.stderr)
@@ -917,7 +1203,7 @@ def cmd_remove(query, force=False):
         raise ExtError('Usage: remove <id> [--force]')
     # Removal must work offline: fall back to installed plugins only.
     try:
-        plugins = load_registry()['plugins']
+        plugins = load_registries()['plugins']
     except ExtError:
         plugins = []
     with ExtensionsLock():
@@ -937,6 +1223,28 @@ def cmd_branch(name):
         return
     set_branch(name, remote_branches())
     print(f'branch: {name} (saved in {CONF_FILE})')
+
+
+def cmd_repo(args):
+    """repo [list] | add <url> [<name>] | remove <name>"""
+    action = args[0] if args else 'list'
+    if action == 'list':
+        for src in configured_sources():
+            note = ' (built-in)' if src['official'] else ''
+            print(f'{src["name"]}{note}  {clean(src["url"])}')
+    elif action == 'add' and len(args) in (2, 3):
+        with ExtensionsLock():
+            added = add_source(args[1], args[2] if len(args) == 3 else None)
+        print(f'Added registry "{added["name"]}" ({added["plugins"]} plugins). '
+              'Its plugins run inside the UI with full access to your printer: install only what you trust.')
+    elif action == 'remove' and len(args) == 2:
+        with ExtensionsLock():
+            orphaned = remove_source(args[1])
+        print(f'Removed registry "{clean(args[1])}"')
+        if orphaned:
+            print(f'These plugins stay installed but will not be updated any more: {", ".join(map(clean, orphaned))}')
+    else:
+        raise ExtError('Usage: repo [list | add <url> [<name>] | remove <name>]')
 
 
 # ------------------------------------------------------------------
@@ -1010,18 +1318,33 @@ def plugin_view(row):
         'dependencies': {clean(k): clean(v) if v else None for k, v in row['dependencies'].items()},
         # "MAJOR.MINOR" of the registry entry: the UI disables Install for an incompatible one.
         'pluginApi': clean(format_plugin_api(row['entry'].get('pluginApi'))) if row['entry'] else None,
+        # Name of the registry this entry comes from (None: installed by hand / not listed anywhere).
+        'source': clean(row['source']) if row.get('source') else None,
+    }
+
+
+def source_view(info):
+    """A registry for the UI: name, address, whether it is the built-in one and why it failed."""
+    return {
+        'name': clean(info['name']),
+        'url': clean(info['url']),
+        'official': info['official'],
+        'plugins': info['count'],
+        'error': clean(info['error']) if info['error'] else None,
     }
 
 
 def api_status():
     installed = scan_installed()
-    try:
-        registry = load_registry()
-    except ExtError as e:
-        rows = collect_status([], installed)
-        return {'pluginApi': HOST_PLUGIN_API, 'registryError': str(e), 'plugins': [plugin_view(r) for r in rows]}
-    rows = collect_status(registry['plugins'], installed)
-    return {'pluginApi': HOST_PLUGIN_API, 'registryError': None, 'plugins': [plugin_view(r) for r in rows]}
+    registry = load_registries(strict=False)
+    rows = collect_status(registry['plugins'], installed, registry['sources'])
+    return {
+        'pluginApi': HOST_PLUGIN_API,
+        # The built-in registry's error: what older UIs show. Every registry's own state is in `sources`.
+        'registryError': registry['sources'][0]['error'],
+        'sources': [source_view(s) for s in registry['sources']],
+        'plugins': [plugin_view(r) for r in rows],
+    }
 
 
 def api_result(pid, changed):
@@ -1034,20 +1357,21 @@ def api_result(pid, changed):
     }
 
 
-def registry_entry(pid):
-    registry = load_registry()
-    entry = next((p for p in registry['plugins'] if p['id'] == pid), None)
-    if not entry:
-        raise ExtError(f'{clean(pid)} is not in the registry')
-    return entry, registry['url']
+def request_registry(source):
+    """The registries for a request; `source` (a saved name, never an address) must exist."""
+    registry = load_registries(strict=False)
+    if source is not None and not any(s['name'] == source for s in registry['sources']):
+        raise ExtError(f'No registry named "{clean(source)}"')
+    return registry
 
 
-def api_install(pid):
-    registry = load_registry()
-    if not any(p['id'] == pid for p in registry['plugins']):
+def api_install(body):
+    pid, source = body['id'], body.get('source')
+    registry = request_registry(source)
+    if not any(p['id'] == pid and source in (None, p['_source']) for p in registry['plugins']):
         raise ExtError(f'{clean(pid)} is not in the registry')
     with ExtensionsLock():
-        changed, deps = install_with_dependencies(pid, registry)
+        changed, deps = install_with_dependencies(pid, registry, source=source)
         if changed:
             scan_extensions()
         result = api_result(pid, changed)
@@ -1055,18 +1379,36 @@ def api_install(pid):
         return result
 
 
-def api_update(pid):
-    entry, url = registry_entry(pid)
+def api_update(body):
+    pid, source = body['id'], body.get('source')
+    registry = request_registry(source)
     with ExtensionsLock():
-        if pid not in scan_installed():
+        installed = scan_installed()
+        if pid not in installed:
             raise ExtError(f'{clean(pid)} is not installed', 409)
-        changed = install(entry, url)
+        entry = find_entry(registry['plugins'], pid, source, installed[pid], registry['sources'])
+        if not entry:
+            raise ExtError(f'{clean(pid)} is not in the registry it was installed from')
+        changed = install(entry, registry['url'])
         if changed:
             scan_extensions()
         return api_result(pid, changed)
 
 
-def api_remove(pid):
+def api_repo_add(body):
+    with ExtensionsLock():
+        added = add_source(body['url'], body.get('name'))
+    return {'changed': True, 'name': added['name'], 'url': clean(added['url']), 'plugins': added['plugins']}
+
+
+def api_repo_remove(body):
+    with ExtensionsLock():
+        orphaned = remove_source(body['name'])
+    return {'changed': True, 'name': clean(body['name']), 'orphaned': [clean(p) for p in orphaned]}
+
+
+def api_remove(body):
+    pid = body['id']
     with ExtensionsLock():
         cur = scan_installed().get(pid)
         if not cur:
@@ -1077,7 +1419,23 @@ def api_remove(pid):
         return {'id': clean(pid), 'changed': True}
 
 
-API_ACTIONS = {'install': api_install, 'update': api_update, 'remove': api_remove}
+API_ACTIONS = {
+    'install': api_install,
+    'update': api_update,
+    'remove': api_remove,
+    'repo-add': api_repo_add,
+    'repo-remove': api_repo_remove,
+}
+# Allowed body fields per action (required, optional): nothing else is accepted, so no force
+# and no archive addresses. An address is taken from a request only by repo-add; installs name
+# a registry by its saved name.
+API_BODY_FIELDS = {
+    'install': ({'id'}, {'source'}),
+    'update': ({'id'}, {'source'}),
+    'remove': ({'id'}, set()),
+    'repo-add': ({'url'}, {'name'}),
+    'repo-remove': ({'name'}, set()),
+}
 
 
 class ApiHandler(http.server.BaseHTTPRequestHandler):
@@ -1124,7 +1482,7 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             raise ExtError('Request body too large', 413)
         return data
 
-    def parse_plugin_id(self, data):
+    def parse_body(self, data, action):
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             # A form on another site cannot send this type without a CORS preflight.
             raise ExtError('Content-Type must be application/json', 415)
@@ -1132,12 +1490,19 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             body = json.loads(data.decode('utf-8'))
         except ValueError as e:
             raise ExtError('Request body must be JSON') from e
-        # A plugin id and nothing else: no URLs, paths or force from a request.
-        if not isinstance(body, dict) or set(body) != {'id'} or not isinstance(body['id'], str):
-            raise ExtError('Request body must be {"id": "<plugin id>"}')
-        if not PLUGIN_ID_RE.fullmatch(body['id']):
+        required, optional = API_BODY_FIELDS[action]
+        # Only the fields of this action, all strings: no paths, force or archive URLs.
+        if (not isinstance(body, dict) or not required <= set(body) <= required | optional
+                or not all(isinstance(v, str) for v in body.values())):
+            fields = ', '.join(f'"{k}"' for k in sorted(required))
+            more = f' and optionally {", ".join(sorted(optional))}' if optional else ''
+            raise ExtError(f'Request body must be a JSON object with {fields}{more}')
+        if 'id' in body and not PLUGIN_ID_RE.fullmatch(body['id']):
             raise ExtError('Invalid plugin id')
-        return body['id']
+        for key in ('source', 'name'):
+            if key in body and not valid_source_name(body[key]) and not (key == 'source' and body[key] == OFFICIAL_SOURCE):
+                raise ExtError('Invalid registry name')
+        return body
 
     def do_GET(self):
         def handler():
@@ -1154,9 +1519,10 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             if not self.path.startswith(API_PREFIX) or self.path[len(API_PREFIX):] not in API_ACTIONS:
                 raise ExtError('Not found', 404)
             check_same_origin(self.headers)
-            pid = self.parse_plugin_id(data)
+            action = self.path[len(API_PREFIX):]
+            body = self.parse_body(data, action)
             check_moonraker_auth(self.headers)
-            return API_ACTIONS[self.path[len(API_PREFIX):]](pid)
+            return API_ACTIONS[action](body)
         self.respond(handler)
 
 
@@ -1349,6 +1715,7 @@ def render_main(rows, registry_url, source):
 def render_settings(source):
     lines = [box_top(), title('Settings'), rule(), row([''])]
     lines.append(row([f'  1) [Branch]   {branch_label(source)}']))
+    lines.append(row([f'  2) [Registries]   {len(read_sources())} added']))
     if source['custom']:
         lines.append(row([YELLOW('     TESSERA_REGISTRY_URL is set: the branch is ignored')]))
     lines += [
@@ -1385,7 +1752,10 @@ def install_items(rows):
     return [{
         'row': r,
         'label': r['name'],
-        'note': DIM(r['version']) if r['state'] == 'available' else GREEN(f'(installed {r["installed_version"]})'),
+        'note': (DIM(r['version']) if r['state'] == 'available'
+                 else YELLOW('(installed from another registry)') if r['state'] == 'conflict'
+                 else GREEN(f'(installed {r["installed_version"]})'))
+                + (DIM(f' <{r["source"]}>') if r['source'] and r['source'] != OFFICIAL_SOURCE else ''),
         'description': r['description'],
     } for r in rows if r['entry']]
 
@@ -1404,7 +1774,7 @@ def remove_items(rows):
         'row': r,
         'label': r['name'],
         'note': DIM(f'{r["installed_version"]} (local)' if r['state'] == 'local' else r['installed_version']),
-    } for r in rows if r['state'] != 'available']
+    } for r in rows if r['state'] not in ('available', 'conflict')]
 
 
 class Menu:
@@ -1446,13 +1816,17 @@ class Menu:
 
     def refresh(self):
         try:
-            self.registry = load_registry()
+            self.registry = load_registries()
         except ExtError as e:
             self.registry = None
             print(f'[tessera-ext] registry: {e}', file=sys.stderr)
 
     def status(self):
-        return collect_status(self.registry['plugins'] if self.registry else [], scan_installed())
+        return collect_status(
+            self.registry['plugins'] if self.registry else [],
+            scan_installed(),
+            self.registry['sources'] if self.registry else None,
+        )
 
     def need_registry(self):
         if not self.registry:
@@ -1474,9 +1848,9 @@ class Menu:
                 scan_extensions()
         return done
 
-    def install_new(self, pid):
+    def install_new(self, pid, source=None):
         with ExtensionsLock():
-            done, _deps = install_with_dependencies(pid, self.registry)
+            done, _deps = install_with_dependencies(pid, self.registry, source=source)
             if done:
                 scan_extensions()
         return done
@@ -1485,6 +1859,31 @@ class Menu:
         with ExtensionsLock():
             remove_installed(pid)
         return True
+
+    def manage_sources(self):
+        """Settings → Registries: lists them, adds (`<url> [name]`) or removes (`-<name>`)."""
+        for src in configured_sources():
+            print(f'  {src["name"]}{" (built-in)" if src["official"] else ""}  {clean(src["url"])}')
+        raw = self.prompt('###### Address of a registry.json to add, -<name> to remove, Enter = back: ')
+        words = (raw or '').split()
+        if not words:
+            return False
+        if words[0].startswith('-') and len(words) == 1:
+            with ExtensionsLock():
+                orphaned = remove_source(words[0][1:])
+            print(f'###### Removed {words[0][1:]}' + (f'; not updated any more: {", ".join(map(clean, orphaned))}' if orphaned else ''))
+        elif len(words) <= 2:
+            print('###### Its plugins run inside the UI with full access to your printer: add only registries you trust.')
+            if not self.confirm('Add this registry?'):
+                return False
+            with ExtensionsLock():
+                added = add_source(words[0], words[1] if len(words) == 2 else None)
+            print(f'###### Added {added["name"]} ({added["plugins"]} plugins)')
+        else:
+            print('###### Invalid input!')
+            return False
+        self.refresh()
+        return False
 
     def pick_branch(self):
         """Lists the registry's branches and saves the choice; refetches on a change."""
@@ -1554,6 +1953,8 @@ class Menu:
                     screen = 'main'
                 elif a == '1':
                     self.act(self.pick_branch)
+                elif a == '2':
+                    self.act(self.manage_sources)
                 else:
                     print('###### Invalid input!')
                 continue
@@ -1591,7 +1992,9 @@ class Menu:
                 if not self.need_registry():
                     continue
                 if r['state'] == 'available':
-                    self.act(lambda: self.install_new(r['id']))
+                    self.act(lambda: self.install_new(r['id'], r['source']))
+                elif r['state'] == 'conflict':
+                    print(f'###### {r["name"]} is installed from another registry: remove it first')
                 elif self.confirm(f'{r["name"]} is installed. Reinstall?'):
                     self.act(lambda: self.install_entry(r['entry'], force=True))
             elif screen == 'update':
@@ -1613,10 +2016,14 @@ USAGE = f"""Usage: tessera-ext [command]
   (no command)          interactive menu
   list                  registry plugins and installed state
   install <name>        install from the registry ("spoolman" or "tessera/spoolman")
+                        --source <registry> when several registries offer the same id
   update [<name>|--all] update one or all registry plugins
   remove <name>         delete an installed plugin
   sync                  rebuild extensions/index.json
   branch [<name>]       show / switch the registry branch (saved in {CONF_FILE})
+  repo [list]           registries: the built-in one and the ones you added
+  repo add <url> [<name>]  add a registry.json (https://); its plugins run in the UI
+  repo remove <name>    forget an added registry (its plugins stay installed)
   serve                 HTTP API for the UI (started by systemd, see tessera-ext.socket)
 Options: --force (replace a hand-installed plugin / reinstall the same version)"""
 
@@ -1629,6 +2036,14 @@ def main(argv):
 
     cmd = argv[0] if argv else None
     rest = argv[1:]
+    # --source takes a value, unlike the other flags: take both out before sorting the rest.
+    source = None
+    if '--source' in rest:
+        i = rest.index('--source')
+        if i + 1 >= len(rest) or rest[i + 1].startswith('--'):
+            raise ExtError('--source needs a registry name (see: tessera-ext repo)')
+        source = rest[i + 1]
+        rest = rest[:i] + rest[i + 2:]
     flags = {a for a in rest if a.startswith('--')}
     args = [a for a in rest if not a.startswith('--')]
     arg = args[0] if args else None
@@ -1639,9 +2054,9 @@ def main(argv):
     elif cmd == 'list':
         cmd_list()
     elif cmd == 'install':
-        cmd_install(arg, force)
+        cmd_install(arg, force, source)
     elif cmd == 'update':
-        cmd_update(arg, update_all='--all' in flags, force=force)
+        cmd_update(arg, update_all='--all' in flags, force=force, source=source)
     elif cmd == 'remove':
         cmd_remove(arg, force)
     elif cmd == 'sync':
@@ -1649,6 +2064,8 @@ def main(argv):
             scan_extensions()
     elif cmd == 'branch':
         cmd_branch(arg)
+    elif cmd == 'repo':
+        cmd_repo(args)
     elif cmd == 'serve':
         cmd_serve(arg if '--socket' in flags else None)
     elif cmd is None:
