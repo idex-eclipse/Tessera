@@ -65,6 +65,8 @@ class Base(unittest.TestCase):
         patches = {
             'EXTENSIONS_DIR': self.extensions,
             'CONF_FILE': os.path.join(self.tmp, 'tessera-ext.conf'),
+            # no build by default: core versions unknown (see DependencyVersionTests)
+            'CORE_PLUGINS_FILE': os.path.join(self.tmp, 'core-plugins.json'),
             'local_sources_allowed': True,
         }
         for key, value in patches.items():
@@ -388,10 +390,11 @@ class InstallTests(Base):
         self.assertTrue(os.path.exists(self.path('hello', 'index.js')))
 
 
-def extension_files(pid, version='1.0.0', points=()):
+def extension_files(pid, version='1.0.0', points=(), dependencies=None):
     """A plugin whose manifest extends the given extension points."""
     data = {
         'id': pid, 'name': pid, 'version': version, 'entry': 'index.js',
+        **({'dependencies': dependencies} if dependencies else {}),
         'extensions': [
             {'point': point, 'kind': 'tab', 'version': 1, 'id': f'x{i}', 'titleKey': 't', 'element': 'x-el'}
             for i, point in enumerate(points)
@@ -423,7 +426,7 @@ class DependencyTests(Base):
 
     def test_core_dependencies_are_always_satisfied(self):
         plan = ext.dependency_plan('acme/addon', self.entries, {})
-        self.assertEqual(plan, (['acme/owner'], []))
+        self.assertEqual(plan, (['acme/owner'], [], []))
 
     def test_missing_dependency_warns_and_installs(self):
         self.publish(extension_files('acme/lonely', points=('acme/ghost#x',)),
@@ -437,7 +440,7 @@ class DependencyTests(Base):
             {'id': 'a', 'requires': ['b']},
             {'id': 'b', 'requires': ['a']},
         ]
-        self.assertEqual(ext.dependency_plan('a', plugins, {}), (['b'], []))
+        self.assertEqual(ext.dependency_plan('a', plugins, {}), (['b'], [], []))
 
     def test_remove_refuses_while_others_depend(self):
         self.run_quiet(ext.cmd_install, 'addon')
@@ -456,6 +459,98 @@ class DependencyTests(Base):
 
     def test_registry_rejects_bad_requires(self):
         self.publish(plugin_files(), requires='acme/owner')
+        with self.assertRaises(ext.ExtError):
+            ext.load_registry()
+
+
+class DependencyVersionTests(Base):
+    """manifest.dependencies / registry `dependencies`: minimal versions of the owners."""
+
+    def setUp(self):
+        super().setUp()
+        self.publish(extension_files('acme/owner', '2.0.0'), pid='acme/owner', version='2.0.0', directory='owner')
+        deps = {'acme/owner': '2.0.0', '@core/calibrations': '3.0.0'}
+        self.publish(
+            extension_files('acme/addon', points=('acme/owner#tabs', '@core/calibrations#panel-probe'),
+                            dependencies=deps),
+            pid='acme/addon', directory='addon',
+            requires=['acme/owner', '@core/calibrations'], dependencies=deps,
+        )
+
+    def write_core(self, versions):
+        with open(ext.CORE_PLUGINS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(versions, f)
+
+    def install_owner(self, version):
+        self.publish(extension_files('acme/owner', version), pid='acme/owner', version=version, directory='owner')
+        with self.quiet():
+            ext.cmd_install('owner')
+
+    def test_versions(self):
+        self.assertTrue(ext.satisfies_min('3.0.0', '3.0.0'))
+        self.assertTrue(ext.satisfies_min('3.1.0', '3.0.9'))
+        self.assertTrue(ext.satisfies_min('anything', None))
+        self.assertFalse(ext.satisfies_min('2.9.9', '3.0.0'))
+        self.assertFalse(ext.satisfies_min('3.0.0-rc.1', '3.0.0'))
+        self.assertTrue(ext.satisfies_min('3.0.0-rc.2', '3.0.0-rc.1'))
+        self.assertTrue(ext.satisfies_min('3.0.0-rc.1', '3.0.0-1'))
+        self.assertFalse(ext.satisfies_min('dev', '1.0.0'))
+        self.assertTrue(ext.valid_dependencies({'a': '1.2.3'}))
+        for bad in ({'a': '1.2'}, {'a': 1}, {'': '1.0.0'}, {'a#b': '1.0.0'}, ['a']):
+            self.assertFalse(ext.valid_dependencies(bad), bad)
+
+    def test_manifest_dependencies_merge_points_and_versions(self):
+        m = json.loads(extension_files('acme/x', points=('acme/owner#tabs', 'acme/other#p'),
+                                       dependencies={'acme/owner': '1.2.0'})['manifest.json'])
+        self.assertEqual(ext.manifest_dependencies(m), {'acme/owner': '1.2.0', 'acme/other': None})
+        self.assertEqual(ext.manifest_requires(m), ['acme/owner', 'acme/other'])
+
+    def test_updates_an_outdated_owner(self):
+        self.install_owner('1.0.0')
+        self.publish(extension_files('acme/owner', '2.0.0'), pid='acme/owner', version='2.0.0', directory='owner')
+        to_install, missing, outdated = ext.dependency_plan('acme/addon', self.entries, ext.scan_installed())
+        self.assertEqual((to_install, missing, outdated), (['acme/owner'], [], []))
+        with self.quiet():
+            ext.cmd_install('addon')
+        self.assertEqual(ext.scan_installed()['acme/owner']['version'], '2.0.0')
+
+    def test_satisfied_owner_is_kept(self):
+        self.install_owner('2.0.0')
+        self.assertEqual(ext.dependency_plan('acme/addon', self.entries, ext.scan_installed()), ([], [], []))
+
+    def test_refuses_when_the_registry_owner_is_too_old(self):
+        self.publish(extension_files('acme/owner', '1.5.0'), pid='acme/owner', version='1.5.0', directory='owner')
+        with self.assertRaises(ext.ExtError) as ctx, self.quiet():
+            ext.cmd_install('addon')
+        self.assertIn('acme/owner 2.0.0', str(ctx.exception))
+        self.assertEqual(ext.scan_installed(), {})
+
+    def test_core_version_is_checked(self):
+        self.write_core({'@core/calibrations': '2.1.0'})
+        with self.assertRaises(ext.ExtError) as ctx, self.quiet():
+            ext.cmd_install('addon')
+        self.assertIn('Update Tessera', str(ctx.exception))
+        self.assertNotIn('acme/addon', ext.scan_installed())
+
+        self.write_core({'@core/calibrations': '3.0.0'})
+        with self.quiet():
+            ext.cmd_install('addon')
+        self.assertIn('acme/addon', ext.scan_installed())
+
+    def test_unknown_core_versions_do_not_block(self):
+        # dev checkout without host/dist: nothing to compare with, the host checks on load
+        with self.quiet():
+            ext.cmd_install('addon')
+        self.assertIn('acme/addon', ext.scan_installed())
+
+    def test_status_reports_dependencies(self):
+        rows = {r['id']: r for r in ext.collect_status(self.entries, {})}
+        view = ext.plugin_view(rows['acme/addon'])
+        self.assertEqual(view['requires'], ['acme/owner'])
+        self.assertEqual(view['dependencies'], {'acme/owner': '2.0.0', '@core/calibrations': '3.0.0'})
+
+    def test_registry_rejects_bad_dependencies(self):
+        self.publish(plugin_files(), dependencies={'acme/owner': 'latest'})
         with self.assertRaises(ext.ExtError):
             ext.load_registry()
 

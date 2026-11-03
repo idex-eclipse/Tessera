@@ -86,7 +86,11 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 - `manifest.json` из архива совпадает с записью реестра по `id` и `version`;
 - `pluginApi` записи подходит хосту: MAJOR тот же, MINOR не больше хостового (сейчас `0.8`;
   см. [plugin-development.md](plugin-development.md#версия-plugin-api)). Целое `1` старых
-  записей означает `0.7`.
+  записей означает `0.7`;
+- подходят [зависимости](plugin-development.md#зависимости): плагины из `requires` ставятся
+  первыми, установленный, но старше `dependencies`, обновляется; CLI отказывает, если в
+  реестре нет подходящей версии или `@core/*` этой Tessera (`host/dist/core-plugins.json`
+  сборки) старше нужного.
 
 Плагин распаковывается в скрытую staging-папку и подменяется через `rename`. Если
 обновление не удалось, остаётся прежняя версия. Рядом с манифестом плагина из
@@ -387,12 +391,16 @@ node <Tessera>/tools/registry-pack.cjs dist --dir hello --url-base . --out <Tess
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": "0.8", "url": "hello-1.2.0.tar.gz",
+  "pluginApi": "0.8", "requires": ["@core/calibrations"],
+  "dependencies": { "@core/calibrations": "3.0.0" }, "url": "hello-1.2.0.tar.gz",
   "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
 
 `pluginApi` берётся из `manifest.pluginApi` (без поля — наследное `1`); `--plugin-api`
-только проверяет, что он ожидаемый. CLI отказывается ставить несовместимую запись. Для упаковки нужен GNU tar (`--sort=name`).
+только проверяет, что он ожидаемый. CLI отказывается ставить несовместимую запись.
+`requires` — все плагины, от которых он зависит (владельцы точек из `extensions` и ключи
+`manifest.dependencies`), `dependencies` — `manifest.dependencies` как есть. Поля раздельные:
+старые CLI принимают в `requires` только строки. Для упаковки нужен GNU tar (`--sort=name`).
 
 Архив воспроизводим на любой ОС: записи отсортированы, время и владелец обнулены, в
 заголовке gzip нет времени, а байт ОС зафиксирован. Любой может пересобрать плагин из проверенного коммита и получить

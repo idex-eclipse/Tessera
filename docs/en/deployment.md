@@ -88,7 +88,11 @@ What the CLI checks before anything lands in `extensions/`:
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
 - `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.8`;
   see [plugin-development.md](plugin-development.md#plugin-api-version)). The integer `1`
-  of older entries means `0.7`.
+  of older entries means `0.7`;
+- its [dependencies](plugin-development.md#dependencies) fit: plugins from `requires` are
+  installed first, an installed one older than `dependencies` asks is updated; the CLI
+  refuses when the registry has no fitting version, or when a `@core/*` plugin of this
+  Tessera (`host/dist/core-plugins.json` of the build) is older than needed.
 
 A plugin is unpacked into a hidden staging folder and swapped in with `rename`. A
 failed update leaves the previous version in place. Registry plugins get an
@@ -394,12 +398,16 @@ in `registry/registry.json`:
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": "0.8", "url": "hello-1.2.0.tar.gz",
+  "pluginApi": "0.8", "requires": ["@core/calibrations"],
+  "dependencies": { "@core/calibrations": "3.0.0" }, "url": "hello-1.2.0.tar.gz",
   "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
 
 `pluginApi` comes from `manifest.pluginApi` (a manifest without it gets the legacy `1`);
 `--plugin-api` only checks that it is the expected one. The CLI refuses an incompatible entry.
+`requires` lists every plugin it depends on (owners of the points in `extensions` and the
+keys of `manifest.dependencies`); `dependencies` is `manifest.dependencies` as is. They are
+separate fields because older CLIs accept only strings in `requires`.
 Packing needs GNU tar (`--sort=name`).
 
 The archive is reproducible on any OS: entries are sorted, timestamps and owners are

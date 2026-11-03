@@ -25,9 +25,12 @@ Env:
 
 Dependencies: a plugin that extends another plugin's extension point depends on
 it (manifest.extensions[].point = "<owner>#<point>"; the registry lists them in
-`requires`). `install` installs missing dependencies from the registry first;
-`remove` refuses to remove a plugin others depend on unless --force. Core
-plugins (@core/*) are part of Tessera and always present.
+`requires`). manifest.dependencies / registry `dependencies` add minimal versions
+({"<id>": "X.Y.Z"}): new points come with a new version of their owner, not with
+the plugin API. `install` installs missing dependencies and updates outdated ones
+from the registry first; `remove` refuses to remove a plugin others depend on
+unless --force. Core plugins (@core/*) are part of Tessera: a plugin that needs a
+newer one than host/dist/core-plugins.json lists is refused ("update Tessera").
 
 Nothing is built or executed on the host: the registry ships prebuilt archives,
 each archive is verified against sha256 from registry.json before it is
@@ -79,16 +82,27 @@ CONF_FILE = os.path.join(
 ORIGIN_FILE = '.tessera-origin.json'
 LOCK_FILE = '.lock'
 
-# Version of the plugin contract (PluginApi, manifest, CE contract, points of the core
-# plugins) this host implements, "MAJOR.MINOR". A plugin fits when MAJOR is the same and
-# its MINOR is not above ours. Same value as PLUGIN_API in plugin-sdk/src/api-level.ts.
+# Version of the plugin contract (PluginApi, manifest, CE contract) this host implements,
+# "MAJOR.MINOR". A plugin fits when MAJOR is the same and its MINOR is not above ours.
+# Same value as PLUGIN_API in plugin-sdk/src/api-level.ts. Extension points are not part of
+# it: they come with the owner's version (manifest.dependencies).
 HOST_PLUGIN_API = '0.8'
 # Registry entries without pluginApi or with the integer 1 of the first registries.
 LEGACY_PLUGIN_API = '0.7'
 PLUGIN_API_RE = re.compile(r'(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})')
 
-# Plugins bundled with Tessera: dependencies on them are always satisfied.
+# Plugins bundled with Tessera: never installed from the registry; their versions come
+# with Tessera (host/dist/core-plugins.json, written by the build).
 CORE_PLUGIN_PREFIX = '@core/'
+CORE_PLUGINS_FILE = os.path.abspath(
+    os.environ.get('TESSERA_CORE_PLUGINS')
+    or os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'host', 'dist', 'core-plugins.json')
+)
+# MAJOR.MINOR.PATCH[-prerelease][+build], as in plugin-sdk/src/dependencies.ts.
+SEMVER_RE = re.compile(
+    r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+    r'(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?'
+)
 
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 100 * 1024 * 1024
@@ -247,7 +261,8 @@ def load_registry():
                 not DIR_NAME_RE.fullmatch(p['dir']) or
                 not SHA256_RE.fullmatch(p['sha256']) or
                 not (p.get('requires') is None or
-                     (isinstance(p['requires'], list) and all(isinstance(r, str) for r in p['requires'])))):
+                     (isinstance(p['requires'], list) and all(isinstance(r, str) for r in p['requires']))) or
+                not (p.get('dependencies') is None or valid_dependencies(p['dependencies']))):
             raise ExtError(f'Invalid registry entry: {clean(json.dumps(p))}', 500)
     return {'url': url, 'plugins': data['plugins']}
 
@@ -269,52 +284,146 @@ def plugin_dirs(extensions_dir=None):
         )
 
 
-def manifest_requires(manifest):
-    """Owners of the extension points the plugin extends: its implicit dependencies."""
-    out = []
+def parse_version(value):
+    """Comparable key of a semver string, or None. Build metadata is ignored."""
+    if not isinstance(value, str):
+        return None
+    m = SEMVER_RE.fullmatch(value)
+    if not m:
+        return None
+    # A release is newer than any of its prereleases; numeric identifiers sort before others.
+    pre = m.group(4)
+    pre_key = (1,) if pre is None else (0, tuple(
+        (0, int(p), '') if p.isdigit() else (1, 0, p) for p in pre.split('.')
+    ))
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), pre_key)
+
+
+def satisfies_min(have, need):
+    """`have` is at least `need`; no `need` is always satisfied, an unreadable `have` never."""
+    if need is None:
+        return True
+    a, b = parse_version(have), parse_version(need)
+    return a is not None and b is not None and a >= b
+
+
+def valid_dependencies(value):
+    """manifest.dependencies / registry `dependencies`: {plugin id: minimal semver}."""
+    return isinstance(value, dict) and all(
+        isinstance(k, str) and k and '#' not in k and parse_version(v) is not None
+        for k, v in value.items()
+    )
+
+
+def is_core(pid):
+    return pid.startswith(CORE_PLUGIN_PREFIX)
+
+
+def manifest_dependencies(manifest):
+    """
+    id → minimal version (None: any) the plugin depends on: owners of the extension
+    points it extends, plus manifest.dependencies. Itself excluded, core plugins included.
+    """
+    out = {}
     for item in manifest.get('extensions') or []:
         point = item.get('point') if isinstance(item, dict) else None
         if not isinstance(point, str) or '#' not in point:
             continue
         owner = point.rsplit('#', 1)[0]
-        if owner and owner != manifest.get('id') and not owner.startswith(CORE_PLUGIN_PREFIX) and owner not in out:
-            out.append(owner)
+        if owner:
+            out.setdefault(owner, None)
+    deps = manifest.get('dependencies')
+    if valid_dependencies(deps):
+        out.update(deps)
+    out.pop(manifest.get('id'), None)
+    return out
+
+
+def manifest_requires(manifest):
+    """Non-core plugins the plugin depends on: what has to be installed next to it."""
+    return [pid for pid in manifest_dependencies(manifest) if not is_core(pid)]
+
+
+def entry_dependencies(entry):
+    """Same as manifest_dependencies() for a registry entry (`requires` + `dependencies`)."""
+    out = {r: None for r in entry.get('requires') or []}
+    out.update(entry.get('dependencies') or {})
+    out.pop(entry['id'], None)
     return out
 
 
 def entry_requires(entry):
     """`requires` of a registry entry without core plugins and itself."""
-    return [
-        r for r in entry.get('requires') or []
-        if r != entry['id'] and not r.startswith(CORE_PLUGIN_PREFIX)
-    ]
+    return [pid for pid in entry_dependencies(entry) if not is_core(pid)]
+
+
+def load_core_versions():
+    """@core/* id → version of this Tessera, or None when unknown (a dev checkout without a build)."""
+    data = read_json_safe(CORE_PLUGINS_FILE)
+    if not isinstance(data, dict):
+        return None
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def core_problems(entry, core_versions):
+    """Messages for core dependencies of `entry` this Tessera does not satisfy."""
+    if core_versions is None:
+        return []
+    problems = []
+    for dep, need in entry_dependencies(entry).items():
+        if not is_core(dep) or need is None:
+            continue
+        have = core_versions.get(dep)
+        if not satisfies_min(have, need):
+            problems.append(
+                f'{clean(entry["id"])}@{clean(entry["version"])} needs {clean(dep)} {clean(need)} or newer, '
+                f'this Tessera has {clean(have) if have else "none"}. Update Tessera first.'
+            )
+    return problems
 
 
 def dependency_plan(pid, plugins, installed):
     """
-    (to_install, missing): registry plugins to install before `pid`, deepest
-    first, and dependencies that are neither installed nor in the registry.
+    (to_install, missing, outdated): registry plugins to install or update before `pid`,
+    deepest first; dependencies that are neither installed nor in the registry; and
+    messages for dependencies that exist only in a version below what is needed.
     Cycles are allowed (extensions bind lazily): every id is visited once.
+    Core plugins are not planned here (see core_problems).
     """
     by_id = {p['id']: p for p in plugins}
-    to_install, missing, seen = [], [], set()
+    to_install, missing, outdated, seen = [], [], [], set()
 
-    def visit(current):
+    def visit(current, need=None, needed_by=None):
         if current in seen:
             return
         seen.add(current)
         entry = by_id.get(current)
+        cur = installed.get(current)
+        # pid itself is installed by the caller; a dependency only when absent or too old
+        ok = current == pid or (cur is not None and satisfies_min(cur['version'], need))
         if entry is None:
-            if current not in installed:
+            if cur is None:
                 missing.append(current)
+            elif not ok:
+                outdated.append(
+                    f'{clean(needed_by)} needs {clean(current)} {clean(need)} or newer, installed '
+                    f'{clean(cur["version"])}, and the registry has no other version.'
+                )
             return
-        for dep in entry_requires(entry):
-            visit(dep)
-        if current != pid and current not in installed:
+        if not ok and not satisfies_min(entry.get('version'), need):
+            outdated.append(
+                f'{clean(needed_by)} needs {clean(current)} {clean(need)} or newer, '
+                f'the registry has {clean(entry["version"])}.'
+            )
+            return
+        for dep, dep_need in entry_dependencies(entry).items():
+            if not is_core(dep):
+                visit(dep, dep_need, current)
+        if not ok:
             to_install.append(current)
 
     visit(pid)
-    return to_install, missing
+    return to_install, missing, outdated
 
 
 def dependents(pid, installed):
@@ -323,7 +432,7 @@ def dependents(pid, installed):
 
 
 def scan_installed():
-    """manifest.id → {dir, version, origin, requires} for everything in extensions/."""
+    """manifest.id → {dir, version, origin, requires, dependencies} for everything in extensions/."""
     result = {}
     if not os.path.isdir(EXTENSIONS_DIR):
         return result
@@ -337,6 +446,7 @@ def scan_installed():
             'version': manifest.get('version'),
             'origin': origin,
             'requires': manifest_requires(manifest),
+            'dependencies': manifest_dependencies(manifest),
         }
     return result
 
@@ -545,6 +655,9 @@ def install(entry, registry_url, force=False):
             f'{clean(entry["id"])}@{clean(entry["version"])} needs plugin API {format_plugin_api(plugin_api)}, '
             f'host provides {HOST_PLUGIN_API}. {hint}'
         )
+    problems = core_problems(entry, load_core_versions())
+    if problems and not force:
+        raise ExtError(' '.join(problems))
 
     current = scan_installed().get(entry['id'])
     target = os.path.join(EXTENSIONS_DIR, entry['dir'])
@@ -640,6 +753,7 @@ def collect_status(plugins, installed):
             'dir': cur['dir'] if cur else p['dir'],
             'managed': bool(cur and cur['origin']),
             'requires': entry_requires(p),
+            'dependencies': entry_dependencies(p),
         })
     for pid, cur in installed.items():
         if pid in known:
@@ -655,6 +769,7 @@ def collect_status(plugins, installed):
             'dir': cur['dir'],
             'managed': bool(cur['origin']),
             'requires': list(cur['requires']),
+            'dependencies': dict(cur['dependencies']),
         })
     return rows
 
@@ -711,7 +826,12 @@ def install_with_dependencies(pid, registry, force=False):
     if not entry:
         raise ExtError(f'{clean(pid)} is not in registry {registry["url"]}')
 
-    to_install, missing = dependency_plan(pid, registry['plugins'], scan_installed())
+    to_install, missing, outdated = dependency_plan(pid, registry['plugins'], scan_installed())
+    if outdated:
+        if not force:
+            raise ExtError(' '.join(outdated))
+        for message in outdated:
+            print(f'{message} Installing anyway (--force): its extensions will be rejected.', file=sys.stderr)
     for dep in missing:
         print(
             f'{clean(pid)} depends on {clean(dep)}, which is not in the registry: '
@@ -721,9 +841,11 @@ def install_with_dependencies(pid, registry, force=False):
 
     changed = False
     done = []
+    installed = scan_installed()
     for dep in to_install:
         dep_entry = next(p for p in registry['plugins'] if p['id'] == dep)
-        print(f'Installing dependency {clean(dep)} of {clean(pid)}')
+        verb = 'Updating' if dep in installed else 'Installing'
+        print(f'{verb} dependency {clean(dep)} of {clean(pid)}')
         if install(dep_entry, registry['url'], force):
             changed = True
             done.append(dep)
@@ -881,6 +1003,8 @@ def plugin_view(row):
         'managed': row['managed'],
         'manifestUrl': f'/extensions/{row["dir"]}/manifest.json',
         'requires': [clean(r) for r in row['requires']],
+        # id → minimal version (None: any), core plugins included: the UI explains what is outdated.
+        'dependencies': {clean(k): clean(v) if v else None for k, v in row['dependencies'].items()},
         # "MAJOR.MINOR" of the registry entry: the UI disables Install for an incompatible one.
         'pluginApi': clean(format_plugin_api(row['entry'].get('pluginApi'))) if row['entry'] else None,
     }
