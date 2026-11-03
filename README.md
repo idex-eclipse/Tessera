@@ -210,6 +210,7 @@ Optional companions:
 | crowsnest / mjpegstreamer / ustreamer | camera widgets |
 | Spoolman (via Moonraker) | optional `tessera/spoolman` plugin from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry: spool per tool, pre-print filament check |
 | Load cell in the nozzle + Klipper `pa_tester` | optional `tessera/pa-tester` plugin from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry: Pressure Advance tab in Calibrations with a live load cell graph |
+| Load cell in the nozzle + Klipper `autopa` and/or `kapat` | optional `tessera/pa-autotune` plugin from the [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext) registry: PA Autotune tab in Calibrations with the web UI of the installed provider |
 
 <a id="installation"></a>
 ## Installation
