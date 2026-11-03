@@ -20,7 +20,7 @@
   <img alt="Vite" src="https://img.shields.io/badge/vite-6-646cff.svg" />
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6.svg" />
   <img alt="Бэкенд не нужен" src="https://img.shields.io/badge/backend-not%20required-informational.svg" />
-  <img alt="Версия" src="https://img.shields.io/badge/version-0.7.0-green.svg" />
+  <img alt="Версия" src="https://img.shields.io/badge/version-0.8.0-green.svg" />
 </p>
 
 ---
@@ -209,7 +209,6 @@ regex-фильтры сообщений и настройки reverse/autoscroll
 | crowsnest / mjpegstreamer / ustreamer | виджеты камер |
 | Spoolman (через Moonraker) | необязательный плагин `tessera/spoolman` из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): катушка на каждый инструмент, проверка филамента перед печатью |
 | Датчик усилия в сопле + Klipper `pa_tester` | необязательный плагин `tessera/pa-tester` из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): вкладка Pressure Advance в калибровках с живым графиком датчика усилия |
-| Датчик усилия в сопле + Klipper `autopa` и/или `kapat` | необязательный плагин `tessera/pa-autotune` из реестра [tessera-ext](https://github.com/idex-eclipse/Tessera-Ext): вкладка PA Autotune в калибровках с веб-интерфейсом установленного провайдера |
 
 <a id="installation"></a>
 ## Установка

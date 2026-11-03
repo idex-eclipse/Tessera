@@ -70,7 +70,7 @@ function git(...args: string[]): string | null {
 /**
  * Какая это сборка — для людей (Settings → About, экспорт настроек), не для проверок:
  * совместимость плагинов решает PLUGIN_API (plugin-sdk/src/api-level.ts).
- * version — `git describe` от последнего тега релиза: 0.7.0 на теге, 0.7.0-12-g0dcfbb1 между ними.
+ * version — `git describe` от последнего тега релиза: X.X.X на теге, X.X.X-X-g<commit> между ними.
  */
 function buildInfo(): { version: string; commit: string; branch: string } {
   const describe = git('describe', '--tags', '--match', 'v[0-9]*', '--dirty');
