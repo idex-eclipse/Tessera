@@ -398,6 +398,11 @@ export interface PluginManifest {
   name: string;
   version: string;
   entry: string;
+  /**
+   * Минимальная версия контракта плагинов "MAJOR.MINOR" (см. api-level.ts). Нет поля — "0.7".
+   * Хост с другим MAJOR или меньшим MINOR плагин не грузит и не ставит.
+   */
+  pluginApi?: string;
 
   pages?: PageContribution[];
   widgets?: WidgetContribution[];

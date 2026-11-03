@@ -1,10 +1,12 @@
 import type { PluginManifest } from '../../../plugin-sdk/src/types.ts';
+import { PLUGIN_API, checkPluginApi, formatPluginApi } from '../../../plugin-sdk/src/api-level.ts';
 
 import type { PluginRegistry } from './plugin-registry.svelte.ts';
 import type { SettingsStore } from './settings-store.svelte.ts';
 
 import { defineMpuElement } from '../../../plugin-sdk/src/element/define-element';
 import type { Component } from 'svelte';
+import { SvelteMap } from 'svelte/reactivity';
 
 import type { GuardAgent } from './guard-agent';
 import {
@@ -44,6 +46,33 @@ export interface LoadedPlugin {
   module: unknown;
   source: 'core' | 'remote';
   manifestUrl?: string;
+}
+
+/** Remote-плагин, который не загрузился: показывается в Settings → Plugins. */
+export interface PluginLoadFailure {
+  manifestUrl: string;
+  /** Есть, если манифест прочитан. */
+  id?: string;
+  name?: string;
+  message: string;
+  /** Плагину нужна другая версия контракта (manifest.pluginApi). */
+  pluginApi?: { problem: 'newer' | 'major' | 'invalid'; need: string; have: string };
+}
+
+/** manifest.pluginApi несовместим с хостом: плагин не импортируется. */
+export class PluginApiMismatchError extends Error {
+  constructor(
+    readonly manifest: PluginManifest,
+    readonly problem: 'newer' | 'major' | 'invalid',
+    readonly need: string,
+    readonly have: string,
+  ) {
+    super(
+      `[plugin-loader] Plugin "${manifest.id}" needs plugin API ${need}, this Tessera provides ${have}` +
+        (problem === 'newer' ? ': update Tessera' : ''),
+    );
+    this.name = 'PluginApiMismatchError';
+  }
 }
 
 export interface PluginLoaderDeps {
@@ -215,6 +244,9 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
    */
   let loadedPlugins = $state<Map<string, LoadedPlugin>>(new Map());
 
+  /** Key: manifestUrl. Очищается при успешной загрузке или удалении плагина. */
+  const loadFailures = new SvelteMap<string, PluginLoadFailure>();
+
   // ------------------------------------------------------------------
   // Core plugin registration
   // ------------------------------------------------------------------
@@ -258,10 +290,23 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     loadedPlugins.delete(pluginId);
   }
 
-  /** fetch manifest → validate → import entry → locales → prepare. */
+  /** fetchRemoteUnchecked + учёт сбоя в loadFailures. */
   async function fetchRemote(manifestUrl: string): Promise<{ loaded: LoadedPlugin; version: string }> {
+    try {
+      const result = await fetchRemoteUnchecked(manifestUrl);
+      loadFailures.delete(manifestUrl);
+      return result;
+    } catch (error) {
+      loadFailures.set(manifestUrl, toLoadFailure(manifestUrl, error));
+      throw error;
+    }
+  }
+
+  /** fetch manifest → validate (в т.ч. pluginApi) → import entry → locales → prepare. */
+  async function fetchRemoteUnchecked(manifestUrl: string): Promise<{ loaded: LoadedPlugin; version: string }> {
     const manifest = await fetchManifest(manifestUrl);
     validateManifest(manifest, manifestUrl);
+    checkManifestPluginApi(manifest);
 
     const entryUrl = resolveEntryUrl(manifest.entry, manifestUrl);
     const module = await importModule(entryUrl);
@@ -323,6 +368,7 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
    * Removes from registry, loaded state, and settings.
    */
   function uninstallRemotePlugin(manifestUrl: string): void {
+    loadFailures.delete(manifestUrl);
     const loaded = findByManifestUrl(manifestUrl);
 
     if (!loaded) {
@@ -395,6 +441,10 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
         .map((plugin) => plugin.manifestUrl),
     );
 
+    for (const url of [...loadFailures.keys()]) {
+      if (!enabledUrls.has(url)) loadFailures.delete(url);
+    }
+
     // Выгружаем remote-плагины, которых больше нет среди enabled.
     for (const [id, loaded] of [...loadedPlugins]) {
       if (
@@ -464,6 +514,10 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
 
   function isLoaded(pluginId: string): boolean {
     return loadedPlugins.has(pluginId);
+  }
+
+  function getLoadFailures(): PluginLoadFailure[] {
+    return Array.from(loadFailures.values());
   }
 
     // ------------------------------------------------------------------
@@ -536,7 +590,30 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     getModule,
     getLoadedPlugins,
     isLoaded,
+    getLoadFailures,
   };
+}
+
+/** Манифест требует несовместимую версию контракта → PluginApiMismatchError. */
+function checkManifestPluginApi(manifest: PluginManifest): void {
+  const problem = checkPluginApi(manifest.pluginApi);
+  if (problem !== 'ok') {
+    throw new PluginApiMismatchError(manifest, problem, formatPluginApi(manifest.pluginApi), PLUGIN_API);
+  }
+}
+
+function toLoadFailure(manifestUrl: string, error: unknown): PluginLoadFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof PluginApiMismatchError) {
+    return {
+      manifestUrl,
+      id: error.manifest.id,
+      name: error.manifest.name,
+      message,
+      pluginApi: { problem: error.problem, need: error.need, have: error.have },
+    };
+  }
+  return { manifestUrl, message };
 }
 
 // ------------------------------------------------------------------

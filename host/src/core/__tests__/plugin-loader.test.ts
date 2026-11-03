@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PluginManifest } from '../../../../plugin-sdk/src/types';
 
-import { createPluginLoader, type PluginLoaderDeps, type I18nSink } from '../plugin-loader.svelte.ts';
+import { PLUGIN_API } from '../../../../plugin-sdk/src/api-level';
+import { PluginApiMismatchError, createPluginLoader, type PluginLoaderDeps, type I18nSink } from '../plugin-loader.svelte.ts';
 import { createPluginRegistry } from '../plugin-registry.svelte.ts';
 import { createSettingsStore } from '../settings-store.svelte.ts';
 import { MemoryStorage } from '../storage';
@@ -551,6 +552,33 @@ describe('plugin-loader / loadEnabledPlugins', () => {
 
     expect(loader.isLoaded('@third/good')).toBe(true);
     expect(registry.getPages()).toHaveLength(0);
+  });
+
+  it('records failures and clears them once the plugin loads or is removed', async () => {
+    let fail = true;
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => {
+        if (fail) throw new Error('Fetch failed');
+        return createTestManifest({ id: '@third/flaky' });
+      }),
+    });
+    const url = 'http://flaky.example.com/manifest.json';
+    settings.addPlugin(url);
+
+    await loader.loadEnabledPlugins();
+    expect(loader.getLoadFailures()).toEqual([{ manifestUrl: url, message: 'Fetch failed' }]);
+
+    fail = false;
+    await loader.loadEnabledPlugins();
+    expect(loader.getLoadFailures()).toEqual([]);
+
+    fail = true;
+    loader.uninstallRemotePlugin(url);
+    settings.addPlugin(url);
+    await loader.loadEnabledPlugins();
+    settings.removePlugin(url);
+    await loader.loadEnabledPlugins();
+    expect(loader.getLoadFailures()).toEqual([]);
   });
 
   it('unloads plugins that are no longer in settings', async () => {
@@ -1395,5 +1423,58 @@ describe('plugin-loader / eagerActivateSurfacePlugins', () => {
     expect(() => {
       loader.eagerActivateSurfacePlugins();
     }).not.toThrow();
+  });
+});
+// ------------------------------------------------------------------
+// pluginApi
+// ------------------------------------------------------------------
+
+describe('plugin-loader / pluginApi', () => {
+  it('loads plugins without pluginApi and with a compatible one', async () => {
+    const manifests: Record<string, PluginManifest> = {
+      'http://a/manifest.json': createTestManifest({ id: '@third/legacy' }),
+      'http://b/manifest.json': createTestManifest({ id: '@third/current', pluginApi: PLUGIN_API }),
+    };
+    const { loader, settings } = setup({ fetchManifest: vi.fn(async (url: string) => manifests[url]!) });
+    for (const url of Object.keys(manifests)) settings.addPlugin(url);
+
+    await loader.loadEnabledPlugins();
+
+    expect(loader.isLoaded('@third/legacy')).toBe(true);
+    expect(loader.isLoaded('@third/current')).toBe(true);
+    expect(loader.getLoadFailures()).toEqual([]);
+  });
+
+  it('does not import a plugin that needs a newer or another major API', async () => {
+    const [major, minor] = PLUGIN_API.split('.').map(Number);
+    const manifests: Record<string, PluginManifest> = {
+      'http://newer/manifest.json': createTestManifest({ id: '@third/newer', name: 'Newer', pluginApi: `${major}.${minor! + 1}` }),
+      'http://major/manifest.json': createTestManifest({ id: '@third/major', pluginApi: `${major! + 1}.0` }),
+      'http://bad/manifest.json': createTestManifest({ id: '@third/bad', pluginApi: 'latest' }),
+    };
+    const importModule = vi.fn(async () => ({ default: {} }));
+    const { loader, settings } = setup({ fetchManifest: vi.fn(async (url: string) => manifests[url]!), importModule });
+    for (const url of Object.keys(manifests)) settings.addPlugin(url);
+
+    await loader.loadEnabledPlugins();
+
+    expect(importModule).not.toHaveBeenCalled();
+    expect(loader.getLoadedPlugins().filter((p) => p.source === 'remote')).toEqual([]);
+    const byId = Object.fromEntries(loader.getLoadFailures().map((f) => [f.id, f]));
+    expect(byId['@third/newer']).toMatchObject({
+      manifestUrl: 'http://newer/manifest.json',
+      name: 'Newer',
+      pluginApi: { problem: 'newer', need: `${major}.${minor! + 1}`, have: PLUGIN_API },
+    });
+    expect(byId['@third/major']?.pluginApi?.problem).toBe('major');
+    expect(byId['@third/bad']?.pluginApi?.problem).toBe('invalid');
+  });
+
+  it('installRemotePlugin throws on an incompatible plugin', async () => {
+    const { loader, settings } = setup({
+      fetchManifest: vi.fn(async () => createTestManifest({ id: '@third/next', pluginApi: '99.0' })),
+    });
+    await expect(loader.installRemotePlugin('http://next/manifest.json')).rejects.toBeInstanceOf(PluginApiMismatchError);
+    expect(settings.plugins).toEqual([]);
   });
 });

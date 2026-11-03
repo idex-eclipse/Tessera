@@ -9,11 +9,23 @@
   import { createExtensionsInstaller, findHostPrinter } from '../../core/extensions-installer.svelte.ts';
   import type { RegistryPlugin } from '../../core/extensions-installer.svelte.ts';
   import ExtensionsOverview from './extensions-overview.svelte';
+  import { PLUGIN_API, checkPluginApi, formatPluginApi } from '../../../../plugin-sdk/src/api-level.ts';
 
   const { settings, loader, printerManager, i18n } = getAppContext();
 
   let remotePlugins = $derived(settings.plugins);
   let loaded = $derived(loader.getLoadedPlugins());
+  let loadFailures = $derived(loader.getLoadFailures());
+
+  /** Почему плагин с таким pluginApi не поставить/не загрузить; null — совместим. */
+  function pluginApiProblem(pluginApi: unknown): string | null {
+    const problem = checkPluginApi(pluginApi);
+    if (problem === 'ok') return null;
+    const params = { need: formatPluginApi(pluginApi), have: PLUGIN_API };
+    if (problem === 'newer') return i18n.t('settings.pluginApiNewer', params);
+    if (problem === 'major') return i18n.t('settings.pluginApiMajor', params);
+    return i18n.t('settings.pluginApiInvalid', params);
+  }
   let printers = $derived(printerManager.printers);
 
   async function toggle(u: string, enabled: boolean): Promise<void> {
@@ -124,6 +136,8 @@
       if (!m || typeof m.id !== 'string' || typeof m.entry !== 'string') {
         throw new Error('invalid manifest');
       }
+      const apiProblem = pluginApiProblem(m.pluginApi);
+      if (apiProblem) throw new Error(apiProblem);
       advancedPreview = { id: m.id, name: m.name ?? m.id, version: m.version ?? '?' };
     } catch (e) {
       advancedError = e instanceof Error ? e.message : String(e);
@@ -178,6 +192,7 @@
     {:else}
       <div class="plugin-list">
         {#each registryPlugins as plugin (plugin.id)}
+          {@const apiProblem = plugin.state === 'available' || plugin.state === 'update' ? pluginApiProblem(plugin.pluginApi) : null}
           <div class="plugin-row">
             <div class="plugin-info">
               <span class="plugin-name">{plugin.name}</span>
@@ -188,18 +203,21 @@
               {#if plugin.description}
                 <span class="plugin-description">{plugin.description}</span>
               {/if}
+              {#if apiProblem}
+                <span class="warning">{apiProblem}</span>
+              {/if}
             </div>
             <div class="plugin-actions">
               {#if installer.busyId === plugin.id}
                 <Loader size="sm" inline text={i18n.t('settings.registryWorking')} />
               {:else if plugin.state === 'available'}
-                <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null}>
+                <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null || apiProblem !== null}>
                   {i18n.t('common.install')}
                 </button>
               {:else}
                 {#if plugin.state === 'update'}
                   <span class="badge update">v{plugin.installedVersion} → v{plugin.version}</span>
-                  {#if plugin.managed}
+                  {#if plugin.managed && !apiProblem}
                     <button class="btn btn-primary" onclick={() => updateFromRegistry(plugin)} disabled={installer.busyId !== null}>
                       {i18n.t('settings.update')}
                     </button>
@@ -328,6 +346,32 @@
       </div>
     {/each}
   </div>
+
+  {#if loadFailures.length > 0}
+    <div class="section-header">
+      <h3>{i18n.t('settings.loadFailures')}</h3>
+    </div>
+    <div class="plugin-list">
+      {#each loadFailures as f (f.manifestUrl)}
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <span class="plugin-name">{f.name ?? f.id ?? f.manifestUrl}</span>
+            <span class="plugin-meta">{f.id ?? f.manifestUrl}</span>
+            <span class="plugin-description error">
+              {f.pluginApi ? pluginApiProblem(f.pluginApi.need) : f.message}
+            </span>
+          </div>
+          <div class="plugin-actions">
+            {#if remotePlugins.some((r) => r.manifestUrl === f.manifestUrl)}
+              <button class="btn btn-danger" onclick={() => remove(f.manifestUrl)}>
+                {i18n.t('common.remove')}
+              </button>
+            {/if}
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <ExtensionsOverview />
 </div>

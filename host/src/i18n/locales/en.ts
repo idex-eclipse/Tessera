@@ -95,6 +95,8 @@ const en: I18nMessages = {
     },
     about: {
       title: 'About / Debug',
+      build: 'Build',
+      pluginApi: 'Plugin API',
       guards: 'Guards',
       parkedChains: 'Running guards',
       noParked: 'No running guards',
@@ -164,6 +166,10 @@ const en: I18nMessages = {
     registryUnreachable: 'Registry is unreachable: {error}',
     registryWorking: 'Working…',
     registryEmpty: 'No plugins in the registry',
+    pluginApiNewer: 'Needs plugin API {need}, this Tessera provides {have}: update Tessera',
+    pluginApiMajor: 'Incompatible plugin API {need} (this Tessera: {have})',
+    pluginApiInvalid: 'Invalid pluginApi in the manifest: {need}',
+    loadFailures: 'Not loaded',
 
     catalog: 'Catalog',
     catalogEmpty: 'No plugins available in catalog',
@@ -287,6 +293,8 @@ const en: I18nMessages = {
       rejectedKind: 'incompatible kind',
       rejectedVersion: 'incompatible version (needs v{need}, point is v{have})',
       rejectedDuplicate: 'duplicate id',
+      missingPointCore: 'this Tessera has no point {point}: update Tessera',
+      missingPoint: '{owner} has no point {point}: update {owner}',
       conflict: 'conflict',
       resolve: 'Resolve',
       resetResolution: 'Reset choice',

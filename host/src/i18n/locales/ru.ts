@@ -92,6 +92,8 @@ const ru: I18nMessages = {
     },
     about: {
       title: 'О программе',
+      build: 'Сборка',
+      pluginApi: 'Plugin API',
       guards: 'Охраняемые маршруты',
       parkedChains: 'Выполняемые проверки',
       noParked: 'Нет выполняемых проверок',
@@ -161,6 +163,10 @@ const ru: I18nMessages = {
     registryUnreachable: 'Реестр недоступен: {error}',
     registryWorking: 'Выполняется…',
     registryEmpty: 'В реестре нет плагинов',
+    pluginApiNewer: 'Нужен plugin API {need}, у этой Tessera {have}: обновите Tessera',
+    pluginApiMajor: 'Несовместимый plugin API {need} (у этой Tessera {have})',
+    pluginApiInvalid: 'Некорректный pluginApi в манифесте: {need}',
+    loadFailures: 'Не загружены',
 
     catalog: 'Каталог',
     catalogEmpty: 'В каталоге нет доступных плагинов',
@@ -284,6 +290,8 @@ const ru: I18nMessages = {
       rejectedKind: 'несовместимый вид',
       rejectedVersion: 'несовместимая версия (нужна v{need}, у точки v{have})',
       rejectedDuplicate: 'повтор id',
+      missingPointCore: 'в этой версии Tessera нет точки {point}: обновите Tessera',
+      missingPoint: 'у {owner} нет точки {point}: обновите {owner}',
       conflict: 'конфликт',
       resolve: 'Разрешить',
       resetResolution: 'Сбросить выбор',

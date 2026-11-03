@@ -610,8 +610,13 @@ still never talk to each other directly.
 - `available` is called with the extension's api when the point is rendered, and again on
   `notify_klippy_ready`, `notify_config_changed` and reconnect. The host never reads the data.
 - A version or kind mismatch rejects the contribution (console warning + Settings → Plugins).
-- A contribution to a point whose owner is not loaded, disabled or has no such point is
-  *sleeping*, not an error: it binds as soon as the point appears.
+- A contribution to a point whose owner is not loaded or disabled is *sleeping*, not an
+  error: it binds as soon as the owner appears.
+- If the owner is loaded but has no such point, its version is older than the contribution
+  needs: Settings → Plugins says what to update (Tessera for `@core/*`, otherwise the
+  owner). A new point or point version in a built-in plugin raises the MINOR of the
+  [plugin API](plugin-development.md#plugin-api-version), so an extension of it states
+  that version in `pluginApi` and is not installed on an older Tessera at all.
 
 ### Conflicts
 
@@ -658,6 +663,13 @@ SDK wrapper, which does all of the above:
   `tessera-ext install` installs them from the registry (`requires` in `registry.json`);
   `remove` refuses to remove a plugin others depend on without `--force`. `@core/*` are
   always present.
+- Popups, menus and lightboxes of a contribution must live in the browser's **top layer**
+  (`<dialog>.showModal()` or the Popover API: `popover="auto"` + `popovertarget`). A
+  contribution is mounted inside the owner's page: its panels often have
+  `overflow: hidden` and the page can be a size container (`container-type`), which
+  clips an in-flow menu and turns `position: fixed` into "fixed to the container". The
+  Shake&Tune plugin (Lit, `tessera-ext`) is the reference: its help is a `[popover]`
+  positioned from JS, its graph lightbox a `<dialog>`.
 
 Points of the built-in plugins: `@core/calibrations#tabs` (tab, append) and
 `@core/calibrations#shaper` (tab, alternative, the Input Shaper tab).

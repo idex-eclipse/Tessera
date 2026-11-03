@@ -114,6 +114,13 @@
             {i18n.t('extensions.settings.rejectedVersion', { need: r.ext.contribution.version, have: point?.decl.version ?? '?' })}
           {:else if r.reason === 'kind-mismatch'}
             {i18n.t('extensions.settings.rejectedKind')}
+          {:else if r.reason === 'missing-point'}
+            {@const owner = ownerOf(r.ext.contribution.point)}
+            {#if owner.startsWith('@core/')}
+              {i18n.t('extensions.settings.missingPointCore', { point: r.ext.contribution.point })}
+            {:else}
+              {i18n.t('extensions.settings.missingPoint', { owner: pluginName(owner), point: pointIdOf(r.ext.contribution.point) })}
+            {/if}
           {:else}
             {i18n.t('extensions.settings.rejectedDuplicate')} ({parseExtensionRef(extensionRef(r.ext))?.id})
           {/if}

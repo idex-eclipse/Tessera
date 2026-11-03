@@ -75,6 +75,7 @@ export function createExtensionHost(deps: ExtensionHostDeps) {
       points: registry.getExtensionPoints(),
       extensions: registry.getExtensions(),
       applies: (pluginId) => loader.pluginAppliesToPrinter(pluginId, printerId),
+      ownerLoaded: (pluginId) => loader.isLoaded(pluginId),
       resolutions: settings.ui.extensionResolutions,
     });
   }

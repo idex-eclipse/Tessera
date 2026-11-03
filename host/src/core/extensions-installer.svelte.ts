@@ -26,6 +26,8 @@ export interface RegistryPlugin {
   manifestUrl: string;
   /** Плагины, в точки которых он встраивается (без @core/*). Нет у старой службы. */
   requires?: string[];
+  /** Версия контракта "MAJOR.MINOR" из реестра. Нет у старой службы и у 'local'. */
+  pluginApi?: string;
 }
 
 interface ActionResult {

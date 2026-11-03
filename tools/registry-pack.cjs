@@ -12,6 +12,10 @@
  *   --url-base          where archives will be published (e.g. GitHub Release download URL);
  *                       "." keeps URLs relative to registry.json
  *   --out               where to write <name>-<version>.tar.gz and registry.json (default: cwd)
+ *   --plugin-api        only a check: must equal manifest.pluginApi ("MAJOR.MINOR"; none = legacy 1)
+ *
+ * pluginApi of the entry comes from manifest.pluginApi. A manifest without it gets the
+ * legacy integer 1 ("0.7" for deploy/tessera-ext.py), which older CLIs also accept.
  *
  * Same input → same bytes → same sha256 on any OS (sorted entries, zeroed mtime/owner, gzip
  * without timestamp and with a fixed OS byte).
@@ -23,17 +27,26 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
+const PLUGIN_API_RE = /^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})$/;
+const LEGACY_PLUGIN_API = '0.7';
+
+/** Same rules as plugin-sdk/src/api-level.ts: "MAJOR.MINOR", or missing / 1 for the legacy one. */
+function normalizePluginApi(value) {
+  if (value === undefined || value === 1 || value === '1') return LEGACY_PLUGIN_API;
+  return typeof value === 'string' && PLUGIN_API_RE.test(value) ? value : null;
+}
+
 const DIR_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
 function parseArgs(argv) {
-  const opts = { out: '.', pluginApi: 1 };
+  const opts = { out: '.' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dir') opts.dir = argv[++i];
     else if (a === '--url-base') opts.urlBase = argv[++i];
     else if (a === '--out') opts.out = argv[++i];
-    else if (a === '--plugin-api') opts.pluginApi = Number(argv[++i]);
+    else if (a === '--plugin-api') opts.pluginApi = argv[++i];
     else rest.push(a);
   }
   opts.src = rest[0];
@@ -43,11 +56,10 @@ function parseArgs(argv) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.src || !opts.dir || !opts.urlBase) {
-    console.log('Usage: registry-pack.cjs <built-plugin-dir> --dir <name> --url-base <url> [--out <dir>] [--plugin-api <n>]');
+    console.log('Usage: registry-pack.cjs <built-plugin-dir> --dir <name> --url-base <url> [--out <dir>] [--plugin-api <MAJOR.MINOR>]');
     process.exit(1);
   }
   if (!DIR_NAME_RE.test(opts.dir)) throw new Error(`Invalid --dir: ${opts.dir}`);
-  if (!Number.isInteger(opts.pluginApi) || opts.pluginApi < 1) throw new Error('Invalid --plugin-api');
 
   const src = path.resolve(opts.src);
   const manifest = JSON.parse(fs.readFileSync(path.join(src, 'manifest.json'), 'utf8'));
@@ -58,6 +70,13 @@ function main() {
   }
   if (!fs.existsSync(path.join(src, manifest.entry))) {
     throw new Error(`manifest.entry "${manifest.entry}" not found in ${src}`);
+  }
+  const pluginApi = normalizePluginApi(manifest.pluginApi);
+  if (!pluginApi || (manifest.pluginApi !== undefined && typeof manifest.pluginApi !== 'string')) {
+    throw new Error(`manifest.json: invalid "pluginApi" ${JSON.stringify(manifest.pluginApi)} (expected "MAJOR.MINOR")`);
+  }
+  if (opts.pluginApi !== undefined && normalizePluginApi(opts.pluginApi) !== pluginApi) {
+    throw new Error(`--plugin-api ${opts.pluginApi} does not match manifest.pluginApi ${pluginApi}`);
   }
 
   const out = path.resolve(opts.out);
@@ -89,7 +108,7 @@ function main() {
     version: manifest.version,
     description: manifest.description,
     author: manifest.author,
-    pluginApi: opts.pluginApi,
+    pluginApi: manifest.pluginApi ?? 1,
     url,
     sha256,
     size: archive.length,

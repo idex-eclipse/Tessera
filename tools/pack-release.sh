@@ -22,6 +22,9 @@ COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 SHORT="${COMMIT:0:7}"
 BRANCH="${TESSERA_BUILD_BRANCH:-$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)}"
 DATE="$(git -C "$ROOT" log -1 --format=%cd --date=short)"
+# Same as the build shows in Settings → About (vite.config.ts); needs tags (fetch-depth: 0).
+VERSION="$(git -C "$ROOT" describe --tags --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)"
+VERSION="${VERSION:-0.0.0-g$SHORT}"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -29,7 +32,7 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/host" "$STAGE/deploy"
 cp -R "$ROOT/host/dist" "$STAGE/host/dist"
 cp "$ROOT/deploy/install.sh" "$ROOT/deploy/install-ext.sh" "$ROOT/deploy/tessera-ext.py" "$STAGE/deploy/"
-printf 'COMMIT=%s\nBRANCH=%s\nDATE=%s\n' "$COMMIT" "$BRANCH" "$DATE" > "$STAGE/build-info"
+printf 'COMMIT=%s\nBRANCH=%s\nDATE=%s\nVERSION=%s\n' "$COMMIT" "$BRANCH" "$DATE" "$VERSION" > "$STAGE/build-info"
 chmod -R a+rX,go-w "$STAGE"
 
 NAME="tessera-$SHORT.tar.gz"

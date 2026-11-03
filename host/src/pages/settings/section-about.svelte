@@ -3,6 +3,7 @@
 
   import { onMount } from 'svelte';
   import { guardAgent, type ParkedChainView, type RegisteredGuardView } from '../../core/guard-agent';
+  import { BUILD_INFO } from '../../core/build-info';
 
   let guards = $state<RegisteredGuardView[]>([]);
   let parked = $state<ParkedChainView[]>([]);
@@ -16,7 +17,6 @@
     return guardAgent.onChange(refresh);
   });
 
-  const HOST_VERSION = '0.7.0';
 
   const { loader, i18n, hotkeys } = getAppContext();
 
@@ -39,7 +39,7 @@
 
     const payload = {
       app: 'modular-klipper-ui',
-      version: HOST_VERSION,
+      version: BUILD_INFO.version,
       exportedAt: new Date().toISOString(),
       data,
     };
@@ -85,7 +85,15 @@
 <div class="section">
   <div class="about-row">
     <span class="about-label">Tessera</span>
-    <span class="about-value">v{HOST_VERSION}</span>
+    <span class="about-value">v{BUILD_INFO.version}</span>
+  </div>
+  <div class="about-row">
+    <span class="about-label">{i18n.t('settings.about.build')}</span>
+    <span class="about-value">{BUILD_INFO.branch} · {BUILD_INFO.commit}</span>
+  </div>
+  <div class="about-row">
+    <span class="about-label">{i18n.t('settings.about.pluginApi')}</span>
+    <span class="about-value">{BUILD_INFO.pluginApi}</span>
   </div>
 
   <div class="plugin-list">

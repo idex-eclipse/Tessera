@@ -344,6 +344,7 @@ interface PluginManifest {
   name: string;          // required, display name
   version: string;       // required, a string (compared as a string!)
   entry: string;         // required, path to the ES module relative to the manifest
+  pluginApi?: string;    // "MAJOR.MINOR" of the plugin contract you need; none = "0.7"
 
   pages?: PageContribution[];
   widgets?: WidgetContribution[];
@@ -367,8 +368,31 @@ interface PluginManifest {
 The catalog and registry tools also read `description`, `author` and `icon` from the
 manifest; the host itself ignores them, and they are not in the SDK type.
 
-The host checks only the four required fields (`id`, `name`, `version`,
-`entry` — non-empty strings). Everything else is sanitized on load: **an invalid
+### Plugin API version
+
+`pluginApi` is the version of the plugin contract the plugin needs: `PluginApi`, the
+manifest, the CE contract and the extension points of the built-in plugins. The host
+keeps its own in `plugin-sdk/src/api-level.ts` (`PLUGIN_API`, now `0.8`; Settings →
+About shows it).
+
+- **MINOR** grows with every backward-compatible addition: a new `PluginApi` method, a
+  manifest field or surface, a new extension point (or point version) of a built-in
+  plugin. **MAJOR** is reserved for incompatible changes.
+- A plugin fits when its MAJOR equals the host's and its MINOR is not above it.
+- Put the version where everything you use first appeared. A plugin without the field
+  is `0.7` (the contract before extension points); one that extends `@core/*` points
+  needs at least `0.8`.
+- An incompatible plugin is not installed (`tessera-ext`, the registry block refuses it)
+  and not loaded (the host does not import it and lists it under "Not loaded" in
+  Settings → Plugins with "update Tessera").
+
+| Version | What appeared |
+|---|---|
+| `0.7` | the base contract |
+| `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `@core/calibrations#tabs` and `#shaper` |
+
+The host checks the four required fields (`id`, `name`, `version`,
+`entry` — non-empty strings) and `pluginApi`. Everything else is sanitized on load: **an invalid
 contribution is dropped with a console warning**; the plugin still loads. What
 counts as invalid:
 

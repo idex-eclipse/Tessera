@@ -86,7 +86,9 @@ What the CLI checks before anything lands in `extensions/`:
   paths, no `..`;
 - the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
-- `pluginApi` of the entry is not newer than the host supports (now `1`).
+- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.8`;
+  see [plugin-development.md](plugin-development.md#plugin-api-version)). The integer `1`
+  of older entries means `0.7`.
 
 A plugin is unpacked into a hidden staging folder and swapped in with `rename`. A
 failed update leaves the previous version in place. Registry plugins get an
@@ -392,11 +394,12 @@ in `registry/registry.json`:
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": 1, "url": "hello-1.2.0.tar.gz",
+  "pluginApi": "0.8", "url": "hello-1.2.0.tar.gz",
   "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
 
-`--plugin-api <n>` sets `pluginApi`; the CLI refuses an entry newer than the host supports.
+`pluginApi` comes from `manifest.pluginApi` (a manifest without it gets the legacy `1`);
+`--plugin-api` only checks that it is the expected one. The CLI refuses an incompatible entry.
 Packing needs GNU tar (`--sort=name`).
 
 The archive is reproducible on any OS: entries are sorted, timestamps and owners are

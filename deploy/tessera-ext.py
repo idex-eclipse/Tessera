@@ -79,8 +79,13 @@ CONF_FILE = os.path.join(
 ORIGIN_FILE = '.tessera-origin.json'
 LOCK_FILE = '.lock'
 
-# Major version of the plugin contract (PluginApi + CE contract) this host implements.
-HOST_PLUGIN_API = 1
+# Version of the plugin contract (PluginApi, manifest, CE contract, points of the core
+# plugins) this host implements, "MAJOR.MINOR". A plugin fits when MAJOR is the same and
+# its MINOR is not above ours. Same value as PLUGIN_API in plugin-sdk/src/api-level.ts.
+HOST_PLUGIN_API = '0.8'
+# Registry entries without pluginApi or with the integer 1 of the first registries.
+LEGACY_PLUGIN_API = '0.7'
+PLUGIN_API_RE = re.compile(r'(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})')
 
 # Plugins bundled with Tessera: dependencies on them are always satisfied.
 CORE_PLUGIN_PREFIX = '@core/'
@@ -494,6 +499,31 @@ def extract_archive(data, dest):
 # Commands
 # ------------------------------------------------------------------
 
+def parse_plugin_api(value):
+    """(major, minor) or None. Missing and the integer 1 are LEGACY_PLUGIN_API."""
+    if value is None or (value == 1 and not isinstance(value, bool)):
+        value = LEGACY_PLUGIN_API
+    if not isinstance(value, str):
+        return None
+    m = PLUGIN_API_RE.fullmatch(value)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def plugin_api_problem(value, host=HOST_PLUGIN_API):
+    """None when the plugin fits this host, else 'invalid' | 'newer' | 'major'."""
+    need, have = parse_plugin_api(value), parse_plugin_api(host)
+    if need is None or have is None:
+        return 'invalid'
+    if need[0] != have[0]:
+        return 'major'
+    return 'newer' if need[1] > have[1] else None
+
+
+def format_plugin_api(value):
+    v = parse_plugin_api(value)
+    return f'{v[0]}.{v[1]}' if v else str(value)
+
+
 def archive_url(entry, registry_url):
     url = urllib.parse.urljoin(registry_url, entry['url'])
     scheme = urllib.parse.urlsplit(url).scheme.lower()
@@ -505,13 +535,15 @@ def archive_url(entry, registry_url):
 
 def install(entry, registry_url, force=False):
     """Must run under ExtensionsLock. True when extensions/ changed."""
-    plugin_api = entry.get('pluginApi', 1)
-    if isinstance(plugin_api, bool) or not isinstance(plugin_api, int):
+    plugin_api = entry.get('pluginApi')
+    problem = plugin_api_problem(plugin_api)
+    if problem == 'invalid':
         raise ExtError(f'Invalid pluginApi of {clean(entry["id"])}: {clean(plugin_api)}')
-    if plugin_api > HOST_PLUGIN_API and not force:
+    if problem and not force:
+        hint = 'Update Tessera first.' if problem == 'newer' else 'It is not compatible with this Tessera.'
         raise ExtError(
-            f'{clean(entry["id"])}@{clean(entry["version"])} needs plugin API {plugin_api}, '
-            f'host provides {HOST_PLUGIN_API}. Update Tessera first.'
+            f'{clean(entry["id"])}@{clean(entry["version"])} needs plugin API {format_plugin_api(plugin_api)}, '
+            f'host provides {HOST_PLUGIN_API}. {hint}'
         )
 
     current = scan_installed().get(entry['id'])
@@ -849,6 +881,8 @@ def plugin_view(row):
         'managed': row['managed'],
         'manifestUrl': f'/extensions/{row["dir"]}/manifest.json',
         'requires': [clean(r) for r in row['requires']],
+        # "MAJOR.MINOR" of the registry entry: the UI disables Install for an incompatible one.
+        'pluginApi': clean(format_plugin_api(row['entry'].get('pluginApi'))) if row['entry'] else None,
     }
 
 
@@ -1193,7 +1227,7 @@ def render_settings(source):
     lines += [
         row(['']),
         row([DIM(f'  Registry:   {source["url"]}')]),
-        row([DIM(f'  Plugin API: v{HOST_PLUGIN_API}')]),
+        row([DIM(f'  Plugin API: {HOST_PLUGIN_API}')]),
         row([DIM(f'  Saved in:   {CONF_FILE}')]),
         row(['']),
         rule(),

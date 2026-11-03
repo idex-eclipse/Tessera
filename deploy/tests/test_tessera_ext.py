@@ -233,8 +233,33 @@ class InstallTests(Base):
         self.assert_refused('no valid manifest.json')
 
     def test_refuses_newer_plugin_api(self):
-        self.publish(plugin_files(), pluginApi=ext.HOST_PLUGIN_API + 1)
+        major, minor = ext.parse_plugin_api(ext.HOST_PLUGIN_API)
+        self.publish(plugin_files(), pluginApi=f'{major}.{minor + 1}')
         self.assert_refused('Update Tessera first')
+
+    def test_refuses_other_major_plugin_api(self):
+        major, _ = ext.parse_plugin_api(ext.HOST_PLUGIN_API)
+        self.publish(plugin_files(), pluginApi=f'{major + 1}.0')
+        self.assert_refused('not compatible')
+
+    def test_refuses_invalid_plugin_api(self):
+        for bad in ('0.8.0', 'latest', 2, True, 0.8):
+            with self.subTest(pluginApi=bad):
+                self.publish(plugin_files(), pluginApi=bad)
+                self.assert_refused('Invalid pluginApi')
+
+    def test_installs_legacy_and_current_plugin_api(self):
+        for value in (1, None, ext.LEGACY_PLUGIN_API, ext.HOST_PLUGIN_API):
+            with self.subTest(pluginApi=value):
+                entry = self.publish(plugin_files(), pluginApi=value)
+                if value is None:
+                    del entry['pluginApi']
+                    with open(os.path.join(self.registry, 'registry.json'), 'w', encoding='utf-8') as f:
+                        json.dump({'schema': 1, 'plugins': self.entries}, f)
+                self.install()
+                self.assertIn('acme/hello', ext.scan_installed())
+                with self.quiet():
+                    ext.cmd_remove('acme/hello', True)
 
     def test_refuses_bad_dir_in_registry(self):
         for bad in ('../evil', 'a/b', '.hidden', ''):
@@ -318,6 +343,30 @@ class InstallTests(Base):
         self.assertEqual(rows['acme/manual']['state'], 'local')
         self.assertTrue(rows['acme/hello']['managed'])
         self.assertFalse(rows['acme/manual']['managed'])
+
+    def test_status_reports_plugin_api(self):
+        self.publish(plugin_files())
+        self.publish(plugin_files('acme/new'), pid='acme/new', directory='new', pluginApi='0.9')
+        self.put_manual('manual', 'acme/manual')
+        rows = {r['id']: ext.plugin_view(r) for r in ext.collect_status(self.entries, ext.scan_installed())}
+        self.assertEqual(rows['acme/hello']['pluginApi'], ext.LEGACY_PLUGIN_API)
+        self.assertEqual(rows['acme/new']['pluginApi'], '0.9')
+        self.assertIsNone(rows['acme/manual']['pluginApi'])
+
+    def test_plugin_api_matches_the_sdk(self):
+        source = (ROOT / 'plugin-sdk' / 'src' / 'api-level.ts').read_text(encoding='utf-8')
+        self.assertIn(f"export const PLUGIN_API = '{ext.HOST_PLUGIN_API}';", source)
+        self.assertIn(f"export const LEGACY_PLUGIN_API = '{ext.LEGACY_PLUGIN_API}';", source)
+
+    def test_plugin_api_compatibility(self):
+        self.assertIsNone(ext.plugin_api_problem('0.7', '0.8'))
+        self.assertIsNone(ext.plugin_api_problem('0.8', '0.8'))
+        self.assertIsNone(ext.plugin_api_problem(1, '0.8'))
+        self.assertIsNone(ext.plugin_api_problem(None, '0.8'))
+        self.assertEqual(ext.plugin_api_problem('0.9', '0.8'), 'newer')
+        self.assertEqual(ext.plugin_api_problem('1.0', '0.8'), 'major')
+        self.assertEqual(ext.plugin_api_problem(True, '0.8'), 'invalid')
+        self.assertEqual(ext.plugin_api_problem('08.1', '0.8'), 'invalid')
 
     def test_registry_text_cannot_reach_the_terminal(self):
         self.publish(plugin_files(), name='Evil\x1b[2J', description='a\x07b')

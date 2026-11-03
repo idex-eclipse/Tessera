@@ -15,7 +15,11 @@ export interface ExtensionResolution {
   candidates: string[];
 }
 
-export type ExtensionRejectReason = 'kind-mismatch' | 'version-mismatch' | 'duplicate';
+/**
+ * missing-point — владелец загружен, но такой точки не объявляет: его версия старше, чем
+ * нужна вкладу (для @core/* — старая Tessera). Ждать бесполезно, нужно обновление.
+ */
+export type ExtensionRejectReason = 'kind-mismatch' | 'version-mismatch' | 'duplicate' | 'missing-point';
 
 export interface ResolvedPoint {
   /** `<owner>#<point>` */
@@ -34,7 +38,7 @@ export interface ResolvedPoint {
 
 export interface ExtensionGraph {
   points: Map<string, ResolvedPoint>;
-  /** Точки (или её владельца) нет: вклад ждёт. */
+  /** Владельца точки нет (не установлен или выключен): вклад ждёт. */
   sleeping: RegisteredExtension[];
   rejected: Array<{ ext: RegisteredExtension; reason: ExtensionRejectReason }>;
 }
@@ -44,6 +48,8 @@ export interface ExtensionGraphInput {
   extensions: RegisteredExtension[];
   /** Плагин включён для принтера (scope плагина). */
   applies: (pluginId: string) => boolean;
+  /** Плагин загружен и включён. Нет функции — вклад без точки всегда «спит». */
+  ownerLoaded?: (pluginId: string) => boolean;
   resolutions: Record<string, ExtensionResolution>;
 }
 
@@ -108,7 +114,9 @@ export function buildExtensionGraph(input: ExtensionGraphInput): ExtensionGraph 
 
     const point = points.get(ext.contribution.point);
     if (!point) {
-      sleeping.push(ext);
+      const owner = ext.contribution.point.slice(0, ext.contribution.point.lastIndexOf('#'));
+      if (input.ownerLoaded?.(owner)) rejected.push({ ext, reason: 'missing-point' });
+      else sleeping.push(ext);
       return;
     }
     if (ext.contribution.kind !== point.decl.kind) {

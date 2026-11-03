@@ -63,6 +63,20 @@ describe('buildExtensionGraph', () => {
     expect(g.rejected).toEqual([]);
   });
 
+  it('rejects an extension of a point its loaded owner does not declare', () => {
+    const e1 = ext('a', { id: 'x', point: `${OWNER}#nope` });
+    const e2 = ext('a', { id: 'y', point: '@other/plugin#tabs' });
+    const g = buildExtensionGraph({
+      points: [point({ id: 'tabs' })],
+      extensions: [e1, e2],
+      applies: all,
+      ownerLoaded: (id) => id === OWNER,
+      resolutions: {},
+    });
+    expect(g.rejected).toEqual([{ ext: e1, reason: 'missing-point' }]);
+    expect(g.sleeping).toEqual([e2]);
+  });
+
   it('rejects kind and version mismatches and duplicates', () => {
     const e1 = ext('a', { id: 'k', point: `${OWNER}#tabs`, kind: 'panel' });
     const e2 = ext('a', { id: 'v', point: `${OWNER}#tabs`, version: 2 });
