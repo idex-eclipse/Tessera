@@ -10,7 +10,6 @@
     type ChartData,
   } from '../../../../shared/uplot-core/index.ts';
   import { gcode, runGcode } from '../../../commands.ts';
-  import { sendMpuNotify } from '../../../../shared/mpu-notify.ts';
   import HeatersHelp from './HeatersPanelHelp.svelte';
   import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
   import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
@@ -191,15 +190,14 @@
           holdCount++;
           if (holdCount >= holdNeeded) {
             phase = 'alert';
-            sendMpuNotify(
-              api,
-              'error',
-              i18n.t('calibrations.heaters.deviationAlert', {
+            api.notifications.push({
+              severity: 'error',
+              text: i18n.t('calibrations.heaters.deviationAlert', {
                 heater: s.displayName,
                 dev: dev.toFixed(1),
                 target: s.target.toFixed(0),
               }),
-            );
+            });
             cooldownCount = 0;
           }
         } else {
