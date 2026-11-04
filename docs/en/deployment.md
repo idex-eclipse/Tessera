@@ -86,7 +86,7 @@ What the CLI checks before anything lands in `extensions/`:
   paths, no `..`;
 - the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
-- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.10`;
+- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.11`;
   see [plugin-development.md](plugin-development.md#plugin-api-version)). The integer `1`
   of older entries means `0.7`;
 - its [dependencies](plugin-development.md#dependencies) fit: plugins from `requires` are

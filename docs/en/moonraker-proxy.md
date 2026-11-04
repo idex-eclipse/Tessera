@@ -275,7 +275,7 @@ token. Returns a cancel function.
 ```ts
 const stop = api.moonraker().klippyStream(
   'load_cell/dump_force',
-  { load_cell: 'my_cell' },
+  { sensor: 'my_cell' },
   (batch) => {
     // { data: [[time, force_g | null, counts, tare | null], …] }
   },
@@ -287,7 +287,9 @@ stop();
 
 Rules:
 
-- only the methods of the host's list are allowed (now `load_cell/dump_force`); others are
+- only the methods of the host's list are allowed (now `load_cell/dump_force` and
+  `load_cell_probe/dump_taps`, params `{ sensor: '<name>' }`, messages
+  `{ tap: { time: number[], force: number[] } }` with one probing tap each); others are
   refused with a console warning and `klippyStream` returns an empty function;
 - the socket opens with the first subscription; subscriptions with the same
   `method+params` share one Klipper stream;
@@ -301,7 +303,8 @@ Rules:
   itself (1 s → 2 s → … up to 30 s) and resubscribes; the plugin only has to show a
   fallback (for example, `subscribe` to a status object);
 - `klippyStream` bypasses GuardAgent (reads only);
-- available with `pluginApi: "0.9"` and newer: a plugin that requires it writes `"0.9"`.
+- available with `pluginApi: "0.9"` and newer: a plugin that requires it writes `"0.9"`
+  (`"0.11"` if it also uses `load_cell_probe/dump_taps`: older hosts refuse that method).
 
 ---
 

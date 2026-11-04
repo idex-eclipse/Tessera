@@ -19,8 +19,9 @@
  *   0.8 — extensionPoints / extensions, api.extensions, manifest.dependencies
  *   0.9 — handle.klippyStream: bulk-потоки Klipper (load_cell/dump_force) через /klippysocket
  *   0.10 — api.notifications.push: центр уведомлений хоста (только запись)
+ *   0.11 — klippyStream: поток load_cell_probe/dump_taps в списке разрешённых методов
  */
-export const PLUGIN_API = '0.10';
+export const PLUGIN_API = '0.11';
 
 export const LEGACY_PLUGIN_API = '0.7';
 

@@ -54,7 +54,7 @@ describe('klippy stream', () => {
     const { instances, stream } = create();
     expect(instances).toHaveLength(0);
 
-    stream.subscribe(FORCE, { load_cell: 'lc' }, () => {});
+    stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
     expect(instances).toHaveLength(1);
     expect(instances[0]!.url).toBe('ws://printer.local/klippysocket');
   });
@@ -63,7 +63,7 @@ describe('klippy stream', () => {
     const { instances, stream } = create();
     const onData = vi.fn();
     const onStatus = vi.fn();
-    stream.subscribe(FORCE, { load_cell: 'lc' }, onData, onStatus);
+    stream.subscribe(FORCE, { sensor: 'lc' }, onData, onStatus);
     expect(onStatus).toHaveBeenLastCalledWith('connecting');
 
     const ws = instances[0]!;
@@ -73,7 +73,7 @@ describe('klippy stream', () => {
     const req = ws.sentMessages[0]!;
     expect(req.method).toBe(FORCE);
     expect(req.jsonrpc).toBeUndefined();
-    expect((req.params as { load_cell: string }).load_cell).toBe('lc');
+    expect((req.params as { sensor: string }).sensor).toBe('lc');
 
     ws.simulateMessage({ id: req.id, result: {} });
     const batch = { data: [[1, 2.5, 100, 90]] };
@@ -87,9 +87,9 @@ describe('klippy stream', () => {
     const { instances, stream } = create();
     const a = vi.fn();
     const b = vi.fn();
-    stream.subscribe(FORCE, { load_cell: 'lc' }, a);
+    stream.subscribe(FORCE, { sensor: 'lc' }, a);
     instances[0]!.simulateOpen();
-    stream.subscribe(FORCE, { load_cell: 'lc' }, b);
+    stream.subscribe(FORCE, { sensor: 'lc' }, b);
 
     expect(instances[0]!.sent).toHaveLength(1);
     instances[0]!.simulateMessage({ key: templateKey(instances[0]!), params: { data: [] } });
@@ -99,8 +99,8 @@ describe('klippy stream', () => {
 
   it('closes the socket with the last unsubscribe and does not reopen', () => {
     const { instances, stream } = create();
-    const off1 = stream.subscribe(FORCE, { load_cell: 'lc' }, () => {});
-    const off2 = stream.subscribe(FORCE, { load_cell: 'lc' }, () => {});
+    const off1 = stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
+    const off2 = stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
     instances[0]!.simulateOpen();
 
     off1();
@@ -113,8 +113,8 @@ describe('klippy stream', () => {
 
   it('recycles the socket when one of two streams stops (Klipper has no unsubscribe)', () => {
     const { instances, stream } = create();
-    const offA = stream.subscribe(FORCE, { load_cell: 'a' }, () => {});
-    stream.subscribe(FORCE, { load_cell: 'b' }, () => {});
+    const offA = stream.subscribe(FORCE, { sensor: 'a' }, () => {});
+    stream.subscribe(FORCE, { sensor: 'b' }, () => {});
     instances[0]!.simulateOpen();
     expect(instances[0]!.sent).toHaveLength(2);
 
@@ -124,13 +124,13 @@ describe('klippy stream', () => {
     instances[1]!.simulateOpen();
     const sent = instances[1]!.sentMessages;
     expect(sent).toHaveLength(1);
-    expect((sent[0]!.params as { load_cell: string }).load_cell).toBe('b');
+    expect((sent[0]!.params as { sensor: string }).sensor).toBe('b');
   });
 
   it('reports unavailable, reconnects with backoff and resubscribes', () => {
     const { instances, stream } = create();
     const onStatus = vi.fn();
-    stream.subscribe(FORCE, { load_cell: 'lc' }, () => {}, onStatus);
+    stream.subscribe(FORCE, { sensor: 'lc' }, () => {}, onStatus);
     instances[0]!.simulateClose();
     expect(onStatus).toHaveBeenLastCalledWith('unavailable');
 
@@ -154,8 +154,8 @@ describe('klippy stream', () => {
     const { instances, stream } = create();
     const bad = vi.fn();
     const good = vi.fn();
-    stream.subscribe(FORCE, { load_cell: 'nope' }, () => {}, bad);
-    stream.subscribe(FORCE, { load_cell: 'lc' }, () => {}, good);
+    stream.subscribe(FORCE, { sensor: 'nope' }, () => {}, bad);
+    stream.subscribe(FORCE, { sensor: 'lc' }, () => {}, good);
     const ws = instances[0]!;
     ws.simulateOpen();
     ws.simulateMessage({ id: ws.sentMessages[0]!.id, error: { message: 'Unknown load_cell' } });
@@ -163,6 +163,22 @@ describe('klippy stream', () => {
     expect(bad).toHaveBeenLastCalledWith('unavailable');
     expect(good).toHaveBeenLastCalledWith('live');
     expect(ws.readyState).toBe(1);
+  });
+
+  it('allows the load cell probe tap stream', () => {
+    const { instances, stream } = create();
+    const onData = vi.fn();
+    stream.subscribe('load_cell_probe/dump_taps', { sensor: 'lcp' }, onData);
+    expect(instances).toHaveLength(1);
+
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    const req = ws.sentMessages[0]!;
+    expect(req.method).toBe('load_cell_probe/dump_taps');
+
+    const tap = { tap: { time: [1, 2], force: [3, 4] } };
+    ws.simulateMessage({ key: templateKey(ws), params: tap });
+    expect(onData).toHaveBeenCalledWith(tap);
   });
 
   it('refuses methods outside the allowlist', () => {
@@ -176,10 +192,10 @@ describe('klippy stream', () => {
 
   it('dispose closes the socket and ignores further subscriptions', () => {
     const { instances, stream } = create();
-    stream.subscribe(FORCE, { load_cell: 'lc' }, () => {});
+    stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
     stream.dispose();
     expect(instances[0]!.readyState).toBe(3);
-    stream.subscribe(FORCE, { load_cell: 'lc' }, () => {});
+    stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
     vi.advanceTimersByTime(60_000);
     expect(instances).toHaveLength(1);
   });
@@ -194,7 +210,7 @@ describe('proxy handle klippyStream', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     const before = instances.length;
-    proxy.handle.klippyStream(FORCE, { load_cell: 'lc' }, () => {});
+    proxy.handle.klippyStream(FORCE, { sensor: 'lc' }, () => {});
     expect(instances).toHaveLength(before + 1);
     const bridge = instances[instances.length - 1]!;
     expect(bridge.url).toBe('ws://printer.local:7125/klippysocket?token=abc');

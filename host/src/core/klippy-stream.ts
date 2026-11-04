@@ -21,7 +21,11 @@ import type { WebSocketFactory, WebSocketLike } from './moonraker-proxy';
  */
 
 /** Методы, разрешённые плагинам. Только чтение; расширяется строкой. */
-export const KLIPPY_STREAM_METHODS: ReadonlySet<string> = new Set(['load_cell/dump_force']);
+export const KLIPPY_STREAM_METHODS: ReadonlySet<string> = new Set([
+  'load_cell/dump_force',
+  // Probing "tap" events of [load_cell_probe]: { tap: { time: [...], force: [...] } }.
+  'load_cell_probe/dump_taps',
+]);
 
 export interface KlippyStreamDeps {
   /** Полный адрес моста (с `?token=`, если он есть) на момент подключения. */
