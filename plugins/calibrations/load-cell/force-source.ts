@@ -2,6 +2,7 @@ import type { MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
 import { binSamples, parseForceBatch, parseTap, type ForceSample, type ForceUnit, type TapTrace } from './force-parse';
 import type { LoadCellProbeInfo } from './load-cell-config';
 import { MainsFilter, type MainsHz } from './mains-filter';
+import { openStream } from './stream-keys';
 
 /**
  * Where the live force trace comes from.
@@ -103,9 +104,11 @@ export function startForceSource(
   if (typeof handle.klippyStream !== 'function') {
     startStatus();
   } else {
-    stopStream = handle.klippyStream(
+    stopStream = openStream(
+      handle,
       FORCE_METHOD,
-      { sensor: probe.name },
+      // documented key first; older Klipper answers "Missing Argument [load_cell]" to it
+      [{ sensor: probe.name }, { load_cell: probe.name }],
       (params) => {
         const batch = parseForceBatch(params);
         if (!batch.samples.length) return;
@@ -161,9 +164,11 @@ export function startTapSource(
     onStatus?.('unavailable');
     return () => {};
   }
-  return handle.klippyStream(
+  return openStream(
+    handle,
     TAP_METHOD,
-    { sensor: probe.name },
+    // documented key first; older Klipper answers "Missing Argument [load_cell_probe]" to it
+    [{ sensor: probe.name }, { load_cell_probe: probe.name }],
     (params) => {
       const tap = parseTap(params);
       if (tap) onTap(tap);
