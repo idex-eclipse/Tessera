@@ -381,7 +381,12 @@ the installation directory, while `tessera-ext` may write `extensions/` only.
   `tessera update`. If a release needs such a change, its release notes say so. A source checkout
   (`.git`) is not updated from the UI: `tessera update` asks before replacing it.
 - **After an update, reload the page.** The new files have new chunk names. A running
-  `tessera-ext` keeps the previous `deploy/` mounted until it exits (up to 5 minutes).
+  `tessera-ext` keeps the previous `deploy/` mounted, so both services notice that their files
+  were replaced and exit by themselves (within a second; systemd starts them again with the new
+  code on the next request). Older builds only exited after 5 idle minutes, and until then
+  `tessera-ext` still answered with the previous plugin API version. The update that brings this
+  behavior is still served by the old processes: run `tessera update` once on the printer (or
+  wait 5 minutes) after it.
 
 **Update notices.** When the UI opens it asks both services (this one and `tessera-ext`) whether
 Tessera or a registry plugin has a newer version and, if so, puts one text notice per kind

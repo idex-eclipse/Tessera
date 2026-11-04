@@ -604,7 +604,6 @@ UNIX_SERVER = getattr(socketserver, 'UnixStreamServer', None)
 class ApiServer(UNIX_SERVER or object):
     def __init__(self, socket_path=None):
         super().__init__(socket_path or '', ApiHandler, bind_and_activate=False)
-        self.idle = False
         if socket_path:
             if os.path.exists(socket_path):
                 os.unlink(socket_path)
@@ -615,9 +614,6 @@ class ApiServer(UNIX_SERVER or object):
             self.socket.close()
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=3)
 
-    def handle_timeout(self):
-        self.idle = True
-
 
 def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
     if not UNIX_SERVER:
@@ -627,10 +623,11 @@ def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
         raise ExtError('serve expects a systemd socket (LISTEN_FDS=1) or --socket <path>')
 
     with ApiServer(socket_path) as server:
-        # Exits when idle, systemd starts it again on the next connection.
-        server.timeout = idle_seconds
-        while not server.idle:
-            server.handle_request()
+        # Exits when idle or after an update replaced these files (this process and the
+        # tessera-ext module it imported would otherwise run the previous build's code);
+        # systemd starts it again on the next connection.
+        watched = [os.path.realpath(__file__), os.path.realpath(ext.__file__)]
+        ext.serve_until_idle(server, idle_seconds, watched)
 
 
 def main(argv):

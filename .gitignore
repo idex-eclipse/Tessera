@@ -52,3 +52,6 @@ plugins/dummy/
 # Klipper upstream docs (local reference copy)
 docs klipper/
 docs moonraker/
+
+#motan_dumps
+motan_dumps/

@@ -54,12 +54,14 @@ import os
 import pathlib
 import posixpath
 import re
+import select
 import shutil
 import socket
 import socketserver
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1533,7 +1535,6 @@ UNIX_SERVER = getattr(socketserver, 'UnixStreamServer', None)
 class ApiServer(UNIX_SERVER or object):
     def __init__(self, socket_path=None):
         super().__init__(socket_path or '', ApiHandler, bind_and_activate=False)
-        self.idle = False
         if socket_path:
             if os.path.exists(socket_path):
                 os.unlink(socket_path)
@@ -1544,8 +1545,38 @@ class ApiServer(UNIX_SERVER or object):
             self.socket.close()
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=3)
 
-    def handle_timeout(self):
-        self.idle = True
+
+def file_stamp(path):
+    """Identity of a file for change detection; None when it cannot be read (e.g. it was deleted)."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_ino, st.st_mtime_ns, st.st_size)
+
+
+def serve_until_idle(server, idle_seconds, watched, poll_seconds=1.0):
+    """Serves requests until nothing came for `idle_seconds` or a watched source file changed.
+
+    Why watch the sources: an update from the UI replaces deploy/ while this process runs, and
+    the process cannot be restarted from there (no sudo). tessera-ext even keeps the *old*
+    deploy/ bind-mounted, where the update deletes the files (the stamp becomes None). Without
+    this check the old process kept answering for up to IDLE_EXIT_SECONDS with the previous
+    build's logic, e.g. refusing a plugin for the new plugin API.
+
+    The check runs before a waiting connection is accepted: when we exit, the connection stays
+    queued on the socket and systemd starts a fresh process for it, which loads the new code.
+    """
+    started = [file_stamp(path) for path in watched]
+    last_request = time.monotonic()
+    while time.monotonic() - last_request < idle_seconds:
+        ready, _, _ = select.select([server.socket], [], [], poll_seconds)
+        if [file_stamp(path) for path in watched] != started:
+            return 'changed'
+        if ready:
+            server.handle_request()
+            last_request = time.monotonic()
+    return 'idle'
 
 
 def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
@@ -1559,10 +1590,8 @@ def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
         raise ExtError('serve expects a systemd socket (LISTEN_FDS=1) or --socket <path>')
 
     with ApiServer(socket_path) as server:
-        # Exits when idle, systemd starts it again on the next connection.
-        server.timeout = idle_seconds
-        while not server.idle:
-            server.handle_request()
+        # Exits when idle or replaced by an update, systemd starts it again on the next connection.
+        serve_until_idle(server, idle_seconds, [os.path.realpath(__file__)])
 
 
 # ------------------------------------------------------------------
