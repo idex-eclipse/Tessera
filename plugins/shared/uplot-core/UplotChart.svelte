@@ -22,12 +22,26 @@
     height = '400px',
     tooltipFormat = (d: SeriesDef, v: number) =>
       d.kind === 'power' ? `${Math.round(v)}%` : `${v.toFixed(1)}°C`,
+    // Optional overrides for non-temperature charts (e.g. a load cell force trace).
+    // Defaults keep the original epoch-time / degrees behaviour of the temperature graphs.
+    xTime = true,
+    xRange = null,
+    formatX = formatTime,
+    formatY = null,
   }: {
     defs: SeriesDef[];
     data: ChartData;
     tick: number;
     height?: string;
     tooltipFormat?: (def: SeriesDef, value: number) => string;
+    /** false: x is a plain number (e.g. seconds), not epoch seconds. */
+    xTime?: boolean;
+    /** Fixed x window; also disables the shift+wheel zoom. */
+    xRange?: [number, number] | null;
+    /** Tooltip header for the x value. */
+    formatX?: (x: number) => string;
+    /** Y axis tick label; null keeps the temperature format (`12.3°`). */
+    formatY?: ((v: number) => string) | null;
   } = $props();
 
   let container = $state<HTMLDivElement | null>(null);
@@ -174,8 +188,9 @@
       series,
       scales: {
         x: {
-          time: true,
+          time: xTime,
           range: (_u: any, dMin: number, dMax: number) => {
+            if (xRange) return xRange;
             if (zoomed) return [zoomMin, zoomMax];
             return [dMin, dMax];
           },
@@ -197,7 +212,7 @@
           font: axisFont,
           splits: (_u: any, _i: number, min: number, max: number) =>
             linspace(min, max, DIVISIONS + 1),
-          values: (_u: any, vals: number[]) => vals.map((v) => `${Number(v.toFixed(1))}°`),
+          values: (_u: any, vals: number[]) => vals.map((v) => (formatY ? formatY(v) : `${Number(v.toFixed(1))}°`)),
         },
 
         // Мощность — справа, тики на тех же горизонталях
@@ -263,7 +278,7 @@
       return;
     }
 
-    const key = defs.map((d) => d.id).join('|') + `#${themeNonce}`;
+    const key = defs.map((d) => d.id).join('|') + `#${themeNonce}#${xTime}#${xRange ? xRange.join(',') : ''}`;
 
     if (!uplot || key !== structureKey) {
       structureKey = key;
@@ -281,7 +296,7 @@
 
   function onWheel(e: WheelEvent): void {
     const u = uplot;
-    if (!u || !e.shiftKey) return;
+    if (!u || !e.shiftKey || xRange) return;
 
     e.preventDefault();
 
@@ -403,7 +418,7 @@
       style:left="{tooltip.x}px"
       style:top="{tooltip.y}px"
     >
-      <div class="tooltip-time">{formatTime(tooltip.time)}</div>
+      <div class="tooltip-time">{formatX(tooltip.time)}</div>
       {#each tooltip.rows as row}
         <div class="tooltip-row">
           <span class="tooltip-dot" class:dash={row.dash} style:background={row.color}></span>
