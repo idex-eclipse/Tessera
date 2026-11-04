@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { useSystem } from '../../use-system.svelte.ts';
   import KvTable from './KvTable.svelte';
@@ -42,33 +42,49 @@
 
 <div class="page">
   <div class="col">
-    <Panel title={i18n.t('system.info.title')}>
-      <KvTable rows={infoRows} />
+    <ExtensionPoint point="panel-info">
+      {#snippet original()}
+        <Panel title={i18n.t('system.info.title')}>
+          <KvTable rows={infoRows} />
 
-      {#if store.systemInfo.network.length > 0}
-        <div class="sub-title">{i18n.t('system.info.network')}</div>
-        <div class="net-list">
-          {#each store.systemInfo.network as n (n.iface)}
-            <span class="net-chip" title={n.iface} dir="ltr">
-              <span class="net-iface">{n.iface}</span>
-              <span class="net-ip">{n.ip}</span>
-            </span>
-          {/each}
-        </div>
-      {/if}
-    </Panel>
+          {#if store.systemInfo.network.length > 0}
+            <div class="sub-title">{i18n.t('system.info.network')}</div>
+            <div class="net-list">
+              {#each store.systemInfo.network as n (n.iface)}
+                <span class="net-chip" title={n.iface} dir="ltr">
+                  <span class="net-iface">{n.iface}</span>
+                  <span class="net-ip">{n.ip}</span>
+                </span>
+              {/each}
+            </div>
+          {/if}
+        </Panel>
+      {/snippet}
+    </ExtensionPoint>
 
-    {#if sdRows.length > 0}
-      <Panel title={i18n.t('system.info.sdTitle')}>
-        <KvTable rows={sdRows} />
-      </Panel>
-    {/if}
+    <!-- The "has SD data" condition lives INSIDE the original: a replacement must still show
+         when the printer reports no SD card, otherwise the contribution would vanish with it. -->
+    <ExtensionPoint point="panel-sd">
+      {#snippet original()}
+        {#if sdRows.length > 0}
+          <Panel title={i18n.t('system.info.sdTitle')}>
+            <KvTable rows={sdRows} />
+          </Panel>
+        {/if}
+      {/snippet}
+    </ExtensionPoint>
   </div>
 
   <div class="col">
-    <Panel title={i18n.t('system.charts.title')}>
-      <ProcCharts />
-    </Panel>
+    <ExtensionPoint point="panel-charts">
+      {#snippet original()}
+        <Panel title={i18n.t('system.charts.title')}>
+          <ProcCharts />
+        </Panel>
+      {/snippet}
+    </ExtensionPoint>
+
+    <ExtensionPoint point="panels-overview" />
   </div>
 </div>
 

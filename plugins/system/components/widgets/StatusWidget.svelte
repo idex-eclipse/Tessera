@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
   import KlipperNotReady from '../../../shared/klippy-state/KlippyNotReady.svelte';
   import StatusStats from '../StatusStats.svelte';
@@ -33,33 +33,39 @@
   );
 </script>
 
-{#if !m.klippyReady}
-  <KlipperNotReady />
-{:else}
-  <div class="status-widget">
-    <div class="line1">
-      <span class="state" class:printing class:paused={m.state === 'paused'}>
-        {i18n.t(stateKey)}
-      </span>
-      <span class="fname" title={m.filename}>{m.filename || '—'}</span>
-    </div>
-
-    {#if printing}
-      <div class="progress-line">
-        <span class="pct">
-          {progress != null ? `${Math.round(progress * 100)}%` : '—'}
-        </span>
-        <div class="bar">
-          <div class="fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
-        </div>
-      </div>
-
-      <StatusStats {m} {mode} {fields} />
+<!-- widget-status replaces the whole body, including the "Klipper not ready" state;
+     the header (StatusHeader) is a separate element and always stays. -->
+<ExtensionPoint point="widget-status">
+  {#snippet original()}
+    {#if !m.klippyReady}
+      <KlipperNotReady />
     {:else}
-      <p class="idle">{i18n.t('system.status.ready')}</p>
+      <div class="status-widget">
+        <div class="line1">
+          <span class="state" class:printing class:paused={m.state === 'paused'}>
+            {i18n.t(stateKey)}
+          </span>
+          <span class="fname" title={m.filename}>{m.filename || '—'}</span>
+        </div>
+
+        {#if printing}
+          <div class="progress-line">
+            <span class="pct">
+              {progress != null ? `${Math.round(progress * 100)}%` : '—'}
+            </span>
+            <div class="bar">
+              <div class="fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
+            </div>
+          </div>
+
+          <StatusStats {m} {mode} {fields} />
+        {:else}
+          <p class="idle">{i18n.t('system.status.ready')}</p>
+        {/if}
+      </div>
     {/if}
-  </div>
-{/if}
+  {/snippet}
+</ExtensionPoint>
 
 <!-- headerActions рендерятся отдельным элементом (StatusHeader.svelte) -->
 

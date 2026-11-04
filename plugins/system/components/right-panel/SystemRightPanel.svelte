@@ -2,7 +2,7 @@
   import Loader from '../../../shared/loader/Loader.svelte';
   import { untrack } from 'svelte';
 
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReadyChip.svelte';
@@ -714,6 +714,11 @@
           </div>
         </section>
       {/if}
+
+      <!-- panels-right (append only): extra sections after the built-in ones. E-stop and
+           upload & print above are deliberately not extensible. Contributions are mounted in a
+           narrow column and must lay out by their own width; the collapsed rail has no point. -->
+      <ExtensionPoint point="panels-right" />
     </div>
   {/if}
 </div>
@@ -920,6 +925,12 @@
   }
 
   /* ---------------- секции ---------------- */
+
+  /* Contributed sections (panels-right) must not shrink inside the scrolling column,
+     same as the built-in .sec cards: the column scrolls instead. */
+  .sys-scroll :global(.mpu-ext-point > .mpu-ext-item) {
+    flex-shrink: 0;
+  }
 
   .sec {
     background: var(--bg-surface);

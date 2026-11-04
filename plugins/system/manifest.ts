@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const systemManifest = definePlugin({
   id: '@core/system',
   name: 'System',
-  version: '3.2.0',
+  version: '4.0.0',
   entry: '/plugins/system/index.js',
 
   pages: [
@@ -140,6 +140,53 @@ export const systemManifest = definePlugin({
       handler: 'hotkeyTabMaintenance',
       titleKey: 'system.hotkeys.tabMaintenance',
     },
+  ],
+
+  // Extensions embed into the Machine page, the Status widget, the banners and the right panel.
+  // Deliberately NOT extensible: the E-stop button, upload & print, and Pause/Resume/Cancel
+  // (print controls must never be replaceable, see docs/en/surfaces.md). All points are version 1.
+  extensionPoints: [
+    // page: extra tabs next to the built-in ones
+    { id: 'tabs', kind: 'tab', mode: 'append', version: 1, titleKey: 'system.ext.tabs' },
+
+    // page: the whole body of a built-in tab (the tab button itself stays)
+    { id: 'tab-overview', kind: 'tab', mode: 'replacement', version: 1, titleKey: 'system.ext.tabOverview' },
+    { id: 'tab-monitoring', kind: 'tab', mode: 'replacement', version: 1, titleKey: 'system.ext.tabMonitoring' },
+    { id: 'tab-maintenance', kind: 'tab', mode: 'replacement', version: 1, titleKey: 'system.ext.tabMaintenance' },
+
+    // page: replacement of a large panel, per tab
+    { id: 'panel-info', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelInfo' },
+    { id: 'panel-sd', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelSd' },
+    { id: 'panel-charts', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelCharts' },
+    { id: 'panel-host', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelHost' },
+    { id: 'panel-mcu', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelMcu' },
+    { id: 'panel-tmc', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelTmc' },
+    { id: 'panel-storage', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelStorage' },
+    { id: 'panel-database', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelDatabase' },
+    { id: 'panel-updates', kind: 'panel', mode: 'replacement', version: 1, titleKey: 'system.ext.panelUpdates' },
+
+    // page: own panels at the end of a built-in tab
+    { id: 'panels-overview', kind: 'panel', mode: 'append', version: 1, titleKey: 'system.ext.panelsOverview' },
+    { id: 'panels-monitoring', kind: 'panel', mode: 'append', version: 1, titleKey: 'system.ext.panelsMonitoring' },
+    { id: 'panels-maintenance', kind: 'panel', mode: 'append', version: 1, titleKey: 'system.ext.panelsMaintenance' },
+
+    // Status widget: the whole content (the header stays)
+    { id: 'widget-status', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.widgetStatus' },
+
+    // banners: the whole body (the plugin still decides WHEN a banner is shown)
+    { id: 'banner-status', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.bannerStatus' },
+    { id: 'banner-klipper-error', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.bannerKlipperError' },
+    { id: 'banner-status-collapsed', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.bannerStatusCollapsed' },
+    { id: 'banner-klipper-error-collapsed', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.bannerKlipperErrorCollapsed' },
+
+    // Status banner while printing: progress and ETA are replaceable, buttons only extendable.
+    // The action context is { state: 'printing' | 'paused', filename: string }.
+    { id: 'banner-status-progress', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.bannerStatusProgress' },
+    { id: 'banner-status-eta', kind: 'element', mode: 'replacement', version: 1, titleKey: 'system.ext.bannerStatusEta' },
+    { id: 'banner-status-actions', kind: 'action', mode: 'append', version: 1, titleKey: 'system.ext.bannerStatusActions' },
+
+    // right panel: own sections after the built-in ones (expanded view only)
+    { id: 'panels-right', kind: 'panel', mode: 'append', version: 1, titleKey: 'system.ext.panelsRight' },
   ],
 
   locales: ['en', 'ru'],

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { useHealth, type McuHealth } from '../../use-health.svelte.ts';
   import HostCard from './health/HostCard.svelte';
@@ -23,29 +23,45 @@
     <p class="waiting">{i18n.t('system.health.waitingKlipper')}</p>
   {/if}
 
-  <Panel title={i18n.t('system.health.host')}>
-    <HostCard {health} />
-  </Panel>
+  <ExtensionPoint point="panel-host">
+    {#snippet original()}
+      <Panel title={i18n.t('system.health.host')}>
+        <HostCard {health} />
+      </Panel>
+    {/snippet}
+  </ExtensionPoint>
 
-  {#if health.mcus.length > 0}
-    <Panel title={i18n.t('system.mcu.title')}>
-      <div class="mcu-grid">
-        {#each health.mcus as mcu (mcu.name)}
-          <McuCard {mcu} onDetails={(m) => (details = m)} />
-        {/each}
-      </div>
-    </Panel>
-  {/if}
+  <!-- Show-conditions live INSIDE the originals: a replacement must stay visible when the
+       original would be hidden (no MCU list yet, no TMC drivers). -->
+  <ExtensionPoint point="panel-mcu">
+    {#snippet original()}
+      {#if health.mcus.length > 0}
+        <Panel title={i18n.t('system.mcu.title')}>
+          <div class="mcu-grid">
+            {#each health.mcus as mcu (mcu.name)}
+              <McuCard {mcu} onDetails={(m) => (details = m)} />
+            {/each}
+          </div>
+        </Panel>
+      {/if}
+    {/snippet}
+  </ExtensionPoint>
 
-  {#if health.tmc.length > 0}
-    <Panel title={i18n.t('system.tmc.title')}>
-      <TmcTable drivers={health.tmc} klippyReady={health.klippyReady} />
-    </Panel>
-  {:else if health.klippyReady}
-    <Panel title={i18n.t('system.tmc.title')}>
-      <p class="empty">{i18n.t('system.tmc.empty')}</p>
-    </Panel>
-  {/if}
+  <ExtensionPoint point="panel-tmc">
+    {#snippet original()}
+      {#if health.tmc.length > 0}
+        <Panel title={i18n.t('system.tmc.title')}>
+          <TmcTable drivers={health.tmc} klippyReady={health.klippyReady} />
+        </Panel>
+      {:else if health.klippyReady}
+        <Panel title={i18n.t('system.tmc.title')}>
+          <p class="empty">{i18n.t('system.tmc.empty')}</p>
+        </Panel>
+      {/if}
+    {/snippet}
+  </ExtensionPoint>
+
+  <ExtensionPoint point="panels-monitoring" />
 </div>
 
 {#if detailsLive}

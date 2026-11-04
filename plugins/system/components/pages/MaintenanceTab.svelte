@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../shared/icons/Icon.svelte';
   import Panel from './Panel.svelte';
@@ -30,30 +30,44 @@
 
 <div class="page">
   <div class="col">
-    <Panel title={i18n.t('system.storage.title')}>
-      <StoragePanel />
-    </Panel>
+    <ExtensionPoint point="panel-storage">
+      {#snippet original()}
+        <Panel title={i18n.t('system.storage.title')}>
+          <StoragePanel />
+        </Panel>
+      {/snippet}
+    </ExtensionPoint>
 
-    <Panel title={i18n.t('system.database.title')} row>
-      <button class="btn" disabled={dbBusy !== ''} onclick={() => dbAction('compact')}>
-        <Icon name="refresh" size={14} />
-        {i18n.t('system.database.compact')}
-      </button>
-      <button class="btn" disabled={dbBusy !== ''} onclick={() => dbAction('backup')}>
-        <Icon name="download" size={14} />
-        {i18n.t('system.database.backup')}
-      </button>
+    <ExtensionPoint point="panel-database">
+      {#snippet original()}
+        <Panel title={i18n.t('system.database.title')} row>
+          <button class="btn" disabled={dbBusy !== ''} onclick={() => dbAction('compact')}>
+            <Icon name="refresh" size={14} />
+            {i18n.t('system.database.compact')}
+          </button>
+          <button class="btn" disabled={dbBusy !== ''} onclick={() => dbAction('backup')}>
+            <Icon name="download" size={14} />
+            {i18n.t('system.database.backup')}
+          </button>
 
-      {#if dbNotice}
-        <span class="db-notice" class:fail={dbNotice.kind === 'fail'}>
-          {dbNotice.text}
-        </span>
-      {/if}
-    </Panel>
+          {#if dbNotice}
+            <span class="db-notice" class:fail={dbNotice.kind === 'fail'}>
+              {dbNotice.text}
+            </span>
+          {/if}
+        </Panel>
+      {/snippet}
+    </ExtensionPoint>
   </div>
 
   <div class="col">
-    <UpdatesPanel />
+    <ExtensionPoint point="panel-updates">
+      {#snippet original()}
+        <UpdatesPanel />
+      {/snippet}
+    </ExtensionPoint>
+
+    <ExtensionPoint point="panels-maintenance" />
   </div>
 </div>
 

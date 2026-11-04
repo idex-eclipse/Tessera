@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../shared/icons/Icon.svelte';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -97,56 +97,61 @@
 </script>
 
 {#if visible}
-  <div class="klipper-banner">
-    <div class="kb-actions">
-      <button
-        class="btn warn"
-        disabled={klipperDisabled}
-        onclick={restartKlipper}
-      >
-        {#if pending === 'klipper'}
-          <span class="spinner" aria-hidden="true"></span>
-        {:else}
-          <Icon name="refresh" size={14} />
-        {/if}
-        {i18n.t('system.klipperBanner.restartKlipper')}
-      </button>
+  <!-- the whole body is replaceable; the plugin still decides when it is shown -->
+  <ExtensionPoint point="banner-klipper-error">
+    {#snippet original()}
+      <div class="klipper-banner">
+        <div class="kb-actions">
+          <button
+            class="btn warn"
+            disabled={klipperDisabled}
+            onclick={restartKlipper}
+          >
+            {#if pending === 'klipper'}
+              <span class="spinner" aria-hidden="true"></span>
+            {:else}
+              <Icon name="refresh" size={14} />
+            {/if}
+            {i18n.t('system.klipperBanner.restartKlipper')}
+          </button>
 
-      <button
-        class="btn warn"
-        disabled={firmwareDisabled}
-        onclick={restartFirmware}
-      >
-        {#if pending === 'firmware'}
-          <span class="spinner" aria-hidden="true"></span>
-        {:else}
-          <Icon name="refresh" size={14} />
-        {/if}
-        {i18n.t('system.klipperBanner.firmwareRestart')}
-      </button>
+          <button
+            class="btn warn"
+            disabled={firmwareDisabled}
+            onclick={restartFirmware}
+          >
+            {#if pending === 'firmware'}
+              <span class="spinner" aria-hidden="true"></span>
+            {:else}
+              <Icon name="refresh" size={14} />
+            {/if}
+            {i18n.t('system.klipperBanner.firmwareRestart')}
+          </button>
 
-      <button class="btn" onclick={() => downloadLog('klippy')}>
-        <Icon name="download" size={14} />
-        {i18n.t('system.klipperBanner.downloadKlippyLog')}
-      </button>
+          <button class="btn" onclick={() => downloadLog('klippy')}>
+            <Icon name="download" size={14} />
+            {i18n.t('system.klipperBanner.downloadKlippyLog')}
+          </button>
 
-      <button class="btn" onclick={() => downloadLog('moonraker')}>
-        <Icon name="download" size={14} />
-        {i18n.t('system.klipperBanner.downloadMoonrakerLog')}
-      </button>
-    </div>
+          <button class="btn" onclick={() => downloadLog('moonraker')}>
+            <Icon name="download" size={14} />
+            {i18n.t('system.klipperBanner.downloadMoonrakerLog')}
+          </button>
+        </div>
 
-    <div class="kb-message">
-      <div class="kb-title">
-        <Icon name="warning" size={16} />
-        <span>{title}</span>
+        <div class="kb-message">
+          <div class="kb-title">
+            <Icon name="warning" size={16} />
+            <span>{title}</span>
+          </div>
+
+          {#if klippy.stateMessage}
+            <pre class="kb-text">{klippy.stateMessage}</pre>
+          {/if}
+        </div>
       </div>
-
-      {#if klippy.stateMessage}
-        <pre class="kb-text">{klippy.stateMessage}</pre>
-      {/if}
-    </div>
-  </div>
+    {/snippet}
+  </ExtensionPoint>
 {/if}
 
 <style>

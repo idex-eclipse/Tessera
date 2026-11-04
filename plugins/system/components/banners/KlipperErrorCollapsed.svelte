@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../shared/icons/Icon.svelte';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -12,10 +12,15 @@
 </script>
 
 {#if isKlipperBannerVisible(klippy.state)}
-  <div class="kb-collapsed">
-    <Icon name="warning" size={16} />
-    <span class="kb-title">{i18n.t(klipperBannerTitleKey(klippy.state))}</span>
-  </div>
+  <!-- the whole body is replaceable; the plugin still decides when it is shown -->
+  <ExtensionPoint point="banner-klipper-error-collapsed">
+    {#snippet original()}
+      <div class="kb-collapsed">
+        <Icon name="warning" size={16} />
+        <span class="kb-title">{i18n.t(klipperBannerTitleKey(klippy.state))}</span>
+      </div>
+    {/snippet}
+  </ExtensionPoint>
 {/if}
 
 <style>
