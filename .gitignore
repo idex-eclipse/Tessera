@@ -48,3 +48,6 @@ release-notes.md
 
 # Local test plugin
 plugins/dummy/
+
+# Klipper upstream docs (local reference copy)
+klipper docs/
