@@ -84,18 +84,16 @@ class Base(unittest.TestCase):
         with open(os.path.join(self.dir, *rel.split('/')), encoding='utf-8') as f:
             return f.read()
 
-    def publish(self, commit=NEW, archive=None, sha=None):
-        """Makes the fake release serve a build."""
+    def publish(self, commit=NEW, archive=None, sha=None, branch='main'):
+        """Makes the fake release serve a build (more branches can be added by calling it again)."""
         archive = archive if archive is not None else build_archive(commit)
         name = f'tessera-{commit[:7]}.tar.gz'
         sha = sha or hashlib.sha256(archive).hexdigest()
-        base = 'https://github.com/acme/tessera/releases/download/build-main'
-        self.remote = {
-            f'{base}/build-info': (
-                f'COMMIT={commit}\nBRANCH=main\nVERSION=1.2.3\nARCHIVE={name}\nSHA256={sha}\n'
-            ).encode(),
-            f'{base}/{name}': archive,
-        }
+        base = f'https://github.com/acme/tessera/releases/download/build-{branch}'
+        self.remote[f'{base}/build-info'] = (
+            f'COMMIT={commit}\nBRANCH={branch}\nVERSION=1.2.3\nARCHIVE={name}\nSHA256={sha}\n'
+        ).encode()
+        self.remote[f'{base}/{name}'] = archive
 
     def fake_open(self, url):
         if url not in self.remote:
@@ -220,6 +218,54 @@ class UpdateTests(Base):
         self.addCleanup(setattr, um, 'MAX_ARCHIVE_BYTES', saved)
         with self.assertRaisesRegex(um.ExtError, 'larger than'):
             um.api_update()
+
+    def test_switch_branch_installs_it_and_saves_the_choice(self):
+        self.publish(commit=OLD, branch='dev')  # same commit: the branch still has to be switched
+        result = um.api_update('dev')
+        self.assertTrue(result['changed'])
+        with open(self.conf, encoding='utf-8') as f:
+            conf = f.read()
+        self.assertIn('BRANCH=dev\n', conf)
+        self.assertIn('REPO_URL=https://github.com/acme/tessera.git', conf)  # other settings kept
+        self.assertEqual(um.current_branch(), 'dev')
+
+    def test_switch_to_unpublished_branch_changes_nothing(self):
+        self.publish()
+        with self.assertRaisesRegex(um.ExtError, 'HTTP 404'):
+            um.api_update('nope')
+        self.assertEqual(um.current_branch(), 'main')
+        self.assertIn('old', self.read('host/dist/index.html'))
+
+    def test_failed_switch_restores_the_setting(self):
+        self.publish(branch='dev', sha='0' * 64)
+        with self.assertRaisesRegex(um.ExtError, 'sha256'):
+            um.api_update('dev')
+        self.assertEqual(um.current_branch(), 'main')
+
+    def test_failed_swap_restores_the_setting(self):
+        self.publish(branch='dev')
+        saved = um.swap_in
+        um.swap_in = lambda tree: (_ for _ in ()).throw(um.ExtError('boom'))
+        self.addCleanup(setattr, um, 'swap_in', saved)
+        with self.assertRaisesRegex(um.ExtError, 'boom'):
+            um.api_update('dev')
+        self.assertEqual(um.current_branch(), 'main')
+
+    def test_invalid_branch_names_are_refused(self):
+        for name in ('../x', 'a b', '', 'x;rm', 5):
+            with self.subTest(name=name):
+                with self.assertRaises(um.ExtError):
+                    um.api_update(name)
+
+    def test_branches_come_from_release_tags(self):
+        um._branches_cache.update(at=float('-inf'), branches=None, error=None)
+        url = 'https://api.github.com/repos/acme/tessera/releases?per_page=100'
+        self.remote[url] = (
+            b'[{"tag_name":"build-main"},{"tag_name":"build-dev"},{"tag_name":"v1"},{"tag_name":"build-a..b"}]'
+        )
+        result = um.api_branches(force=True)
+        self.assertEqual(result['branches'], ['dev', 'main'])
+        self.assertEqual(result['current'], 'main')
 
     def test_https_only(self):
         um.open_https = self.saved[2]

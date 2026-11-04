@@ -357,9 +357,18 @@ the installation directory, while `tessera-ext` may write `extensions/` only.
   the first request and the process exits after 5 idle minutes. nginx proxies `/tessera-update/`.
   Moonraker checks permissions the same way (same code), POST requires `application/json`,
   `Origin` must match `Host`.
-- **The request has no parameters.** `GET /tessera-update/v1/status` (add `?refresh=1` to skip
+- **Almost no parameters.** `GET /tessera-update/v1/status` (add `?refresh=1` to skip
   the 10-minute cache) and `POST /tessera-update/v1/update` with the body `{}`. The branch and
-  the repository come from `install.conf`; nothing is taken from the request.
+  the repository come from `install.conf`; the repository is never taken from a request.
+- **Switching the branch.** Settings → About has a branch selector. `GET /tessera-update/v1/branches`
+  lists the branches that have a published build (the `build-<branch>` releases of the repository;
+  `feature/x` appears as `feature-x`, which selects the same release). `POST /tessera-update/v1/update`
+  with `{"branch": "<name>"}` installs that branch's build even if the commit is the same and saves
+  `BRANCH` in `install.conf`, so `tessera update` stays on the new branch. The name is validated and its
+  build must exist and pass the sha256 check; on any failure the UI and `install.conf` stay as they were.
+  The same from the printer: `tessera-update-manager.py update --branch <name>`. Installations made
+  before this feature have `install.conf` mounted read-only for the service: the switch then fails with a
+  hint, and one `tessera update` on the printer rewrites the unit.
 - **The same build as the installer.** The service downloads `build-info` and the archive of the
   rolling release `build-<branch>` over `https://` only, checks the sha256, unpacks into a
   staging folder, rejects links and unsafe paths, and only then swaps `host/`, `deploy/` and

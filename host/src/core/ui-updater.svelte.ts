@@ -4,8 +4,8 @@
  *
  * The service is optional. When it is missing (disabled, dev server, nginx configured by
  * hand) `available` stays false and the UI does not offer the feature: Tessera is then
- * updated with the `tessera` command on the printer. The request carries no parameters:
- * the branch and the repository are decided by the service from install.conf.
+ * updated with the `tessera` command on the printer. The repository is decided by the
+ * service from install.conf; the branch too, unless the user switches it (`update(branch)`).
  * Rights are checked by Moonraker: the service forwards the Authorization of the request.
  */
 
@@ -26,6 +26,14 @@ export interface UiUpdateStatus {
   /** false for a source checkout: `tessera update` has to migrate it. */
   canUpdate: boolean;
   remoteError: string | null;
+}
+
+/** Branches that have a published build (`GET branches`). */
+export interface UiBranches {
+  current: string;
+  branches: string[];
+  /** Why the list is empty (GitHub unreachable); null otherwise. */
+  error: string | null;
 }
 
 export interface UiUpdateResult {
@@ -65,8 +73,11 @@ export function createUiUpdater(deps: UiUpdaterDeps) {
   let status = $state<UiUpdateStatus | null>(null);
   let busy = $state(false);
   let error = $state<UiUpdaterError | null>(null);
+  let branches = $state<string[]>([]);
+  let branchesLoading = $state(false);
+  let branchesError = $state<string | null>(null);
 
-  async function call<T>(path: string, post: boolean): Promise<T> {
+  async function call<T>(path: string, post: boolean, body: Record<string, string> = {}): Promise<T> {
     const headers: Record<string, string> = {};
     if (post) headers['Content-Type'] = 'application/json';
     const token = deps.getToken();
@@ -77,8 +88,8 @@ export function createUiUpdater(deps: UiUpdaterDeps) {
       res = await doFetch(`/tessera-update/v1/${path}`, {
         method: post ? 'POST' : 'GET',
         headers,
-        // The service accepts nothing but an empty object.
-        body: post ? '{}' : undefined,
+        // The service accepts an empty object or `{ branch }`, nothing else.
+        body: post ? JSON.stringify(body) : undefined,
         cache: 'no-store',
       });
     } catch {
@@ -124,13 +135,34 @@ export function createUiUpdater(deps: UiUpdaterDeps) {
     }
   }
 
-  /** true when the new build is in place (the page must be reloaded); the reason is in `error` otherwise. */
-  async function update(): Promise<boolean> {
+  /**
+   * Lists the branches that have a published build. Failures end up in `branchesError`
+   * (and the list stays empty): the user can still type nothing and keep the current branch.
+   */
+  async function loadBranches(force = false): Promise<void> {
+    branchesLoading = true;
+    try {
+      const result = await call<UiBranches>(force ? 'branches?refresh=1' : 'branches', false);
+      branches = Array.isArray(result.branches) ? result.branches.filter((b) => typeof b === 'string') : [];
+      branchesError = result.error ?? null;
+    } catch (e) {
+      branches = [];
+      branchesError = e instanceof Error ? e.message : String(e);
+    } finally {
+      branchesLoading = false;
+    }
+  }
+
+  /**
+   * true when the new build is in place (the page must be reloaded); the reason is in `error` otherwise.
+   * With `branch` the installation is switched to that branch (and the choice is saved on the printer).
+   */
+  async function update(branch?: string): Promise<boolean> {
     if (busy) return false;
     busy = true;
     error = null;
     try {
-      const result = await call<UiUpdateResult>('update', true);
+      const result = await call<UiUpdateResult>('update', true, branch ? { branch } : {});
       await refresh();
       return result.changed;
     } catch (e) {
@@ -157,7 +189,17 @@ export function createUiUpdater(deps: UiUpdaterDeps) {
     get error() {
       return error;
     },
+    get branches() {
+      return branches;
+    },
+    get branchesLoading() {
+      return branchesLoading;
+    },
+    get branchesError() {
+      return branchesError;
+    },
     refresh,
+    loadBranches,
     update,
   };
 }
