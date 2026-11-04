@@ -850,18 +850,22 @@ step_klipper() {
 # REQUIRES Klipper extension "gcode_shell_command" (install manually via kiauh!).
 # UI sends RUN_SHELL_COMMAND CMD=tessera_graph_x|tessera_graph_y|tessera_graph_belts
 # after TEST_RESONANCES … OUTPUT=raw_data; csv is cleaned AFTER graph generation.
+# NOTE: gcode_shell_command does shlex.split() + Popen() WITHOUT a shell, so "&&",
+# globs (/tmp/*.csv) and $(date) are NOT interpreted by itself. Every command must
+# be one quoted "bash -c" argument, otherwise "&&" and the rest are passed to the
+# first program as plain arguments (e.g. "mkdir: invalid option -- 'c'").
 [gcode_shell_command generate_x_shaper_graph]
-command: mkdir -p @CFG_DIR@/shapers && bash -c @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_x*.csv -o @CFG_DIR@/shapers/x_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_x*_axis.csv
+command: bash -c "mkdir -p @CFG_DIR@/shapers && @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_x*.csv -o @CFG_DIR@/shapers/x_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_x*.csv"
 timeout: 180
 verbose: True
 
 [gcode_shell_command generate_y_shaper_graph]
-command: mkdir -p @CFG_DIR@/shapers && bash -c @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_y*.csv -o @CFG_DIR@/shapers/y_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_y*.csv
+command: bash -c "mkdir -p @CFG_DIR@/shapers && @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_y*.csv -o @CFG_DIR@/shapers/y_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_y*.csv"
 timeout: 180
 verbose: True
 
 [gcode_shell_command generate_belts_graph]
-command: mkdir -p @CFG_DIR@/shapers && python3 @KLIPPER_DIR@/scripts/graph_accelerometer.py /tmp/*_data*.csv -o @CFG_DIR@/shapers/belts_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_data*.csv
+command: bash -c "mkdir -p @CFG_DIR@/shapers && python3 @KLIPPER_DIR@/scripts/graph_accelerometer.py /tmp/*_data*.csv -o @CFG_DIR@/shapers/belts_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_data*.csv"
 timeout: 180
 verbose: True
 CFG
