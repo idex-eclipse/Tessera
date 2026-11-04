@@ -302,6 +302,11 @@ Rules:
   Moonraker) or Klipper rejected the subscription (no such `load_cell`). The proxy retries
   itself (1 s → 2 s → … up to 30 s) and resubscribes; the plugin only has to show a
   fallback (for example, `subscribe` to a status object);
+- the params key: Klipper's `API_Server.md` documents `{ sensor: '<name>' }`, but some Klipper
+  versions answer "Missing Argument [load_cell]" and want `load_cell` (`load_cell_probe` for
+  `load_cell_probe/dump_taps`). The host passes params as they are: a plugin tries the
+  documented key first and, when the status becomes `unavailable`, the older one (the calibrations
+  plugin does this in `load-cell/stream-keys.ts`);
 - `klippyStream` bypasses GuardAgent (reads only);
 - available with `pluginApi: "0.9"` and newer: a plugin that requires it writes `"0.9"`
   (`"0.11"` if it also uses `load_cell_probe/dump_taps`: older hosts refuse that method).

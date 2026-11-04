@@ -299,6 +299,11 @@ stop();
   Klipper отклонил подписку (нет такого `load_cell`). Прокси повторяет подключение сам
   (1 с → 2 с → … до 30 с) и подписывается заново; плагину достаточно показать запасной
   вариант (например, `subscribe` на статус-объект);
+- ключ в params: `API_Server.md` Klipper описывает `{ sensor: '<имя>' }`, но часть версий
+  Klipper отвечает «Missing Argument [load_cell]» и ждёт `load_cell` (`load_cell_probe` для
+  `load_cell_probe/dump_taps`). Хост передаёт params как есть: плагин пробует сначала
+  документированный ключ, а при статусе `unavailable` — старый (плагин calibrations делает это
+  в `load-cell/stream-keys.ts`);
 - `klippyStream` обходит GuardAgent (только чтение);
 - работает с `pluginApi: "0.9"` и новее: плагину, которому он обязателен, пишите `"0.9"`
   (`"0.11"`, если он использует и `load_cell_probe/dump_taps`: старые хосты этот метод отклоняют).
