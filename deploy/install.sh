@@ -855,7 +855,7 @@ step_klipper() {
 # be one quoted "bash -c" argument, otherwise "&&" and the rest are passed to the
 # first program as plain arguments (e.g. "mkdir: invalid option -- 'c'").
 [gcode_shell_command generate_x_shaper_graph]
-command: bash -c "mkdir -p @CFG_DIR@/shapers && @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_x*.csv -o @CFG_DIR@/shapers/x_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_x*.csv"
+command: bash -c "mkdir -p @CFG_DIR@/shapers && @KLIPPER_DIR@/scripts/calibrate_shaper.py /tmp/*_x*.csv -o @CFG_DIR@/shapers/x_$(date +%Y%m%d-%H%M%S).png && rm -f /tmp/*_x*_axis.csv"
 timeout: 180
 verbose: True
 
