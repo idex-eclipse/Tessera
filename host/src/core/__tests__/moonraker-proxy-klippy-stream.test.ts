@@ -181,13 +181,96 @@ describe('klippy stream', () => {
     expect(onData).toHaveBeenCalledWith(tap);
   });
 
-  it('refuses methods outside the allowlist', () => {
+  it('refuses blocked methods and their spelling variants, sending nothing', () => {
     const { instances, stream } = create();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const off = stream.subscribe('gcode/subscribe_output', {}, () => {});
+    const blocked = [
+      'emergency_stop',
+      'Emergency_Stop',
+      ' emergency_stop ',
+      'emergency_stop\u0003',
+      'emergency\u0003_stop',
+      '/emergency_stop',
+      'ｅmergency_stop', // fullwidth "e": NFKC folds it into the blocked name
+      'gcode/script',
+      'GCODE/Script',
+      'gcode/restart',
+      'gcode/firmware_restart',
+      'pause_resume/pause',
+      'pause_resume/cancel',
+      'register_remote_method',
+    ];
+    for (const method of blocked) {
+      const off = stream.subscribe(method, {}, () => {});
+      expect(() => off()).not.toThrow();
+    }
     expect(instances).toHaveLength(0);
-    expect(warn).toHaveBeenCalled();
-    expect(() => off()).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(blocked.length);
+  });
+
+  it('refuses malformed method names and params', () => {
+    const { instances, stream } = create();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stream.subscribe('', {}, () => {});
+    stream.subscribe('a/b/c', {}, () => {});
+    stream.subscribe('objects list', {}, () => {});
+    stream.subscribe('objects/list', [] as unknown as Record<string, unknown>, () => {});
+    stream.subscribe('objects/subscribe', { response_template: { q: 'x' } }, () => {});
+    expect(instances).toHaveLength(0);
+  });
+
+  it('allows read endpoints beyond the former allowlist', () => {
+    const { instances, stream } = create();
+    for (const method of ['info', 'objects/list', 'motion_report/dump_trapq', 'tmc/stallguard_dump']) {
+      stream.subscribe(method, { name: 'x' }, () => {});
+    }
+    expect(instances).toHaveLength(1);
+    instances[0]!.simulateOpen();
+    expect(instances[0]!.sentMessages.map((m) => m.method)).toEqual([
+      'info',
+      'objects/list',
+      'motion_report/dump_trapq',
+      'tmc/stallguard_dump',
+    ]);
+  });
+
+  it('sends the normalized method name, not the original spelling', () => {
+    const { instances, stream } = create();
+    stream.subscribe('  Motion_Report/Dump_Trapq ', { name: 'toolhead' }, () => {});
+    instances[0]!.simulateOpen();
+    expect(instances[0]!.sentMessages[0]!.method).toBe('motion_report/dump_trapq');
+  });
+
+  it('shares one stream between params that differ only in key order', () => {
+    const { instances, stream } = create();
+    const a = vi.fn();
+    const b = vi.fn();
+    stream.subscribe('objects/subscribe', { objects: { toolhead: null, configfile: null }, x: 1 }, a);
+    instances[0]!.simulateOpen();
+    stream.subscribe('objects/subscribe', { x: 1, objects: { configfile: null, toolhead: null } }, b);
+    expect(instances[0]!.sent).toHaveLength(1);
+  });
+
+  it('hands the subscribe ack to onAck, also to a late joiner, and again after a reconnect', () => {
+    const { instances, stream } = create();
+    const early = vi.fn();
+    const late = vi.fn();
+    stream.subscribe('objects/subscribe', { objects: { toolhead: null } }, () => {}, undefined, early);
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    const result = { eventtime: 5, status: { toolhead: { estimated_print_time: 1 } } };
+    ws.simulateMessage({ id: ws.sentMessages[0]!.id, result });
+    expect(early).toHaveBeenCalledWith(result);
+
+    stream.subscribe('objects/subscribe', { objects: { toolhead: null } }, () => {}, undefined, late);
+    expect(late).toHaveBeenCalledWith(result);
+
+    ws.simulateClose();
+    vi.advanceTimersByTime(1000);
+    const ws2 = instances[1]!;
+    ws2.simulateOpen();
+    ws2.simulateMessage({ id: ws2.sentMessages[0]!.id, result: { eventtime: 9 } });
+    expect(early).toHaveBeenLastCalledWith({ eventtime: 9 });
   });
 
   it('dispose closes the socket and ignores further subscriptions', () => {
@@ -198,6 +281,113 @@ describe('klippy stream', () => {
     stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
     vi.advanceTimersByTime(60_000);
     expect(instances).toHaveLength(1);
+  });
+});
+
+describe('klippy request', () => {
+  it('sends the call once the socket is open and resolves with the result', async () => {
+    const { instances, stream } = create();
+    const promise = stream.request('objects/list');
+    expect(instances).toHaveLength(1);
+    const ws = instances[0]!;
+    expect(ws.sent).toHaveLength(0);
+
+    ws.simulateOpen();
+    const req = ws.sentMessages[0]!;
+    expect(req.method).toBe('objects/list');
+    expect(req.jsonrpc).toBeUndefined();
+    expect(req.params).toEqual({});
+    ws.simulateMessage({ id: req.id, result: { objects: ['toolhead'] } });
+    await expect(promise).resolves.toEqual({ objects: ['toolhead'] });
+  });
+
+  it('rejects with the Klipper error message', async () => {
+    const { instances, stream } = create();
+    const promise = stream.request('info');
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({ id: ws.sentMessages[0]!.id, error: { message: 'Klippy not ready' } });
+    await expect(promise).rejects.toThrow('Klippy not ready');
+  });
+
+  it('rejects after the timeout and ignores a late answer', async () => {
+    const { instances, stream } = create();
+    const promise = stream.request('info', {}, { timeoutMs: 500 });
+    const settled = promise.catch((e: Error): Error => e);
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(((await settled) as Error).message).toMatch(/timed out/);
+    expect(() => ws.simulateMessage({ id: ws.sentMessages[0]!.id, result: {} })).not.toThrow();
+  });
+
+  it('rejects in-flight requests when the connection drops, without reconnecting', async () => {
+    const { instances, stream } = create();
+    const promise = stream.request('info');
+    const settled = promise.catch((e: Error): Error => e);
+    instances[0]!.simulateOpen();
+    instances[0]!.simulateClose();
+    expect(((await settled) as Error).message).toMatch(/lost/);
+    vi.advanceTimersByTime(60_000);
+    expect(instances).toHaveLength(1);
+  });
+
+  it('refuses blocked and malformed calls without opening a socket', async () => {
+    const { instances, stream } = create();
+    await expect(stream.request('emergency_stop')).rejects.toThrow(/blocked/);
+    await expect(stream.request('Gcode/Script', { script: 'G28' })).rejects.toThrow(/blocked/);
+    await expect(stream.request('pause_resume/pause')).rejects.toThrow(/blocked/);
+    await expect(stream.request('objects/list', { response_template: { q: 1 } })).rejects.toThrow(/response_template/);
+    await expect(stream.request('not a method')).rejects.toThrow(/malformed/);
+    expect(instances).toHaveLength(0);
+  });
+
+  it('closes the idle socket after the last answer and leaves no dangling timers', async () => {
+    const { instances, stream } = create();
+    const promise = stream.request('info');
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({ id: ws.sentMessages[0]!.id, result: {} });
+    await promise;
+    expect(ws.readyState).toBe(1);
+    vi.advanceTimersByTime(2000);
+    expect(ws.readyState).toBe(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('reuses the socket for requests in a burst', async () => {
+    const { instances, stream } = create();
+    const first = stream.request('objects/list');
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({ id: ws.sentMessages[0]!.id, result: {} });
+    await first;
+    const second = stream.request('info');
+    expect(instances).toHaveLength(1);
+    ws.simulateMessage({ id: ws.sentMessages[1]!.id, result: { state: 'ready' } });
+    await expect(second).resolves.toEqual({ state: 'ready' });
+  });
+
+  it('keeps the socket for a subscription that outlives the request', async () => {
+    const { instances, stream } = create();
+    stream.subscribe(FORCE, { sensor: 'lc' }, () => {});
+    const promise = stream.request('info');
+    const ws = instances[0]!;
+    ws.simulateOpen();
+    ws.simulateMessage({ id: ws.sentMessages[1]!.id, result: {} });
+    await promise;
+    vi.advanceTimersByTime(60_000);
+    expect(ws.readyState).toBe(1);
+    expect(instances).toHaveLength(1);
+  });
+
+  it('rejects pending requests on dispose and refuses new ones', async () => {
+    const { instances, stream } = create();
+    const settled = stream.request('info').catch((e: Error): Error => e);
+    stream.dispose();
+    expect(((await settled) as Error).message).toMatch(/disposed/);
+    expect(instances[0]!.readyState).toBe(3);
+    await expect(stream.request('info')).rejects.toThrow(/disposed/);
   });
 });
 

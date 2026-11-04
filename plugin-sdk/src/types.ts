@@ -520,17 +520,31 @@ export interface MoonrakerProxyHandle {
    * method+params делят один поток (refcount); поток идёт, пока есть
    * слушатели, с последней отменой сокет закрывается (у Klipper нет отписки),
    * поэтому отменяйте, когда данные не нужны (скрытый график, ушли с вкладки).
-   * Обходит GuardAgent (только чтение). Разрешены методы из списка хоста
-   * (сейчас `load_cell/dump_force`, params `{ sensor: '<имя>' }` (на старых Klipper `{ load_cell: '<имя>' }`), и
-   * `load_cell_probe/dump_taps`, params `{ sensor: '<имя>' }` (на старых `{ load_cell_probe: … }`), сообщения
-   * `{ tap: { time: number[], force: number[] } }`, этот метод с pluginApi "0.11"); другие
-   * отклоняются с предупреждением, возвращается пустая функция.
+   * Обходит GuardAgent: мост только для чтения. Хост пропускает любой метод вебхука
+   * Klipper, кроме запрещённых (с pluginApi "0.12"; раньше был белый список из
+   * `load_cell/dump_force` и `load_cell_probe/dump_taps`): `emergency_stop`,
+   * `register_remote_method`, `gcode/script`, `gcode/restart`, `gcode/firmware_restart`
+   * и `pause_resume/*`. Имя метода хост нормализует (регистр, пробелы, управляющие
+   * символы, Unicode NFKC) и отправляет уже нормализованным; формат — один или два
+   * сегмента `[a-z0-9_]`. Запрещённый или некорректный метод, а также `params`, не
+   * являющиеся простым объектом или содержащие `response_template`, отклоняются с
+   * предупреждением, возвращается пустая функция. Список запрещённых покрывает ядро
+   * Klipper: сторонние `extras` могут иметь собственные записывающие эндпоинты.
+   *
+   * Примеры: `load_cell/dump_force`, params `{ sensor: '<имя>' }` (на старых Klipper
+   * `{ load_cell: '<имя>' }`); `load_cell_probe/dump_taps`, сообщения
+   * `{ tap: { time: number[], force: number[] } }`; `motion_report/dump_trapq`
+   * (`{ name }`), `adxl345/dump_adxl345` (`{ sensor }`); `objects/subscribe`.
    *
    * `onData` получает `params` каждого сообщения потока, для `load_cell/dump_force`:
    * `{ data: [[time, force_g | null, counts, tare | null], …] }`.
    * `onStatus`: сразу текущее состояние, затем при каждом изменении; `unavailable` —
    * моста нет (nginx без `/klippysocket`, mixed content) или Klipper отклонил подписку;
    * хост повторяет подключение сам с паузой, плагину достаточно показать запасной вариант.
+   * `onAck` (с pluginApi "0.12"): `result` ответа Klipper на подписку (у
+   * `objects/subscribe` это `{ eventtime, status }` — начальное состояние; у dump-потоков —
+   * `header`). Вызывается при каждом (пере)подключении потока и для опоздавшего
+   * слушателя уже работающего потока.
    * Возвращает unreg.
    */
   klippyStream(
@@ -538,10 +552,32 @@ export interface MoonrakerProxyHandle {
     params: Record<string, unknown>,
     onData: (data: unknown) => void,
     onStatus?: (status: KlippyStreamStatus) => void,
+    onAck?: (result: unknown) => void,
   ): () => void;
+
+  /**
+   * Разовый запрос с ответом по тому же мосту `/klippysocket` (pluginApi "0.12"):
+   * `objects/list`, `info` и подобные чтения, которых нет в обычном `request()`.
+   * Те же правила метода и `params`, что у `klippyStream` (запрещённые методы и
+   * `response_template` отклоняются: promise rejected). Resolves значением `result`;
+   * rejected при ошибке Klipper (текст из `error.message`), таймауте (`timeoutMs`,
+   * по умолчанию 10 с), обрыве моста или `dispose`. Повторов нет. Сокет открывается
+   * по требованию и закрывается через короткую паузу, если подписок нет.
+   */
+  klippyRequest(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: KlippyRequestOptions,
+  ): Promise<unknown>;
 }
 
 export type KlippyStreamStatus = 'connecting' | 'live' | 'unavailable';
+
+/** Options of `klippyRequest`. */
+export interface KlippyRequestOptions {
+  /** How long to wait for the answer, ms. Default 10000. */
+  timeoutMs?: number;
+}
 
 /**
  * Фильтр-тег fleet-индекса. Хост не знает смысла `id`: он только строит из

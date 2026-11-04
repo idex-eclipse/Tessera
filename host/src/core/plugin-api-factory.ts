@@ -51,8 +51,12 @@ function createGuardedHandle(
       return resolveHandle().poll(method, params, intervalMs);
     },
 
-    klippyStream(method, params, onData, onStatus) {
-      return resolveHandle().klippyStream(method, params, onData, onStatus);
+    klippyStream(method, params, onData, onStatus, onAck) {
+      return resolveHandle().klippyStream(method, params, onData, onStatus, onAck);
+    },
+
+    klippyRequest(method, params, options) {
+      return resolveHandle().klippyRequest(method, params, options);
     },
 
     get httpBaseUrl() {
@@ -139,13 +143,21 @@ function createGuardedHandleFor(
       return handle.poll(method, params, intervalMs);
     },
 
-    klippyStream(method, params, onData, onStatus) {
+    klippyStream(method, params, onData, onStatus, onAck) {
       const handle = live();
       if (!handle) {
         onStatus?.('unavailable');
         return () => {};
       }
-      return handle.klippyStream(method, params, onData, onStatus);
+      return handle.klippyStream(method, params, onData, onStatus, onAck);
+    },
+
+    klippyRequest(method, params, options) {
+      const handle = live();
+      if (!handle) {
+        return Promise.reject(new Error(`[plugin-api] printer '${printerId}' is not configured`));
+      }
+      return handle.klippyRequest(method, params, options);
     },
 
     get httpBaseUrl() {

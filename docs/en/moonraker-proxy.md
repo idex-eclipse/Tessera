@@ -264,10 +264,10 @@ Rules:
   detected, so never poll them;
 - `poll` bypasses GuardAgent (it is an internal refresh, reads only).
 
-## `klippyStream(method, params, onData, onStatus?)`
+## `klippyStream(method, params, onData, onStatus?, onAck?)`
 
-A declaration that "I need a Klipper bulk stream". Such data (currently
-`load_cell/dump_force`, the force sensor samples) is not served by Moonraker's regular
+A declaration that "I need a Klipper bulk stream". Such data (for example
+`load_cell/dump_force`, the force sensor samples, or `motion_report/dump_trapq`) is not served by Moonraker's regular
 `/websocket`, only by the raw `/klippysocket` bridge. A plugin opens no socket: the proxy
 opens and keeps one socket per printer on the same origin as the main socket, with the same
 token. Returns a cancel function.
@@ -287,10 +287,22 @@ stop();
 
 Rules:
 
-- only the methods of the host's list are allowed (now `load_cell/dump_force` and
-  `load_cell_probe/dump_taps`, params `{ sensor: '<name>' }`, messages
-  `{ tap: { time: number[], force: number[] } }` with one probing tap each); others are
-  refused with a console warning and `klippyStream` returns an empty function;
+- the bridge is **read-only by policy**: the host lets any Klipper webhooks method through
+  except a denylist of the core endpoints that change printer state: `emergency_stop`,
+  `register_remote_method`, `gcode/script`, `gcode/restart`, `gcode/firmware_restart` and
+  everything under `pause_resume/`. The host normalizes the name first (case, surrounding
+  whitespace, control characters such as the ETX frame delimiter, Unicode NFKC) and sends the
+  normalized string, so `Emergency_Stop` or `emergency_stop\u0003` is refused too. A name must
+  be one or two segments of `[a-z0-9_]`. A refused call, params that are not a plain object
+  or that set their own `response_template` get a console warning and `klippyStream` returns an
+  empty function. The denylist covers the Klipper core: a third-party `extras` module may
+  register its own writing endpoint, which the host cannot know about;
+- examples of streams: `load_cell/dump_force` (`{ sensor }`), `load_cell_probe/dump_taps`
+  (`{ sensor }`, messages `{ tap: { time: number[], force: number[] } }` with one probing tap
+  each), `motion_report/dump_trapq` and `motion_report/dump_stepper` (`{ name }`),
+  `adxl345/dump_adxl345`, `angle/dump_angle`, `ldc1612/dump_ldc1612` (`{ sensor }`),
+  `tmc/stallguard_dump` (`{ name }`) and `objects/subscribe` (status objects, messages
+  `{ eventtime, status }`);
 - the socket opens with the first subscription; subscriptions with the same
   `method+params` share one Klipper stream;
 - Klipper has no unsubscribe: a stream runs while the socket is open. The last cancel
@@ -307,9 +319,36 @@ Rules:
   `load_cell_probe/dump_taps`). The host passes params as they are: a plugin tries the
   documented key first and, when the status becomes `unavailable`, the older one (the calibrations
   plugin does this in `load-cell/stream-keys.ts`);
+- `onAck` (optional, `pluginApi: "0.12"`) receives the `result` of Klipper's answer to the
+  subscription: for `objects/subscribe` it is `{ eventtime, status }`, the starting state with
+  no gap before the first update; for the dump streams it is `{ header: [...] }`. It is called
+  on every (re)subscription and, for a listener that joins a stream already running, at once
+  with the stored answer;
 - `klippyStream` bypasses GuardAgent (reads only);
-- available with `pluginApi: "0.9"` and newer: a plugin that requires it writes `"0.9"`
-  (`"0.11"` if it also uses `load_cell_probe/dump_taps`: older hosts refuse that method).
+- available with `pluginApi: "0.9"` and newer: a plugin that requires it writes `"0.9"`.
+  Hosts older than `"0.12"` accept only `load_cell/dump_force` (and `load_cell_probe/dump_taps`
+  from `"0.11"`) and refuse the other methods, so a plugin that uses them writes `"0.12"`.
+
+## `klippyRequest(method, params?, options?)`
+
+A one-shot request with an answer over the same `/klippysocket` bridge (`pluginApi: "0.12"`):
+`objects/list`, `info` and other reads that the regular `request()` does not reach. It follows
+the same method and params rules and the same denylist as `klippyStream`; a refused call is a
+rejected promise (not a console warning).
+
+```ts
+const { objects } = (await api.moonraker().klippyRequest('objects/list')) as { objects: string[] };
+const info = await api.moonraker().klippyRequest('info', {}, { timeoutMs: 5000 });
+```
+
+- resolves with Klipper's `result`; rejects with the text of `error.message` when Klipper
+  answers with an error, on a timeout (`timeoutMs`, default 10 s), when the bridge connection
+  drops, or when the proxy is disposed. There are no retries;
+- the socket opens on demand and shares the connection with streams. When nothing else needs
+  it, it closes about 2 s after the last answer (a burst of requests reuses one connection).
+  Cancelling a stream group while others keep running recreates the socket, and requests that
+  were in flight on it are rejected;
+- `klippyRequest` bypasses GuardAgent (reads only).
 
 ---
 

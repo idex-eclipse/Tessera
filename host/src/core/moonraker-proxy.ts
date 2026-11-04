@@ -1259,6 +1259,7 @@ function request<T = unknown>(method: string, params?: unknown): Promise<T> {
     onNotify,
     poll,
     klippyStream: klippyStream.subscribe,
+    klippyRequest: klippyStream.request,
 
     get httpBaseUrl() {
       return httpBaseUrl;

@@ -20,8 +20,10 @@
  *   0.9 — handle.klippyStream: bulk-потоки Klipper (load_cell/dump_force) через /klippysocket
  *   0.10 — api.notifications.push: центр уведомлений хоста (только запись)
  *   0.11 — klippyStream: поток load_cell_probe/dump_taps в списке разрешённых методов
+ *   0.12 — klippyStream: чёрный список вместо белого (мост свободен для чтения), onAck;
+ *          klippyRequest: разовые запросы с ответом по /klippysocket
  */
-export const PLUGIN_API = '0.11';
+export const PLUGIN_API = '0.12';
 
 export const LEGACY_PLUGIN_API = '0.7';
 
