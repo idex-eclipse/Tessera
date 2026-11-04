@@ -521,8 +521,8 @@ export interface MoonrakerProxyHandle {
    * слушатели, с последней отменой сокет закрывается (у Klipper нет отписки),
    * поэтому отменяйте, когда данные не нужны (скрытый график, ушли с вкладки).
    * Обходит GuardAgent (только чтение). Разрешены методы из списка хоста
-   * (сейчас `load_cell/dump_force`, params `{ sensor: '<имя>' }`, и
-   * `load_cell_probe/dump_taps`, params `{ sensor: '<имя>' }`, сообщения
+   * (сейчас `load_cell/dump_force`, params `{ sensor: '<имя>' }` (на старых Klipper `{ load_cell: '<имя>' }`), и
+   * `load_cell_probe/dump_taps`, params `{ sensor: '<имя>' }` (на старых `{ load_cell_probe: … }`), сообщения
    * `{ tap: { time: number[], force: number[] } }`, этот метод с pluginApi "0.11"); другие
    * отклоняются с предупреждением, возвращается пустая функция.
    *
