@@ -134,5 +134,10 @@ export const calibrationsManifest = definePlugin({
     'view:interpolated': true,
     'view:basePlane': true,
     'view:wireframe': false,
+    'probe:forceOpen': false,
+    'probe:forceSeconds': 30,
+    'probe:forceFilter': 'raw',
+    'probe:forceFilterMs': 100,
+    'probe:forceRaw': false,
   },
 });

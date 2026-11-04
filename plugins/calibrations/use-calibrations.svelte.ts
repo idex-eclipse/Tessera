@@ -8,6 +8,7 @@ import {
 } from './shaper-state.svelte.ts';
 import { initialLiveZState, type LiveZState } from './live-z-state.svelte.ts';
 import { scanEntries, type GcodeStoreEntry } from './gcode-scanner.ts';
+import { findLoadCellProbes, type LoadCellProbeInfo } from './load-cell/load-cell-config.ts';
 import {
   createCoreKeeper,
   createDelegateStore,
@@ -26,6 +27,8 @@ export interface CalibrationsState {
   hasBltouch: boolean;
   hasEddy: boolean;
   eddyChips: string[];
+  /** `[load_cell_probe]` sections (also reported as the probe section); drives the force graph. */
+  loadCellProbes: LoadCellProbeInfo[];
   heaters: string[];
   heaterMaxTemps: Record<string, number>;
   heaterTemps: Record<string, { actual: number; target: number }>;
@@ -50,6 +53,7 @@ const INITIAL: CalibrationsState = {
   hasBltouch: false,
   hasEddy: false,
   eddyChips: [],
+  loadCellProbes: [],
   heaters: [],
   heaterMaxTemps: {},
   heaterTemps: {},
@@ -145,6 +149,7 @@ function createCalibrationsCore(api: PluginApi, printerId: string) {
       resubscribeHeaters();
       state.heaterMaxTemps = maxTemps;
       state.eddyChips = eddyChips;
+      state.loadCellProbes = findLoadCellProbes(Object.keys(settings));
       state.shellCommands = shellCommands;
       state.hasEddy = eddyChips.length > 0;
       state.hasBltouch = bltouchSection !== null;

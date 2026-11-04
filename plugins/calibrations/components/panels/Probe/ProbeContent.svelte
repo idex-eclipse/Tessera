@@ -7,6 +7,7 @@
   import ProbeHelp from './ProbePanelHelp.svelte';
   import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
+  import ForceChart from './ForceChart.svelte';
 
   let { compact = false } = $props<{ compact?: boolean }>();
 
@@ -225,6 +226,11 @@
       <span class="label">{accuracy ? i18n.t('calibrations.probe.log') : i18n.t('calibrations.probe.rawFallback')}</span>
       <pre>{log.join('\n')}</pre>
     </div>
+  {/if}
+
+  <!-- force graph: only for a [load_cell_probe]; the compact widget stays minimal -->
+  {#if !compact && store.state.loadCellProbes.length > 0}
+    <ForceChart probes={store.state.loadCellProbes} />
   {/if}
 {/snippet}
 
