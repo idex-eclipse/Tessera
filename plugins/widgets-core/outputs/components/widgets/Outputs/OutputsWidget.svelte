@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
 
-  import SectionAccordion from '../../../../shared/accordion/SectionAccordion.svelte';
-  import { useAccordionState } from '../../../../shared/accordion/use-accordion-state.svelte.ts';
-  import SliderField from '../../../../shared/slider-field/SliderField.svelte';
-  import SliderGrid from '../../../../shared/slider-field/SliderGrid.svelte';
-  import { SECTION_GAP, sectionsNeedAccordion, sliderColumns } from '../../../../shared/slider-field/slider-layout';
-  import { observeWidgetBox, type WidgetBox } from '../../../../shared/responsive/observe-widget-box';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
-  import { useOutputs } from '../../use-outputs.svelte.ts';
+  import SectionAccordion from '../../../../../shared/accordion/SectionAccordion.svelte';
+  import { useAccordionState } from '../../../../../shared/accordion/use-accordion-state.svelte.ts';
+  import SliderField from '../../../../../shared/slider-field/SliderField.svelte';
+  import SliderGrid from '../../../../../shared/slider-field/SliderGrid.svelte';
+  import { SECTION_GAP, sectionsNeedAccordion, sliderColumns } from '../../../../../shared/slider-field/slider-layout';
+  import { observeWidgetBox, type WidgetBox } from '../../../../../shared/responsive/observe-widget-box';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import KlipperNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { useOutputs } from '../../../data/use-outputs.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();
