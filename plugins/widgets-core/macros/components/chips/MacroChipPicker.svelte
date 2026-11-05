@@ -1,6 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useMacros } from '../../use-macros.svelte';
+  import { useMacros } from '../../data/use-macros.svelte';
   import PickerSection from '../../../../shared/PickerAccordion.svelte';
 
   let { params = {} }: { params?: Record<string, string> } = $props();

@@ -1,13 +1,13 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, MoonrakerProxyHandle, PluginSettingsApi } from '../../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle, PluginSettingsApi } from '../../../../plugin-sdk/src/types';
 import {
   createCoreKeeper,
   createDelegateStore,
-} from '../../shared/core-keeper/core-keeper';
+} from '../../../shared/core-keeper/core-keeper';
 
-import { parseMacroParams, type MacroParam } from '../../shared/macro-params';
-import { mapMacroHelp } from './macro-help';
+import { parseMacroParams, type MacroParam } from '../../../shared/macro-params';
+import { mapMacroHelp } from '../lib/macro-help';
 
 export interface MacroItemCfg {
   alias?: string;
@@ -440,14 +440,17 @@ function createMacrosCore(api: PluginApi, printerId: string) {
       }),
     );
 
-    // Settings onChange (per-printer namespace)
+    // Settings onChange (per-printer namespace). The host passes an EMPTY key, so re-read the
+    // value instead of matching it; the JSON check skips unrelated writes (and our own echo).
+    let appliedCfg = JSON.stringify(settingsApi.get<MacrosCfg>('macros'));
     unsubs.push(
-      settingsApi.onChange((k) => {
-        if (k === 'macros') {
-          const newCfg = settingsApi.get<MacrosCfg>('macros');
-          if (newCfg && typeof newCfg === 'object') {
-            cfg = sanitizeCfg(newCfg);
-          }
+      settingsApi.onChange(() => {
+        const newCfg = settingsApi.get<MacrosCfg>('macros');
+        const sig = JSON.stringify(newCfg);
+        if (sig === appliedCfg) return;
+        appliedCfg = sig;
+        if (newCfg && typeof newCfg === 'object') {
+          cfg = sanitizeCfg(newCfg);
         }
       }),
     );

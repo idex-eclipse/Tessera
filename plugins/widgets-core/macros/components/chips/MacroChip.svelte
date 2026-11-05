@@ -1,10 +1,10 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useMacros } from '../../use-macros.svelte';
+  import { useMacros } from '../../data/use-macros.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
-  import MacroParamsMenu from '../MacroParamsMenu.svelte';
+  import MacroParamsMenu from '../shared/MacroParamsMenu.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
   import { buildMacroScript } from '../../../../shared/macro-params';
   import { placeChipPopover } from '../../../../shared/popover-align';

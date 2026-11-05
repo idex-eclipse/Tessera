@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
-  import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReadyChip.svelte'
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
+  import KlippyNotReadyChip from '../../../../../shared/klippy-state/KlippyNotReadyChip.svelte'
 
-  import { useMacros } from '../../use-macros.svelte.ts';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useMacros } from '../../../data/use-macros.svelte.ts';
+  import { isRtl } from '../../../../../shared/popover-align';
 
   const api = useWidget();
   const i18n = useI18n();

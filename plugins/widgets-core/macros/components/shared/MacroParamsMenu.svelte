@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
+  import { useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import type { MacroParam } from '../../../shared/macro-params';
-  import { isRtl } from '../../../shared/popover-align';
+  import type { MacroParam } from '../../../../shared/macro-params';
+  import { isRtl } from '../../../../shared/popover-align';
 
   let {
     name,

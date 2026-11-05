@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
-  import ColorPickerMenu from '../../../../shared/color-picker/ColorPickerMenu.svelte';
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
+  import ColorPickerMenu from '../../../../../shared/color-picker/ColorPickerMenu.svelte';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { useMacros } from '../../use-macros.svelte.ts';
-  import MacroParamsMenu from '../MacroParamsMenu.svelte';
-  import { buildMacroScript } from '../../../../shared/macro-params.ts';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useMacros } from '../../../data/use-macros.svelte.ts';
+  import MacroParamsMenu from '../../shared/MacroParamsMenu.svelte';
+  import { buildMacroScript } from '../../../../../shared/macro-params.ts';
+  import { isRtl } from '../../../../../shared/popover-align';
 
   const api = useWidget();
   const i18n = useI18n();
@@ -328,6 +328,8 @@
 {/if}
 
 {#if pop && popItem}
+  <!-- Captured at render time: handlers fire later, when `pop` may already be null (popover closed). -->
+  {@const popName = pop.name}
   <div class="pop-backdrop" onclick={() => (pop = null)} role="presentation"></div>
   <div
     class="pop"
@@ -340,8 +342,8 @@
       <input
         type="text"
         value={popItem.alias ?? ''}
-        placeholder={pop.name}
-        onchange={(e) => store.setAlias(pop.name, e.currentTarget.value)}
+        placeholder={popName}
+        onchange={(e) => store.setAlias(popName, e.currentTarget.value)}
       />
     </label>
 
@@ -350,15 +352,15 @@
       <ColorPickerMenu
         value={popItem.color ?? null}
         i18n={i18n}
-        onPick={(hex) => store.setColor(pop.name, hex)}
+        onPick={(hex) => store.setColor(popName, hex)}
       />
     </div>
 
     <label class="pop-check">
       <input
         type="checkbox"
-        checked={store.isHidden(pop.name)}
-        onchange={(e) => store.setHidden(pop.name, e.currentTarget.checked)}
+        checked={store.isHidden(popName)}
+        onchange={(e) => store.setHidden(popName, e.currentTarget.checked)}
       />
       {i18n.t('widgets.macros.hide')}
     </label>
@@ -367,7 +369,7 @@
       <input
         type="checkbox"
         checked={popItem.confirm === true}
-        onchange={(e) => store.setConfirm(pop.name, e.currentTarget.checked)}
+        onchange={(e) => store.setConfirm(popName, e.currentTarget.checked)}
       />
       {i18n.t('widgets.macros.confirm')}
     </label>
@@ -375,8 +377,8 @@
     <label class="pop-field">
       <span>{i18n.t('widgets.macros.group')}</span>
       <select
-        value={store.groupOf(pop.name)}
-        onchange={(e) => store.moveMacro(pop.name, e.currentTarget.value)}
+        value={store.groupOf(popName)}
+        onchange={(e) => store.moveMacro(popName, e.currentTarget.value)}
       >
         <option value="">{i18n.t('widgets.macros.ungrouped')}</option>
         {#each store.cfg.groups as g (g.id)}
