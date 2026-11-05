@@ -4,12 +4,12 @@ import type {
   PluginApi,
   PluginSettingsApi,
   MoonrakerProxyHandle,
-} from '../../../plugin-sdk/src/types';
+} from '../../../../plugin-sdk/src/types';
 
 import {
   createCoreKeeper,
   createDelegateStore,
-} from '../../shared/core-keeper/core-keeper';
+} from '../../../shared/core-keeper/core-keeper';
 
 export const DEFAULT_STEPS = [0.1, 1, 10, 25, 50, 100];
 
@@ -731,15 +731,9 @@ function createToolheadCore(api: PluginApi, printerId: string) {
   async function init(): Promise<void> {
     loadUi();
 
-    unsubs.push(
-      settingsApi.onChange((k) => {
-        if (
-          k === 'tools.style' || k === 'tools.invert' || k === 'tools.steps' ||
-          k === 'tools.feedXY' || k === 'tools.feedZ' ||
-          k === 'tools.directMode' || k === 'tools.directAxis'
-        ) loadUi();
-      }),
-    );
+    // The host passes an EMPTY key, so a per-key check never matched and the widget kept stale
+    // preferences after they arrived from the DB; reload them on every change.
+    unsubs.push(settingsApi.onChange(() => loadUi()));
 
     const gen = ++generation;
     const h = safeHandle();

@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
-  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
+  import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
 
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { useToolhead } from '../../use-toolhead.svelte.ts';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useToolhead } from '../../../data/use-toolhead.svelte.ts';
+  import { isRtl } from '../../../../../shared/popover-align';
 
-  import '../../../../shared/input/inputs.css';
+  import '../../../../../shared/input/inputs.css';
 
   const api = useWidget();
   const i18n = useI18n();

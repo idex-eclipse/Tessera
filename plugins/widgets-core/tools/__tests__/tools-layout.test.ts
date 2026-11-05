@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { forceMoveRowFit, rowsFit, rowsMinWidth } from '../tools-layout';
+import { forceMoveRowFit, rowsFit, rowsMinWidth } from '../lib/tools-layout';
 
 describe('forceMoveRowFit', () => {
   it('needs room for six step buttons and the stepper name', () => {

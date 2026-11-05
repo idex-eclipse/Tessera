@@ -1,26 +1,28 @@
 <script lang="ts">
   import { onDestroy, type Snippet } from 'svelte';
 
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
 
-  import { cleanCarriage } from '../../use-toolhead.svelte.ts';
+  import { cleanCarriage } from '../../../data/use-toolhead.svelte.ts';
 
-  import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import KlipperNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { useToolhead, DEFAULT_STEPS } from '../../use-toolhead.svelte.ts';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useToolhead, DEFAULT_STEPS } from '../../../data/use-toolhead.svelte.ts';
+  import { isRtl } from '../../../../../shared/popover-align';
 
-  import SectionAccordion from '../../../../shared/accordion/SectionAccordion.svelte';
-  import { useAccordionState } from '../../../../shared/accordion/use-accordion-state.svelte.ts';
-  import SliderField from '../../../../shared/slider-field/SliderField.svelte';
-  import SliderGrid from '../../../../shared/slider-field/SliderGrid.svelte';
-  import { sliderColumns } from '../../../../shared/slider-field/slider-layout';
-  import { observeWidgetBox, type WidgetBox } from '../../../../shared/responsive/observe-widget-box';
-  import { forceMoveRowFit, rowsFit } from '../../tools-layout';
+  import SectionAccordion from '../../../../../shared/accordion/SectionAccordion.svelte';
+  import { useAccordionState } from '../../../../../shared/accordion/use-accordion-state.svelte.ts';
+  import SliderField from '../../../../../shared/slider-field/SliderField.svelte';
+  import SliderGrid from '../../../../../shared/slider-field/SliderGrid.svelte';
+  import { sliderColumns } from '../../../../../shared/slider-field/slider-layout';
+  import { observeWidgetBox, type WidgetBox } from '../../../../../shared/responsive/observe-widget-box';
+  import { forceMoveRowFit, rowsFit } from '../../../lib/tools-layout';
 
-  import '../../../../shared/input/inputs.css';
+  import { useSetting, type ReactiveSetting } from '../../../../../shared/settings/create-setting.svelte';
+  import { asPositiveNumber } from '../../../../../shared/settings/parsers';
+  import '../../../../../shared/input/inputs.css';
 
   const api = useWidget();
   const i18n = useI18n();
@@ -135,25 +137,21 @@
   let speedView = $derived(Math.round(store.th.speedFactor * 100));
   let flowView = $derived(Math.round(store.th.extrudeFactor * 100));
 
-  let extLen = $state(Number(api.settings.get<number>('tools.extrudeLen') ?? 10));
-  let extSpeed = $state(Number(api.settings.get<number>('tools.extrudeSpeed') ?? 5));
-
-  const offPrinterExt = api.onPrinterChange(() => {
-    extLen = Number(api.settings.get<number>('tools.extrudeLen') ?? 10);
-    extSpeed = Number(api.settings.get<number>('tools.extrudeSpeed') ?? 5);
-  });
+  // Reactive: follow printer switches and settings arriving from the DB (previously read once).
+  const extLenSetting = useSetting(api, 'tools.extrudeLen', 10, asPositiveNumber);
+  const extSpeedSetting = useSetting(api, 'tools.extrudeSpeed', 5, asPositiveNumber);
+  const extLen = $derived(extLenSetting.value);
+  const extSpeed = $derived(extSpeedSetting.value);
 
   onDestroy(() => {
-    offPrinterExt();
     if (hoverTimer) clearTimeout(hoverTimer);
     if (pressTimer) clearTimeout(pressTimer);
   });
 
-  function setExt(key: 'tools.extrudeLen' | 'tools.extrudeSpeed', raw: string, set: (n: number) => void): void {
+  function setExt(setting: ReactiveSetting<number>, raw: string): void {
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return;
-    set(n);
-    api.settings.set(key, n);
+    setting.set(n);
   }
 
   function canType(axis: string): boolean {
@@ -608,7 +606,7 @@
               min="0.1"
               step="any"
               value={extLen}
-              onchange={(e) => setExt('tools.extrudeLen', e.currentTarget.value, (n) => (extLen = n))}
+              onchange={(e) => setExt(extLenSetting, e.currentTarget.value)}
             />
             <span class="mpu-field-unit">mm</span>
           </label>
@@ -631,7 +629,7 @@
               min="0.1"
               step="any"
               value={extSpeed}
-              onchange={(e) => setExt('tools.extrudeSpeed', e.currentTarget.value, (n) => (extSpeed = n))}
+              onchange={(e) => setExt(extSpeedSetting, e.currentTarget.value)}
             />
             <span class="mpu-field-unit">mm/s</span>
           </label>
@@ -726,6 +724,8 @@
   </div>
 
   {#if modeMenu}
+    <!-- Captured at render time: click handlers fire later, when `modeMenu` may already be null. -->
+    {@const carriage = modeMenu.carriage}
     <div class="menu-backdrop" onclick={() => (modeMenu = null)} role="presentation"></div>
 
     <div
@@ -736,13 +736,13 @@
     >
       <div class="dc-menu-title">{i18n.t('widgets.tools.dcMode')}</div>
 
-      {#each store.modesFor(modeMenu.carriage) as m (m)}
-        {@const current = (store.th.dcModes[modeMenu.carriage] ?? '').toUpperCase()}
+      {#each store.modesFor(carriage) as m (m)}
+        {@const current = (store.th.dcModes[carriage] ?? '').toUpperCase()}
         <button
           class="dc-item"
           class:checked={current === m}
           onclick={() => {
-            store.setCarriageMode(modeMenu.carriage, m);
+            store.setCarriageMode(carriage, m);
             modeMenu = null;
           }}
         >
@@ -751,14 +751,14 @@
         </button>
       {/each}
 
-      {#if store.ui.directMode && modeMenu.carriage === store.dualCarriageName()}
-        {@const current = (store.th.dcModes[modeMenu.carriage] ?? '').toUpperCase()}
+      {#if store.ui.directMode && carriage === store.dualCarriageName()}
+        {@const current = (store.th.dcModes[carriage] ?? '').toUpperCase()}
         <div class="dc-sep"></div>
         <button
           class="dc-item direct"
           class:checked={current === 'DIRECT'}
           onclick={() => {
-            store.setCarriageDirect(modeMenu.carriage, true);
+            store.setCarriageDirect(carriage, true);
             modeMenu = null;
           }}
         >
