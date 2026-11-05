@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import type { WebcamItem } from '../use-cameras.svelte.ts';
-  import { createFpsMeter } from '../camera-utils';
+  import type { WebcamItem } from '../../data/use-cameras.svelte.ts';
+  import { createFpsMeter } from '../../lib/camera-utils';
 
   let {
     camera,

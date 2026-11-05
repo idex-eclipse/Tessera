@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import ConfirmDialog from '../../../../shared/confirm-dialog.svelte';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import { isRtl } from '../../../../../shared/popover-align';
 
-  import CameraStream from '../CameraStream.svelte';
-  import CameraDialog from '../CameraDialog.svelte';
-  import CameraViewer from '../CameraViewer.svelte';
-  import { useCameras } from '../../use-cameras.svelte.ts';
-  import { swipeDirection } from '../../camera-utils';
+  import CameraStream from '../../shared/CameraStream.svelte';
+  import CameraDialog from '../../shared/CameraDialog.svelte';
+  import CameraViewer from '../../shared/CameraViewer.svelte';
+  import { useCameras } from '../../../data/use-cameras.svelte.ts';
+  import { swipeDirection } from '../../../lib/camera-utils';
 
   const api = useWidget();
   const i18n = useI18n();

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../shared/icons/Icon.svelte';
+  import { useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../shared/icons/Icon.svelte';
 
-  import type { WebcamItem } from '../use-cameras.svelte.ts';
-  import { cycleIndex } from '../camera-utils';
+  import type { WebcamItem } from '../../data/use-cameras.svelte.ts';
+  import { cycleIndex } from '../../lib/camera-utils';
   import CameraStream from './CameraStream.svelte';
 
   let {

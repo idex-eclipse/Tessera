@@ -5,7 +5,7 @@ import {
   cycleIndex,
   extractWebcams,
   swipeDirection,
-} from '../camera/camera-utils';
+} from '../lib/camera-utils';
 
 describe('swipeDirection', () => {
   it('LTR: swipe left = next, swipe right = prev', () => {

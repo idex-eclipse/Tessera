@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import { isRtl } from '../../../../../shared/popover-align';
 
-  import { useCameras } from '../../use-cameras.svelte.ts';
+  import { useCameras } from '../../../data/use-cameras.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();

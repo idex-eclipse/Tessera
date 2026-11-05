@@ -4,12 +4,12 @@ import type {
   PluginApi,
   PluginSettingsApi,
   MoonrakerProxyHandle,
-} from '../../../plugin-sdk/src/types';
+} from '../../../../plugin-sdk/src/types';
 import {
   createCoreKeeper,
   createDelegateStore,
-} from '../../shared/core-keeper/core-keeper';
-import { cycleIndex, extractWebcams } from './camera-utils';
+} from '../../../shared/core-keeper/core-keeper';
+import { cycleIndex, extractWebcams } from '../lib/camera-utils';
 
 export interface WebcamItem {
   name: string;
@@ -200,9 +200,12 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     // Читаем сохранённый выбор из namespace принтера
     activeName = settingsApi.get<string>('camera.active') ?? null;
 
+    // The host calls onChange with an EMPTY key (see watchSettings), so re-read instead of matching
+    // the key. This core is bound to one printer, so settingsFor(printerId) needs no re-subscribing.
     unsubs.push(
-      settingsApi.onChange((k, v) => {
-        if (k === 'camera.active') activeName = typeof v === 'string' ? v : null;
+      settingsApi.onChange(() => {
+        const stored = settingsApi.get<string>('camera.active');
+        activeName = typeof stored === 'string' ? stored : null;
       }),
     );
 
