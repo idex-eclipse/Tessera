@@ -1,16 +1,16 @@
 <script lang="ts">
   import { untrack } from 'svelte';
 
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { letterSignature, namedParams, paramTypeLabel } from '../../shared/gcode-hints/catalog';
-  import { makeNameResolver, type ObjectIndex } from '../../shared/gcode-hints/object-names';
-  import { suggestForLine, type HintSuggestion } from '../../shared/gcode-hints/suggest';
-  import type { Catalog } from '../../shared/gcode-hints/types';
+  import { letterSignature, namedParams, paramTypeLabel } from '../../../shared/gcode-hints/catalog';
+  import { makeNameResolver, type ObjectIndex } from '../../../shared/gcode-hints/object-names';
+  import { suggestForLine, type HintSuggestion } from '../../../shared/gcode-hints/suggest';
+  import type { Catalog } from '../../../shared/gcode-hints/types';
 
-  import { isPrinting } from '../console-session.svelte';
-  import { consoleUi } from '../page-ui-state.svelte';
-  import { breaksPrint } from '../print-safety';
+  import { isPrinting } from '../../data/console-session.svelte';
+  import { consoleUi } from '../../state/page-ui-state.svelte';
+  import { breaksPrint } from '../../lib/print-safety';
 
   const i18n = usePluginApi().i18n;
 

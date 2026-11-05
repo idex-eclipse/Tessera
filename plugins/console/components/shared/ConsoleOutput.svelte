@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ConsoleLine } from '../console-session.svelte';
+  import type { ConsoleLine } from '../../data/console-session.svelte';
 
   /**
    * Лог консоли — общий для страницы и виджета. Строки — G-code / ответы Klipper, поэтому

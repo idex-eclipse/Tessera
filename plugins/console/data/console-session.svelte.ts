@@ -1,8 +1,8 @@
-import type { PluginApi } from '../../plugin-sdk/src/types';
+import type { PluginApi } from '../../../plugin-sdk/src/types';
 
-import { attachHints, dropHints } from '../shared/gcode-hints/gcode-hints-store.svelte.ts';
+import { attachHints, dropHints } from '../../shared/gcode-hints/gcode-hints-store.svelte.ts';
 
-import { isPrintActive } from './print-safety';
+import { isPrintActive } from '../lib/print-safety';
 
 /**
  * Console log = Moonraker `server.gcode_store` (single source of truth,
@@ -53,7 +53,6 @@ const pollTimersByPrinter = new Map<string, ReturnType<typeof setInterval>>();
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let printersUnsub: (() => void) | null = null;
-let settingsUnsub: (() => void) | null = null;
 let consumers = 0;
 
 function now(): string {
@@ -128,8 +127,6 @@ export function attach(api: PluginApi): () => void {
 function stop(): void {
   printersUnsub?.();
   printersUnsub = null;
-  settingsUnsub?.();
-  settingsUnsub = null;
   for (const pid of Array.from(dataUnsubsByPrinter.keys())) unsubscribePrinter(pid);
 }
 
@@ -154,12 +151,6 @@ function start(api: PluginApi): void {
       }
     }
   });
-
-  if (!settingsUnsub) {
-    settingsUnsub = api.settings.onChange(() => {
-      reloadPrefs(api);
-    });
-  }
 
   // Initial subscribe for all existing printers
   for (const p of api.printers) {
@@ -253,6 +244,13 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
   }
 
   connectedByPrinter[printerId] = h.readyState === 'open';
+
+  // History and prefs live in the settings of EACH printer. `api.settings.onChange` would stay
+  // bound to the printer that was active at attach time, so settings pulled from the Moonraker DB
+  // for any other printer (the host pulls on every printer switch) would be missed. Subscribe
+  // through settingsFor(printerId) instead; it also covers the sync-mode switch, which notifies
+  // every namespace.
+  unsubs.push(api.settingsFor(printerId).onChange(() => reloadPrinterSettings(api, printerId)));
 
   // Подсказки команд и макросов — общий модуль shared/gcode-hints (help, макросы, G-Codes.md).
   unsubs.push(attachHints(api, printerId));
@@ -376,25 +374,23 @@ function ensureHistoryLoaded(api: PluginApi, printerId: string): void {
   }
 }
 
-function reloadPrefs(api: PluginApi): void {
-  // При смене sync-флага namespace меняется, перечитываем всё заново
-  historyLoaded.clear();
-  prefsLoaded.clear();
-
-  for (const pid of Object.keys(historyByPrinter)) {
-    const stored = api.settingsFor(pid).get<string[]>('history');
-    if (Array.isArray(stored)) {
-      historyByPrinter[pid] = stored.filter((s) => typeof s === 'string');
-    } else {
-      historyByPrinter[pid] = [];
-    }
+/** Re-reads one printer's history and prefs after its stored settings changed under us. */
+function reloadPrinterSettings(api: PluginApi, printerId: string): void {
+  let settings;
+  try {
+    settings = api.settingsFor(printerId);
+  } catch {
+    return; // the printer was removed between the notification and now
   }
 
-  for (const pid of Object.keys(prefsByPrinter)) {
-    prefsByPrinter[pid] = sanitizePrefs(
-      api.settingsFor(pid).get<Partial<ConsolePrefs>>('consolePrefs'),
-    );
-  }
+  const history = settings.get<string[]>('history');
+  historyByPrinter[printerId] = Array.isArray(history)
+    ? history.filter((s) => typeof s === 'string')
+    : [];
+  historyLoaded.add(printerId);
+
+  prefsByPrinter[printerId] = sanitizePrefs(settings.get<Partial<ConsolePrefs>>('consolePrefs'));
+  prefsLoaded.add(printerId);
 }
 
 // ------------------------------------------------------------------

@@ -19,13 +19,13 @@ import {
   isPrinting,
   refreshNow,
   type ConsoleLine,
-} from '../console-session.svelte';
+} from '../data/console-session.svelte';
 import * as hotkeys from '../hotkeys';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
 import { consoleManifest } from '../manifest';
-import { consoleUi } from '../page-ui-state.svelte';
-import { breaksPrint, isPrintActive, scriptCommands } from '../print-safety';
+import { consoleUi } from '../state/page-ui-state.svelte';
+import { breaksPrint, isPrintActive, scriptCommands } from '../lib/print-safety';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -99,7 +99,26 @@ function fakeApi(ids: string[], store: (pid: string) => Promise<unknown>) {
     },
   });
 
-  const settings = { get: () => undefined, set: () => {} };
+  // Per-printer settings that mimic the real host: `settings.onChange` is bound to the printer
+  // that was ACTIVE at subscribe time, while `settingsFor(id).onChange` follows that printer.
+  const settingsData: Record<string, Record<string, unknown>> = {};
+  const settingsListeners = new Map<string, Set<() => void>>();
+  const emitSettings = (pid: string) => {
+    for (const cb of Array.from(settingsListeners.get(pid) ?? [])) cb();
+  };
+  const settingsOf = (pid: string) => ({
+    get: (key: string) => settingsData[pid]?.[key],
+    set: (key: string, value: unknown) => {
+      (settingsData[pid] ??= {})[key] = value;
+      emitSettings(pid);
+    },
+    onChange: (cb: () => void) => {
+      const set = settingsListeners.get(pid) ?? new Set<() => void>();
+      set.add(cb);
+      settingsListeners.set(pid, set);
+      return () => set.delete(cb);
+    },
+  });
   const api = {
     printer: { id: ids[0] },
     printers: ids.map((id) => ({ id })),
@@ -110,8 +129,8 @@ function fakeApi(ids: string[], store: (pid: string) => Promise<unknown>) {
       };
     },
     moonrakerFor: handle,
-    settings: { onChange: () => () => {} },
-    settingsFor: () => settings,
+    settings: { onChange: (cb: () => void) => settingsOf(ids[0]!).onChange(cb) },
+    settingsFor: settingsOf,
   } as unknown as PluginApi;
 
   return {
@@ -121,6 +140,12 @@ function fakeApi(ids: string[], store: (pid: string) => Promise<unknown>) {
     stored,
     emitPrintState: (state: string) => printStatsCb?.({ print_stats: { state } }),
     offPrinters: () => offPrinters,
+    /** Settings arriving from the Moonraker DB for one printer (not a write by the plugin). */
+    remoteSettings(pid: string, key: string, value: unknown) {
+      (settingsData[pid] ??= {})[key] = value;
+      emitSettings(pid);
+    },
+    settingsListeners: () => Array.from(settingsListeners.values()).reduce((n, set) => n + set.size, 0),
     firePrinters: (p: Array<{ id: string }>) => printersCb?.(p),
   };
 }
@@ -143,6 +168,31 @@ describe('session lifecycle', () => {
     b();
     expect(f.offPrinters()).toBe(1);
     expect(f.unsubscribed.filter((u) => u.endsWith(':sub')).sort()).toEqual(['p1:sub', 'p2:sub']);
+  });
+
+  it('re-reads prefs that arrive for a printer other than the one active at attach time', () => {
+    // Regression: the session used one api.settings.onChange bound to the printer active at
+    // start, so settings pulled from the DB for another printer (e.g. after a printer switch)
+    // never reached the console.
+    const f = fakeApi(['s1', 's2'], async () => ({ gcode_store: [] }));
+    const off = attach(f.api);
+    try {
+      expect(getPrefs('s2').reverse).toBe(false);
+
+      f.remoteSettings('s2', 'consolePrefs', { reverse: true, filters: ['x'] });
+      expect(getPrefs('s2')).toMatchObject({ reverse: true, filters: ['x'] });
+      expect(getPrefs('s1').reverse).toBe(false); // other printers are untouched
+    } finally {
+      off(); // the session is a module singleton: never leak it into the next test
+    }
+  });
+
+  it('releases the settings subscriptions with the last consumer', () => {
+    const f = fakeApi(['s3', 's4'], async () => ({ gcode_store: [] }));
+    const off = attach(f.api);
+    expect(f.settingsListeners()).toBeGreaterThan(0);
+    off();
+    expect(f.settingsListeners()).toBe(0);
   });
 
   it('tracks the print state used for the restart confirmation', async () => {

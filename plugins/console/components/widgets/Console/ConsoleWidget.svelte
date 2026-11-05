@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { useConsoleView } from '../../use-console-view.svelte';
+  import { useConsoleView } from '../../../data/use-console-view.svelte';
 
-  import ConsoleInput from '../ConsoleInput.svelte';
-  import ConsoleOutput from '../ConsoleOutput.svelte';
+  import ConsoleInput from '../../shared/ConsoleInput.svelte';
+  import ConsoleOutput from '../../shared/ConsoleOutput.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;

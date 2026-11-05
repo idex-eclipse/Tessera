@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte';
-  import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReadyChip.svelte';
-  import Icon from '../../../shared/icons/Icon.svelte';
-  import { pageHash } from '../../../shared/page-nav';
+  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
+  import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReadyChip.svelte';
+  import Icon from '../../../../shared/icons/Icon.svelte';
+  import { pageHash } from '../../../../shared/page-nav';
 
-  import ConsoleControls from '../ConsoleControls.svelte';
-  import ConsoleFilterMenu from '../ConsoleFilterMenu.svelte';
-  import ConsoleHelp from '../ConsoleHelp.svelte';
+  import ConsoleControls from '../../shared/ConsoleControls.svelte';
+  import ConsoleFilterMenu from '../../shared/ConsoleFilterMenu.svelte';
+  import ConsoleHelp from '../../shared/ConsoleHelp.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;

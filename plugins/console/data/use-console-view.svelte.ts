@@ -1,6 +1,6 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi } from '../../plugin-sdk/src/types';
+import type { PluginApi } from '../../../plugin-sdk/src/types';
 
 import {
   applyFilters,
@@ -13,8 +13,8 @@ import {
   pushHistory,
   sendCommand,
 } from './console-session.svelte.ts';
-import { getCatalog, getObjects } from '../shared/gcode-hints/gcode-hints-store.svelte.ts';
-import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
+import { getCatalog, getObjects } from '../../shared/gcode-hints/gcode-hints-store.svelte.ts';
+import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
 
 /**
  * Общая «вьюха» консоли для страницы и виджета: подключает сессию (с отпиской при

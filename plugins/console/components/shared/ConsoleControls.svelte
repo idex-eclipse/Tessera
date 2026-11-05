@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { getPrefs, setPrefs } from '../console-session.svelte';
+  import { getPrefs, setPrefs } from '../../data/console-session.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;

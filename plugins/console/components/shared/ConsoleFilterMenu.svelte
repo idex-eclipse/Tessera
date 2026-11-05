@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
 
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import Icon from '../../shared/icons/Icon.svelte';
+  import Icon from '../../../shared/icons/Icon.svelte';
 
   import {
     compileFilters,
     getPrefs,
     setPrefs,
     TEMP_FILTER_PRESET,
-  } from '../console-session.svelte';
-  import { consoleUi } from '../page-ui-state.svelte';
+  } from '../../data/console-session.svelte';
+  import { consoleUi } from '../../state/page-ui-state.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;

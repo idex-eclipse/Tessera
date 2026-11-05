@@ -3,14 +3,14 @@
 
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReadyChip.svelte';
 
-  import { clearLines } from '../../console-session.svelte';
-  import { useConsoleView } from '../../use-console-view.svelte';
+  import { clearLines } from '../../data/console-session.svelte';
+  import { useConsoleView } from '../../data/use-console-view.svelte';
 
-  import ConsoleControls from '../ConsoleControls.svelte';
-  import ConsoleFilterMenu from '../ConsoleFilterMenu.svelte';
-  import ConsoleHelp from '../ConsoleHelp.svelte';
-  import ConsoleInput from '../ConsoleInput.svelte';
-  import ConsoleOutput from '../ConsoleOutput.svelte';
+  import ConsoleControls from '../shared/ConsoleControls.svelte';
+  import ConsoleFilterMenu from '../shared/ConsoleFilterMenu.svelte';
+  import ConsoleHelp from '../shared/ConsoleHelp.svelte';
+  import ConsoleInput from '../shared/ConsoleInput.svelte';
+  import ConsoleOutput from '../shared/ConsoleOutput.svelte';
   import CommandList from './CommandList.svelte';
 
   const api = usePluginApi();

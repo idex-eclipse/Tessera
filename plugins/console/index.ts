@@ -1,8 +1,8 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 
-import ConsolePage from './components/pages/ConsolePage.svelte';
-import ConsoleWidget from './components/widgets/ConsoleWidget.svelte';
-import ConsoleHeaderActions from './components/widgets/ConsoleHeaderActions.svelte';
+import ConsolePage from './components/page/ConsolePage.svelte';
+import ConsoleWidget from './components/widgets/Console/ConsoleWidget.svelte';
+import ConsoleHeaderActions from './components/widgets/Console/ConsoleHeaderActions.svelte';
 
 import terminalIcon from './icons/terminal.svg?raw';
 

@@ -2,8 +2,8 @@ import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
 
-import { consoleUi } from './page-ui-state.svelte.ts';
-import { clearLines, getPrefs, refreshNow, setPrefs } from './console-session.svelte.ts';
+import { consoleUi } from './state/page-ui-state.svelte.ts';
+import { clearLines, getPrefs, refreshNow, setPrefs } from './data/console-session.svelte.ts';
 
 /**
  * Hotkey-обработчики плагина (manifest.hotkeys[].handler). Scope 'plugin' — только на

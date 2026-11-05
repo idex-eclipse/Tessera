@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import HeaderHelp from '../../shared/header-help/HeaderHelp.svelte';
+  import HeaderHelp from '../../../shared/header-help/HeaderHelp.svelte';
 
   const i18n = usePluginApi().i18n;
 </script>
