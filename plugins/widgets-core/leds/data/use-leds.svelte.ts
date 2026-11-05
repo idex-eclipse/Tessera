@@ -1,10 +1,10 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, PluginSettingsApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import type { PluginApi, PluginSettingsApi, MoonrakerProxyHandle } from '../../../../plugin-sdk/src/types';
 import {
   createCoreKeeper,
   createDelegateStore,
-} from '../../shared/core-keeper/core-keeper';
+} from '../../../shared/core-keeper/core-keeper';
 import {
   OFF,
   buildSetLed,
@@ -16,7 +16,7 @@ import {
   type LedItem,
   type LedTemplate,
   type Rgbw,
-} from './led-data';
+} from '../lib/led-data';
 
 const HIDDEN_KEY = 'leds.hiddenTemplates';
 

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
-  import { isRtl } from '../../../../shared/popover-align';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
+  import { isRtl } from '../../../../../shared/popover-align';
 
-  import { useLeds } from '../../use-leds.svelte.ts';
+  import { useLeds } from '../../../data/use-leds.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();

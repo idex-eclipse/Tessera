@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { colorToCss, isLit, type Rgbw } from '../led-data';
+  import { colorToCss, isLit, type Rgbw } from '../../lib/led-data';
 
   let {
     pixels,

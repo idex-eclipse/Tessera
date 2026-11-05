@@ -1,7 +1,7 @@
 <script lang="ts">
-  import '../../../shared/input/inputs.css';
-  import ColorPickerMenu from '../../../shared/color-picker/ColorPickerMenu.svelte';
-  import SliderField from '../../../shared/slider-field/SliderField.svelte';
+  import '../../../../shared/input/inputs.css';
+  import ColorPickerMenu from '../../../../shared/color-picker/ColorPickerMenu.svelte';
+  import SliderField from '../../../../shared/slider-field/SliderField.svelte';
   import {
     OFF,
     brightnessOf,
@@ -11,8 +11,8 @@
     withBrightness,
     type LedItem,
     type Rgbw,
-  } from '../led-data';
-  import type { LedsStore } from '../use-leds.svelte';
+  } from '../../lib/led-data';
+  import type { LedsStore } from '../../data/use-leds.svelte';
 
   let {
     store,

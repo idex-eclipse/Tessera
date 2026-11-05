@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
 
-  import SectionAccordion from '../../../../shared/accordion/SectionAccordion.svelte';
-  import { useAccordionState } from '../../../../shared/accordion/use-accordion-state.svelte.ts';
-  import { SECTION_GAP, sectionsNeedAccordion } from '../../../../shared/slider-field/slider-layout';
-  import { observeWidgetBox, type WidgetBox } from '../../../../shared/responsive/observe-widget-box';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
-  import { isLit, OFF } from '../../led-data';
-  import { useLeds } from '../../use-leds.svelte.ts';
-  import LedStrip from '../LedStrip.svelte';
-  import LedControls from '../LedControls.svelte';
+  import SectionAccordion from '../../../../../shared/accordion/SectionAccordion.svelte';
+  import { useAccordionState } from '../../../../../shared/accordion/use-accordion-state.svelte.ts';
+  import { SECTION_GAP, sectionsNeedAccordion } from '../../../../../shared/slider-field/slider-layout';
+  import { observeWidgetBox, type WidgetBox } from '../../../../../shared/responsive/observe-widget-box';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import KlipperNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { isLit, OFF } from '../../../lib/led-data';
+  import { useLeds } from '../../../data/use-leds.svelte.ts';
+  import LedStrip from '../../shared/LedStrip.svelte';
+  import LedControls from '../../shared/LedControls.svelte';
 
   const api = useWidget();
   const i18n = useI18n();
