@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
 
-  import KlippyNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
-  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import KlippyNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { useFilament, type FilamentSensor } from '../../use-filament.svelte.ts';
+  import { useFilament, type FilamentSensor } from '../../../data/use-filament.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();
