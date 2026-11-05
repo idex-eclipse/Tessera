@@ -1,6 +1,7 @@
 import { onDestroy } from 'svelte';
 
 import type { PluginApi, PluginSettingsApi } from '../../../plugin-sdk/src/types';
+import { watchSettings } from '../settings/watch-settings';
 
 type SectionsState = Record<string, boolean>;
 
@@ -50,9 +51,13 @@ export function createAccordionState(
   };
 }
 
-/** Состояние хранится в настройках активного принтера и перечитывается при его смене. */
+/**
+ * Состояние хранится в настройках активного принтера и перечитывается при его смене, при
+ * подгрузке настроек из Moonraker DB и при переключении sync (watchSettings; раньше было только
+ * при смене принтера, и свежие настройки из DB не доходили до открытого виджета).
+ */
 export function useAccordionState(api: PluginApi, key: string): AccordionState {
   const accordion = createAccordionState(api.settings, key);
-  onDestroy(api.onPrinterChange(() => accordion.reload()));
+  onDestroy(watchSettings(api, () => accordion.reload()));
   return accordion;
 }

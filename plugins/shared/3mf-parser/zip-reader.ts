@@ -21,11 +21,18 @@ export interface ZipEntry {
   readonly localHeaderOffset: number;
 }
 
+/**
+ * Bytes backed by a plain ArrayBuffer (never a SharedArrayBuffer). TypeScript 5.9 types a bare
+ * `Uint8Array` as possibly shared, which `Blob` rejects; every buffer here comes from
+ * `Blob.arrayBuffer()` / `Response.arrayBuffer()`, so the narrower type is accurate.
+ */
+export type Bytes = Uint8Array<ArrayBuffer>;
+
 export interface ZipArchive {
   readonly entries: readonly ZipEntry[];
   getEntry(name: string): ZipEntry | undefined;
   find(re: RegExp): ZipEntry[];
-  readEntry(entry: ZipEntry, signal?: AbortSignal): Promise<Uint8Array>;
+  readEntry(entry: ZipEntry, signal?: AbortSignal): Promise<Bytes>;
   readText(entry: ZipEntry, signal?: AbortSignal): Promise<string>;
 }
 
@@ -52,7 +59,7 @@ function findSignature(buf: Uint8Array, sig: number, from: number): number {
   return -1;
 }
 
-async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
+async function inflateRaw(data: Bytes): Promise<Bytes> {
   if (typeof DecompressionStream === 'undefined') throw new ZipError('no-inflate');
   const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -117,7 +124,7 @@ export async function openZip(
   const byName = new Map<string, ZipEntry>();
   for (const e of entries) byName.set(e.name, e);
 
-  async function readEntry(entry: ZipEntry, signal?: AbortSignal): Promise<Uint8Array> {
+  async function readEntry(entry: ZipEntry, signal?: AbortSignal): Promise<Bytes> {
     if (signal?.aborted) throw new ZipError('aborted');
     if (entry.method !== 0 && entry.method !== 8) throw new ZipError('unsupported-method', entry.name);
     const lh = new Uint8Array(

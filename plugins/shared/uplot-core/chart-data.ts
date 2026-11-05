@@ -34,7 +34,7 @@ export function buildChartData(
   let bestEnd = -Infinity;
 
   for (const d of defs) {
-    const buf = buffers.get(d.id.split(':')[0]);  // id format: "sensorName:kind"
+    const buf = buffers.get(d.id.split(':')[0] ?? '');  // id format: "sensorName:kind" ('' = no such buffer)
     const t = buf?.temp?.timesArray;
     if (t && t.length > 0) {
       const end = t[t.length - 1] ?? -Infinity;
@@ -48,7 +48,7 @@ export function buildChartData(
   const xs = ref.slice();
 
   const cols = defs.map((d) => {
-    const sensorName = d.id.split(':')[0];
+    const sensorName = d.id.split(':')[0] ?? '';
     const buf = buffers.get(sensorName);
     
     let src: SeriesBuffer | undefined;

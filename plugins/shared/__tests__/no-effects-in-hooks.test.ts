@@ -40,7 +40,8 @@ describe('hooks and cores', () => {
 
   it('contain no $effect (subscribe imperatively via onReady / onNotify)', () => {
     const offenders = files
-      .filter((f) => /\$effect/.test(stripComments(readFileSync(f, 'utf8'))))
+      // `$effect.root` is allowed: it makes a detached root (core-keeper), not a component-bound effect.
+      .filter((f) => /\$effect(?!\.root)/.test(stripComments(readFileSync(f, 'utf8'))))
       .map((f) => relative(PLUGINS_DIR, f).replaceAll('\\', '/'))
       .sort();
     expect(offenders).toEqual([]);

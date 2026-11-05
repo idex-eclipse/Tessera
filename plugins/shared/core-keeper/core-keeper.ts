@@ -1,5 +1,7 @@
 import type { PluginApi } from '../../../plugin-sdk/src/types';
 
+import { runDetached } from './detached-root.svelte';
+
 /**
  * CoreKeeper — keep-alive реестр per-printer ядер хуков (Фаза 2 тёплых
  * переключений).
@@ -16,6 +18,8 @@ import type { PluginApi } from '../../../plugin-sdk/src/types';
  *
  * Keeper не использует runes: реактивность переключения принтера даёт сигнал
  * api.printer.id, читаемый делегатом (createDelegateStore), а не сам реестр.
+ * Единственное исключение — runDetached: каждое ядро создаётся под собственным effect root,
+ * чтобы его $state/$derived не принадлежали эффекту первого компонента-потребителя.
  */
 
 export interface CoreKeeperOptions<Core> {
@@ -26,6 +30,8 @@ export interface CoreKeeperOptions<Core> {
 
 interface Entry<Core> {
   core: Core;
+  /** Ends the effect root that owns the core's reactive state (see runDetached). */
+  dispose: () => void;
   refs: number;
   lastUsed: number;
 }
@@ -59,6 +65,8 @@ export function createCoreKeeper<Core extends { destroy(): void }>(
       e.core.destroy();
     } catch (err) {
       console.error('[core-keeper] core destroy failed:', pid, err);
+    } finally {
+      e.dispose();
     }
   }
 
@@ -82,7 +90,9 @@ export function createCoreKeeper<Core extends { destroy(): void }>(
   }
 
   function createEntry(pid: string, api: PluginApi, refs: number): Entry<Core> {
-    const e: Entry<Core> = { core: options.create(pid, api), refs, lastUsed: Date.now() };
+    // Created under a detached effect root: the core outlives the component that first asked for it.
+    const { value: core, dispose } = runDetached(() => options.create(pid, api));
+    const e: Entry<Core> = { core, dispose, refs, lastUsed: Date.now() };
     entries.set(pid, e);
     evictIfNeeded();
     return e;
