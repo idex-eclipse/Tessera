@@ -701,3 +701,26 @@ SDK wrapper, which does all of the above:
 
 A replacement of `overlay-test-z` takes over the manual probe Accept/Abort controls: it
 must provide them itself.
+
+`@core/system` (all `version: 1`, no params; a contribution gets only its own api), since
+owner version `4.0.0`:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `tabs` | tab | append | Machine page: extra tabs (deep link `?section=<extPluginId>/<id>`; no Alt+N hotkey) |
+| `tab-overview`, `tab-monitoring`, `tab-maintenance` | tab | replacement | the whole body of a built-in tab (the tab button stays) |
+| `panel-info`, `panel-sd`, `panel-charts` | panel | replacement | System tab: system information, SD card, process charts |
+| `panel-host`, `panel-mcu`, `panel-tmc` | panel | replacement | Monitoring tab: host, MCUs, TMC drivers |
+| `panel-storage`, `panel-database`, `panel-updates` | panel | replacement | Storage & updates tab: storage, database, updates |
+| `panels-overview`, `panels-monitoring`, `panels-maintenance` | panel | append | extra panels at the end of the respective tab |
+| `widget-status` | element | replacement | the whole content of the Status widget (its header stays) |
+| `banner-status`, `banner-klipper-error` | element | replacement | the whole body of the print status and Klipper error banners; the plugin still decides **when** they are shown |
+| `banner-status-collapsed`, `banner-klipper-error-collapsed` | element | replacement | the whole body of the collapsed banners |
+| `banner-status-progress`, `banner-status-eta` | element | replacement | the progress bar with the percentage, and the ETA (while printing) |
+| `banner-status-actions` | action | append | extra buttons next to Pause/Resume/Cancel while printing; context `{ state: 'printing' \| 'paused', filename: string }` |
+| `panels-right` | panel | append | extra sections of the right panel after the built-in ones (expanded view only) |
+
+Not extensible on purpose: the E-stop button, upload & print, and the Pause/Resume/Cancel
+buttons (see "Modes" above). Only a replacement of `banner-status` as a whole takes them over,
+and then the contribution must provide print controls itself. A contribution in `panels-right`
+is mounted in a narrow column, so it should lay out by its own width.

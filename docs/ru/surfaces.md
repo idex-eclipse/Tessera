@@ -700,3 +700,26 @@ SDK даёт обёртку, которая делает всё это сама:
 
 Замена `overlay-test-z` забирает кнопки Accept/Abort ручного зондирования: вклад обязан
 предоставить их сам.
+
+`@core/system` (все `version: 1`, без params; вклад получает только свой api), начиная с
+версии владельца `4.0.0`:
+
+| Точка | kind | mode | Где |
+|---|---|---|---|
+| `tabs` | tab | append | страница «Система»: свои вкладки (deep link `?section=<extPluginId>/<id>`; горячей клавиши Alt+N нет) |
+| `tab-overview`, `tab-monitoring`, `tab-maintenance` | tab | replacement | всё тело встроенной вкладки (кнопка вкладки остаётся) |
+| `panel-info`, `panel-sd`, `panel-charts` | panel | replacement | вкладка «Система»: информация о системе, SD-карта, графики процессов |
+| `panel-host`, `panel-mcu`, `panel-tmc` | panel | replacement | вкладка «Мониторинг»: хост, MCU, драйверы TMC |
+| `panel-storage`, `panel-database`, `panel-updates` | panel | replacement | вкладка «Хранилище и обновления»: хранилище, база данных, обновления |
+| `panels-overview`, `panels-monitoring`, `panels-maintenance` | panel | append | свои панели в конце соответствующей вкладки |
+| `widget-status` | element | replacement | всё содержимое виджета «Статус» (шапка остаётся) |
+| `banner-status`, `banner-klipper-error` | element | replacement | всё тело баннеров статуса печати и ошибки Klipper; **когда** их показывать, решает плагин |
+| `banner-status-collapsed`, `banner-klipper-error-collapsed` | element | replacement | всё тело свёрнутых баннеров |
+| `banner-status-progress`, `banner-status-eta` | element | replacement | полоса прогресса с процентами и оставшееся время (во время печати) |
+| `banner-status-actions` | action | append | дополнительные кнопки рядом с Pause/Resume/Cancel во время печати; контекст `{ state: 'printing' \| 'paused', filename: string }` |
+| `panels-right` | panel | append | свои секции правой панели после встроенных (только в развёрнутом виде) |
+
+Намеренно не расширяются: кнопка E-stop, загрузка и печать, кнопки Pause/Resume/Cancel
+(см. «Режимы» выше). Забрать их может только замена `banner-status` целиком, и тогда вклад
+обязан предоставить кнопки управления печатью сам. Вклад в `panels-right` монтируется в узкую
+колонку, поэтому его вёрстка должна опираться на собственную ширину.

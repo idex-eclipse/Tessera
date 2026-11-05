@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { usePrintStatus, computeProgress } from '../../use-print-status.svelte.ts';
-  import { useStatusBannerPrefs } from './status-banner-prefs.svelte.ts';
+  import { usePrintStatus, computeProgress } from '../../data/use-print-status.svelte.ts';
+  import { useStatusPrefs } from '../../state/status-prefs.svelte.ts';
 
   const api = usePluginApi();
   const store = usePrintStatus(api);
-  const prefs = useStatusBannerPrefs(api);
+  const prefs = useStatusPrefs(api);
 
   let m = $derived(store.model);
   let printing = $derived(m.state === 'printing' || m.state === 'paused');
@@ -14,17 +14,22 @@
 </script>
 
 {#if prefs.banner && m.klippyReady}
-  <div class="status-collapsed">
-    <span class="state" class:printing class:paused={m.state === 'paused'}>{m.state}</span>
-    <span class="fname" title={m.filename}>{m.filename || '—'}</span>
+  <!-- the whole body is replaceable; the plugin still decides when it is shown -->
+  <ExtensionPoint point="banner-status-collapsed">
+    {#snippet original()}
+      <div class="status-collapsed">
+        <span class="state" class:printing class:paused={m.state === 'paused'}>{m.state}</span>
+        <span class="fname" title={m.filename}>{m.filename || '—'}</span>
 
-    {#if printing}
-      <div class="bar">
-        <div class="fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
+        {#if printing}
+          <div class="bar">
+            <div class="fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
+          </div>
+          <span class="pct">{progress != null ? `${Math.round(progress * 100)}%` : '—'}</span>
+        {/if}
       </div>
-      <span class="pct">{progress != null ? `${Math.round(progress * 100)}%` : '—'}</span>
-    {/if}
-  </div>
+    {/snippet}
+  </ExtensionPoint>
 {/if}
 
 <style>

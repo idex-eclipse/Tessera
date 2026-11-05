@@ -1,8 +1,8 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 
-import GCodePreviewPage from './GCodePreviewPage.svelte';
-import GCodePreviewWidget from './GCodePreviewWidget.svelte';
-import GcodePreviewHeaderActions from './GCodePreviewHeaderActions.svelte';
+import GCodePreviewPage from './components/page/GCodePreviewPage.svelte';
+import GCodePreviewWidget from './components/widgets/GCodePreview/GCodePreviewWidget.svelte';
+import GcodePreviewHeaderActions from './components/widgets/GCodePreview/GCodePreviewHeaderActions.svelte';
 
 import cubeIcon from './icons/cube.svg?raw';
 

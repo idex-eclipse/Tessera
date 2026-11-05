@@ -29,6 +29,7 @@ vi.mock('../moonraker-proxy', () => {
       onNotify: vi.fn(() => () => {}),
       poll: vi.fn(() => () => {}),
       klippyStream: vi.fn(() => () => {}),
+      klippyRequest: vi.fn(() => Promise.resolve(undefined)),
       httpBaseUrl: url,
       readyState: 'open' as ConnectionStatus,
       authToken: null,

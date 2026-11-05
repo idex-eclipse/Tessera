@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { guardAgent, type ParkedChainView, type RegisteredGuardView } from '../../core/guard-agent';
   import { BUILD_INFO } from '../../core/build-info';
+  import { notifyLocalWrite } from '../../core/settings-remote';
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
   import { readStoredAuth } from '../../core/auth-store.svelte.ts';
   import { findHostPrinter } from '../../core/extensions-installer.svelte.ts';
@@ -28,7 +29,7 @@
   });
 
 
-  const { loader, i18n, hotkeys, printerManager, settings } = getAppContext();
+  const { loader, i18n, printerManager, settings } = getAppContext();
 
   let loaded = $derived(loader.getLoadedPlugins());
   let importError = $state(false);
@@ -70,6 +71,36 @@
     if (await updater.update()) updated = true;
   }
 
+  // Branch switch: the list is fetched once, when the service says this installation can update itself.
+  let chosenBranch = $state('');
+  let branchesRequested = false;
+  $effect(() => {
+    if (!updater.status?.canUpdate || branchesRequested) return;
+    branchesRequested = true;
+    void updater.loadBranches();
+  });
+  // The current branch is always an option, even when GitHub could not be asked for the list.
+  let branchOptions = $derived.by(() => {
+    const current = updater.status?.branch;
+    return current && !updater.branches.includes(current) ? [current, ...updater.branches] : updater.branches;
+  });
+  let selectedBranch = $derived(chosenBranch || updater.status?.branch || '');
+
+  async function switchBranch(): Promise<void> {
+    const ok = await confirm({
+      title: i18n.t('settings.about.branch.title'),
+      message: i18n.t('settings.about.branch.confirm', { branch: selectedBranch }),
+    });
+    if (!ok) return;
+    if (await updater.update(selectedBranch)) updated = true;
+    chosenBranch = '';
+  }
+
+  /** Keys that describe this browser and must neither be exported nor imported. */
+  function isDeviceOnlyKey(k: string): boolean {
+    return k === 'mpu:v2:deviceId' || k === 'mpu:v2:remote-meta';
+  }
+
   function exportSettings(): void {
     const data: Record<string, unknown> = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -77,6 +108,8 @@
       if (!k || !k.startsWith('mpu:v2:')) continue;
       // Токены авторизации не должны попадать в файл, которым могут поделиться
       if (k.startsWith('mpu:v2:auth:')) continue;
+      // Device identity and mirror bookkeeping belong to this browser only
+      if (isDeviceOnlyKey(k)) continue;
       try {
         data[k] = JSON.parse(localStorage.getItem(k) ?? 'null');
       } catch {
@@ -116,8 +149,10 @@
         if (!data || typeof data !== 'object') throw new Error('bad file');
 
         for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-          if (!k.startsWith('mpu:v2:')) continue;
+          if (!k.startsWith('mpu:v2:') || isDeviceOnlyKey(k)) continue;
           localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+          // Imported keys must be pushed to the printer DB, or the older copy there would win on reload
+          notifyLocalWrite(k);
         }
 
         location.reload();
@@ -198,6 +233,35 @@
         {updater.error.status === 401 ? i18n.t('settings.about.update.unauthorized') : updater.error.message}
       </p>
     {/if}
+    {#if status?.canUpdate}
+      <div class="about-row">
+        <label class="about-label" for="update-branch">{i18n.t('settings.about.branch.label')}</label>
+        <!-- Branch names are LTR content; the row wraps on narrow screens. -->
+        <span class="interval">
+          <select
+            id="update-branch"
+            dir="ltr"
+            value={selectedBranch}
+            onchange={(e) => (chosenBranch = e.currentTarget.value)}
+            disabled={updater.busy}
+          >
+            {#each branchOptions as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+          <button
+            class="btn btn-secondary"
+            onclick={switchBranch}
+            disabled={updater.busy || selectedBranch === status.branch}
+          >
+            {i18n.t('settings.about.branch.switch')}
+          </button>
+        </span>
+      </div>
+      {#if updater.branchesError}
+        <p class="about-empty">{i18n.t('settings.about.branch.listError', { error: updater.branchesError })}</p>
+      {/if}
+    {/if}
     <div class="about-actions">
       {#if updater.busy}
         <Loader size="md" inline text={i18n.t('settings.about.update.working')} />
@@ -240,26 +304,6 @@
           </div>
         {/each}
       </div>
-    {/if}
-  </div>
-
-  <div class="plugin-list">
-    <div class="about-sub">{i18n.t('settings.about.hotkeys')}</div>
-    {#if hotkeys.bindings.length === 0}
-      <p class="about-empty">{i18n.t('settings.about.noHotkeys')}</p>
-    {:else}
-      {#each hotkeys.bindings as b (`${b.pluginId}:${b.contribution.id}`)}
-        <div class="about-row" class:about-disabled={!b.enabled}>
-          <span class="about-label">
-            <kbd>{b.canonical}</kbd>
-            {b.contribution.titleKey ? i18n.t(b.contribution.titleKey) : b.contribution.id}
-          </span>
-          <span class="about-value">
-            {b.pluginId} · {i18n.t(`settings.about.hotkeyScope.${b.contribution.scope}`)}
-            {#if !b.enabled} · {i18n.t('settings.about.hotkeyDisabled')}{/if}
-          </span>
-        </div>
-      {/each}
     {/if}
   </div>
 
@@ -314,13 +358,15 @@
   }
 
   .about-sub { font-weight: 600; margin-top: var(--space-xs); }
-  .about-disabled { opacity: 0.55; }
-  .about-row kbd {
-    font-family: var(--font-mono, monospace);
-    padding: 0 var(--space-xs);
+  .interval select {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 2.5rem;
+    padding: var(--space-sm);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    margin-inline-end: var(--space-xs);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-primary);
   }
   .about-empty { color: var(--text-muted); font-size: var(--font-size-sm); }
 </style>

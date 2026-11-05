@@ -10,9 +10,9 @@ import { getSearchFocusTick } from '../../shared/file-table/file-table-state.sve
 import { editorUi } from '../../shared/text-editor-dialog/editor-state.svelte';
 import { guardNo3mfPrint } from '../guards';
 import * as hotkeys from '../hotkeys';
-import { inspectUrl, is3mf, jobsCustomAction, jobsMenuItems } from '../jobs-menu';
+import { inspectUrl, is3mf, jobsCustomAction, jobsMenuItems } from '../lib/jobs-menu';
 import { jobsManifest } from '../manifest';
-import { jobsUi } from '../page-ui-state.svelte';
+import { jobsUi } from '../state/page-ui-state.svelte';
 
 const DENY = { action: 'deny', reasonKey: 'jobs.guard.three_mf_not_printable' };
 const ALLOW = { action: 'allow' };

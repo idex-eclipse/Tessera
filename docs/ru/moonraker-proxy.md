@@ -262,17 +262,17 @@ stop();
   распознаются, поэтому никогда их не поллите;
 - `poll` обходит GuardAgent (это внутреннее обновление, только чтения).
 
-## `klippyStream(method, params, onData, onStatus?)`
+## `klippyStream(method, params, onData, onStatus?, onAck?)`
 
-Декларация «мне нужен bulk-поток Klipper». Такие данные (сейчас `load_cell/dump_force`
-— отсчёты датчика усилия) обычный `/websocket` Moonraker не отдаёт: только raw-мост
+Декларация «мне нужен bulk-поток Klipper». Такие данные (например `load_cell/dump_force`
+— отсчёты датчика усилия или `motion_report/dump_trapq`) обычный `/websocket` Moonraker не отдаёт: только raw-мост
 `/klippysocket`. Плагин сокетов не открывает: сокет (один на принтер) открывает и ведёт
 прокси на том же origin, что и основной сокет, с тем же токеном. Возвращает функцию отмены.
 
 ```ts
 const stop = api.moonraker().klippyStream(
   'load_cell/dump_force',
-  { load_cell: 'my_cell' },
+  { sensor: 'my_cell' },
   (batch) => {
     // { data: [[time, force_g | null, counts, tare | null], …] }
   },
@@ -284,8 +284,22 @@ stop();
 
 Правила:
 
-- разрешены только методы из списка хоста (сейчас `load_cell/dump_force`); остальные
-  отклоняются с предупреждением в консоль, `klippyStream` возвращает пустую функцию;
+- мост **только для чтения по политике**: хост пропускает любой метод вебхуков Klipper, кроме
+  чёрного списка эндпоинтов ядра, меняющих состояние принтера: `emergency_stop`,
+  `register_remote_method`, `gcode/script`, `gcode/restart`, `gcode/firmware_restart` и всё
+  под `pause_resume/`. Имя хост сначала нормализует (регистр, пробелы по краям, управляющие
+  символы, в том числе разделитель кадра ETX, Unicode NFKC) и отправляет уже нормализованную
+  строку, поэтому `Emergency_Stop` или `emergency_stop\u0003` тоже отклоняются. Имя — один или
+  два сегмента из `[a-z0-9_]`. Отклонённый вызов, params не в виде простого объекта или со своим
+  `response_template` дают предупреждение в консоль, `klippyStream` возвращает пустую функцию.
+  Чёрный список покрывает ядро Klipper: сторонний модуль `extras` может зарегистрировать
+  собственный записывающий эндпоинт, о котором хост не знает;
+- примеры потоков: `load_cell/dump_force` (`{ sensor }`), `load_cell_probe/dump_taps`
+  (`{ sensor }`, сообщения `{ tap: { time: number[], force: number[] } }` — по одному касанию
+  пробы), `motion_report/dump_trapq` и `motion_report/dump_stepper` (`{ name }`),
+  `adxl345/dump_adxl345`, `angle/dump_angle`, `ldc1612/dump_ldc1612` (`{ sensor }`),
+  `tmc/stallguard_dump` (`{ name }`) и `objects/subscribe` (статус-объекты, сообщения
+  `{ eventtime, status }`);
 - сокет открывается с первой подписки; подписки с одинаковым `method+params` делят один
   поток Klipper;
 - у Klipper нет отписки: поток идёт, пока открыт сокет. С последней отменой сокет
@@ -297,8 +311,41 @@ stop();
   Klipper отклонил подписку (нет такого `load_cell`). Прокси повторяет подключение сам
   (1 с → 2 с → … до 30 с) и подписывается заново; плагину достаточно показать запасной
   вариант (например, `subscribe` на статус-объект);
+- ключ в params: `API_Server.md` Klipper описывает `{ sensor: '<имя>' }`, но часть версий
+  Klipper отвечает «Missing Argument [load_cell]» и ждёт `load_cell` (`load_cell_probe` для
+  `load_cell_probe/dump_taps`). Хост передаёт params как есть: плагин пробует сначала
+  документированный ключ, а при статусе `unavailable` — старый (плагин calibrations делает это
+  в `load-cell/stream-keys.ts`);
+- `onAck` (необязательный, `pluginApi: "0.12"`) получает `result` ответа Klipper на подписку:
+  у `objects/subscribe` это `{ eventtime, status }` — начальное состояние без разрыва до
+  первого обновления; у dump-потоков — `{ header: [...] }`. Вызывается при каждой
+  (пере)подписке, а слушателю, который подключился к уже идущему потоку, — сразу сохранённым
+  ответом;
 - `klippyStream` обходит GuardAgent (только чтение);
 - работает с `pluginApi: "0.9"` и новее: плагину, которому он обязателен, пишите `"0.9"`.
+  Хосты старше `"0.12"` принимают только `load_cell/dump_force` (и `load_cell_probe/dump_taps`
+  с `"0.11"`) и отклоняют остальные методы, поэтому плагин, который их использует, пишет `"0.12"`.
+
+## `klippyRequest(method, params?, options?)`
+
+Разовый запрос с ответом по тому же мосту `/klippysocket` (`pluginApi: "0.12"`):
+`objects/list`, `info` и другие чтения, до которых обычный `request()` не дотягивается. Правила
+метода и params и чёрный список те же, что у `klippyStream`; отклонённый вызов — rejected
+promise (а не предупреждение в консоль).
+
+```ts
+const { objects } = (await api.moonraker().klippyRequest('objects/list')) as { objects: string[] };
+const info = await api.moonraker().klippyRequest('info', {}, { timeoutMs: 5000 });
+```
+
+- resolves значением `result` Klipper; rejected с текстом `error.message`, если Klipper
+  ответил ошибкой, по таймауту (`timeoutMs`, по умолчанию 10 с), при обрыве соединения с
+  мостом или `dispose` прокси. Повторов нет;
+- сокет открывается по требованию и делит соединение с потоками. Если он больше никому не
+  нужен, закрывается примерно через 2 с после последнего ответа (серия запросов использует одно
+  соединение). Отмена одной группы потока при работающих других пересоздаёт сокет, и запросы,
+  бывшие на нём в полёте, отклоняются;
+- `klippyRequest` обходит GuardAgent (только чтение).
 
 ---
 

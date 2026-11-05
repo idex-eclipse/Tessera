@@ -1,7 +1,7 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
-import { systemUiState } from './system-ui-state.svelte.ts';
+import { systemUiState } from './state/system-ui-state.svelte.ts';
 
 /** id страницы «Система» в manifest.pages. */
 export const MACHINE_PAGE_ID = 'machine';

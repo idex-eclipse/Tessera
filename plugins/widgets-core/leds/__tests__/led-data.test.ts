@@ -10,7 +10,7 @@ import {
   parseTemplates,
   withBrightness,
   type LedItem,
-} from '../led-data';
+} from '../lib/led-data';
 
 const OBJECTS = [
   'toolhead',

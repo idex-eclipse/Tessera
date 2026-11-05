@@ -1,6 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useTemperatureData } from '../../use-temperature.svelte';
+  import { useTemperatureData } from '../../data/use-temperature.svelte';
   import PickerSection from '../../../../shared/PickerAccordion.svelte';
 
   let { params = {} }: { params?: Record<string, string> } = $props();

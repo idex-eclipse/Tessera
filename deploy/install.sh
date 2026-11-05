@@ -664,13 +664,13 @@ Environment=TESSERA_MOONRAKER=$MOONRAKER
 Environment=TESSERA_DIR=$INSTALL_DIR
 Environment=XDG_CONFIG_HOME=$(dirname "$cfg_dir")
 UMask=0022
-# Writes the installation directory (host/, deploy/, build-info) and nothing else.
+# Writes the installation directory (host/, deploy/, build-info) and the settings folder
+# (only BRANCH of install.conf, when the branch is switched from the UI), nothing else.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=tmpfs
-BindPaths=$INSTALL_DIR
-BindReadOnlyPaths=$cfg_dir
+BindPaths=$INSTALL_DIR $cfg_dir
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=128M
 SERVICE

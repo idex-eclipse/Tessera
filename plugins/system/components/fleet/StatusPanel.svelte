@@ -11,7 +11,7 @@
     fmtDuration,
     durationUnits,
     fmtClock,
-  } from '../../use-print-status.svelte.ts';
+  } from '../../data/use-print-status.svelte.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
   import { isKlippyFault } from '../../../shared/klippy-state/klippy-fault.ts';
   import { buildFleetIndex } from '../../fleet-index.ts';

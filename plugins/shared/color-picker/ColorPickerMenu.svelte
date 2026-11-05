@@ -71,8 +71,11 @@
   function updateSV(e: MouseEvent | TouchEvent): void {
     if (!svEl) return;
     const rect = svEl.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    // A touch event may carry no touches (e.g. touchend / cancelled): nothing to pick then.
+    const point = 'touches' in e ? e.touches[0] : e;
+    if (!point) return;
+    const clientX = point.clientX;
+    const clientY = point.clientY;
 
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
@@ -89,7 +92,9 @@
   function updateH(e: MouseEvent | TouchEvent): void {
     if (!hEl) return;
     const rect = hEl.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const point = 'touches' in e ? e.touches[0] : e;
+    if (!point) return;
+    const clientX = point.clientX;
 
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const h = Math.round((x / rect.width) * 360);

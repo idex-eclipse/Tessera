@@ -1,9 +1,9 @@
 <script lang="ts">
   import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { useBedMesh } from '../../use-bed-mesh.svelte.ts';
-  import { gcode, runGcode } from '../../commands.ts';
-  import { ensurePrinterTracker } from '../../printer-tracker.ts';
+  import { useBedMesh } from '../../data/use-bed-mesh.svelte.ts';
+  import { gcode, runGcode } from '../../lib/commands.ts';
+  import { ensurePrinterTracker } from '../../data/printer-tracker.ts';
 
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 

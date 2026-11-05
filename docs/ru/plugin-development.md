@@ -274,9 +274,78 @@ CE зарегистрированы при импорте, зависимост�
 | `slider-field/slider-layout.ts` | `sliderColumns(width, narrow)`, `sectionsNeedAccordion(heights, gap, available)` |
 | `accordion/SectionAccordion.svelte` | секция, которая по запросу становится аккордеоном: `title`, `accordion`, `open`, `onToggle`, `bind:contentHeight` |
 | `accordion/use-accordion-state.svelte.ts` | `useAccordionState(api, key)`: помнит открытые секции для каждого принтера, отдельно для широкого и узкого режима |
+| `settings/create-setting.svelte.ts`, `settings/parsers.ts` | `useSetting(api, key, fallback, parse?)`: одна реактивная настройка; готовые парсеры `asBoolean`, `asNumber(min, max)`, `asPositiveNumber`, `oneOf([...])` |
+| `settings/watch-settings.ts` | `watchSettings(api, onChange)`: одна подписка, которая переживает смену принтера |
 | `popover-align.ts` | `shouldOpenAbove()`, `shouldAlignToEnd()`, `placeChipPopover()` для поповеров чипов |
 | `loader/Loader.svelte` | загрузчик; `<tessera-loader>` — его элемент для remote-плагинов (см. [i18n-and-theming.md](i18n-and-theming.md#индикатор-загрузки)) |
 | `gcode-hints/` | каталог G-code команд для автодополнения |
+
+### Реактивное чтение настроек (core-плагины)
+
+`api.settings.onChange` вызывается как `cb('', всеНастройки)`: ключ всегда пустой
+([plugin-api.md](plugin-api.md#настройки)), а подписка остаётся привязанной к принтеру,
+который был активен в момент подписки. Отсюда две ошибки, из-за которых виджеты оставались
+со старыми значениями после подгрузки настроек из базы Moonraker или после смены принтера:
+
+- `onChange((k) => { if (k === 'my.key') … })` не срабатывает никогда, потому что `k` равен `''`;
+- разовое `api.settings.get(...)` при монтировании или `onChange`, подписанный один раз,
+  не учитывает последующую смену принтера.
+
+Поэтому core-плагины читают настройки **только** через `plugins/shared/settings`:
+
+```ts
+// в компоненте (или в коде, который выполняется при инициализации компонента)
+const banner = useSetting(api, 'status.banner', true, asBoolean);
+// banner.value реактивно; banner.set(false) обновляет значение и сохраняет его
+
+// в долгоживущем ядре (вне компонента): createSetting + destroy(), или
+const stop = watchSettings(api, () => { cfg = readCfg(); }); // перечитать при ЛЮБОМ изменении
+```
+
+Всегда задавайте значение по умолчанию (хост не применяет `manifest.defaultSettings`) и парсер,
+который возвращает умолчание при некорректных данных: настройки — обычный JSON, который мог
+записать импорт или другой браузер. Не храните в `api.settings` данные, уникальные для принтера,
+если может быть включён sync ([settings.md](settings.md)).
+
+### Раскладка встроенных плагинов
+
+Относится **только** к встроенным плагинам в `plugins/*`; remote-плагины и расширения
+свободны. Соблюдение проверяет `plugins/shared/__tests__/plugin-structure.test.ts`.
+
+```
+plugins/<id>/
+  index.ts  manifest.ts            регистрация custom elements; манифест
+  types.ts                         типы, общие для нескольких слоёв (локальные остаются рядом с модулем)
+  guards.ts  hotkeys.ts            контракты, которые реэкспортирует index.ts (у system здесь же
+                                   notification-producers.ts и fleet-index.ts)
+  lib/                             чистая логика: без Svelte, без рун, без runtime PluginApi
+  data/                            подписки на Moonraker / plugin API («ядра», use-*.svelte.ts)
+  state/                           $state-хранилища без сети: UI-состояние, префы из настроек
+  components/
+    chips/ overlays/ banners/ widgets/<Name>/ page/ (page/panels/) fleet/ right-panel/
+    shared/                        части, общие для нескольких поверхностей
+  i18n/ (index.ts, locales/)  icons/  __tests__/
+```
+
+Направление импортов одностороннее: `components → data / state → lib → types`. `lib` никогда не
+импортирует `data`, `state` и `components`; `state` — `data`; `data` — `components`; плагины не
+импортируют друг друга (только `plugins/shared` и SDK). Тесты лежат только в `__tests__/`, в
+`components/` — только `.svelte`.
+
+Тесты, которым нужна настоящая клиентская реактивность (эффекты, владение `$derived`, что
+компонент рисует после смены настройки), называются `*.dom.test.ts`: они идут в jsdom с
+Svelte, собранным для браузера. Остальные тесты идут в `node`, где Svelte компилируется в
+серверном режиме и руны не работают. Фикстуры для DOM-теста (маленькие `.svelte`-пробы) лежат в
+`__tests__/helpers/`.
+
+`widgets-core` — набор плиток: в его корне остаются `index.ts`, `manifest.ts`, общий `i18n/` и
+`__tests__/`, а каждая папка внутри (`temperature`, `tools`, `camera`, …) устроена как отдельный
+плагин и имеет свой `manifest.ts` со списком вкладов.
+
+Ядро данных не должно вызывать lifecycle-функции Svelte (`onDestroy`): keeper может создать его
+вне компонента; что оно удерживает, оно отпускает в собственном `destroy()`. По той же причине
+`createCoreKeeper` создаёт каждое ядро под своим effect root (`runDetached`), чтобы `$derived`
+ядра не принадлежали компоненту, который случайно создал его первым.
 
 ---
 
@@ -373,7 +442,7 @@ interface PluginManifest {
 
 `pluginApi` — версия контракта плагинов, которая нужна плагину: `PluginApi`, манифест и
 CE-контракт. Своя версия у хоста — в `plugin-sdk/src/api-level.ts` (`PLUGIN_API`,
-сейчас `0.10`; её показывает Settings → About).
+сейчас `0.12`; её показывает Settings → About).
 
 - **MINOR** растёт при каждом обратно совместимом добавлении: новый метод `PluginApi`,
   поле или поверхность манифеста. **MAJOR** зарезервирован для несовместимых изменений.
@@ -395,6 +464,8 @@ CE-контракт. Своя версия у хоста — в `plugin-sdk/src/
 | `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `dependencies` |
 | `0.9` | `handle.klippyStream`: bulk-потоки Klipper (`load_cell/dump_force`) через `/klippysocket` |
 | `0.10` | `api.notifications.push`: центр уведомлений хоста (только запись) |
+| `0.11` | `klippyStream` разрешает и `load_cell_probe/dump_taps` (кривые касаний при зондировании) |
+| `0.12` | `klippyStream`: чёрный список вместо белого (мост открыт для чтения), `onAck`; `klippyRequest`: разовые запросы с ответом по `/klippysocket` |
 
 ### Зависимости
 

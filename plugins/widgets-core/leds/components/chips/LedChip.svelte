@@ -1,13 +1,13 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useLeds } from '../../use-leds.svelte';
+  import { useLeds } from '../../data/use-leds.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
   import { placeChipPopover } from '../../../../shared/popover-align';
-  import { colorToCss, isLit, OFF, rgbwToHex, type Rgbw } from '../../led-data';
-  import LedStrip from '../LedStrip.svelte';
-  import LedControls from '../LedControls.svelte';
+  import { colorToCss, isLit, OFF, rgbwToHex, type Rgbw } from '../../lib/led-data';
+  import LedStrip from '../shared/LedStrip.svelte';
+  import LedControls from '../shared/LedControls.svelte';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 

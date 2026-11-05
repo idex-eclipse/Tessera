@@ -1,6 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useFilament } from '../../use-filament.svelte';
+  import { useFilament } from '../../data/use-filament.svelte';
   import PickerSection from '../../../../shared/PickerAccordion.svelte';
 
   let { params = {} }: { params?: Record<string, string> } = $props();

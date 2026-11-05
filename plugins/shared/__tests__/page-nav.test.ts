@@ -15,7 +15,7 @@ import * as jobs from '../../jobs/hotkeys';
 import { jobsManifest } from '../../jobs/manifest';
 import * as system from '../../system/hotkeys';
 import { systemManifest } from '../../system/manifest';
-import { systemUiState } from '../../system/system-ui-state.svelte';
+import { systemUiState } from '../../system/state/system-ui-state.svelte';
 import { openPluginPage, pageHash } from '../page-nav';
 
 afterEach(() => {

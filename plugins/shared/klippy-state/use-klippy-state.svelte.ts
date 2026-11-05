@@ -285,6 +285,35 @@ const keeper = createCoreKeeper<KlippyStateStore>({
   cap: 4,
 });
 
+/** A held klippy-state core of one printer; `release()` must be called exactly when the owner dies. */
+export interface KlippyStateHold {
+  readonly store: KlippyStateStore;
+  /** Drops the hold (idempotent). The core itself stays alive in the keeper (keep-alive). */
+  release(): void;
+}
+
+/**
+ * Holds the klippy-state core of ONE printer without touching Svelte's component lifecycle.
+ *
+ * Why this exists: per-printer data cores (`use-system`, `use-health`) are created by their own
+ * keeper, which may run outside any component (e.g. from a printer-change listener). Calling
+ * `useKlippyState` there threw `lifecycle_outside_component` (it uses `onDestroy`), and even
+ * where it did not, the core never released the hold. A core calls this and releases in its
+ * own `destroy()`.
+ */
+export function acquireKlippyState(api: PluginApi, printerId: string): KlippyStateHold {
+  const store = keeper.acquire(printerId, api);
+  let released = false;
+  return {
+    store,
+    release() {
+      if (released) return;
+      released = true;
+      keeper.release(printerId);
+    },
+  };
+}
+
 /**
  * Хук состояния Klipper.
  *
@@ -292,18 +321,20 @@ const keeper = createCoreKeeper<KlippyStateStore>({
  * refcount на текущего принтера, ядра других принтеров живут в keeper по
  * политике keep-alive. С printerId — fleet/явная привязка: прямое ядро с
  * удержанием.
+ *
+ * Only for component initialisation (it registers `onDestroy`); cores use `acquireKlippyState`.
  */
 export function useKlippyState(api: PluginApi, printerId?: string): KlippyStateStore {
   if (printerId !== undefined) {
-    const core = keeper.acquire(printerId, api);
+    const hold = acquireKlippyState(api, printerId);
     const offPrinters = api.onPrintersChange((printers) => {
       keeper.prune(printers.map((p) => p.id));
     });
     onDestroy(() => {
       offPrinters();
-      keeper.release(printerId);
+      hold.release();
     });
-    return core;
+    return hold.store;
   }
 
   let heldPid = api.printer.id;

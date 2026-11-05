@@ -71,6 +71,7 @@ function createFakeProxy(url: string): FakeProxy {
         // no-op
       };
     },
+    klippyRequest: () => Promise.resolve(undefined),
 
     onAuthRequired(callback: () => void): () => void {
       return () => {

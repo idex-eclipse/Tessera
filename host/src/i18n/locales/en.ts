@@ -147,10 +147,16 @@ const en: I18nMessages = {
         unavailable: 'Update from the UI is not set up: run the tessera command on the printer to update.',
         unauthorized: 'Log in to this printer to update Tessera.',
       },
+      branch: {
+        title: 'Switch branch',
+        label: 'Branch',
+        switch: 'Switch',
+        confirm: 'Switch Tessera to the {branch} branch? Its build replaces the installed UI; your plugins and settings are kept.',
+        listError: 'Cannot list branches: {error}',
+      },
       guards: 'Guards',
       parkedChains: 'Running guards',
       noParked: 'No running guards',
-      hotkeys: 'Hotkeys',
       noHotkeys: 'No hotkeys registered',
       hostHotkeys: {
         toggleFleet: 'Toggle fleet mode',
@@ -166,7 +172,6 @@ const en: I18nMessages = {
         layoutUndo: 'Undo a layout change (edit mode)',
         layoutRedo: 'Redo a layout change (edit mode)',
       },
-      hotkeyDisabled: 'disabled: conflict',
       hotkeyScope: { global: 'global', dashboard: 'dashboard', plugin: 'plugin page' },
     },
 

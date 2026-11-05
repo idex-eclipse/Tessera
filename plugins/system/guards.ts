@@ -1,6 +1,6 @@
 import type { GuardContext, GuardDecision } from '../../plugin-sdk/src/types';
 
-import { isPrinting } from './print-tracker.ts';
+import { isPrinting } from './data/print-tracker.ts';
 
 interface GuardRequest {
   method: string;

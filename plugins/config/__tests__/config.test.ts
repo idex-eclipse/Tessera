@@ -13,7 +13,7 @@ import { editorUi } from '../../shared/text-editor-dialog/editor-state.svelte';
 import { guardCriticalConfig, isCriticalConfigPath, normalizeMoonrakerPath } from '../guards';
 import * as hotkeys from '../hotkeys';
 import { configManifest } from '../manifest';
-import { activeSearchScope, pageUi, setActivePane, setTab } from '../page-ui-state.svelte';
+import { activeSearchScope, pageUi, setActivePane, setTab } from '../state/page-ui-state.svelte';
 
 const decide = (method: string, params: unknown) => guardCriticalConfig({ method, params });
 const DENY = { action: 'deny', reasonKey: 'config.guard.critical_file' };

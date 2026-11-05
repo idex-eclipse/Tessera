@@ -4,7 +4,7 @@ import { openPluginPage } from '../shared/page-nav';
 import { requestRefresh, requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
 import { isEditorOpen } from '../shared/text-editor-dialog/editor-state.svelte';
 
-import { jobsUi } from './page-ui-state.svelte.ts';
+import { jobsUi } from './state/page-ui-state.svelte.ts';
 
 /** scope таблицы на странице Jobs (см. JobsPage.svelte). */
 export const JOBS_PAGE_SCOPE = 'page:gcodes';

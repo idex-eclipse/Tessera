@@ -1,6 +1,6 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 
-import SystemPage from './components/pages/SystemPage.svelte';
+import SystemPage from './components/page/SystemPage.svelte';
 import SystemRightPanel from './components/right-panel/SystemRightPanel.svelte';
 import StateBanner from './components/banners/SystemBanner.svelte';
 import StateBannerCollapsed from './components/banners/SystemBannerCollapsed.svelte';
@@ -33,8 +33,8 @@ defineMpuElement('mpu-system-notifications', NotificationProducers);
 defineMpuElement('mpu-core-system-chip-power', PowerChip);
 defineMpuElement('mpu-core-system-chip-power-picker', PowerChipPicker);
 
-import StatusWidget from './components/widgets/StatusWidget.svelte';
-import StatusHeader from './components/widgets/StatusHeader.svelte';
+import StatusWidget from './components/widgets/Status/StatusWidget.svelte';
+import StatusHeader from './components/widgets/Status/StatusHeader.svelte';
 defineMpuElement('mpu-widgets-status', StatusWidget);
 defineMpuElement('mpu-widgets-status-header', StatusHeader);
 

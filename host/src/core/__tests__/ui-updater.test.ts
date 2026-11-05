@@ -74,6 +74,22 @@ describe('ui-updater / availability', () => {
   });
 });
 
+describe('ui-updater / branches', () => {
+  it('keeps the list of branches', async () => {
+    const { updater } = setup(() => json(200, { current: 'main', branches: ['dev', 'main'], error: null }));
+    await updater.loadBranches();
+    expect(updater.branches).toEqual(['dev', 'main']);
+    expect(updater.branchesError).toBeNull();
+  });
+
+  it('a failure leaves an empty list and the reason', async () => {
+    const { updater } = setup(() => json(401, { error: 'Unauthorized' }));
+    await updater.loadBranches();
+    expect(updater.branches).toEqual([]);
+    expect(updater.branchesError).toBe('Unauthorized');
+  });
+});
+
 describe('ui-updater / update', () => {
   it('posts an empty object, then re-reads the status', async () => {
     const { updater, fetchMock } = setup((path) =>
@@ -87,6 +103,14 @@ describe('ui-updater / update', () => {
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect(String(fetchMock.mock.calls[1]![0])).toBe('/tessera-update/v1/status');
     expect(updater.busy).toBe(false);
+  });
+
+  it('switching a branch posts the branch name', async () => {
+    const { updater, fetchMock } = setup((path) =>
+      path === 'update' ? json(200, { changed: true, from: 'aaaaaaa', to: 'bbbbbbb' }) : json(200, status),
+    );
+    expect(await updater.update('dev')).toBe(true);
+    expect((fetchMock.mock.calls[0]![1] as RequestInit).body).toBe('{"branch":"dev"}');
   });
 
   it('nothing to update: false, no error', async () => {

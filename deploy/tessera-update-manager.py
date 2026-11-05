@@ -7,7 +7,8 @@ the configured branch, the same build deploy/install.sh downloads. Standard libr
 Usage (the service is a systemd socket unit written by deploy/install.sh):
   tessera-update-manager.py serve [--socket <path>]   HTTP API on a unix socket
   tessera-update-manager.py status                    installed and published build
-  tessera-update-manager.py update                    download and swap the build in
+  tessera-update-manager.py update [--branch <name>]  download and swap the build in (--branch switches)
+  tessera-update-manager.py branches                  branches that have a published build
 
 Why a separate service and not part of tessera-ext: replacing the UI needs write access
 to the installation directory, while tessera-ext may write extensions/ only. Keeping them
@@ -17,8 +18,8 @@ apart keeps that sandbox narrow. Both authorize requests with Moonraker the same
 What it does NOT do: nginx, systemd units and Klipper config need root and stay with
 `tessera update` (install.sh). A build that needs such a change says so in the release notes.
 
-The request carries no parameters: branch and repository come from install.conf, the
-archive is verified against the sha256 of the published build-info and unpacked into a
+The repository comes from install.conf; the branch too, unless a request asks to switch
+to another one (then the choice is saved back to install.conf). The archive is verified against the sha256 of the published build-info and unpacked into a
 staging folder first, so a failed update leaves the working UI in place.
 """
 
@@ -164,12 +165,71 @@ def repo_slug(repo_url):
     return slug if SLUG_RE.fullmatch(slug) else None
 
 
-def release_base():
-    """URL of the rolling release of the branch (.github/workflows/build.yml)."""
+def valid_branch(name):
+    return isinstance(name, str) and bool(ext.BRANCH_RE.fullmatch(name)) and '..' not in name
+
+
+def release_slug():
+    """owner/repo of the configured repository; builds are releases of it."""
     slug = repo_slug(read_conf().get('REPO_URL') or DEFAULT_REPO_URL)
     if not slug:
         raise ExtError('REPO_URL in install.conf is not a GitHub repository: update with `tessera update`', 409)
-    return f'https://github.com/{slug}/releases/download/build-{current_branch().replace("/", "-")}'
+    return slug
+
+
+def release_base(branch=None):
+    """URL of the rolling release of the branch (.github/workflows/build.yml)."""
+    return f'https://github.com/{release_slug()}/releases/download/build-{(branch or current_branch()).replace("/", "-")}'
+
+
+def save_branch(branch):
+    """Rewrites BRANCH in install.conf and keeps every other line, so `tessera update` stays on this branch.
+
+    Replaced atomically (temp file + rename in the same folder): install.sh reads the file at any time.
+    Returns the previous text (None if there was no file) so a failed switch can put it back.
+    """
+    try:
+        with open(CONF_FILE, encoding='utf-8') as f:
+            previous = f.read()
+    except OSError:
+        previous = None
+    lines = (previous or '').splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith('BRANCH='):
+            lines[i] = f'BRANCH={branch}'
+            break
+    else:
+        lines.append(f'BRANCH={branch}')
+    write_conf('\n'.join(lines) + '\n')
+    return previous
+
+
+def restore_conf(previous):
+    """Puts install.conf back after a failed switch (None = there was no file)."""
+    try:
+        if previous is None:
+            os.unlink(CONF_FILE)
+        else:
+            write_conf(previous)
+    except (OSError, ExtError):
+        pass  # best effort: the original error is the one worth reporting
+
+
+def write_conf(text):
+    try:
+        os.makedirs(os.path.dirname(CONF_FILE), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix='.install.conf-', dir=os.path.dirname(CONF_FILE))
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(text)
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, CONF_FILE)
+        except BaseException:
+            os.unlink(tmp)
+            raise
+    except OSError as e:
+        # Installations made before branch switching have the settings folder mounted read-only.
+        raise ExtError(f'Cannot save the branch to install.conf ({e}): run `tessera update` on the printer once', 500) from e
 
 
 # ------------------------------------------------------------------
@@ -220,9 +280,9 @@ def download(url, limit, sink=None):
     return (b''.join(chunks) if sink is None else None), digest.hexdigest()
 
 
-def remote_info():
-    """Validated build-info of the published build of the branch."""
-    data, _ = download(f'{release_base()}/build-info', MAX_BUILD_INFO_BYTES)
+def remote_info(branch=None):
+    """Validated build-info of the published build of the branch (default: the configured one)."""
+    data, _ = download(f'{release_base(branch)}/build-info', MAX_BUILD_INFO_BYTES)
     info = parse_build_info(data.decode('utf-8', errors='replace'))
     if not (COMMIT_RE.fullmatch(info.get('COMMIT', ''))
             and ARCHIVE_RE.fullmatch(info.get('ARCHIVE', ''))
@@ -372,26 +432,66 @@ def api_status(force=False):
     }
 
 
-def api_update():
-    """Downloads the published build and swaps it in. The old build stays if anything fails."""
+_branches_cache = {'at': float('-inf'), 'branches': None, 'error': None}
+
+
+def api_branches(force=False):
+    """Branches that have a published build, from the releases of the repository (like install.sh).
+
+    The release tag is `build-<branch with / replaced by ->`, so a branch such as feature/x is
+    listed as feature-x; that name selects the same release, which is all a switch needs.
+    """
+    now = time.monotonic()
+    if force or now - _branches_cache['at'] > STATUS_CACHE_SECONDS:
+        try:
+            data, _ = download(f'https://api.github.com/repos/{release_slug()}/releases?per_page=100', MAX_BUILD_INFO_BYTES * 16)
+            names = sorted({
+                r['tag_name'][len('build-'):]
+                for r in json.loads(data.decode('utf-8', errors='replace'))
+                if isinstance(r, dict) and isinstance(r.get('tag_name'), str) and r['tag_name'].startswith('build-')
+            })
+            _branches_cache.update(at=now, branches=[n for n in names if valid_branch(n)], error=None)
+        except (ExtError, ValueError, TypeError) as e:
+            # Not cached for long: a GitHub hiccup must not hide the list for 10 minutes.
+            _branches_cache.update(at=now - STATUS_CACHE_SECONDS + 60, branches=None, error=str(e))
+    return {
+        'current': current_branch(),
+        'branches': _branches_cache['branches'] or [],
+        'error': _branches_cache['error'],
+    }
+
+
+def api_update(branch=None):
+    """Downloads the published build and swaps it in. The old build stays if anything fails.
+
+    With `branch` the installation is switched to that branch: its build is installed even if
+    the commit is the same, and the choice is saved to install.conf (so `tessera update` agrees).
+    """
     local = installed_info()
     if local is None or os.path.isdir(os.path.join(INSTALL_DIR, '.git')):
         raise ExtError('This installation is a source checkout: update it with `tessera update`', 409)
+    if branch is not None and not valid_branch(branch):
+        raise ExtError('Invalid branch name')
+    switching = branch is not None and branch != current_branch()
 
     with UpdateLock():
         recover_swap()
-        info = remote_info()
-        if short(info['COMMIT']) == short(local.get('COMMIT')):
+        # Also proves the branch has a published build before anything is changed.
+        info = remote_info(branch)
+        if not switching and short(info['COMMIT']) == short(local.get('COMMIT')):
             return {'changed': False, 'from': short(local.get('COMMIT')), 'to': short(info['COMMIT'])}
+        # release_base() below must keep pointing at the target, whatever install.conf says now.
+        target = branch if switching else current_branch()
 
         for stale in os.listdir(INSTALL_DIR):
             if stale.startswith('.staging-'):
                 shutil.rmtree(os.path.join(INSTALL_DIR, stale), ignore_errors=True)
         staging = tempfile.mkdtemp(prefix='.staging-', dir=INSTALL_DIR)
+        previous_conf, conf_saved = None, False
         try:
             archive = os.path.join(staging, 'build.tar.gz')
             with open(archive, 'wb') as sink:
-                _, digest = download(f'{release_base()}/{info["ARCHIVE"]}', MAX_ARCHIVE_BYTES, sink)
+                _, digest = download(f'{release_base(target)}/{info["ARCHIVE"]}', MAX_ARCHIVE_BYTES, sink)
             if digest != info['SHA256']:
                 raise ExtError('sha256 of the downloaded build does not match build-info', 502)
 
@@ -401,7 +501,15 @@ def api_update():
             for must in REQUIRED_FILES:
                 if not os.path.isfile(os.path.join(tree, *must.split('/'))):
                     raise ExtError(f'The archive has no {must}', 502)
-            swap_in(tree)
+            # The setting goes first: it fails cleanly (read-only folder) before the UI is touched.
+            if switching:
+                previous_conf, conf_saved = save_branch(target), True
+            try:
+                swap_in(tree)
+            except ExtError:
+                if conf_saved:
+                    restore_conf(previous_conf)
+                raise
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
@@ -457,12 +565,13 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         def handler():
             url = urllib.parse.urlsplit(self.path)
-            if url.path != f'{API_PREFIX}status':
+            if url.path not in (f'{API_PREFIX}status', f'{API_PREFIX}branches'):
                 raise ExtError('Not found', 404)
             ext.check_same_origin(self.headers)
             ext.check_moonraker_auth(self.headers)
             # "Check now" in the UI skips the cache; page opens use it.
-            return api_status(force=urllib.parse.parse_qs(url.query).get('refresh') == ['1'])
+            force = urllib.parse.parse_qs(url.query).get('refresh') == ['1']
+            return api_branches(force) if url.path.endswith('/branches') else api_status(force)
         self.respond(handler)
 
     def do_POST(self):
@@ -478,11 +587,13 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                 body = json.loads(data.decode('utf-8'))
             except ValueError as e:
                 raise ExtError('Request body must be JSON') from e
-            # No parameters at all: branch and repository are never taken from a request.
-            if body != {}:
-                raise ExtError('Request body must be {}')
+            # Only an optional branch is accepted; the repository is never taken from a request.
+            # A branch is just a name of a release in the configured repository (validated, and
+            # its sha256-checked build must exist), the same trust as the branch in install.conf.
+            if not isinstance(body, dict) or set(body) - {'branch'}:
+                raise ExtError('Request body must be {} or {"branch": "<name>"}')
             ext.check_moonraker_auth(self.headers)
-            return api_update()
+            return api_update(body.get('branch'))
         self.respond(handler)
 
 
@@ -493,7 +604,6 @@ UNIX_SERVER = getattr(socketserver, 'UnixStreamServer', None)
 class ApiServer(UNIX_SERVER or object):
     def __init__(self, socket_path=None):
         super().__init__(socket_path or '', ApiHandler, bind_and_activate=False)
-        self.idle = False
         if socket_path:
             if os.path.exists(socket_path):
                 os.unlink(socket_path)
@@ -504,9 +614,6 @@ class ApiServer(UNIX_SERVER or object):
             self.socket.close()
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=3)
 
-    def handle_timeout(self):
-        self.idle = True
-
 
 def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
     if not UNIX_SERVER:
@@ -516,10 +623,11 @@ def cmd_serve(socket_path=None, idle_seconds=IDLE_EXIT_SECONDS):
         raise ExtError('serve expects a systemd socket (LISTEN_FDS=1) or --socket <path>')
 
     with ApiServer(socket_path) as server:
-        # Exits when idle, systemd starts it again on the next connection.
-        server.timeout = idle_seconds
-        while not server.idle:
-            server.handle_request()
+        # Exits when idle or after an update replaced these files (this process and the
+        # tessera-ext module it imported would otherwise run the previous build's code);
+        # systemd starts it again on the next connection.
+        watched = [os.path.realpath(__file__), os.path.realpath(ext.__file__)]
+        ext.serve_until_idle(server, idle_seconds, watched)
 
 
 def main(argv):
@@ -530,8 +638,11 @@ def main(argv):
             cmd_serve(socket_path)
         elif command == 'status':
             print(json.dumps(api_status(force=True), indent=2, ensure_ascii=False))
+        elif command == 'branches':
+            print(json.dumps(api_branches(force=True), indent=2, ensure_ascii=False))
         elif command == 'update':
-            print(json.dumps(api_update(), indent=2, ensure_ascii=False))
+            branch = argv[3] if len(argv) > 3 and argv[2] == '--branch' else None
+            print(json.dumps(api_update(branch), indent=2, ensure_ascii=False))
         else:
             print(__doc__)
             return 0 if command in ('-h', '--help', 'help') else 1

@@ -1,6 +1,6 @@
 import type { GuardContext, GuardDecision } from '../../plugin-sdk/src/types';
 
-import { getTracked, resolvePrinterState } from './printer-tracker.ts';
+import { getTracked, resolvePrinterState } from './data/printer-tracker.ts';
 
 interface GuardRequest {
   method: string;

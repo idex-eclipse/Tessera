@@ -275,9 +275,78 @@ at runtime. What is there for layout:
 | `slider-field/slider-layout.ts` | `sliderColumns(width, narrow)`, `sectionsNeedAccordion(heights, gap, available)` |
 | `accordion/SectionAccordion.svelte` | a section that becomes an accordion on demand: `title`, `accordion`, `open`, `onToggle`, `bind:contentHeight` |
 | `accordion/use-accordion-state.svelte.ts` | `useAccordionState(api, key)`: remembers open sections per printer, separately for wide and narrow |
+| `settings/create-setting.svelte.ts`, `settings/parsers.ts` | `useSetting(api, key, fallback, parse?)`: one reactive setting; ready-made parsers `asBoolean`, `asNumber(min, max)`, `asPositiveNumber`, `oneOf([...])` |
+| `settings/watch-settings.ts` | `watchSettings(api, onChange)`: one subscription that follows printer switches |
 | `popover-align.ts` | `shouldOpenAbove()`, `shouldAlignToEnd()`, `placeChipPopover()` for chip popovers |
 | `loader/Loader.svelte` | the loader; `<tessera-loader>` is its element for remote plugins (see [i18n-and-theming.md](i18n-and-theming.md#loading-indicator)) |
 | `gcode-hints/` | the G-code command catalog behind autocomplete |
+
+### Reading settings reactively (core plugins)
+
+`api.settings.onChange` calls back as `cb('', allSettings)`: the key is always empty
+([plugin-api.md](plugin-api.md#settings)), and the subscription stays bound to the printer
+that was active when you subscribed. Two mistakes follow from that, and both used to make
+widgets keep stale values after settings arrived from the Moonraker database or after a printer
+switch:
+
+- `onChange((k) => { if (k === 'my.key') … })` never fires, because `k` is `''`;
+- a one-off `api.settings.get(...)` at mount, or an `onChange` subscribed once, ignores a later
+  printer switch.
+
+Core plugins therefore read settings **only** through `plugins/shared/settings`:
+
+```ts
+// in a component (or any code that runs during component initialisation)
+const banner = useSetting(api, 'status.banner', true, asBoolean);
+// banner.value is reactive; banner.set(false) updates it and persists it
+
+// in a long-lived core (not inside a component): createSetting + destroy(), or
+const stop = watchSettings(api, () => { cfg = readCfg(); }); // re-read on ANY change
+```
+
+Always give a default (the host does not apply `manifest.defaultSettings`) and a parser that
+falls back for malformed data: settings are plain JSON that an import or another browser may
+have written. Do not store per-printer data under `api.settings` if sync may be on
+([settings.md](settings.md#synchronization-between-printers-sync)).
+
+### Layout of built-in plugins
+
+This applies to the **built-in** plugins in `plugins/*` only; remote plugins and extensions
+are free-form. It is enforced by `plugins/shared/__tests__/plugin-structure.test.ts`.
+
+```
+plugins/<id>/
+  index.ts  manifest.ts            registration of the custom elements; the manifest
+  types.ts                         types shared by several layers (local types stay next to their module)
+  guards.ts  hotkeys.ts            contracts re-exported by index.ts (system also keeps
+                                   notification-producers.ts and fleet-index.ts here)
+  lib/                             pure logic: no Svelte, no runes, no PluginApi runtime
+  data/                            subscriptions to Moonraker / the plugin API (the "cores", use-*.svelte.ts)
+  state/                           $state holders without network: UI state, settings-backed prefs
+  components/
+    chips/ overlays/ banners/ widgets/<Name>/ page/ (page/panels/) fleet/ right-panel/
+    shared/                        pieces used by several surfaces
+  i18n/ (index.ts, locales/)  icons/  __tests__/
+```
+
+Import direction is one-way: `components → data / state → lib → types`. `lib` never imports
+`data`, `state` or `components`; `state` never imports `data`; `data` never imports
+`components`; plugins never import each other (only `plugins/shared` and the SDK). Tests live
+only in `__tests__/`. `components/` holds `.svelte` files only.
+
+Tests that need real client-side reactivity (effects, `$derived` ownership, what a component
+renders after a settings change) are named `*.dom.test.ts`: they run in jsdom with Svelte compiled
+for the browser. All other tests run in `node`, where Svelte is compiled in server mode and runes
+are inert. Fixtures for a DOM test (small `.svelte` probes) live in `__tests__/helpers/`.
+
+`widgets-core` is a bundle: its root keeps `index.ts`, `manifest.ts`, one shared `i18n/` and
+`__tests__/`, and every folder inside (`temperature`, `tools`, `camera`, …) is laid out like a
+plugin of its own, with its own `manifest.ts` listing its contributions.
+
+A data core must not call Svelte lifecycle functions (`onDestroy`) because the keeper may create
+it outside a component; it releases what it holds in its own `destroy()`. For the same reason
+`createCoreKeeper` builds every core under its own effect root (`runDetached`), so a core's
+`$derived` values do not belong to the component that happened to create it first.
 
 ---
 
@@ -373,7 +442,7 @@ manifest; the host itself ignores them, and they are not in the SDK type.
 
 `pluginApi` is the version of the plugin contract the plugin needs: `PluginApi`, the
 manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-level.ts`
-(`PLUGIN_API`, now `0.10`; Settings → About shows it).
+(`PLUGIN_API`, now `0.12`; Settings → About shows it).
 
 - **MINOR** grows with every backward-compatible addition: a new `PluginApi` method, a
   manifest field or surface. **MAJOR** is reserved for incompatible changes.
@@ -395,6 +464,8 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 | `0.8` | `extensionPoints` / `extensions`, `api.extensions`, `dependencies` |
 | `0.9` | `handle.klippyStream`: Klipper bulk streams (`load_cell/dump_force`) via `/klippysocket` |
 | `0.10` | `api.notifications.push`: the host notification center (write only) |
+| `0.11` | `klippyStream` also allows `load_cell_probe/dump_taps` (probing tap traces) |
+| `0.12` | `klippyStream`: denylist instead of allowlist (the bridge is open for reads), `onAck`; `klippyRequest`: one-shot requests with an answer over `/klippysocket` |
 
 ### Dependencies
 

@@ -1,7 +1,7 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 
-import CalibrationsPage from './components/CalibrationsPage.svelte';
-import CalibrationsWidget from './components/widgets/CalibrationsWidget.svelte';
+import CalibrationsPage from './components/page/CalibrationsPage.svelte';
+import CalibrationsWidget from './components/widgets/Calibrations/CalibrationsWidget.svelte';
 import BedMeshWidget from './components/widgets/BedMesh/BedMeshWidget.svelte';
 import BedMeshWidgetHeader from './components/widgets/BedMesh/BedMeshWidgetHeader.svelte';
 import TestZOverlay from './components/overlays/TestZOverlay.svelte';

@@ -182,7 +182,12 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   >();
   const printerSettingsPairs = new Set<string>();
 
-  onSyncChange(() => {
+  /**
+   * Drops the per-printer caches and re-reads them from storage, then tells the plugin
+   * subscribers. Used when the namespace changes (sync toggle) and when newer settings
+   * arrive from the Moonraker DB.
+   */
+  function resyncCaches(): void {
     // namespace сменился — сбрасываем кэши
     pluginSettingsCache = {};
     printerSettingsCache = {};
@@ -199,7 +204,30 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     for (const pid of printerSettingsPairs) {
       warmPrinterSettings(pid);
     }
-  });
+  }
+
+  onSyncChange(resyncCaches);
+
+  /**
+   * Re-reads everything that may have changed in storage behind the store's back
+   * (settings pulled from the Moonraker DB) without reloading the page. The plugin
+   * list is read too, but plugins that are already loaded stay as they are until a reload.
+   */
+  function reloadFromStorage(): void {
+    ui = readUiState(storage);
+    plugins = readPlugins(storage);
+    resyncCaches();
+    // Keep every printer's settings cached (and so reactive), not only those read so far
+    for (const printer of printers) warmPrinterSettings(printer.id);
+  }
+
+  const activePrinterListeners = new Set<(id: string | null) => void>();
+
+  /** Calls back after the active printer changed. Returns an unsubscribe function. */
+  function onActivePrinterChange(cb: (id: string | null) => void): () => void {
+    activePrinterListeners.add(cb);
+    return () => { activePrinterListeners.delete(cb); };
+  }
 
   /**
    * Persist corrected active printer id if needed.
@@ -292,6 +320,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     if (id === null) {
       activePrinterId = null;
       persistActivePrinter();
+      activePrinterListeners.forEach((cb) => safeCall(cb, null));
       return;
     }
 
@@ -303,6 +332,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
 
     activePrinterId = id;
     persistActivePrinter();
+    activePrinterListeners.forEach((cb) => safeCall(cb, id));
   }
 
   function persistPrinters(): void {
@@ -1017,6 +1047,8 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     updatePrinter,
     removePrinter,
     setActivePrinter,
+    onActivePrinterChange,
+    reloadFromStorage,
 
     addPlugin,
     setPluginEnabled,

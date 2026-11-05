@@ -20,6 +20,7 @@ import sys
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -1306,10 +1307,65 @@ class ApiTests(Base):
     def test_idle_exit(self):
         server = ext.ApiServer(os.path.join(self.tmp, 'idle'))
         self.addCleanup(server.server_close)
-        server.timeout = 0.01
-        while not server.idle:
-            server.handle_request()
-        self.assertTrue(server.idle)
+        self.assertEqual(ext.serve_until_idle(server, 0.05, [], poll_seconds=0.01), 'idle')
+
+    def test_exits_when_the_sources_are_replaced(self):
+        # An update from the UI swaps deploy/ under a running service: it must not go on
+        # answering with the previous build's code (the stale plugin API bug).
+        source = os.path.join(self.tmp, 'source.py')
+        with open(source, 'w', encoding='utf-8') as f:
+            f.write('# v1\n')
+        server = ext.ApiServer(os.path.join(self.tmp, 'stale'))
+        self.addCleanup(server.server_close)
+
+        def replace():
+            time.sleep(0.1)
+            os.replace(self.write_file(source + '.new', '# v2\n'), source)
+
+        thread = threading.Thread(target=replace)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.assertEqual(ext.serve_until_idle(server, 30, [source], poll_seconds=0.01), 'changed')
+
+    def test_exits_when_the_sources_are_deleted(self):
+        # tessera-ext has the old deploy/ bind-mounted: the update deletes the files there.
+        source = os.path.join(self.tmp, 'gone.py')
+        self.write_file(source, '# v1\n')
+        server = ext.ApiServer(os.path.join(self.tmp, 'gone'))
+        self.addCleanup(server.server_close)
+        threading.Timer(0.1, os.remove, [source]).start()
+        self.assertEqual(ext.serve_until_idle(server, 30, [source], poll_seconds=0.01), 'changed')
+
+    def test_a_replaced_source_leaves_the_waiting_connection_unanswered(self):
+        # The connection must stay queued on the socket for systemd to hand to a fresh process.
+        source = os.path.join(self.tmp, 'queued.py')
+        self.write_file(source, '# v1\n')
+        path = os.path.join(self.tmp, 'queued')
+        server = ext.ApiServer(path)
+        self.addCleanup(server.server_close)
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(client.close)
+
+        def replace_then_connect():
+            # In this order: a connection that was already waiting at the start is served.
+            time.sleep(0.1)
+            os.remove(source)
+            client.connect(path)
+            client.sendall(b'GET /tessera-ext/v1/status HTTP/1.0\r\n\r\n')
+
+        thread = threading.Thread(target=replace_then_connect)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.assertEqual(ext.serve_until_idle(server, 30, [source], poll_seconds=0.01), 'changed')
+        client.settimeout(0.2)
+        with self.assertRaises(socket.timeout):
+            client.recv(1)
+
+    @staticmethod
+    def write_file(path, text):
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        return path
 
 
 if __name__ == '__main__':

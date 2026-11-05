@@ -1,5 +1,5 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
-import HistoryPage from './HistoryPage.svelte';
+import HistoryPage from './components/page/HistoryPage.svelte';
 
 import historyIcon from './icons/history.svg?raw';
 

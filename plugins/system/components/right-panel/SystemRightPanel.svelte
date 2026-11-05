@@ -2,7 +2,7 @@
   import Loader from '../../../shared/loader/Loader.svelte';
   import { untrack } from 'svelte';
 
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReadyChip.svelte';
@@ -13,8 +13,10 @@
   import { openThreeMF } from '../../../shared/3mf-parser/parser.ts';
   import type { ThreeMFHandle } from '../../../shared/3mf-parser/types.ts';
 
-  import { useSystem } from '../../use-system.svelte.ts';
-  import { systemUiState } from '../../system-ui-state.svelte.ts';
+  import { useSetting } from '../../../shared/settings/create-setting.svelte';
+  import { asBoolean } from '../../../shared/settings/parsers';
+  import { useSystem } from '../../data/use-system.svelte.ts';
+  import { systemUiState } from '../../state/system-ui-state.svelte.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -50,23 +52,26 @@
   // аккордеоны Host / Services (персист в api.settings → sync)
   // ------------------------------------------------------------------
 
-  let hostOpen = $state(api.settings.get<boolean>('panel:hostOpen') ?? false);
-  let servicesOpen = $state(api.settings.get<boolean>('panel:servicesOpen') ?? false);
-  let powerOpen = $state(api.settings.get<boolean>('panel:powerOpen') ?? false);
+  // Reactive settings: re-read after DB pulls / printer switches instead of once at mount.
+  const hostSetting = useSetting(api, 'panel:hostOpen', false, asBoolean);
+  const servicesSetting = useSetting(api, 'panel:servicesOpen', false, asBoolean);
+  const powerSetting = useSetting(api, 'panel:powerOpen', false, asBoolean);
+  const accountsSetting = useSetting(api, 'panel:accountsOpen', false, asBoolean);
+  const hostOpen = $derived(hostSetting.value);
+  const servicesOpen = $derived(servicesSetting.value);
+  const powerOpen = $derived(powerSetting.value);
+  const accountsOpen = $derived(accountsSetting.value);
 
   function togglePower(): void {
-    powerOpen = !powerOpen;
-    api.settings.set('panel:powerOpen', powerOpen);
+    powerSetting.set(!powerOpen);
   }
 
   function toggleHost(): void {
-    hostOpen = !hostOpen;
-    api.settings.set('panel:hostOpen', hostOpen);
+    hostSetting.set(!hostOpen);
   }
 
   function toggleServices(): void {
-    servicesOpen = !servicesOpen;
-    api.settings.set('panel:servicesOpen', servicesOpen);
+    servicesSetting.set(!servicesOpen);
   }
 
   // печать — для locked_while_printing у power-устройств
@@ -84,11 +89,8 @@
     );
   });
 
-  let accountsOpen = $state(api.settings.get<boolean>('panel:accountsOpen') ?? false);
-
   function toggleAccounts(): void {
-    accountsOpen = !accountsOpen;
-    api.settings.set('panel:accountsOpen', accountsOpen);
+    accountsSetting.set(!accountsOpen);
   }
 
   let currentUser = $derived(decodeJwtUser((api.moonraker() as { authToken?: string }).authToken ?? null));
@@ -714,6 +716,11 @@
           </div>
         </section>
       {/if}
+
+      <!-- panels-right (append only): extra sections after the built-in ones. E-stop and
+           upload & print above are deliberately not extensible. Contributions are mounted in a
+           narrow column and must lay out by their own width; the collapsed rail has no point. -->
+      <ExtensionPoint point="panels-right" />
     </div>
   {/if}
 </div>
@@ -920,6 +927,12 @@
   }
 
   /* ---------------- секции ---------------- */
+
+  /* Contributed sections (panels-right) must not shrink inside the scrolling column,
+     same as the built-in .sec cards: the column scrolls instead. */
+  .sys-scroll :global(.mpu-ext-point > .mpu-ext-item) {
+    flex-shrink: 0;
+  }
 
   .sec {
     background: var(--bg-surface);

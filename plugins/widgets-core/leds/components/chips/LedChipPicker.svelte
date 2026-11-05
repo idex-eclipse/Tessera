@@ -1,7 +1,7 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useLeds } from '../../use-leds.svelte';
-  import { LED_KINDS } from '../../led-data';
+  import { useLeds } from '../../data/use-leds.svelte';
+  import { LED_KINDS } from '../../lib/led-data';
   import PickerSection from '../../../../shared/PickerAccordion.svelte';
 
   let { params = {} }: { params?: Record<string, string> } = $props();

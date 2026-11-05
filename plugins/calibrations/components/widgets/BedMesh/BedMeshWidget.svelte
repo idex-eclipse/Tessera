@@ -1,15 +1,15 @@
 <script lang="ts">
   import { ExtensionPoint, usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { useBedMesh } from '../../../use-bed-mesh.svelte.ts';
-  import { computeStats, deviationColor } from '../../panels/Mesh/mesh-math.ts';
+  import { useBedMesh } from '../../../data/use-bed-mesh.svelte.ts';
+  import { computeStats, deviationColor } from '../../../lib/mesh-math.ts';
   import {
     sectorCounts,
     sectorMean,
     tickStep,
     fmtSector,
     type SectorBounds,
-  } from '../../../bed-mesh-sectors.ts';
+  } from '../../../lib/bed-mesh-sectors.ts';
 
   import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';

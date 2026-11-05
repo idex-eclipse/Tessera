@@ -1,10 +1,10 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useTemperatureData, useTemperaturePrefs } from '../../use-temperature.svelte';
-  import { parseHoldMinutes } from '../../hold-timer';
-  import HoldInput from '../HoldInput.svelte';
+  import { useTemperatureData, useTemperaturePrefs } from '../../data/use-temperature.svelte';
+  import { parseHoldMinutes } from '../../lib/hold-timer';
+  import HoldInput from '../shared/HoldInput.svelte';
   import { placeChipPopover } from '../../../../shared/popover-align';
-  import TempKindIcon from '../TempKindIcon.svelte';
+  import TempKindIcon from '../shared/TempKindIcon.svelte';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
 

@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const gcodePreviewManifest: PluginManifest = {
   id: '@core/gcode-preview',
   name: 'G-code Preview',
-  version: '2.0.0',
+  version: '3.0.0',
   entry: '/plugins/gcode-preview/index.js',
   pages: [
     { id: 'gcode-preview', titleKey: 'gcodePreview.title', icon: 'cube', element: 'mpu-gcode-preview-page', },

@@ -1,7 +1,9 @@
 # Settings and storage
 
-Tessera has no backend: all settings live in the browser's `localStorage` and are
-tied to the origin and the device. The schema is versioned with the `mpu:v2:` prefix.
+Tessera has no backend of its own. Settings live in the browser's `localStorage`
+(the synchronous working copy) and are **mirrored in the Moonraker database** of the
+printer, so they survive a browser change (see [Mirror in Moonraker](#mirror-in-moonraker)).
+The schema is versioned with the `mpu:v2:` prefix.
 
 ## localStorage keys
 
@@ -143,9 +145,53 @@ On start the host looks for keys of old schemas (`mpu:v1:*` or `mpu:*` without
 exports the old data or resets it. There is no automatic migration — you will not
 get old plugin settings back without configuring them again.
 
-## What the host keeps outside localStorage
+## Mirror in Moonraker
 
-Nothing. Printer data (files, history, temperatures) lives in Moonraker/Klipper; the
+The host copies the synced keys into the `tessera` namespace of the Moonraker DB and
+pulls newer copies back. `localStorage` is not replaced: it stays the working copy and
+the fallback, so without a reachable Moonraker everything works as before, and
+existing installations are migrated automatically (local keys that the DB has never
+seen are published on the first start).
+
+| Mirrored | Stays on the device only |
+|---|---|
+| `ui`, `plugins`, `editor-colors`, `settings:*`, `plugin-settings:*` | `printers`, `activePrinter`, `auth:*` (tokens), `deviceId`, `settingsSync`, the background image (`ui.bgImage`) |
+
+Where a key goes: per-printer keys (`settings:<id>`, `plugin-settings:<id>:*`) to that
+printer's own DB; global keys (`ui`, `plugins`, `GLOBAL` sets) to the DB of the printer
+that serves the page (the same origin, else the first printer). Records are stored
+without the browser's local printer ids, so a second browser that imported the same
+printer list sees them.
+
+A record in the DB (key = the `mpu:v2` key without the prefix, `.` written as `%2E`
+because Moonraker reads a dot as a path separator):
+
+```json
+{ "app": "tessera", "kind": "settings", "schema": 2, "key": "mpu:v2:settings:…",
+  "rev": 7, "updatedAt": 1767225600000,
+  "writer": { "deviceId": "…", "host": "192.168.1.20:8000", "userAgent": "…" },
+  "data": { } }
+```
+
+`app`/`kind` mark the record as Tessera settings; `writer` tells which browser saved
+it (a browser cannot learn its own IP and Moonraker does not report it, so the device
+id, the host the page was opened on and the User-Agent are stored instead).
+
+Rules:
+
+- **Last write wins, ordered by `rev`.** A push first reads the remote `rev` and
+  publishes `max(remote, local) + 1`; a pending local edit is never overwritten by an
+  older remote copy.
+- Writes are debounced (about 0.5 s) and retried while Moonraker is unreachable.
+- Moonraker has no change notification for its DB, so other browsers pick changes up at
+  start, when the window gets focus and on every printer switch. Newer copies are applied
+  in place (a changed plugin list needs a page reload, which the host does by itself).
+- Export/Import skip `deviceId` and the mirror's bookkeeping; an import is pushed to the
+  DB. Records in the namespace that are not marked `app: "tessera"` are ignored.
+
+## What the host keeps outside localStorage and the Moonraker DB
+
+Nothing else. Printer data (files, history, temperatures) lives in Moonraker/Klipper; the
 host does not duplicate it and does not read it for its own UI. The fleet search
 index (tags and the name of the file being printed, published by fleet panels) is
 kept in memory only and is never persisted.

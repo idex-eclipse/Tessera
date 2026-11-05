@@ -1,4 +1,5 @@
 import type { PluginApi } from '../../../plugin-sdk/src/types';
+import { watchSettings } from '../settings/watch-settings';
 
 let searchMap = $state<Record<string, string>>({});
 let tickMap = $state<Record<string, number>>({});
@@ -14,19 +15,10 @@ function wire(api: PluginApi): void {
   if (wired.has(api)) return;
   wired.add(api);
 
-  // api.settings.onChange привязан к принтеру, активному в момент подписки, поэтому
-  // при смене принтера переподписываемся — иначе изменения настроек второго принтера
-  // не доходили бы до таблицы (пока не сменится принтер ещё раз).
-  let offSettings = api.settings.onChange(() => {
-    rev++;
-  });
-
-  // смена принтера → переподписка и перечитать (GLOBAL тот же, но per-printer разные)
-  api.onPrinterChange(() => {
-    offSettings();
-    offSettings = api.settings.onChange(() => {
-      rev++;
-    });
+  // One subscription per plugin API, deliberately never released: it is shared by every table
+  // of the plugin and lives as long as the page does. watchSettings re-binds it on printer
+  // switches and ignores the (always empty) key, so any settings change bumps `rev`.
+  watchSettings(api, () => {
     rev++;
   });
 }

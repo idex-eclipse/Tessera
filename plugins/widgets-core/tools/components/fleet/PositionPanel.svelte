@@ -3,7 +3,7 @@
 
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { useToolhead } from '../../use-toolhead.svelte.ts';
+  import { useToolhead } from '../../data/use-toolhead.svelte.ts';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
   let {

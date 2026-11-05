@@ -40,11 +40,18 @@ Thumbs.db
 Config_Reference.md
 G-Codes.md
 # Local roadmap shared between chats
-roadmap.md
+*roadmap.md
 *_PLAN.md
 CLAUDE.md
 #release notes
-release-notes.md
+*release-notes.md
 
 # Local test plugin
 plugins/dummy/
+
+# Klipper upstream docs (local reference copy)
+docs klipper/
+docs moonraker/
+
+#motan_dumps
+motan_dumps/

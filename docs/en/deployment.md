@@ -86,7 +86,7 @@ What the CLI checks before anything lands in `extensions/`:
   paths, no `..`;
 - the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
-- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.10`;
+- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.12`;
   see [plugin-development.md](plugin-development.md#plugin-api-version)). The integer `1`
   of older entries means `0.7`;
 - its [dependencies](plugin-development.md#dependencies) fit: plugins from `requires` are
@@ -357,9 +357,18 @@ the installation directory, while `tessera-ext` may write `extensions/` only.
   the first request and the process exits after 5 idle minutes. nginx proxies `/tessera-update/`.
   Moonraker checks permissions the same way (same code), POST requires `application/json`,
   `Origin` must match `Host`.
-- **The request has no parameters.** `GET /tessera-update/v1/status` (add `?refresh=1` to skip
+- **Almost no parameters.** `GET /tessera-update/v1/status` (add `?refresh=1` to skip
   the 10-minute cache) and `POST /tessera-update/v1/update` with the body `{}`. The branch and
-  the repository come from `install.conf`; nothing is taken from the request.
+  the repository come from `install.conf`; the repository is never taken from a request.
+- **Switching the branch.** Settings → About has a branch selector. `GET /tessera-update/v1/branches`
+  lists the branches that have a published build (the `build-<branch>` releases of the repository;
+  `feature/x` appears as `feature-x`, which selects the same release). `POST /tessera-update/v1/update`
+  with `{"branch": "<name>"}` installs that branch's build even if the commit is the same and saves
+  `BRANCH` in `install.conf`, so `tessera update` stays on the new branch. The name is validated and its
+  build must exist and pass the sha256 check; on any failure the UI and `install.conf` stay as they were.
+  The same from the printer: `tessera-update-manager.py update --branch <name>`. Installations made
+  before this feature have `install.conf` mounted read-only for the service: the switch then fails with a
+  hint, and one `tessera update` on the printer rewrites the unit.
 - **The same build as the installer.** The service downloads `build-info` and the archive of the
   rolling release `build-<branch>` over `https://` only, checks the sha256, unpacks into a
   staging folder, rejects links and unsafe paths, and only then swaps `host/`, `deploy/` and
@@ -372,7 +381,12 @@ the installation directory, while `tessera-ext` may write `extensions/` only.
   `tessera update`. If a release needs such a change, its release notes say so. A source checkout
   (`.git`) is not updated from the UI: `tessera update` asks before replacing it.
 - **After an update, reload the page.** The new files have new chunk names. A running
-  `tessera-ext` keeps the previous `deploy/` mounted until it exits (up to 5 minutes).
+  `tessera-ext` keeps the previous `deploy/` mounted, so both services notice that their files
+  were replaced and exit by themselves (within a second; systemd starts them again with the new
+  code on the next request). Older builds only exited after 5 idle minutes, and until then
+  `tessera-ext` still answered with the previous plugin API version. The update that brings this
+  behavior is still served by the old processes: run `tessera update` once on the printer (or
+  wait 5 minutes) after it.
 
 **Update notices.** When the UI opens it asks both services (this one and `tessera-ext`) whether
 Tessera or a registry plugin has a newer version and, if so, puts one text notice per kind

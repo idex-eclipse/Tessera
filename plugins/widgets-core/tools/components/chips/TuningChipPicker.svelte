@@ -1,6 +1,6 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
-  import { useToolhead } from '../../use-toolhead.svelte';
+  import { useToolhead } from '../../data/use-toolhead.svelte';
   import PickerSection from '../../../../shared/PickerAccordion.svelte';
 
   type Item = { id: string; label: string };
