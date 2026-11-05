@@ -1,41 +1,32 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-
   import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
   import type { ExtensionRef } from '../../../../plugin-sdk/src/types';
   import Icon from '../../../shared/icons/Icon.svelte';
   import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
   import HeaderHelp from '../../../shared/header-help/HeaderHelp.svelte';
 
-  import StatusSettingsMenu from '../StatusSettingsMenu.svelte';
-  import StatusStats from '../StatusStats.svelte';
+  import StatusSettingsMenu from '../shared/StatusSettingsMenu.svelte';
+  import StatusStats from '../shared/StatusStats.svelte';
   import {
     usePrintStatus,
     computeProgress,
     computeEta,
     fmtClock,
-  } from '../../use-print-status.svelte.ts';
+  } from '../../data/use-print-status.svelte.ts';
 
-  import { readEnabledFields, type StatusFieldId } from '../../use-print-status.svelte.ts';
-  import { useStatusBannerPrefs } from './status-banner-prefs.svelte.ts';
+  import { useStatusPrefs } from '../../state/status-prefs.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;
   const store = usePrintStatus(api);
 
-  const prefs = useStatusBannerPrefs(api);
+  const prefs = useStatusPrefs(api);
   let mode = $derived(prefs.mode);
-  let fieldsOpen = $state(api.settings.get<boolean>('status.bannerFieldsOpen') ?? true);
-  let fields = $state<StatusFieldId[]>(readEnabledFields(api));
-
-  const off = api.settings.onChange((k, v) => {
-    if (k === 'status.bannerFieldsOpen') fieldsOpen = Boolean(v);
-  });
-  onDestroy(off);
+  let fieldsOpen = $derived(prefs.bannerFieldsOpen);
+  let fields = $derived(prefs.fields);
 
   function toggleFields(): void {
-    fieldsOpen = !fieldsOpen;
-    api.settings.set('status.bannerFieldsOpen', fieldsOpen);
+    prefs.setBannerFieldsOpen(!fieldsOpen);
   }
 
   let m = $derived(store.model);

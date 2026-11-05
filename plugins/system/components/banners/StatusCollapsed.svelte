@@ -1,12 +1,12 @@
 <script lang="ts">
   import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import { usePrintStatus, computeProgress } from '../../use-print-status.svelte.ts';
-  import { useStatusBannerPrefs } from './status-banner-prefs.svelte.ts';
+  import { usePrintStatus, computeProgress } from '../../data/use-print-status.svelte.ts';
+  import { useStatusPrefs } from '../../state/status-prefs.svelte.ts';
 
   const api = usePluginApi();
   const store = usePrintStatus(api);
-  const prefs = useStatusBannerPrefs(api);
+  const prefs = useStatusPrefs(api);
 
   let m = $derived(store.model);
   let printing = $derived(m.state === 'printing' || m.state === 'paused');

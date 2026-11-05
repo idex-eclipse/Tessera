@@ -3,7 +3,7 @@
 
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
   import { startNotificationProducers } from '../../notification-producers.ts';
-  import { ensurePrintTracker } from '../../print-tracker.ts';
+  import { ensurePrintTracker } from '../../data/print-tracker.ts';
 
   const api = usePluginApi();
 

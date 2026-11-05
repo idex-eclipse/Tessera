@@ -4,7 +4,7 @@
   import Icon from '../../../shared/icons/Icon.svelte';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { isKlipperBannerVisible, klipperBannerTitleKey } from './klipper-banner-state.ts';
+  import { isKlipperBannerVisible, klipperBannerTitleKey } from '../../lib/klipper-banner-state.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

@@ -13,10 +13,10 @@ import * as hotkeys from '../hotkeys';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
 import { systemManifest } from '../manifest';
-import { ensurePrintTracker, stopPrintTracker } from '../print-tracker';
-import { durationUnits, fmtClock, fmtDuration } from '../use-print-status.svelte';
-import { updateRequestFor } from '../use-system.svelte';
-import { systemUiState } from '../system-ui-state.svelte';
+import { ensurePrintTracker, stopPrintTracker } from '../data/print-tracker';
+import { durationUnits, fmtClock, fmtDuration } from '../data/use-print-status.svelte';
+import { updateRequestFor } from '../data/use-system.svelte';
+import { systemUiState } from '../state/system-ui-state.svelte';
 
 // ------------------------------------------------------------------
 // Fake PluginApi: подписки и запросы по принтерам

@@ -4,8 +4,8 @@ import type {
   PluginApi,
 } from '../../plugin-sdk/src/types.ts';
 
-import { createHealthWatch, type HealthAlert, type HealthWatch } from './health-alerts.ts';
-import { CANBUS_FIELDS, MCU_FIELDS } from './health-model.ts';
+import { createHealthWatch, type HealthAlert, type HealthWatch } from './lib/health-alerts.ts';
+import { CANBUS_FIELDS, MCU_FIELDS } from './lib/health-model.ts';
 import {
   isFlagSet,
   matchCanbus,
@@ -13,7 +13,7 @@ import {
   matchTmc,
   TMC_CRITICAL_FLAGS,
   TMC_ERROR_FLAGS,
-} from './health-utils.ts';
+} from './lib/health-utils.ts';
 
 /**
  * Продюсеры уведомлений @core/system: всё, что завязано на Klipper и Moonraker.

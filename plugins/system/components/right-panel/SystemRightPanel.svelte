@@ -13,8 +13,10 @@
   import { openThreeMF } from '../../../shared/3mf-parser/parser.ts';
   import type { ThreeMFHandle } from '../../../shared/3mf-parser/types.ts';
 
-  import { useSystem } from '../../use-system.svelte.ts';
-  import { systemUiState } from '../../system-ui-state.svelte.ts';
+  import { useSetting } from '../../../shared/settings/create-setting.svelte';
+  import { asBoolean } from '../../../shared/settings/parsers';
+  import { useSystem } from '../../data/use-system.svelte.ts';
+  import { systemUiState } from '../../state/system-ui-state.svelte.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 
@@ -50,23 +52,26 @@
   // аккордеоны Host / Services (персист в api.settings → sync)
   // ------------------------------------------------------------------
 
-  let hostOpen = $state(api.settings.get<boolean>('panel:hostOpen') ?? false);
-  let servicesOpen = $state(api.settings.get<boolean>('panel:servicesOpen') ?? false);
-  let powerOpen = $state(api.settings.get<boolean>('panel:powerOpen') ?? false);
+  // Reactive settings: re-read after DB pulls / printer switches instead of once at mount.
+  const hostSetting = useSetting(api, 'panel:hostOpen', false, asBoolean);
+  const servicesSetting = useSetting(api, 'panel:servicesOpen', false, asBoolean);
+  const powerSetting = useSetting(api, 'panel:powerOpen', false, asBoolean);
+  const accountsSetting = useSetting(api, 'panel:accountsOpen', false, asBoolean);
+  const hostOpen = $derived(hostSetting.value);
+  const servicesOpen = $derived(servicesSetting.value);
+  const powerOpen = $derived(powerSetting.value);
+  const accountsOpen = $derived(accountsSetting.value);
 
   function togglePower(): void {
-    powerOpen = !powerOpen;
-    api.settings.set('panel:powerOpen', powerOpen);
+    powerSetting.set(!powerOpen);
   }
 
   function toggleHost(): void {
-    hostOpen = !hostOpen;
-    api.settings.set('panel:hostOpen', hostOpen);
+    hostSetting.set(!hostOpen);
   }
 
   function toggleServices(): void {
-    servicesOpen = !servicesOpen;
-    api.settings.set('panel:servicesOpen', servicesOpen);
+    servicesSetting.set(!servicesOpen);
   }
 
   // печать — для locked_while_printing у power-устройств
@@ -84,11 +89,8 @@
     );
   });
 
-  let accountsOpen = $state(api.settings.get<boolean>('panel:accountsOpen') ?? false);
-
   function toggleAccounts(): void {
-    accountsOpen = !accountsOpen;
-    api.settings.set('panel:accountsOpen', accountsOpen);
+    accountsSetting.set(!accountsOpen);
   }
 
   let currentUser = $derived(decodeJwtUser((api.moonraker() as { authToken?: string }).authToken ?? null));

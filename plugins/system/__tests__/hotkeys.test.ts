@@ -5,7 +5,7 @@ import { createHostHotkeys } from '../../../host/src/core/host-hotkeys';
 import { analyzeHotkeys } from '../../../host/src/core/hotkeys';
 import * as hotkeys from '../hotkeys';
 import { systemManifest } from '../manifest';
-import { systemUiState } from '../system-ui-state.svelte';
+import { systemUiState } from '../state/system-ui-state.svelte';
 
 afterEach(() => {
   systemUiState.activeTab = 'overview';
