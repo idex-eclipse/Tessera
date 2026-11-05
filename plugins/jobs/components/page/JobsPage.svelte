@@ -8,9 +8,9 @@
   import { openThreeMF } from '../../../shared/3mf-parser/parser.ts';
   import type { ThreeMFHandle } from '../../../shared/3mf-parser/types.ts';
 
-  import { is3mf, jobsCustomAction, jobsMenuItems } from '../../jobs-menu.ts';
+  import { is3mf, jobsCustomAction, jobsMenuItems } from '../../lib/jobs-menu.ts';
   import { JOBS_PAGE_SCOPE } from '../../hotkeys.ts';
-  import { jobsUi } from '../../page-ui-state.svelte.ts';
+  import { jobsUi } from '../../state/page-ui-state.svelte.ts';
 
   let { params = {} }: { params?: Record<string, string> } = $props();
 

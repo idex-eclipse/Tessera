@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const jobsManifest: PluginManifest = {
   id: '@core/jobs',
   name: 'Jobs',
-  version: '2.0.0',
+  version: '3.0.0',
   entry: '/plugins/jobs/index.js',
   pages: [
     { 

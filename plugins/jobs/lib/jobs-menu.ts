@@ -1,7 +1,7 @@
-import type { PluginApi } from '../../plugin-sdk/src/types';
+import type { PluginApi } from '../../../plugin-sdk/src/types';
 
-import type { ContextMenuItem } from '../shared/context-menu-types';
-import type { FileRef } from '../shared/file-table/file-ops';
+import type { ContextMenuItem } from '../../shared/context-menu-types';
+import type { FileRef } from '../../shared/file-table/file-ops';
 
 type I18n = PluginApi['i18n'];
 
