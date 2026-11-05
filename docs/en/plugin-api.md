@@ -181,6 +181,9 @@ api.settings.onChange((_key, all) => {
 
 - Set defaults on read: `api.settings.get('limit') ?? 50`
   (`manifest.defaultSettings` is currently not applied by the host).
+- Do not compare the `key` argument of `onChange`: it is always `''`. Re-read the keys you
+  care about. Built-in plugins use `useSetting` / `watchSettings`
+  ([plugin-development.md](plugin-development.md#reading-settings-reactively-core-plugins)).
 - Name keys with an area prefix (`columns:page:gcodes`).
 - Store compact values. Everything sits in `localStorage` (the browser limit is
   about 5 MB per origin).

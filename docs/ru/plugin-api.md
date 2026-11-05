@@ -179,6 +179,9 @@ api.settings.onChange((_key, all) => {
 
 ### Практика
 
+- Не сравнивайте аргумент `key` в `onChange`: он всегда `''`. Перечитывайте нужные ключи.
+  Встроенные плагины используют `useSetting` / `watchSettings`
+  ([plugin-development.md](plugin-development.md#реактивное-чтение-настроек-core-плагины)).
 - Значения по умолчанию задавайте на чтении: `api.settings.get('limit') ?? 50`
   (`manifest.defaultSettings` хостом сейчас не применяется).
 - Ключи лучше называть с префиксом области (`columns:page:gcodes`).
