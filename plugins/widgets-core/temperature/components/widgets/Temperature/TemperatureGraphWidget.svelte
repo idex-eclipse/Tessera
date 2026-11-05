@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { useI18n, useWidget } from '../../../../../plugin-sdk/src/svelte/index';
+  import { useI18n, useWidget } from '../../../../../../plugin-sdk/src/svelte/index';
 
-  import KlipperNotReady from '../../../../shared/klippy-state/KlippyNotReady.svelte';
-  import TargetInput from '../TargetInput.svelte';
-  import HoldInput from '../HoldInput.svelte';
-  import TempKindIcon from '../TempKindIcon.svelte';
-  import { useTemperatureData, useTemperaturePrefs } from '../../use-temperature.svelte';
-  import TemperatureChart from '../TemperatureChart.svelte';
-  import SensorPopover from '../SensorPopover.svelte';
-  import { observeWidth } from '../../../../shared/responsive/observe-width';
-  import { fmtPower, fmtRate, fmtTemp } from '../../format';
+  import KlipperNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
+  import TargetInput from '../../shared/TargetInput.svelte';
+  import HoldInput from '../../shared/HoldInput.svelte';
+  import TempKindIcon from '../../shared/TempKindIcon.svelte';
+  import { useTemperatureData, useTemperaturePrefs } from '../../../data/use-temperature.svelte';
+  import TemperatureChart from '../../shared/TemperatureChart.svelte';
+  import SensorPopover from '../../shared/SensorPopover.svelte';
+  import { observeWidth } from '../../../../../shared/responsive/observe-width';
+  import { fmtPower, fmtRate, fmtTemp } from '../../../lib/format';
 
   const api = useWidget();
   const i18n = useI18n();

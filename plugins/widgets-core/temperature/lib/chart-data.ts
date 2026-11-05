@@ -2,11 +2,11 @@
  * Temperature-specific series composition.
  * Generic chart math lives in plugins/shared/uplot-core.
  */
-import type { SeriesDef } from '../../shared/uplot-core';
-import type { TemperatureSensor } from './use-temperature.svelte';
+import type { SeriesDef } from '../../../shared/uplot-core';
+import type { TemperatureSensor } from '../types';
 
-export { buildChartData, linspace, niceRange, niceStep } from '../../shared/uplot-core';
-export type { ChartData, SeriesDef } from '../../shared/uplot-core';
+export { buildChartData, linspace, niceRange, niceStep } from '../../../shared/uplot-core';
+export type { ChartData, SeriesDef } from '../../../shared/uplot-core';
 
 /**
  * Which series the chart should draw:

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import '../../../shared/input/inputs.css';
+  import '../../../../shared/input/inputs.css';
 
   let {
     value = null,

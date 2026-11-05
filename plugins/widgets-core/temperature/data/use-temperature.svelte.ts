@@ -1,6 +1,8 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi } from '../../../plugin-sdk/src/types';
+import type { PluginApi } from '../../../../plugin-sdk/src/types';
+import { watchSettings } from '../../../shared/settings/watch-settings';
+import type { TemperatureSensor, SensorBuffers } from '../types';
 
 import {
   buildTargetGcode,
@@ -8,7 +10,7 @@ import {
   displayName,
   sensorSortKey,
   type SensorKind,
-} from './data';
+} from '../lib/data';
 import {
   HOLD_MAX_MINUTES,
   HOLD_OFF,
@@ -16,12 +18,12 @@ import {
   sameHold,
   stepHold,
   type HoldState,
-} from './hold-timer';
-import { SeriesBuffer } from '../../shared/uplot-core/series-buffer';
+} from '../lib/hold-timer';
+import { SeriesBuffer } from '../../../shared/uplot-core/series-buffer';
 import {
   createCoreKeeper,
   createDelegateStore,
-} from '../../shared/core-keeper/core-keeper';
+} from '../../../shared/core-keeper/core-keeper';
 
 // ------------------------------------------------------------------
 // Module-level prefs: настройки отображения виджета (колонки графика) —
@@ -73,18 +75,9 @@ export function useTemperaturePrefs(api: PluginApi) {
 
   load();
 
-  const off = api.settings.onChange((k, v) => {
-    if (k === COLUMNS_KEY && v && typeof v === 'object') {
-      columns = { ...DEFAULT_COLUMNS, ...(v as Partial<TempColumns>) };
-    } else if (k === VIEW_MODE_KEY) {
-      viewMode = parseViewMode(v);
-    }
-  });
-  const offPrinter = api.onPrinterChange(() => load());
-  onDestroy(() => {
-    off();
-    offPrinter();
-  });
+  // The host passes an EMPTY key (matching `k === COLUMNS_KEY` never fired), so re-read everything.
+  // watchSettings also re-binds to the new printer and reloads on a printer switch.
+  onDestroy(watchSettings(api, load));
 
   function setColumn(key: keyof TempColumns, value: boolean): void {
     columns = { ...columns, [key]: value };
@@ -112,27 +105,8 @@ export function useTemperaturePrefs(api: PluginApi) {
 // Типы / палитра
 // ------------------------------------------------------------------
 
-export interface TemperatureSensor {
-  name: string;
-  displayName: string;
-  kind: SensorKind;
-  color: string;
-  temperature: number | null;
-  target: number | null;
-  power: number | null;
-  rate: number | null;
-  speed: number | null;
-  minTemp: number | null;
-  maxTemp: number | null;
-  chartVisible: boolean;
-  powerVisible: boolean;
-}
-
-export interface SensorBuffers {
-  temp: SeriesBuffer;
-  target: SeriesBuffer;
-  power: SeriesBuffer;
-}
+// The sensor / buffer shapes live in ../types so lib/ can use them without importing data/.
+export type { TemperatureSensor, SensorBuffers } from '../types';
 
 const PALETTE = [
   '#ff6d00', '#ffab40', '#40c4ff', '#b388ff', '#69f0ae',
@@ -253,10 +227,11 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
     const gen = ++generation;
 
     // настройки читаются раньше handle: таймер не должен зависеть от соединения
+    // The host passes an EMPTY key, so both values are re-read on every change.
     unsubs.push(
-      settingsApi.onChange((k, v) => {
-        if (k === HOLD_MINUTES_KEY) holdMinutes = readHoldMinutes();
-        else if (k === COLUMNS_KEY) holdColumnOn = readHoldColumn();
+      settingsApi.onChange(() => {
+        holdMinutes = readHoldMinutes();
+        holdColumnOn = readHoldColumn();
         evalHolds();
       }),
     );

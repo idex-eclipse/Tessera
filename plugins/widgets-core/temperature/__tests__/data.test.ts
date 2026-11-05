@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTargetGcode, classifySensor, displayName, sensorSortKey } from './data';
-import { SeriesBuffer } from '../../shared/uplot-core/series-buffer';
+import { buildTargetGcode, classifySensor, displayName, sensorSortKey } from '../lib/data';
+import { SeriesBuffer } from '../../../shared/uplot-core/series-buffer';
 
 describe('temperature / classifySensor', () => {
   it('classifies heaters', () => {

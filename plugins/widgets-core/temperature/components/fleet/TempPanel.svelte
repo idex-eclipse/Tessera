@@ -3,7 +3,7 @@
 
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { useTemperatureData } from '../../use-temperature.svelte.ts';
+  import { useTemperatureData } from '../../data/use-temperature.svelte.ts';
 
   let {
     mpuApi,

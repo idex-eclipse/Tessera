@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildChartData, buildSeriesDefs } from './chart-data';
-import { SeriesBuffer } from '../../shared/uplot-core/series-buffer';
-import type { TemperatureSensor } from './use-temperature.svelte';
+import { buildChartData, buildSeriesDefs } from '../lib/chart-data';
+import { SeriesBuffer } from '../../../shared/uplot-core/series-buffer';
+import type { TemperatureSensor } from '../types';
 
 function makeSensor(overrides: Partial<TemperatureSensor> = {}): TemperatureSensor {
   return {
@@ -14,6 +14,9 @@ function makeSensor(overrides: Partial<TemperatureSensor> = {}): TemperatureSens
     target: 0,
     power: 0.5,
     rate: 0,
+    speed: null,
+    minTemp: null,
+    maxTemp: null,
     chartVisible: true,
     powerVisible: false,
     ...overrides,

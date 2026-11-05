@@ -1,8 +1,8 @@
 <script lang="ts">
-  import '../../../shared/input/inputs.css';
-  import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
+  import '../../../../shared/input/inputs.css';
+  import { useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { formatCountdown, HOLD_MAX_MINUTES, parseHoldMinutes, type HoldPhase } from '../hold-timer';
+  import { formatCountdown, HOLD_MAX_MINUTES, parseHoldMinutes, type HoldPhase } from '../../lib/hold-timer';
 
   let {
     value = 0,

@@ -4,13 +4,13 @@
     buildChartData,
     type SeriesDef,
     type ChartData,
-  } from '../../../shared/uplot-core';
+  } from '../../../../shared/uplot-core';
 
-  import { buildSeriesDefs } from '../chart-data';
+  import { buildSeriesDefs } from '../../lib/chart-data';
   import type {
     SensorBuffers,
     TemperatureSensor,
-  } from '../use-temperature.svelte';
+  } from '../../data/use-temperature.svelte';
 
   let {
     sensors,

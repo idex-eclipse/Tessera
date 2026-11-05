@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from '../../../shared/icons/Icon.svelte';
+  import Icon from '../../../../shared/icons/Icon.svelte';
 
   let {
     kind,

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../../../shared/icons/Icon.svelte';
-  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
 
-  import { isRtl } from '../../../../shared/popover-align';
+  import { isRtl } from '../../../../../shared/popover-align';
 
-  import { useTemperaturePrefs, type TempColumns, type TempViewMode } from '../../use-temperature.svelte';
+  import { useTemperaturePrefs, type TempColumns, type TempViewMode } from '../../../data/use-temperature.svelte';
 
   const api = useWidget();
   const i18n = useI18n();

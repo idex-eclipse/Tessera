@@ -9,7 +9,7 @@ import {
   stepHold,
   type HoldInput,
   type HoldState,
-} from './hold-timer';
+} from '../lib/hold-timer';
 
 const base: HoldInput = { target: 220, temperature: 25, minutes: 5, blocked: false, now: 0 };
 const run = (s: HoldState, patch: Partial<HoldInput>) => stepHold(s, { ...base, ...patch });

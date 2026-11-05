@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { useI18n } from '../../../../plugin-sdk/src/svelte/index';
-  import { isRtl } from '../../../shared/popover-align';
+  import { useI18n } from '../../../../../plugin-sdk/src/svelte/index';
+  import { isRtl } from '../../../../shared/popover-align';
 
-  import type { TempColumns, useTemperatureData } from '../use-temperature.svelte';
-  import { fmtPower, fmtRate } from '../format';
+  import type { TempColumns, useTemperatureData } from '../../data/use-temperature.svelte';
+  import { fmtPower, fmtRate } from '../../lib/format';
   import HoldInput from './HoldInput.svelte';
   import TargetInput from './TargetInput.svelte';
   import TempKindIcon from './TempKindIcon.svelte';
