@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { guardAgent, type ParkedChainView, type RegisteredGuardView } from '../../core/guard-agent';
   import { BUILD_INFO } from '../../core/build-info';
+  import { notifyLocalWrite } from '../../core/settings-remote';
   import { confirm } from '../../components/confirm/confirm-dialog.svelte.ts';
   import { readStoredAuth } from '../../core/auth-store.svelte.ts';
   import { findHostPrinter } from '../../core/extensions-installer.svelte.ts';
@@ -95,6 +96,11 @@
     chosenBranch = '';
   }
 
+  /** Keys that describe this browser and must neither be exported nor imported. */
+  function isDeviceOnlyKey(k: string): boolean {
+    return k === 'mpu:v2:deviceId' || k === 'mpu:v2:remote-meta';
+  }
+
   function exportSettings(): void {
     const data: Record<string, unknown> = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -102,6 +108,8 @@
       if (!k || !k.startsWith('mpu:v2:')) continue;
       // Токены авторизации не должны попадать в файл, которым могут поделиться
       if (k.startsWith('mpu:v2:auth:')) continue;
+      // Device identity and mirror bookkeeping belong to this browser only
+      if (isDeviceOnlyKey(k)) continue;
       try {
         data[k] = JSON.parse(localStorage.getItem(k) ?? 'null');
       } catch {
@@ -141,8 +149,10 @@
         if (!data || typeof data !== 'object') throw new Error('bad file');
 
         for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-          if (!k.startsWith('mpu:v2:')) continue;
+          if (!k.startsWith('mpu:v2:') || isDeviceOnlyKey(k)) continue;
           localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+          // Imported keys must be pushed to the printer DB, or the older copy there would win on reload
+          notifyLocalWrite(k);
         }
 
         location.reload();

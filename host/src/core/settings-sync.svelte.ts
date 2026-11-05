@@ -1,3 +1,5 @@
+import { notifyLocalWrite } from './settings-remote';
+
 const PREF_KEY = 'mpu:v2:settingsSync';
 
 interface Prefs {
@@ -61,6 +63,8 @@ function readJson(key: string): Record<string, unknown> | undefined {
 }
 function writeJson(key: string, v: unknown): void {
   localStorage.setItem(key, JSON.stringify(v));
+  // These writes bypass the settings store, so tell the DB mirror about them
+  notifyLocalWrite(key);
 }
 
 // ---------- тумблеры с миграцией без потерь ----------

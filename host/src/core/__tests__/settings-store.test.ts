@@ -569,3 +569,37 @@ describe('settings-store / legacy schema detection', () => {
     expect(exported['printers']).toBe('raw-string');
   });
 });
+describe('settings-store / reload from storage', () => {
+  it('picks up settings written to storage behind its back and notifies plugin subscribers', () => {
+    const { storage, store } = setup();
+    const p = store.addPrinter({ name: 'A', url: 'http://a:7125' });
+    const seen: unknown[] = [];
+    store.onPluginSettingsChange(p.id, 'tessera/x', (s) => seen.push(s));
+    expect(store.getPageVisibility(p.id, 'jobs')).toBe(true);
+
+    storage.setItem(
+      pluginSettingsStorageKey(p.id, 'tessera/x'),
+      JSON.stringify({ values: { k: 1 } }),
+    );
+    storage.setItem(printerSettingsStorageKey(p.id), JSON.stringify({ pages: { jobs: false } }));
+    storage.setItem(SETTINGS_STORAGE_KEYS.ui, JSON.stringify({ theme: 'light' }));
+    store.reloadFromStorage();
+
+    expect(store.getPageVisibility(p.id, 'jobs')).toBe(false);
+    expect(store.ui.theme).toBe('light');
+    expect(seen.length).toBe(1);
+  });
+
+  it('tells subscribers when the active printer changes', () => {
+    const { store } = setup();
+    const a = store.addPrinter({ name: 'A', url: 'http://a:7125' });
+    const b = store.addPrinter({ name: 'B', url: 'http://b:7125' });
+    const ids: Array<string | null> = [];
+    const off = store.onActivePrinterChange((id) => ids.push(id));
+    store.setActivePrinter(b.id);
+    store.setActivePrinter(a.id);
+    off();
+    store.setActivePrinter(b.id);
+    expect(ids).toEqual([b.id, a.id]);
+  });
+});

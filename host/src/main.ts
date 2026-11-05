@@ -9,6 +9,7 @@ import { createPluginLoader } from './core/plugin-loader.svelte.ts';
 import { createPluginRegistry } from './core/plugin-registry.svelte.ts';
 import { createPrinterManager } from './core/printer-manager.svelte.ts';
 import { createRouter } from './core/router.svelte.ts';
+import { createSettingsMirror } from './core/settings-remote.ts';
 import { createSettingsStore } from './core/settings-store.svelte.ts';
 import { createUiStore } from './core/ui-store.svelte.ts';
 import { guardAgent } from './core/guard-agent';
@@ -55,7 +56,37 @@ import { locales as dummyLocales } from '../../plugins/dummy/i18n'; **/
 
 import './styles/global.css';
 
-const settings = createSettingsStore();
+// Settings are mirrored in the Moonraker DB (see settings-remote.ts). The pull has to
+// finish before the store is created because the store reads localStorage only once.
+const mirror = createSettingsMirror({ storage: window.localStorage });
+try {
+  await mirror.pull();
+} catch (e) {
+  console.warn('[main] Settings pull failed, using local settings:', e);
+}
+const settings = createSettingsStore({ storage: mirror.storage, createDefaultPrinter: true });
+
+// Applies settings that arrived from the Moonraker DB (changed in another browser).
+// The store re-reads its caches in place; only a changed plugin list needs a reload,
+// because already loaded plugins cannot be swapped at runtime. A pull never touches a
+// key with a pending local edit, so nothing the user just typed is lost.
+function applyPulled(r: { changed: boolean; keys: string[] }): void {
+  if (!r.changed) return;
+  if (r.keys.includes('mpu:v2:plugins') && !mirror.hasPending()) {
+    location.reload();
+    return;
+  }
+  settings.reloadFromStorage();
+}
+
+// Pick up changes when the window gets focus, and on every printer switch (the user
+// expects the other printer's settings to be current as soon as it is opened).
+window.addEventListener('focus', () => {
+  void mirror.pullOnFocus().then(applyPulled);
+});
+settings.onActivePrinterChange(() => {
+  void mirror.pullNow().then(applyPulled);
+});
 const printerManager = createPrinterManager(settings);
 const registry = createPluginRegistry(settings);
 const ui = createUiStore(settings);
