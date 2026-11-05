@@ -1,10 +1,10 @@
 import { onDestroy } from 'svelte';
 
-import type { PluginApi, MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
+import type { PluginApi, MoonrakerProxyHandle } from '../../../../plugin-sdk/src/types';
 import {
   createCoreKeeper,
   createDelegateStore,
-} from '../../shared/core-keeper/core-keeper';
+} from '../../../shared/core-keeper/core-keeper';
 
 export type QueueState = 'ready' | 'loading' | 'starting' | 'paused' | 'unknown';
 

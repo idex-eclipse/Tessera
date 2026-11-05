@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../plugin-sdk/src/svelte/index';
-  import Icon from '../../shared/icons/Icon.svelte';
-  import ConfirmDialog from '../../shared/confirm-dialog.svelte';
-  import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import Icon from '../../../../../shared/icons/Icon.svelte';
+  import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
+  import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import { useJobQueue } from './use-job-queue.svelte.ts';
+  import { useJobQueue } from '../../../data/use-job-queue.svelte.ts';
 
   const api = useWidget();
   const i18n = useI18n();
