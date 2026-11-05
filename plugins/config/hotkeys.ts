@@ -4,7 +4,7 @@ import { openPluginPage } from '../shared/page-nav';
 import { requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
 import { isEditorOpen } from '../shared/text-editor-dialog/editor-state.svelte';
 
-import { activeSearchScope, setTab } from './page-ui-state.svelte.ts';
+import { activeSearchScope, setTab } from './state/page-ui-state.svelte.ts';
 
 /**
  * Hotkey-обработчики плагина (manifest.hotkeys[].handler), scope 'plugin':

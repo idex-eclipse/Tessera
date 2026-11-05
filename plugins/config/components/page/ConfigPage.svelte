@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
-  import FileTable from '../shared/file-table/FileTable.svelte';
-  import type { ContextMenuItem } from '../shared/context-menu.svelte';
-  import type { FileRef } from '../shared/file-table/file-ops';
-  import { fileCap } from '../shared/file-table/file-capabilities';
-  import { CONFIG_TABS, pageUi, setActivePane, setTab, type ConfigTab } from './page-ui-state.svelte.ts';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import FileTable from '../../../shared/file-table/FileTable.svelte';
+  import type { ContextMenuItem } from '../../../shared/context-menu.svelte';
+  import type { FileRef } from '../../../shared/file-table/file-ops';
+  import { fileCap } from '../../../shared/file-table/file-capabilities';
+  import { CONFIG_TABS, pageUi, setActivePane, setTab, type ConfigTab } from '../../state/page-ui-state.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

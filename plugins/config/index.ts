@@ -1,5 +1,5 @@
 import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
-import ConfigPage from './ConfigPage.svelte';
+import ConfigPage from './components/page/ConfigPage.svelte';
 
 import codeIcon from './icons/code.svg?raw';
 
