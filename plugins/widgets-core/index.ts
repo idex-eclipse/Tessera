@@ -2,8 +2,8 @@ import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 
 /** TEMPERATURE */
 // Widget
-import TemperatureGraphWidget from './temperature/components/widgets/TemperatureGraphWidget.svelte';
-import TemperatureHeader from './temperature/components/widgets/TemperatureHeader.svelte';
+import TemperatureGraphWidget from './temperature/components/widgets/Temperature/TemperatureGraphWidget.svelte';
+import TemperatureHeader from './temperature/components/widgets/Temperature/TemperatureHeader.svelte';
 defineMpuElement('mpu-widgets-temperature-graph', TemperatureGraphWidget);
 defineMpuElement('mpu-widgets-temperature-header', TemperatureHeader);
 
@@ -19,8 +19,8 @@ defineMpuElement('mpu-core-widgets-chip-temperature-picker', TemperatureChipPick
 
 /** MACRO */
 //Widget
-import MacrosWidget from './macros/components/widgets/MacrosWidget.svelte';
-import MacrosHeader from './macros/components/widgets/MacrosHeader.svelte';
+import MacrosWidget from './macros/components/widgets/Macros/MacrosWidget.svelte';
+import MacrosHeader from './macros/components/widgets/Macros/MacrosHeader.svelte';
 defineMpuElement('mpu-widgets-macros', MacrosWidget);
 defineMpuElement('mpu-widgets-macros-header', MacrosHeader);
 
@@ -33,8 +33,8 @@ defineMpuElement('mpu-core-widgets-chip-macro-picker', MacroChipPicker);
 
 /** TOOLS */
 //Widget
-import ToolsWidget from './tools/components/widgets/ToolsWidget.svelte';
-import ToolsHeader from './tools/components/widgets/ToolsHeader.svelte';
+import ToolsWidget from './tools/components/widgets/Tools/ToolsWidget.svelte';
+import ToolsHeader from './tools/components/widgets/Tools/ToolsHeader.svelte';
 defineMpuElement('mpu-widgets-tools', ToolsWidget);
 defineMpuElement('mpu-widgets-tools-header', ToolsHeader);
 
@@ -51,13 +51,13 @@ defineMpuElement('mpu-core-widgets-fleet-position', FleetPositionPanel);
 
 /** LIMITS */
 //Widget
-import LimitsWidget from './limits/LimitsWidget.svelte';
+import LimitsWidget from './limits/components/widgets/Limits/LimitsWidget.svelte';
 defineMpuElement('mpu-widgets-limits', LimitsWidget);
 
 
 /** OUTPUTS */
 //Widget
-import OutputsWidget from './outputs/components/widgets/OutputsWidget.svelte';
+import OutputsWidget from './outputs/components/widgets/Outputs/OutputsWidget.svelte';
 defineMpuElement('mpu-widgets-outputs', OutputsWidget);
 
 // Quick access chip
@@ -69,8 +69,8 @@ defineMpuElement('mpu-core-widgets-chip-output-picker', OutputChipPicker);
 
 /** LEDS */
 //Widget
-import LedsWidget from './leds/components/widgets/LedsWidget.svelte';
-import LedsHeader from './leds/components/widgets/LedsHeader.svelte';
+import LedsWidget from './leds/components/widgets/Leds/LedsWidget.svelte';
+import LedsHeader from './leds/components/widgets/Leds/LedsHeader.svelte';
 defineMpuElement('mpu-widgets-leds', LedsWidget);
 defineMpuElement('mpu-widgets-leds-header', LedsHeader);
 
@@ -83,8 +83,8 @@ defineMpuElement('mpu-core-widgets-chip-led-picker', LedChipPicker);
 
 /** CAMERA */
 //Widget
-import CameraWidget from './camera/components/widgets/CameraWidget.svelte';
-import CameraHeader from './camera/components/widgets/CameraHeader.svelte';
+import CameraWidget from './camera/components/widgets/Camera/CameraWidget.svelte';
+import CameraHeader from './camera/components/widgets/Camera/CameraHeader.svelte';
 defineMpuElement('mpu-widgets-camera', CameraWidget);
 defineMpuElement('mpu-widgets-camera-header', CameraHeader);
 import FleetCameraPanel from './camera/components/fleet/CameraPanel.svelte';
@@ -93,7 +93,7 @@ defineMpuElement('mpu-core-widgets-fleet-camera', FleetCameraPanel);
 
 /** FILAMENT SENSORS */
 //Widget
-import FilamentWidget from './filament-sensors/components/widgets/FilamentWidget.svelte';
+import FilamentWidget from './filament-sensors/components/widgets/Filament/FilamentWidget.svelte';
 defineMpuElement('mpu-widgets-filament', FilamentWidget);
 
 // Quick access chip
@@ -105,5 +105,5 @@ defineMpuElement('mpu-core-widgets-chip-filament-picker', FilamentChipPicker);
 
 /** JOBS QUEUE */
 //Widget
-import JobQueueWidget from './job-queue/JobQueueWidget.svelte';
+import JobQueueWidget from './job-queue/components/widgets/JobQueue/JobQueueWidget.svelte';
 defineMpuElement('mpu-widgets-job-queue', JobQueueWidget);

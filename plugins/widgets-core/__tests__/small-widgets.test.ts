@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isRtl, shouldAlignToEnd } from '../../shared/popover-align';
-import { mapMacroHelp } from '../macros/macro-help';
+import { mapMacroHelp } from '../macros/lib/macro-help';
 import { filamentChips, filamentWidgets } from '../filament-sensors/manifest';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
