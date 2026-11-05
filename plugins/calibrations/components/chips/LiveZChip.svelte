@@ -1,7 +1,7 @@
 <script lang="ts">
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
-  import { useCalibrations } from '../../use-calibrations.svelte';
-  import { gcode, runGcode } from '../../commands.ts';
+  import { useCalibrations } from '../../data/use-calibrations.svelte';
+  import { gcode, runGcode } from '../../lib/commands.ts';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte';
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReady.svelte';
   import ConfirmDialog from '../../../shared/confirm-dialog.svelte';

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MainsFilter, mainsFilterSeries, parseMainsHz } from '../load-cell/mains-filter';
-import { startForceSource } from '../load-cell/force-source';
+import { MainsFilter, mainsFilterSeries, parseMainsHz } from '../lib/load-cell/mains-filter';
+import { startForceSource } from '../data/force-source';
 
 /** 1 kHz samples of `dc` plus a sine of `hz` and amplitude `amp`. */
 function hum(hz: number, seconds: number, dc = 5, amp = 3, rate = 1000) {

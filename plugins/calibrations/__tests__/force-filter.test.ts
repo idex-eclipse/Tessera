@@ -6,7 +6,7 @@ import {
   applyFilter,
   clampFilterMs,
   parseFilterKind,
-} from '../load-cell/force-filter';
+} from '../lib/load-cell/force-filter';
 
 // 10 ms apart, so a 50 ms window covers 5 samples
 const xs = [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09];

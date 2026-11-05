@@ -10,8 +10,8 @@ import { calibrationsManifest } from '../manifest';
 import { SURFACE_SPECS } from '../../../host/src/core/surfaces';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
-import { pageUi } from '../page-ui-state.svelte';
-import { ensurePrinterTracker, stopPrinterTracker } from '../printer-tracker';
+import { pageUi } from '../state/page-ui-state.svelte';
+import { ensurePrinterTracker, stopPrinterTracker } from '../data/printer-tracker';
 
 // ------------------------------------------------------------------
 // Fake PluginApi: подписки и запросы по принтерам

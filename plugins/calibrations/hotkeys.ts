@@ -1,9 +1,9 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
-import { gcode, runGcode } from './commands.ts';
-import { requestTab, type CalibrationsTab } from './page-ui-state.svelte.ts';
-import { isManualProbeActive } from './printer-tracker.ts';
+import { gcode, runGcode } from './lib/commands.ts';
+import { requestTab, type CalibrationsTab } from './state/page-ui-state.svelte.ts';
+import { isManualProbeActive } from './data/printer-tracker.ts';
 
 /**
  * Hotkey-обработчики плагина (manifest.hotkeys[].handler).

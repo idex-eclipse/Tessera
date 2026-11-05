@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { binSamples, parseForceBatch, parseTap } from '../load-cell/force-parse';
-import { ForceBuffer } from '../load-cell/force-buffer';
-import { findLoadCellProbes, loadCellProbeName } from '../load-cell/load-cell-config';
-import { startForceSource, startTapSource } from '../load-cell/force-source';
-import { openStream, resetStreamKeys } from '../load-cell/stream-keys';
+import { binSamples, parseForceBatch, parseTap } from '../lib/load-cell/force-parse';
+import { ForceBuffer } from '../lib/load-cell/force-buffer';
+import { findLoadCellProbes, loadCellProbeName } from '../lib/load-cell/load-cell-config';
+import { startForceSource, startTapSource } from '../data/force-source';
+import { openStream, resetStreamKeys } from '../lib/load-cell/stream-keys';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
 

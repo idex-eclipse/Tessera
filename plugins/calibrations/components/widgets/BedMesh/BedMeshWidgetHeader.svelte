@@ -4,8 +4,8 @@
 
   import Icon from '../../../../shared/icons/Icon.svelte';
 
-  import { useBedMesh, type BedMeshTools } from '../../../use-bed-mesh.svelte.ts';
-  import { gcode, runGcode } from '../../../commands.ts';
+  import { useBedMesh, type BedMeshTools } from '../../../data/use-bed-mesh.svelte.ts';
+  import { gcode, runGcode } from '../../../lib/commands.ts';
 
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
