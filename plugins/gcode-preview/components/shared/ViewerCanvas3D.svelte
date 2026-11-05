@@ -3,15 +3,15 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-  import { extruderRgb, typeRgb } from './colors';
-  import type { ParsedGcode } from './parse-gcode';
+  import { extruderRgb, typeRgb } from '../../lib/colors';
+  import type { ParsedGcode } from '../../lib/parse-gcode';
 
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
-  import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
-  import Icon from '../../shared/icons/Icon.svelte';
-  import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte.ts';
-  import ConfirmDialog from '../../shared/confirm-dialog.svelte';
-  import { previewUi } from './preview-ui-state.svelte';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import Icon from '../../../shared/icons/Icon.svelte';
+  import { useExcludeObjects } from '../../../shared/exclude-objects/use-exclude-objects.svelte.ts';
+  import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
+  import { previewUi } from '../../state/preview-ui-state.svelte';
 
   // ---- 1. props первым: Svelte 5 требует объявление до первого $effect ----
   let {

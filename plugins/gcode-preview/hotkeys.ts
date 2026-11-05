@@ -2,7 +2,7 @@ import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
 
-import { sendPreviewCommand } from './viewer/preview-ui-state.svelte.ts';
+import { sendPreviewCommand } from './state/preview-ui-state.svelte.ts';
 
 /**
  * Hotkey-обработчики плагина (manifest.hotkeys[].handler). Scope 'plugin' — только на

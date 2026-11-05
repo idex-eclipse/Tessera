@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import ViewerCanvas2D from './ViewerCanvas2D.svelte';
   import ViewerCanvas3D from './ViewerCanvas3D.svelte';
-  import type { ParsedGcode } from './parse-gcode';
+  import type { ParsedGcode } from '../../lib/parse-gcode';
 
-  import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte';
-  import { usePreviewCommands } from './preview-ui-state.svelte';
+  import { useExcludeObjects } from '../../../shared/exclude-objects/use-exclude-objects.svelte';
+  import { useSetting } from '../../../shared/settings/create-setting.svelte';
+  import { usePreviewCommands } from '../../state/preview-ui-state.svelte';
 
   const api = usePluginApi();
   const excludeStore = useExcludeObjects(api);
@@ -57,12 +58,15 @@
 
   // ---- follow print: слой едет за прогрессом; ручное движение слоёв
   // ---- ставит слежение на паузу 10с, потом оно само возобновляется
-  let follow = $state(api.settings.get<boolean>('gcodePreview.follow') ?? true);
+  // Reactive: re-reads after a printer switch or settings arriving from the Moonraker DB.
+  const followSetting = useSetting(api, 'gcodePreview.follow', true, (raw, fallback) =>
+    typeof raw === 'boolean' ? raw : fallback,
+  );
+  const follow = $derived(followSetting.value);
   let followPausedUntil = $state(0);
 
   function setFollow(v: boolean): void {
-    follow = v;
-    api.settings.set('gcodePreview.follow', v);
+    followSetting.set(v);
   }
 
   function pauseFollow(): void {

@@ -14,13 +14,13 @@ import * as hotkeys from '../hotkeys';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
 import { gcodePreviewManifest } from '../manifest';
-import { ensureParsed, getEntry, reloadParsed } from '../viewer/gcode-store.svelte';
+import { ensureParsed, getEntry, reloadParsed } from '../data/gcode-store.svelte';
 import {
   onPreviewCommand,
   previewUi,
   sendPreviewCommand,
   type PreviewCommand,
-} from '../viewer/preview-ui-state.svelte';
+} from '../state/preview-ui-state.svelte';
 
 afterEach(() => {
   vi.unstubAllGlobals();

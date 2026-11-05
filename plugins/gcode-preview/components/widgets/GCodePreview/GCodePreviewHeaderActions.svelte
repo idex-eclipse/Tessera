@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
-  import { useKlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
-  import HeaderHelp from '../shared/header-help/HeaderHelp.svelte';
+  import HeaderHelp from '../../../../shared/header-help/HeaderHelp.svelte';
 
-  import Icon from '../shared/icons/Icon.svelte';
-  import { clearPreview } from './viewer/preview-ui-state.svelte';
-  import { useExcludeObjects } from '../shared/exclude-objects/use-exclude-objects.svelte.ts';
+  import Icon from '../../../../shared/icons/Icon.svelte';
+  import { clearPreview } from '../../../state/preview-ui-state.svelte';
+  import { useExcludeObjects } from '../../../../shared/exclude-objects/use-exclude-objects.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

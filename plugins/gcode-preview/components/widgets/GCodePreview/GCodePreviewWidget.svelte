@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
-  import { segmentAtOffset } from './viewer/parse-gcode';
-  import { ensureParsed, getEntry } from './viewer/gcode-store.svelte';
-  import { pageHash } from '../shared/page-nav';
-  import { usePrintProgress } from './viewer/use-print-progress.svelte';
-  import GCodeViewer from './viewer/GCodeViewer.svelte';
-  import Loader from '../shared/loader/Loader.svelte';
+  import { segmentAtOffset } from '../../../lib/parse-gcode';
+  import { ensureParsed, getEntry } from '../../../data/gcode-store.svelte';
+  import { pageHash } from '../../../../shared/page-nav';
+  import { usePrintProgress } from '../../../data/use-print-progress.svelte';
+  import GCodeViewer from '../../shared/GCodeViewer.svelte';
+  import Loader from '../../../../shared/loader/Loader.svelte';
 
-  import { isCleared, unclear } from './viewer/preview-ui-state.svelte';
+  import { isCleared, unclear } from '../../../state/preview-ui-state.svelte';
 
 
 

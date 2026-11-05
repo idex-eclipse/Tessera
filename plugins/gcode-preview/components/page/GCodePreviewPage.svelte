@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import GCodeViewer from './viewer/GCodeViewer.svelte';
-  import { ensureParsed, getEntry, reloadParsed } from './viewer/gcode-store.svelte';
+  import GCodeViewer from '../shared/GCodeViewer.svelte';
+  import { ensureParsed, getEntry, reloadParsed } from '../../data/gcode-store.svelte';
 
-  import { usePrintProgress } from './viewer/use-print-progress.svelte';
-  import { segmentAtOffset } from './viewer/parse-gcode';
+  import { usePrintProgress } from '../../data/use-print-progress.svelte';
+  import { segmentAtOffset } from '../../lib/parse-gcode';
 
   import { untrack } from 'svelte';
 
-  import { isCleared, unclear, clearPreview, usePreviewCommands } from './viewer/preview-ui-state.svelte';
-  import Icon from '../shared/icons/Icon.svelte';
-  import Loader from '../shared/loader/Loader.svelte';
-  import HeaderHelp from '../shared/header-help/HeaderHelp.svelte';
+  import { isCleared, unclear, clearPreview, usePreviewCommands } from '../../state/preview-ui-state.svelte';
+  import Icon from '../../../shared/icons/Icon.svelte';
+  import Loader from '../../../shared/loader/Loader.svelte';
+  import HeaderHelp from '../../../shared/header-help/HeaderHelp.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;

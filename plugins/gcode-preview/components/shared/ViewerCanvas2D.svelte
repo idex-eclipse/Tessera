@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import { previewUi } from './preview-ui-state.svelte';
-  import type { ParsedGcode } from './parse-gcode';
-  import { extruderRgb, typeRgb } from './colors';
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
-  import { useKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte.ts';
-  import Icon from '../../shared/icons/Icon.svelte';
-  import { useExcludeObjects } from '../../shared/exclude-objects/use-exclude-objects.svelte.ts';
-  import ConfirmDialog from '../../shared/confirm-dialog.svelte';
+  import { previewUi } from '../../state/preview-ui-state.svelte';
+  import type { ParsedGcode } from '../../lib/parse-gcode';
+  import { extruderRgb, typeRgb } from '../../lib/colors';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import Icon from '../../../shared/icons/Icon.svelte';
+  import { useExcludeObjects } from '../../../shared/exclude-objects/use-exclude-objects.svelte.ts';
+  import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;

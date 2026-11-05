@@ -1,7 +1,7 @@
 import type { PluginApi } from '../../../plugin-sdk/src/types';
 
-import { parseGcodeAsync } from './parse-client';
-import type { ParsedGcode } from './parse-gcode';
+import { parseGcodeAsync } from '../lib/parse-client';
+import type { ParsedGcode } from '../lib/parse-gcode';
 
 export type GcodeEntry =
   | { status: 'loading' }
