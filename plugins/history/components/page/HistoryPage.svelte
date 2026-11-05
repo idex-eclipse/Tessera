@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import FileTable from '../shared/file-table/FileTable.svelte';
+  import FileTable from '../../../shared/file-table/FileTable.svelte';
 
-  import { HISTORY_SCOPE } from './hotkeys.ts';
+  import { HISTORY_SCOPE } from '../../hotkeys.ts';
   import StatsPanel from './HistoryStats.svelte';
 
   const api = usePluginApi();

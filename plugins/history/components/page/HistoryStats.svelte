@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import { usePluginApi } from '../../plugin-sdk/src/svelte/index';
+  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
-  import ConfirmDialog from '../shared/confirm-dialog.svelte';
-  import Icon from '../shared/icons/Icon.svelte';
+  import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
+  import Icon from '../../../shared/icons/Icon.svelte';
 
-  import { formatDuration, formatFilament } from './format';
-  import { historyUi } from './page-ui-state.svelte.ts';
+  import { formatDuration, formatFilament } from '../../lib/format';
+  import { historyUi } from '../../state/page-ui-state.svelte.ts';
 
   const api = usePluginApi();
   const i18n = api.i18n;

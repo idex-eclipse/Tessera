@@ -3,7 +3,7 @@ import type { PluginApi } from '../../plugin-sdk/src/types';
 import { openPluginPage } from '../shared/page-nav';
 import { requestRefresh, requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
 
-import { historyUi } from './page-ui-state.svelte.ts';
+import { historyUi } from './state/page-ui-state.svelte.ts';
 
 /** scope таблицы на странице истории (см. HistoryPage.svelte). */
 export const HISTORY_SCOPE = 'page:history';

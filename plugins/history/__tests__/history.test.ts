@@ -7,13 +7,13 @@ import { fakeHostHotkeyDeps } from '../../../host/src/core/__tests__/helpers/hos
 import { configManifest } from '../../config/manifest';
 import { jobsManifest } from '../../jobs/manifest';
 import { getRefreshTick, getSearchFocusTick } from '../../shared/file-table/file-table-state.svelte';
-import { formatDuration, formatFilament } from '../format';
+import { formatDuration, formatFilament } from '../lib/format';
 import { guardHistoryOwnerOnly } from '../guards';
 import * as hotkeys from '../hotkeys';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
 import { historyManifest } from '../manifest';
-import { historyUi } from '../page-ui-state.svelte';
+import { historyUi } from '../state/page-ui-state.svelte';
 
 afterEach(() => {
   historyUi.dialogOpen = false;
