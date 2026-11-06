@@ -1,6 +1,9 @@
 <script lang="ts">
   import '../../shared/input/inputs.css';
+  import { ExtensionPoint } from '../../../plugin-sdk/src/svelte/index';
+  import type { MpuParams } from '../../../plugin-sdk/src/types';
   import Icon from '../icons/Icon.svelte';
+  import { SLIDER_EVENTS, SLIDER_POINT_ID } from './extension-points';
 
   let {
     label,
@@ -65,8 +68,43 @@
   function commitDraft(): void {
     commitNumber(Number(draft));
   }
+
+  // What a replacing extension needs to draw the slider (params are strings by contract).
+  let extParams = $derived<MpuParams>({
+    label,
+    value: String(value),
+    min: String(min),
+    max: String(max),
+    step: String(step),
+    unit,
+    decimals: String(decimals),
+    resettable: String(onReset != null),
+  });
+
+  // An extension cannot reach our state, so it reports back with bubbling composed events. The value
+  // goes through commitNumber(): the clamping and the pending-value guard stay ours.
+  let hostEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const el = hostEl;
+    if (!el) return;
+    const onExtCommit = (e: Event) => {
+      const v = (e as CustomEvent<{ value?: unknown }>).detail?.value;
+      if (typeof v === 'number') commitNumber(v);
+    };
+    const onExtReset = () => onReset?.();
+    el.addEventListener(SLIDER_EVENTS.commit, onExtCommit);
+    el.addEventListener(SLIDER_EVENTS.reset, onExtReset);
+    return () => {
+      el.removeEventListener(SLIDER_EVENTS.commit, onExtCommit);
+      el.removeEventListener(SLIDER_EVENTS.reset, onExtReset);
+    };
+  });
 </script>
 
+<!-- display: contents keeps the grid cell the slider had; the host element only carries the listeners -->
+<div class="sf-host" bind:this={hostEl}>
+<ExtensionPoint point={SLIDER_POINT_ID} params={extParams}>
+  {#snippet original()}
 <div class="sf">
   <div class="sf-head">
     <span class="sf-label" title={label}>{label}</span>
@@ -126,8 +164,13 @@
     }}
   />
 </div>
+  {/snippet}
+</ExtensionPoint>
+</div>
 
 <style>
+  .sf-host { display: contents; }
+
   .sf {
     display: flex;
     flex-direction: column;

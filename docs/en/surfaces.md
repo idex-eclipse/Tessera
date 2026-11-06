@@ -803,6 +803,59 @@ version `4.0.0`:
 Nothing finer is extensible on purpose: the viewer is a single canvas with its own controls.
 The file to show comes in `?file=` (page) and `?preview=` (widget), as for the original.
 
+`@core/widgets` (all `version: 1`; a contribution gets only its own api), since owner version
+`3.0.0`. Ids are prefixed by widget, because one plugin owns all the widgets:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `widget-temperature`, `widget-tools`, `widget-macros`, `widget-leds`, `widget-camera` | element | replacement | the whole body of the widget (Temperature, Tools, Macros, LEDs, Camera) |
+| `header-temperature`, `header-tools`, `header-macros`, `header-leds`, `header-camera` | element | replacement | the header bar of the same widgets |
+| `widget-outputs`, `widget-limits`, `widget-filament`, `widget-job-queue` | element | replacement | the whole body of the widget (these widgets have no header) |
+| `temperature-sensors` | element | replacement | the sensor table or cards, with the "no printer" and "not ready" notices; the chart stays |
+| `temperature-chart` | element | replacement | the chart |
+| `temperature-extra` | panel | append | extra panels under the chart |
+| `tools-move` | element | replacement | tool chips, dual carriage, step, jog pad or axis rows, home and position |
+| `tools-extrude`, `tools-speed-flow`, `tools-pa`, `tools-retraction` | element | replacement | the body of the respective accordion section (the section header and its open state stay) |
+| `tools-sections` | panel | append | extra accordion sections after the built-in ones |
+| `camera-stream` | element | alternative | the camera stream; the original player stays one choice away (right-click or long press) |
+| `slider` | element | replacement | every slider of the plugin, in widgets and chips (see below) |
+
+**Replace the header together with the body.** The buttons and menus of a header (the edit
+mode of Macros, the view and column menus of Temperature, the camera list, and so on) drive
+the state of the *original* body. If an extension replaces `widget-<name>` and leaves
+`header-<name>` as is, the header keeps working on a body nobody shows. Replace both, or
+accept a header that does nothing.
+
+Many of these widgets send commands (movement, G-code, pins, limits): a replacement must go
+through the guards itself, they are not inherited. `camera-stream` gets the camera as params
+(strings): `uid`, `name`, `service`, `streamUrl`, `snapshotUrl`, `rotation`, `flipHorizontal`,
+`flipVertical`, `targetFps`. The URLs are passed as stored, so a relative one is resolved
+against `api.printer.url`. The two `panel` points use the host panel shell, whose look matches the
+accordion sections of the widget.
+
+Not extensible on purpose: chips as a whole, fleet panels (the host gives them the printer id
+and the plugin settings are still bound to the active printer), the Macros groups and the
+per-LED controls. A replacement of the widget body covers them.
+
+#### Point of the shared slider
+
+`SliderField` (`plugins/shared/slider-field`) is bundled into every plugin that embeds it and
+talks to the host as that plugin, so its point lives in the manifest of each such plugin
+(`sliderPoints('<i18nPrefix>')` from `plugins/shared/slider-field/extension-points.ts`). Today
+only `@core/widgets` declares it: it covers Tools, Outputs, Limits and LEDs, and the Outputs and
+Tuning chips. The slider of the layers in G-code preview is a separate component and is not
+covered.
+
+- `slider` replaces only the **look** of one slider (label, number field, reset button, range).
+  The clamping to min/max, the guard against a stale value and the commands stay in the plugin.
+- Params (strings): `label`, `value`, `min`, `max`, `step`, `unit`, `decimals`, `resettable`
+  (`'true'` or `'false'`). They are updated while the value changes.
+- An extension reports back with bubbling, composed events: `mpu:slider-commit` with
+  `detail: { value: number }` (the value is clamped to min/max) and `mpu:slider-reset` (only
+  when `resettable` is `'true'`).
+- One point serves all sliders. `available(api, params)` can limit a contribution by `label`
+  or `unit`, so a slider for "Speed" can differ from the one for "Flow".
+
 #### Points of the shared file table
 
 The file table (`plugins/shared/file-table`) is bundled into every plugin that embeds it and
