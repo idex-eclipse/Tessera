@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, type Snippet } from 'svelte';
 
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
 
   import { cleanCarriage } from '../../../data/use-toolhead.svelte.ts';
@@ -177,634 +177,668 @@
   });
 </script>
 
-{#if !klippy.ready}
-  <KlipperNotReady />
-{:else}
-  {#snippet section(id: string, title: string, children: Snippet)}
-    <SectionAccordion
-      {title}
-      open={sections.isOpen(id, box.narrow, !box.narrow)}
-      onToggle={() => sections.toggle(id, box.narrow, !box.narrow)}
-      {children}
-    />
-  {/snippet}
-
-  <div class="tools-box" use:observeWidgetBox={(b) => (box = b)}>
-  <div class="tools">
-    <!-- Тулы -->
-    {#if store.meta.tools.length > 0}
-      <div class="row chips">
-        {#each store.meta.tools as tool (tool)}
-          {@const sid = store.spoolIdForTool(tool)}
-          {@const color = store.spoolColorForTool(tool)}
-          <button
-            class="chip"
-            class:active={activeTool === tool}
-            onclick={() => clickTool(tool)}
-            onpointerenter={(e) => onChipHoverStart(e, tool, sid)}
-            onpointerleave={onChipHoverEnd}
-            onpointerdown={(e) => onChipPressStart(e, tool, sid)}
-            onpointerup={onChipPressEnd}
-            onpointercancel={onChipPressEnd}
-          >
-            {#if color}
-              <svg class="spool-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                <circle cx="8" cy="8" r="7" fill={color} stroke="rgba(0,0,0,.25)" stroke-width="0.7"></circle>
-                <circle cx="8" cy="8" r="2.8" fill="var(--bg-surface)"></circle>
-              </svg>
-            {/if}
-            {tool}
-          </button>
-        {/each}
-      </div>
-    {/if}
-
-    <!-- dual_carriage: статус + смена режима -->
-    {#if store.meta.hasDualCarriage}
-      <div class="row chips">
-        {#each Object.entries(store.th.dcModes) as [name, mode] (name)}
-          <button
-            class="chip"
-            class:active={mode !== 'INACTIVE'}
-            disabled={dcPrinting()}
-            title={dcPrinting()
-              ? i18n.t('widgets.tools.dcBlockedPrint')
-              : i18n.t('widgets.tools.dcMode')}
-            onclick={(e) => openModeMenu(e, name)}
-          >
-            {cleanCarriage(name)}: {mode}
-            <Icon name="chevron-down" size={12} />
-          </button>
-        {/each}
-      </div>
-    {/if}
-
-    {#if store.forceMove}
-      <div class="fm-note">{i18n.t('widgets.tools.forceMoveNote')}</div>
-
-      <div class="rows">
-        {#each store.meta.steppers as st (st)}
-          <div class="axis-row fm-row" class:stacked={!forceMoveRowFit(box.width)}>
-            {#each fmStepsDesc as s (s)}
-              <button class="btn rsq" onclick={() => store.forceMoveStepper(st, -s)}>
-                −{fmt(s)}
-              </button>
-            {/each}
-
-            <bdi class="fm-name" title={st}>{st}</bdi>
-
-            {#each fmSteps as s (s)}
-              <button class="btn rsq" onclick={() => store.forceMoveStepper(st, s)}>
-                +{fmt(s)}
-              </button>
-            {/each}
-          </div>
-        {/each}
-      </div>
-    {:else if style === 'cross'}
-      <div class="move-area">
-        <!-- Единый grid: XY-крест + Z-колонка -->
-        <div class="cross" class:du-x={duX} class:du-y={duY}>
-          <button class="btn sq a-yup" disabled={jogDisabled('Y')} onclick={() => store.jog('Y', step)}>
-            <Icon name="chevron-up" size={16} />
-          </button>
-          <button class="btn sq a-xmin" disabled={jogDisabled('X')} onclick={() => store.jog('X', -step)}>
-            <Icon name="chevron-left" size={16} />
-          </button>
-          <span class="pad-label a-lab">XY</span>
-          <button class="btn sq a-xmax" disabled={jogDisabled('X')} onclick={() => store.jog('X', step)}>
-            <Icon name="chevron-right" size={16} />
-          </button>
-          <button class="btn sq a-ymin" disabled={jogDisabled('Y')} onclick={() => store.jog('Y', -step)}>
-            <Icon name="chevron-down" size={16} />
-          </button>
-
-          <!-- Z-колонка -->
-          <button class="btn sq a-zup" disabled={jogDisabled('Z')} onclick={() => store.jog('Z', step)}>
-            <Icon name="chevron-up" size={16} />
-          </button>
-          <span class="pad-label a-zlab">Z</span>
-          <button class="btn sq a-zmin" disabled={jogDisabled('Z')} onclick={() => store.jog('Z', -step)}>
-            <Icon name="chevron-down" size={16} />
-          </button>
-
-          {#if duX}
-            <button class="btn sq du a-umin" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(-step)}>
-              <Icon name="chevron-left" size={16} />
-            </button>
-            <span class="pad-label accent a-ulab">{store.ui.directAxis}</span>
-            <button class="btn sq du a-umax" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(step)}>
-              <Icon name="chevron-right" size={16} />
-            </button>
-          {/if}
-
-          {#if duY}
-            <button class="btn sq du a-umax" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(step)}>
-              <Icon name="chevron-up" size={16} />
-            </button>
-            <span class="pad-label accent a-ulab">{store.ui.directAxis}</span>
-            <button class="btn sq du a-umin" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(-step)}>
-              <Icon name="chevron-down" size={16} />
-            </button>
-          {/if}
-        </div>
-
-        <div class="home-col">
-          <div class="home-row wide">
-            <button class="btn rsq home all" title="{i18n.t('widgets.tools.home')} {i18n.t('widgets.tools.homeall')}" onclick={() => store.homeAll()}>
-              <Icon name="home" size={14} />
-              <span class="home-label">{i18n.t('widgets.tools.homeAll')}</span>
-            </button>
-            <button
-              class="btn rsq home all"
-              title="{i18n.t('widgets.tools.home')} XY"
-              onclick={() => store.homeAxes('X Y')}
-            >
-              <Icon name="home" size={14} />
-              <span class="home-label">XY</span>
-            </button>
-          </div>
-
-          <div class="home-row axes">
-            <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} X" onclick={() => store.homeAxes('X')}>
-              <Icon name="home" size={14} />
-              <span class="home-label">X</span>
-            </button>
-            <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Y" onclick={() => store.homeAxes('Y')}>
-              <Icon name="home" size={14} />
-              <span class="home-label">Y</span>
-            </button>
-            <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Z" onclick={() => store.homeAxes('Z')}>
-              <Icon name="home" size={14} />
-              <span class="home-label">Z</span>
-            </button>
-          </div>
-
-          {#if !store.forceMove && (store.hasQgl || store.hasZTilt)}
-            <div class="home-row calibration">
-              {#if store.hasQgl}
-                <button
-                  class="btn rsq calib"
-                  onclick={() => store.qgl()}
-                  title={i18n.t('widgets.tools.qglHint')}
-                >
-                  {i18n.t('widgets.tools.qgl')}
-                </button>
-              {/if}
-              {#if store.hasZTilt}
-                <button
-                  class="btn rsq calib"
-                  onclick={() => store.zTiltAdjust()}
-                  title={i18n.t('widgets.tools.zTiltHint')}
-                >
-                  {i18n.t('widgets.tools.zTilt')}
-                </button>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <div class="row chips steps">
-        {#each steps as s, i (i)}
-          <button class="chip" class:active={stepIdx === i} onclick={() => (stepIdx = i)}>
-            {fmt(s)}
-          </button>
-        {/each}
-      </div>
+<!-- widget-tools (replacement): the whole widget body, including the "Klipper not ready" state; the header (ToolsHeader) is a separate element, replace it with header-tools too -->
+<ExtensionPoint point="widget-tools">
+  {#snippet original()}
+    {#if !klippy.ready}
+      <KlipperNotReady />
     {:else}
-      <!-- строки: [−steps] [положение] [+steps]; парковки — тем же блоком, что в кресте -->
-      <div class="rows">
-        {#each AXES as axis, i (axis)}
-          <div class="axis-row">
-            {#each [...steps].reverse() as s (s)}
-              <button class="btn rsq" disabled={jogDisabled(axis)} onclick={() => store.jog(axis, -s, false)}>
-                −{fmt(s)}
-              </button>
-            {/each}
+      {#snippet section(id: string, title: string, children: Snippet)}
+        <SectionAccordion
+          {title}
+          open={sections.isOpen(id, box.narrow, !box.narrow)}
+          onToggle={() => sections.toggle(id, box.narrow, !box.narrow)}
+          {children}
+        />
+      {/snippet}
 
-            <div class="mpu-field pos-field row-pos">
-              <span class="mpu-field-legend">
-                {axis} [ {(store.th.position[i] ?? 0).toFixed(2)} ]
-              </span>
-              {#if canType(axis)}
-                <input
-                  class="mpu-input"
-                  type="number"
-                  step="any"
-                  placeholder={(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
-                  onkeydown={(e) => {
-                    if (e.key !== 'Enter') return;
-                    const v = Number(e.currentTarget.value);
-                    if (Number.isFinite(v)) {
-                      store.moveTo(axis, v);
-                      e.currentTarget.value = '';
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              {:else}
-                <span class="mpu-field-value">
-                  {(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
-                </span>
-              {/if}
-            </div>
+      <div class="tools-box" use:observeWidgetBox={(b) => (box = b)}>
+      <div class="tools">
+        <!-- tools-move (replacement): everything above the sections: tool chips, dual carriage, step, jog pad or axis rows, home and position -->
+        <ExtensionPoint point="tools-move">
+          {#snippet original()}
+            <!-- Тулы -->
+            {#if store.meta.tools.length > 0}
+              <div class="row chips">
+                {#each store.meta.tools as tool (tool)}
+                  {@const sid = store.spoolIdForTool(tool)}
+                  {@const color = store.spoolColorForTool(tool)}
+                  <button
+                    class="chip"
+                    class:active={activeTool === tool}
+                    onclick={() => clickTool(tool)}
+                    onpointerenter={(e) => onChipHoverStart(e, tool, sid)}
+                    onpointerleave={onChipHoverEnd}
+                    onpointerdown={(e) => onChipPressStart(e, tool, sid)}
+                    onpointerup={onChipPressEnd}
+                    onpointercancel={onChipPressEnd}
+                  >
+                    {#if color}
+                      <svg class="spool-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                        <circle cx="8" cy="8" r="7" fill={color} stroke="rgba(0,0,0,.25)" stroke-width="0.7"></circle>
+                        <circle cx="8" cy="8" r="2.8" fill="var(--bg-surface)"></circle>
+                      </svg>
+                    {/if}
+                    {tool}
+                  </button>
+                {/each}
+              </div>
+            {/if}
 
-            {#each steps as s (s)}
-              <button class="btn rsq" disabled={jogDisabled(axis)} onclick={() => store.jog(axis, s, false)}>
-                +{fmt(s)}
-              </button>
-            {/each}
-          </div>
-        {/each}
+            <!-- dual_carriage: статус + смена режима -->
+            {#if store.meta.hasDualCarriage}
+              <div class="row chips">
+                {#each Object.entries(store.th.dcModes) as [name, mode] (name)}
+                  <button
+                    class="chip"
+                    class:active={mode !== 'INACTIVE'}
+                    disabled={dcPrinting()}
+                    title={dcPrinting()
+                      ? i18n.t('widgets.tools.dcBlockedPrint')
+                      : i18n.t('widgets.tools.dcMode')}
+                    onclick={(e) => openModeMenu(e, name)}
+                  >
+                    {cleanCarriage(name)}: {mode}
+                    <Icon name="chevron-down" size={12} />
+                  </button>
+                {/each}
+              </div>
+            {/if}
 
-        {#if directActive}
-          <div class="axis-row">
-            {#each [...steps].reverse() as s (s)}
-              <button class="btn rsq dir" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(-s)}>
-                −{fmt(s)}
-              </button>
-            {/each}
+            {#if store.forceMove}
+              <div class="fm-note">{i18n.t('widgets.tools.forceMoveNote')}</div>
 
-            <div class="mpu-field pos-field row-pos">
-              <span class="mpu-field-legend">
-                {store.ui.directAxis} [ {(store.th.position[4] ?? 0).toFixed(2)} ]
-              </span>
-              {#if canTypeDirect()}
-                <input
-                  class="mpu-input"
-                  type="number"
-                  step="any"
-                  placeholder={(store.th.gcodePosition[4] ?? 0).toFixed(2)}
-                  onkeydown={(e) => {
-                    if (e.key !== 'Enter') return;
-                    const v = Number(e.currentTarget.value);
-                    if (Number.isFinite(v)) {
-                      store.moveToDirect(v);
-                      e.currentTarget.value = '';
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              {:else}
-                <span class="mpu-field-value">
-                  {(store.th.gcodePosition[4] ?? 0).toFixed(2)}
-                </span>
-              {/if}
-            </div>
+              <div class="rows">
+                {#each store.meta.steppers as st (st)}
+                  <div class="axis-row fm-row" class:stacked={!forceMoveRowFit(box.width)}>
+                    {#each fmStepsDesc as s (s)}
+                      <button class="btn rsq" onclick={() => store.forceMoveStepper(st, -s)}>
+                        −{fmt(s)}
+                      </button>
+                    {/each}
 
-            {#each steps as s (s)}
-              <button class="btn rsq dir" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(s)}>
-                +{fmt(s)}
-              </button>
-            {/each}
-          </div>
+                    <bdi class="fm-name" title={st}>{st}</bdi>
+
+                    {#each fmSteps as s (s)}
+                      <button class="btn rsq" onclick={() => store.forceMoveStepper(st, s)}>
+                        +{fmt(s)}
+                      </button>
+                    {/each}
+                  </div>
+                {/each}
+              </div>
+            {:else if style === 'cross'}
+              <div class="move-area">
+                <!-- Единый grid: XY-крест + Z-колонка -->
+                <div class="cross" class:du-x={duX} class:du-y={duY}>
+                  <button class="btn sq a-yup" disabled={jogDisabled('Y')} onclick={() => store.jog('Y', step)}>
+                    <Icon name="chevron-up" size={16} />
+                  </button>
+                  <button class="btn sq a-xmin" disabled={jogDisabled('X')} onclick={() => store.jog('X', -step)}>
+                    <Icon name="chevron-left" size={16} />
+                  </button>
+                  <span class="pad-label a-lab">XY</span>
+                  <button class="btn sq a-xmax" disabled={jogDisabled('X')} onclick={() => store.jog('X', step)}>
+                    <Icon name="chevron-right" size={16} />
+                  </button>
+                  <button class="btn sq a-ymin" disabled={jogDisabled('Y')} onclick={() => store.jog('Y', -step)}>
+                    <Icon name="chevron-down" size={16} />
+                  </button>
+
+                  <!-- Z-колонка -->
+                  <button class="btn sq a-zup" disabled={jogDisabled('Z')} onclick={() => store.jog('Z', step)}>
+                    <Icon name="chevron-up" size={16} />
+                  </button>
+                  <span class="pad-label a-zlab">Z</span>
+                  <button class="btn sq a-zmin" disabled={jogDisabled('Z')} onclick={() => store.jog('Z', -step)}>
+                    <Icon name="chevron-down" size={16} />
+                  </button>
+
+                  {#if duX}
+                    <button class="btn sq du a-umin" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(-step)}>
+                      <Icon name="chevron-left" size={16} />
+                    </button>
+                    <span class="pad-label accent a-ulab">{store.ui.directAxis}</span>
+                    <button class="btn sq du a-umax" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(step)}>
+                      <Icon name="chevron-right" size={16} />
+                    </button>
+                  {/if}
+
+                  {#if duY}
+                    <button class="btn sq du a-umax" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(step)}>
+                      <Icon name="chevron-up" size={16} />
+                    </button>
+                    <span class="pad-label accent a-ulab">{store.ui.directAxis}</span>
+                    <button class="btn sq du a-umin" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(-step)}>
+                      <Icon name="chevron-down" size={16} />
+                    </button>
+                  {/if}
+                </div>
+
+                <div class="home-col">
+                  <div class="home-row wide">
+                    <button class="btn rsq home all" title="{i18n.t('widgets.tools.home')} {i18n.t('widgets.tools.homeall')}" onclick={() => store.homeAll()}>
+                      <Icon name="home" size={14} />
+                      <span class="home-label">{i18n.t('widgets.tools.homeAll')}</span>
+                    </button>
+                    <button
+                      class="btn rsq home all"
+                      title="{i18n.t('widgets.tools.home')} XY"
+                      onclick={() => store.homeAxes('X Y')}
+                    >
+                      <Icon name="home" size={14} />
+                      <span class="home-label">XY</span>
+                    </button>
+                  </div>
+
+                  <div class="home-row axes">
+                    <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} X" onclick={() => store.homeAxes('X')}>
+                      <Icon name="home" size={14} />
+                      <span class="home-label">X</span>
+                    </button>
+                    <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Y" onclick={() => store.homeAxes('Y')}>
+                      <Icon name="home" size={14} />
+                      <span class="home-label">Y</span>
+                    </button>
+                    <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Z" onclick={() => store.homeAxes('Z')}>
+                      <Icon name="home" size={14} />
+                      <span class="home-label">Z</span>
+                    </button>
+                  </div>
+
+                  {#if !store.forceMove && (store.hasQgl || store.hasZTilt)}
+                    <div class="home-row calibration">
+                      {#if store.hasQgl}
+                        <button
+                          class="btn rsq calib"
+                          onclick={() => store.qgl()}
+                          title={i18n.t('widgets.tools.qglHint')}
+                        >
+                          {i18n.t('widgets.tools.qgl')}
+                        </button>
+                      {/if}
+                      {#if store.hasZTilt}
+                        <button
+                          class="btn rsq calib"
+                          onclick={() => store.zTiltAdjust()}
+                          title={i18n.t('widgets.tools.zTiltHint')}
+                        >
+                          {i18n.t('widgets.tools.zTilt')}
+                        </button>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+
+              <div class="row chips steps">
+                {#each steps as s, i (i)}
+                  <button class="chip" class:active={stepIdx === i} onclick={() => (stepIdx = i)}>
+                    {fmt(s)}
+                  </button>
+                {/each}
+              </div>
+            {:else}
+              <!-- строки: [−steps] [положение] [+steps]; парковки — тем же блоком, что в кресте -->
+              <div class="rows">
+                {#each AXES as axis, i (axis)}
+                  <div class="axis-row">
+                    {#each [...steps].reverse() as s (s)}
+                      <button class="btn rsq" disabled={jogDisabled(axis)} onclick={() => store.jog(axis, -s, false)}>
+                        −{fmt(s)}
+                      </button>
+                    {/each}
+
+                    <div class="mpu-field pos-field row-pos">
+                      <span class="mpu-field-legend">
+                        {axis} [ {(store.th.position[i] ?? 0).toFixed(2)} ]
+                      </span>
+                      {#if canType(axis)}
+                        <input
+                          class="mpu-input"
+                          type="number"
+                          step="any"
+                          placeholder={(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
+                          onkeydown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            const v = Number(e.currentTarget.value);
+                            if (Number.isFinite(v)) {
+                              store.moveTo(axis, v);
+                              e.currentTarget.value = '';
+                              e.currentTarget.blur();
+                            }
+                          }}
+                        />
+                      {:else}
+                        <span class="mpu-field-value">
+                          {(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
+                        </span>
+                      {/if}
+                    </div>
+
+                    {#each steps as s (s)}
+                      <button class="btn rsq" disabled={jogDisabled(axis)} onclick={() => store.jog(axis, s, false)}>
+                        +{fmt(s)}
+                      </button>
+                    {/each}
+                  </div>
+                {/each}
+
+                {#if directActive}
+                  <div class="axis-row">
+                    {#each [...steps].reverse() as s (s)}
+                      <button class="btn rsq dir" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(-s)}>
+                        −{fmt(s)}
+                      </button>
+                    {/each}
+
+                    <div class="mpu-field pos-field row-pos">
+                      <span class="mpu-field-legend">
+                        {store.ui.directAxis} [ {(store.th.position[4] ?? 0).toFixed(2)} ]
+                      </span>
+                      {#if canTypeDirect()}
+                        <input
+                          class="mpu-input"
+                          type="number"
+                          step="any"
+                          placeholder={(store.th.gcodePosition[4] ?? 0).toFixed(2)}
+                          onkeydown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            const v = Number(e.currentTarget.value);
+                            if (Number.isFinite(v)) {
+                              store.moveToDirect(v);
+                              e.currentTarget.value = '';
+                              e.currentTarget.blur();
+                            }
+                          }}
+                        />
+                      {:else}
+                        <span class="mpu-field-value">
+                          {(store.th.gcodePosition[4] ?? 0).toFixed(2)}
+                        </span>
+                      {/if}
+                    </div>
+
+                    {#each steps as s (s)}
+                      <button class="btn rsq dir" disabled={jogDirectDisabled()} onclick={() => store.jogDirect(s)}>
+                        +{fmt(s)}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+
+                <!-- парковки + калибровка: в rows-режиме калибровка СПРАВА от парковок,
+                     колонкой в высоту двух home-рядов (не занимает вертикаль) -->
+                <div class="home-area">
+                  <div class="home-col rows-home">
+                    <div class="home-row wide">
+                      <button class="btn rsq home all" title={i18n.t('widgets.tools.homeAll')} onclick={() => store.homeAll()}>
+                        <Icon name="home" size={14} />
+                      </button>
+                      <button
+                        class="btn rsq home all"
+                        title="{i18n.t('widgets.tools.home')} XY"
+                        onclick={() => store.homeAxes('X Y')}
+                      >
+                        <Icon name="home" size={12} />
+                        <span class="home-label">XY</span>
+                      </button>
+                    </div>
+                    <div class="home-row axes">
+                      <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} X" onclick={() => store.homeAxes('X')}>
+                        <span class="home-label">X</span>
+                      </button>
+                      <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Y" onclick={() => store.homeAxes('Y')}>
+                        <span class="home-label">Y</span>
+                      </button>
+                      <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Z" onclick={() => store.homeAxes('Z')}>
+                        <span class="home-label">Z</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {#if !store.forceMove && (store.hasQgl || store.hasZTilt)}
+                    <div class="calib-col">
+                      {#if store.hasQgl}
+                        <button
+                          class="btn rsq calib"
+                          onclick={() => store.qgl()}
+                          title={i18n.t('widgets.tools.qglHint')}
+                        >
+                          QGL
+                        </button>
+                      {/if}
+                      {#if store.hasZTilt}
+                        <button
+                          class="btn rsq calib"
+                          onclick={() => store.zTiltAdjust()}
+                          title={i18n.t('widgets.tools.zTiltHint')}
+                        >
+                          Z-TILT
+                        </button>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            {#if !store.forceMove && style === 'cross'}
+              <!-- положение: в строковом режиме встроено в строки осей -->
+              <div class="pos-row">
+                {#each AXES as axis, i (axis)}
+                  <div class="mpu-field pos-field">
+                    <span class="mpu-field-legend">
+                      {axis} [ {(store.th.position[i] ?? 0).toFixed(2)} ]
+                    </span>
+                    {#if canType(axis)}
+                      <input
+                        class="mpu-input"
+                        type="number"
+                        step="any"
+                        placeholder={(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
+                        onkeydown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          const v = Number(e.currentTarget.value);
+                          if (Number.isFinite(v)) {
+                            store.moveTo(axis, v);
+                            e.currentTarget.value = '';
+                            e.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    {:else}
+                      <span class="mpu-field-value">
+                        {(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
+                      </span>
+                    {/if}
+                  </div>
+                {/each}
+
+                {#if directActive}
+                  <div class="mpu-field pos-field">
+                    <span class="mpu-field-legend">
+                      {store.ui.directAxis} [ {(store.th.position[4] ?? 0).toFixed(2)} ]
+                    </span>
+                    {#if canTypeDirect()}
+                      <input
+                        class="mpu-input"
+                        type="number"
+                        step="any"
+                        placeholder={(store.th.gcodePosition[4] ?? 0).toFixed(2)}
+                        onkeydown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          const v = Number(e.currentTarget.value);
+                          if (Number.isFinite(v)) {
+                            store.moveToDirect(v);
+                            e.currentTarget.value = '';
+                            e.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    {:else}
+                      <span class="mpu-field-value">
+                        {(store.th.gcodePosition[4] ?? 0).toFixed(2)}
+                      </span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          {/snippet}
+        </ExtensionPoint>
+
+        <!-- Extruder -->
+        {#snippet extrudeBody()}
+          <!-- tools-extrude (replacement): the body of the Extruder section (the section header stays) -->
+          <ExtensionPoint point="tools-extrude">
+            {#snippet original()}
+              <div class="ext">
+                {#if store.meta.extruders.length > 1}
+                  <div class="row chips">
+                    {#each store.meta.extruders as e (e)}
+                      <button
+                        class="chip"
+                        class:active={store.th.activeExtruder === e}
+                        onclick={() => store.activateExtruder(e)}
+                      >
+                        {e}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+
+                <div class="ext-grid">
+                  <label class="mpu-field">
+                    <span class="mpu-field-legend">{i18n.t('widgets.tools.extrudeLen')}</span>
+                    <input
+                      class="mpu-input"
+                      type="number"
+                      min="0.1"
+                      step="any"
+                      value={extLen}
+                      onchange={(e) => setExt(extLenSetting, e.currentTarget.value)}
+                    />
+                    <span class="mpu-field-unit">mm</span>
+                  </label>
+
+                  <button
+                    class="btn ext-btn"
+                    disabled={store.coldBlocked()}
+                    title={store.coldBlocked() ? i18n.t('widgets.tools.cold') : ''}
+                    onclick={() => store.extrude(-1)}
+                  >
+                    {i18n.t('widgets.tools.retract')}
+                    <Icon name="chevron-up" size={14} />
+                  </button>
+
+                  <label class="mpu-field">
+                    <span class="mpu-field-legend">{i18n.t('widgets.tools.extrudeSpeed')}</span>
+                    <input
+                      class="mpu-input"
+                      type="number"
+                      min="0.1"
+                      step="any"
+                      value={extSpeed}
+                      onchange={(e) => setExt(extSpeedSetting, e.currentTarget.value)}
+                    />
+                    <span class="mpu-field-unit">mm/s</span>
+                  </label>
+
+                  <button
+                    class="btn ext-btn"
+                    disabled={store.coldBlocked()}
+                    title={store.coldBlocked() ? i18n.t('widgets.tools.cold') : ''}
+                    onclick={() => store.extrude(1)}
+                  >
+                    {i18n.t('widgets.tools.extrude')}
+                    <Icon name="chevron-down" size={14} />
+                  </button>
+                </div>
+              </div>
+            {/snippet}
+          </ExtensionPoint>
+        {/snippet}
+        {#if store.meta.extruders.length > 0}
+          {@render section('extrude', i18n.t('widgets.tools.extrude'), extrudeBody)}
         {/if}
 
-        <!-- парковки + калибровка: в rows-режиме калибровка СПРАВА от парковок,
-             колонкой в высоту двух home-рядов (не занимает вертикаль) -->
-        <div class="home-area">
-          <div class="home-col rows-home">
-            <div class="home-row wide">
-              <button class="btn rsq home all" title={i18n.t('widgets.tools.homeAll')} onclick={() => store.homeAll()}>
-                <Icon name="home" size={14} />
-              </button>
-              <button
-                class="btn rsq home all"
-                title="{i18n.t('widgets.tools.home')} XY"
-                onclick={() => store.homeAxes('X Y')}
-              >
-                <Icon name="home" size={12} />
-                <span class="home-label">XY</span>
-              </button>
-            </div>
-            <div class="home-row axes">
-              <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} X" onclick={() => store.homeAxes('X')}>
-                <span class="home-label">X</span>
-              </button>
-              <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Y" onclick={() => store.homeAxes('Y')}>
-                <span class="home-label">Y</span>
-              </button>
-              <button class="btn rsq home" title="{i18n.t('widgets.tools.home')} Z" onclick={() => store.homeAxes('Z')}>
-                <span class="home-label">Z</span>
-              </button>
-            </div>
-          </div>
+        <!-- Speed / Flow -->
+        {#snippet speedFlowBody()}
+          <!-- tools-speed-flow (replacement): the body of the Speed / Flow section (the section header stays) -->
+          <ExtensionPoint point="tools-speed-flow">
+            {#snippet original()}
+              <SliderGrid {columns}>
+                <SliderField
+                  label={i18n.t('widgets.tools.speed')}
+                  value={speedView} min={1} max={200} step={1} unit="%"
+                  onCommit={(v) => store.setSpeed(v)}
+                  onReset={() => store.setSpeed(100)}
+                />
+                <SliderField
+                  label={i18n.t('widgets.tools.flow')}
+                  value={flowView} min={1} max={200} step={1} unit="%"
+                  onCommit={(v) => store.setFlow(v)}
+                  onReset={() => store.setFlow(100)}
+                />
+              </SliderGrid>
+            {/snippet}
+          </ExtensionPoint>
+        {/snippet}
+        {@render section('speedFlow', i18n.t('widgets.tools.speed-flow'), speedFlowBody)}
 
-          {#if !store.forceMove && (store.hasQgl || store.hasZTilt)}
-            <div class="calib-col">
-              {#if store.hasQgl}
-                <button
-                  class="btn rsq calib"
-                  onclick={() => store.qgl()}
-                  title={i18n.t('widgets.tools.qglHint')}
-                >
-                  QGL
-                </button>
-              {/if}
-              {#if store.hasZTilt}
-                <button
-                  class="btn rsq calib"
-                  onclick={() => store.zTiltAdjust()}
-                  title={i18n.t('widgets.tools.zTiltHint')}
-                >
-                  Z-TILT
-                </button>
-              {/if}
-            </div>
+        <!-- PA -->
+        {#snippet paBody()}
+          <!-- tools-pa (replacement): the body of the Pressure advance section (the section header stays) -->
+          <ExtensionPoint point="tools-pa">
+            {#snippet original()}
+              <SliderGrid {columns}>
+                <SliderField
+                  label={i18n.t('widgets.tools.pa')}
+                  value={paVal.advance} min={0} max={2} step={0.001} unit="s" decimals={3}
+                  onCommit={(v) => store.setPA({ advance: v })}
+                  onReset={() => store.setPA({ advance: paDef.advance })}
+                />
+                <SliderField
+                  label={i18n.t('widgets.tools.paSmooth')}
+                  value={paVal.smooth} min={0} max={0.2} step={0.001} unit="s" decimals={3}
+                  onCommit={(v) => store.setPA({ smooth: v })}
+                  onReset={() => store.setPA({ smooth: paDef.smooth })}
+                />
+              </SliderGrid>
+            {/snippet}
+          </ExtensionPoint>
+        {/snippet}
+        {@render section('pa', i18n.t('widgets.tools.pa'), paBody)}
+
+        <!-- Retracts only if [firmware_retraction] -->
+        {#if store.meta.hasRetraction}
+          {#snippet retractionBody()}
+            <!-- tools-retraction (replacement): the body of the Retraction section (the section header stays) -->
+            <ExtensionPoint point="tools-retraction">
+              {#snippet original()}
+                <SliderGrid {columns}>
+                  <SliderField
+                    label={i18n.t('widgets.tools.retractLength')}
+                    value={store.th.retraction.length} min={0} max={5} step={0.05} unit="mm" decimals={2}
+                    onCommit={(v) => store.setRetraction({ length: v })}
+                    onReset={() => store.setRetraction({ length: store.meta.defaults.retraction.length })}
+                  />
+                  <SliderField
+                    label={i18n.t('widgets.tools.retractSpeed')}
+                    value={store.th.retraction.speed} min={1} max={100} step={1} unit="mm/s"
+                    onCommit={(v) => store.setRetraction({ speed: v })}
+                    onReset={() => store.setRetraction({ speed: store.meta.defaults.retraction.speed })}
+                  />
+                  <SliderField
+                    label={i18n.t('widgets.tools.unretractExtra')}
+                    value={store.th.retraction.extra} min={0} max={5} step={0.05} unit="mm" decimals={2}
+                    onCommit={(v) => store.setRetraction({ extra: v })}
+                    onReset={() => store.setRetraction({ extra: store.meta.defaults.retraction.extra })}
+                  />
+                  <SliderField
+                    label={i18n.t('widgets.tools.unretractSpeed')}
+                    value={store.th.retraction.unspeed} min={1} max={100} step={1} unit="mm/s"
+                    onCommit={(v) => store.setRetraction({ unspeed: v })}
+                    onReset={() => store.setRetraction({ unspeed: store.meta.defaults.retraction.unspeed })}
+                  />
+                </SliderGrid>
+              {/snippet}
+            </ExtensionPoint>
+          {/snippet}
+          {@render section('retraction', i18n.t('widgets.tools.retraction'), retractionBody)}
+        {/if}
+
+        <!-- tools-sections (append): extra accordion sections after the built-in ones. The host draws the
+             panel shell; no wrapper is needed because nothing is rendered while there are no contributions. -->
+        <ExtensionPoint point="tools-sections" />
+      </div>
+      </div>
+
+      {#if modeMenu}
+        <!-- Captured at render time: click handlers fire later, when `modeMenu` may already be null. -->
+        {@const carriage = modeMenu.carriage}
+        <div class="menu-backdrop" onclick={() => (modeMenu = null)} role="presentation"></div>
+
+        <div
+          class="dc-menu"
+          style:top="{modeMenu.pos.top}px"
+          style:left="{modeMenu.pos.left}px"
+          role="menu"
+        >
+          <div class="dc-menu-title">{i18n.t('widgets.tools.dcMode')}</div>
+
+          {#each store.modesFor(carriage) as m (m)}
+            {@const current = (store.th.dcModes[carriage] ?? '').toUpperCase()}
+            <button
+              class="dc-item"
+              class:checked={current === m}
+              onclick={() => {
+                store.setCarriageMode(carriage, m);
+                modeMenu = null;
+              }}
+            >
+              <span class="check">{current === m ? '✓' : ''}</span>
+              {m}
+            </button>
+          {/each}
+
+          {#if store.ui.directMode && carriage === store.dualCarriageName()}
+            {@const current = (store.th.dcModes[carriage] ?? '').toUpperCase()}
+            <div class="dc-sep"></div>
+            <button
+              class="dc-item direct"
+              class:checked={current === 'DIRECT'}
+              onclick={() => {
+                store.setCarriageDirect(carriage, true);
+                modeMenu = null;
+              }}
+            >
+              <span class="check">{current === 'DIRECT' ? '✓' : ''}</span>
+              DIRECT
+            </button>
           {/if}
         </div>
-      </div>
-    {/if}
-
-    {#if !store.forceMove && style === 'cross'}
-      <!-- положение: в строковом режиме встроено в строки осей -->
-      <div class="pos-row">
-        {#each AXES as axis, i (axis)}
-          <div class="mpu-field pos-field">
-            <span class="mpu-field-legend">
-              {axis} [ {(store.th.position[i] ?? 0).toFixed(2)} ]
-            </span>
-            {#if canType(axis)}
-              <input
-                class="mpu-input"
-                type="number"
-                step="any"
-                placeholder={(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
-                onkeydown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  const v = Number(e.currentTarget.value);
-                  if (Number.isFinite(v)) {
-                    store.moveTo(axis, v);
-                    e.currentTarget.value = '';
-                    e.currentTarget.blur();
-                  }
-                }}
-              />
-            {:else}
-              <span class="mpu-field-value">
-                {(store.th.gcodePosition[i] ?? 0).toFixed(axis === 'Z' ? 3 : 2)}
-              </span>
-            {/if}
-          </div>
-        {/each}
-
-        {#if directActive}
-          <div class="mpu-field pos-field">
-            <span class="mpu-field-legend">
-              {store.ui.directAxis} [ {(store.th.position[4] ?? 0).toFixed(2)} ]
-            </span>
-            {#if canTypeDirect()}
-              <input
-                class="mpu-input"
-                type="number"
-                step="any"
-                placeholder={(store.th.gcodePosition[4] ?? 0).toFixed(2)}
-                onkeydown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  const v = Number(e.currentTarget.value);
-                  if (Number.isFinite(v)) {
-                    store.moveToDirect(v);
-                    e.currentTarget.value = '';
-                    e.currentTarget.blur();
-                  }
-                }}
-              />
-            {:else}
-              <span class="mpu-field-value">
-                {(store.th.gcodePosition[4] ?? 0).toFixed(2)}
-              </span>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Extruder -->
-    {#snippet extrudeBody()}
-      <div class="ext">
-        {#if store.meta.extruders.length > 1}
-          <div class="row chips">
-            {#each store.meta.extruders as e (e)}
-              <button
-                class="chip"
-                class:active={store.th.activeExtruder === e}
-                onclick={() => store.activateExtruder(e)}
-              >
-                {e}
-              </button>
-            {/each}
-          </div>
-        {/if}
-
-        <div class="ext-grid">
-          <label class="mpu-field">
-            <span class="mpu-field-legend">{i18n.t('widgets.tools.extrudeLen')}</span>
-            <input
-              class="mpu-input"
-              type="number"
-              min="0.1"
-              step="any"
-              value={extLen}
-              onchange={(e) => setExt(extLenSetting, e.currentTarget.value)}
-            />
-            <span class="mpu-field-unit">mm</span>
-          </label>
-
-          <button
-            class="btn ext-btn"
-            disabled={store.coldBlocked()}
-            title={store.coldBlocked() ? i18n.t('widgets.tools.cold') : ''}
-            onclick={() => store.extrude(-1)}
-          >
-            {i18n.t('widgets.tools.retract')}
-            <Icon name="chevron-up" size={14} />
-          </button>
-
-          <label class="mpu-field">
-            <span class="mpu-field-legend">{i18n.t('widgets.tools.extrudeSpeed')}</span>
-            <input
-              class="mpu-input"
-              type="number"
-              min="0.1"
-              step="any"
-              value={extSpeed}
-              onchange={(e) => setExt(extSpeedSetting, e.currentTarget.value)}
-            />
-            <span class="mpu-field-unit">mm/s</span>
-          </label>
-
-          <button
-            class="btn ext-btn"
-            disabled={store.coldBlocked()}
-            title={store.coldBlocked() ? i18n.t('widgets.tools.cold') : ''}
-            onclick={() => store.extrude(1)}
-          >
-            {i18n.t('widgets.tools.extrude')}
-            <Icon name="chevron-down" size={14} />
-          </button>
-        </div>
-      </div>
-    {/snippet}
-    {#if store.meta.extruders.length > 0}
-      {@render section('extrude', i18n.t('widgets.tools.extrude'), extrudeBody)}
-    {/if}
-
-    <!-- Speed / Flow -->
-    {#snippet speedFlowBody()}
-      <SliderGrid {columns}>
-        <SliderField
-          label={i18n.t('widgets.tools.speed')}
-          value={speedView} min={1} max={200} step={1} unit="%"
-          onCommit={(v) => store.setSpeed(v)}
-          onReset={() => store.setSpeed(100)}
-        />
-        <SliderField
-          label={i18n.t('widgets.tools.flow')}
-          value={flowView} min={1} max={200} step={1} unit="%"
-          onCommit={(v) => store.setFlow(v)}
-          onReset={() => store.setFlow(100)}
-        />
-      </SliderGrid>
-    {/snippet}
-    {@render section('speedFlow', i18n.t('widgets.tools.speed-flow'), speedFlowBody)}
-
-    <!-- PA -->
-    {#snippet paBody()}
-      <SliderGrid {columns}>
-        <SliderField
-          label={i18n.t('widgets.tools.pa')}
-          value={paVal.advance} min={0} max={2} step={0.001} unit="s" decimals={3}
-          onCommit={(v) => store.setPA({ advance: v })}
-          onReset={() => store.setPA({ advance: paDef.advance })}
-        />
-        <SliderField
-          label={i18n.t('widgets.tools.paSmooth')}
-          value={paVal.smooth} min={0} max={0.2} step={0.001} unit="s" decimals={3}
-          onCommit={(v) => store.setPA({ smooth: v })}
-          onReset={() => store.setPA({ smooth: paDef.smooth })}
-        />
-      </SliderGrid>
-    {/snippet}
-    {@render section('pa', i18n.t('widgets.tools.pa'), paBody)}
-
-    <!-- Retracts only if [firmware_retraction] -->
-    {#if store.meta.hasRetraction}
-      {#snippet retractionBody()}
-        <SliderGrid {columns}>
-          <SliderField
-            label={i18n.t('widgets.tools.retractLength')}
-            value={store.th.retraction.length} min={0} max={5} step={0.05} unit="mm" decimals={2}
-            onCommit={(v) => store.setRetraction({ length: v })}
-            onReset={() => store.setRetraction({ length: store.meta.defaults.retraction.length })}
-          />
-          <SliderField
-            label={i18n.t('widgets.tools.retractSpeed')}
-            value={store.th.retraction.speed} min={1} max={100} step={1} unit="mm/s"
-            onCommit={(v) => store.setRetraction({ speed: v })}
-            onReset={() => store.setRetraction({ speed: store.meta.defaults.retraction.speed })}
-          />
-          <SliderField
-            label={i18n.t('widgets.tools.unretractExtra')}
-            value={store.th.retraction.extra} min={0} max={5} step={0.05} unit="mm" decimals={2}
-            onCommit={(v) => store.setRetraction({ extra: v })}
-            onReset={() => store.setRetraction({ extra: store.meta.defaults.retraction.extra })}
-          />
-          <SliderField
-            label={i18n.t('widgets.tools.unretractSpeed')}
-            value={store.th.retraction.unspeed} min={1} max={100} step={1} unit="mm/s"
-            onCommit={(v) => store.setRetraction({ unspeed: v })}
-            onReset={() => store.setRetraction({ unspeed: store.meta.defaults.retraction.unspeed })}
-          />
-        </SliderGrid>
-      {/snippet}
-      {@render section('retraction', i18n.t('widgets.tools.retraction'), retractionBody)}
-    {/if}
-  </div>
-  </div>
-
-  {#if modeMenu}
-    <!-- Captured at render time: click handlers fire later, when `modeMenu` may already be null. -->
-    {@const carriage = modeMenu.carriage}
-    <div class="menu-backdrop" onclick={() => (modeMenu = null)} role="presentation"></div>
-
-    <div
-      class="dc-menu"
-      style:top="{modeMenu.pos.top}px"
-      style:left="{modeMenu.pos.left}px"
-      role="menu"
-    >
-      <div class="dc-menu-title">{i18n.t('widgets.tools.dcMode')}</div>
-
-      {#each store.modesFor(carriage) as m (m)}
-        {@const current = (store.th.dcModes[carriage] ?? '').toUpperCase()}
-        <button
-          class="dc-item"
-          class:checked={current === m}
-          onclick={() => {
-            store.setCarriageMode(carriage, m);
-            modeMenu = null;
-          }}
-        >
-          <span class="check">{current === m ? '✓' : ''}</span>
-          {m}
-        </button>
-      {/each}
-
-      {#if store.ui.directMode && carriage === store.dualCarriageName()}
-        {@const current = (store.th.dcModes[carriage] ?? '').toUpperCase()}
-        <div class="dc-sep"></div>
-        <button
-          class="dc-item direct"
-          class:checked={current === 'DIRECT'}
-          onclick={() => {
-            store.setCarriageDirect(carriage, true);
-            modeMenu = null;
-          }}
-        >
-          <span class="check">{current === 'DIRECT' ? '✓' : ''}</span>
-          DIRECT
-        </button>
       {/if}
-    </div>
-  {/if}
 
-  <!-- Spool tooltip -->
-  {#if spoolTip}
-    {@const spool = store.getSpool(spoolTip.spoolId)}
-    {#if spool}
-      <div
-        class="spool-tip"
-        class:above={spoolTip.above}
-        style:left="{spoolTip.x}px"
-        style:top="{spoolTip.y}px"
-        role="tooltip"
-        onpointerleave={hideTip}
-      >
-        <div class="spool-tip-head">
-          <span
-            class="spool-swatch"
-            style:background={spool.filament.color_hex ? `#${spool.filament.color_hex}` : 'var(--text-muted)'}
-          ></span>
-          <span class="spool-name">{spool.filament.name ?? `#${spool.id}`}</span>
-        </div>
-        {#if spool.filament.vendor?.name}
-          <div class="spool-row">{spool.filament.vendor.name}</div>
-        {/if}
-        {#if spool.filament.material}
-          <span class="spool-mat">{spool.filament.material}</span>
-        {/if}
-        {#if spool.remaining_weight != null && spool.filament.weight}
-          {@const pct = Math.max(0, Math.min(100, Math.round((spool.remaining_weight / spool.filament.weight) * 100)))}
-          <div class="spool-bar-track">
-            <div class="spool-bar-fill" style:width="{pct}%"></div>
+      <!-- Spool tooltip -->
+      {#if spoolTip}
+        {@const spool = store.getSpool(spoolTip.spoolId)}
+        {#if spool}
+          <div
+            class="spool-tip"
+            class:above={spoolTip.above}
+            style:left="{spoolTip.x}px"
+            style:top="{spoolTip.y}px"
+            role="tooltip"
+            onpointerleave={hideTip}
+          >
+            <div class="spool-tip-head">
+              <span
+                class="spool-swatch"
+                style:background={spool.filament.color_hex ? `#${spool.filament.color_hex}` : 'var(--text-muted)'}
+              ></span>
+              <span class="spool-name">{spool.filament.name ?? `#${spool.id}`}</span>
+            </div>
+            {#if spool.filament.vendor?.name}
+              <div class="spool-row">{spool.filament.vendor.name}</div>
+            {/if}
+            {#if spool.filament.material}
+              <span class="spool-mat">{spool.filament.material}</span>
+            {/if}
+            {#if spool.remaining_weight != null && spool.filament.weight}
+              {@const pct = Math.max(0, Math.min(100, Math.round((spool.remaining_weight / spool.filament.weight) * 100)))}
+              <div class="spool-bar-track">
+                <div class="spool-bar-fill" style:width="{pct}%"></div>
+              </div>
+              <div class="spool-row">{Math.round(spool.remaining_weight)} г · {pct}%</div>
+            {/if}
           </div>
-          <div class="spool-row">{Math.round(spool.remaining_weight)} г · {pct}%</div>
         {/if}
-      </div>
+      {/if}
     {/if}
-  {/if}
-{/if}
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   :global(mpu-widgets-tools) {

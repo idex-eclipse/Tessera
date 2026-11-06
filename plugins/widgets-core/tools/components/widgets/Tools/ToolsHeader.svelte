@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
   import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
@@ -46,56 +46,61 @@
   }
 </script>
 
-<div class="hdr">
-  <button
-    class="fm-btn"
-    class:active={store.forceMove}
-    disabled={!klippy.ready}
-    title={!klippy.ready ? i18n.t('common.klipperNotReady') : undefined}
-    onclick={() => {
-      if (store.forceMove) store.setForceMove(false);
-      else confirmFM = true;
-    }}
-  >
-    {i18n.t('widgets.tools.forceMove')}
-  </button>
+<!-- header-tools (replacement): the header bar; its menu below opens only from the original. Replace it together with widget-tools: the buttons drive the original body -->
+<ExtensionPoint point="header-tools">
+  {#snippet original()}
+    <div class="hdr">
+      <button
+        class="fm-btn"
+        class:active={store.forceMove}
+        disabled={!klippy.ready}
+        title={!klippy.ready ? i18n.t('common.klipperNotReady') : undefined}
+        onclick={() => {
+          if (store.forceMove) store.setForceMove(false);
+          else confirmFM = true;
+        }}
+      >
+        {i18n.t('widgets.tools.forceMove')}
+      </button>
 
-  <button
-    class="fm-btn"
-    disabled={!klippy.ready}
-    title={!klippy.ready ? i18n.t('common.klipperNotReady') : undefined}
-    onclick={() => store.motorsOff()}
-  >
-    {i18n.t('widgets.tools.motorsOff')}
-  </button>
+      <button
+        class="fm-btn"
+        disabled={!klippy.ready}
+        title={!klippy.ready ? i18n.t('common.klipperNotReady') : undefined}
+        onclick={() => store.motorsOff()}
+      >
+        {i18n.t('widgets.tools.motorsOff')}
+      </button>
 
-  <button
-    class="hdr-btn"
-    class:active={menuOpen}
-    bind:this={btnEl}
-    onclick={toggleMenu}
-    title={i18n.t('widgets.tools.settings')}
-  >
-    <Icon name="settings" size={15} />
-  </button>
+      <button
+        class="hdr-btn"
+        class:active={menuOpen}
+        bind:this={btnEl}
+        onclick={toggleMenu}
+        title={i18n.t('widgets.tools.settings')}
+      >
+        <Icon name="settings" size={15} />
+      </button>
 
-  <HeaderHelp title={i18n.t('widgets.tools.help.Title')}>
-    <h4>{i18n.t('widgets.tools.help.MoveTitle')}</h4>
-    <p>{i18n.t('widgets.tools.help.MoveText')}</p>
+      <HeaderHelp title={i18n.t('widgets.tools.help.Title')}>
+        <h4>{i18n.t('widgets.tools.help.MoveTitle')}</h4>
+        <p>{i18n.t('widgets.tools.help.MoveText')}</p>
 
-    <h4>{i18n.t('widgets.tools.help.PositionTitle')}</h4>
-    <p>{i18n.t('widgets.tools.help.PositionText')}</p>
+        <h4>{i18n.t('widgets.tools.help.PositionTitle')}</h4>
+        <p>{i18n.t('widgets.tools.help.PositionText')}</p>
 
-    <h4>{i18n.t('widgets.tools.help.ToolsTitle')}</h4>
-    <p>{i18n.t('widgets.tools.help.ToolsText')}</p>
+        <h4>{i18n.t('widgets.tools.help.ToolsTitle')}</h4>
+        <p>{i18n.t('widgets.tools.help.ToolsText')}</p>
 
-    <h4>{i18n.t('widgets.tools.help.DirectTitle')}</h4>
-    <p>{i18n.t('widgets.tools.help.DirectText')}</p>
+        <h4>{i18n.t('widgets.tools.help.DirectTitle')}</h4>
+        <p>{i18n.t('widgets.tools.help.DirectText')}</p>
 
-    <h4>{i18n.t('widgets.tools.help.ForceMoveTitle')}</h4>
-    <p class="warn">{i18n.t('widgets.tools.help.ForceMoveText')}</p>
-  </HeaderHelp>
-</div>
+        <h4>{i18n.t('widgets.tools.help.ForceMoveTitle')}</h4>
+        <p class="warn">{i18n.t('widgets.tools.help.ForceMoveText')}</p>
+      </HeaderHelp>
+    </div>
+  {/snippet}
+</ExtensionPoint>
 
 {#if menuOpen}
   <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>

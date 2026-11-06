@@ -1,4 +1,4 @@
-import type { PrinterPanelContribution, WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { PrinterPanelContribution, WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const toolsWidgets: WidgetContribution[] = [
@@ -31,3 +31,20 @@ export const toolsFleet: PrinterPanelContribution[] = [
     titleKey: 'fleet.position.title',
   },
 ]
+
+/** Extension points of this feature (all version 1), collected in the plugin manifest. */
+export const toolsPoints: ExtensionPointDecl[] = [
+  // the whole widget body; its header is a separate element (header-tools)
+  { id: 'widget-tools', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetTools' },
+  // the header bar; replace it together with the body
+  { id: 'header-tools', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.headerTools' },
+  // tool chips, dual carriage, step, jog pad or axis rows, home and position
+  { id: 'tools-move', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.toolsMove' },
+  // bodies of the accordion sections: the section header and its open state stay
+  { id: 'tools-extrude', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.toolsExtrude' },
+  { id: 'tools-speed-flow', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.toolsSpeedFlow' },
+  { id: 'tools-pa', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.toolsPa' },
+  { id: 'tools-retraction', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.toolsRetraction' },
+  // extra accordion sections after the built-in ones
+  { id: 'tools-sections', kind: 'panel', mode: 'append', version: 1, titleKey: 'widgets.ext.toolsSections' },
+];
