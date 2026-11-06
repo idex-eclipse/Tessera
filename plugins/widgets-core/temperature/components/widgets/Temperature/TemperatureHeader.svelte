@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
 
@@ -86,34 +86,39 @@
   }
 </script>
 
-<div class="hdr">
-  <button
-    class="hdr-btn"
-    class:active={menuOpen}
-    bind:this={btnEl}
-    title={i18n.t('widgets.temperature.settings')}
-    onclick={toggleMenu}
-  >
-    <Icon name="settings" size={15} />
-  </button>
+<!-- header-temperature (replacement): the header bar; its menu below opens only from the original. Replace it together with widget-temperature: the buttons drive the original body -->
+<ExtensionPoint point="header-temperature">
+  {#snippet original()}
+    <div class="hdr">
+      <button
+        class="hdr-btn"
+        class:active={menuOpen}
+        bind:this={btnEl}
+        title={i18n.t('widgets.temperature.settings')}
+        onclick={toggleMenu}
+      >
+        <Icon name="settings" size={15} />
+      </button>
 
-  <HeaderHelp title={i18n.t('widgets.temperature.help.Title')}>
-    <h4>{i18n.t('widgets.temperature.help.ChartTitle')}</h4>
-    <p>{i18n.t('widgets.temperature.help.ChartText')}</p>
+      <HeaderHelp title={i18n.t('widgets.temperature.help.Title')}>
+        <h4>{i18n.t('widgets.temperature.help.ChartTitle')}</h4>
+        <p>{i18n.t('widgets.temperature.help.ChartText')}</p>
 
-    <h4>{i18n.t('widgets.temperature.help.TargetTitle')}</h4>
-    <p>{i18n.t('widgets.temperature.help.TargetText')}</p>
+        <h4>{i18n.t('widgets.temperature.help.TargetTitle')}</h4>
+        <p>{i18n.t('widgets.temperature.help.TargetText')}</p>
 
-    <h4>{i18n.t('widgets.temperature.help.ViewTitle')}</h4>
-    <p>{i18n.t('widgets.temperature.help.ViewText')}</p>
+        <h4>{i18n.t('widgets.temperature.help.ViewTitle')}</h4>
+        <p>{i18n.t('widgets.temperature.help.ViewText')}</p>
 
-    <h4>{i18n.t('widgets.temperature.help.ColumnsTitle')}</h4>
-    <p>{i18n.t('widgets.temperature.help.ColumnsText')}</p>
+        <h4>{i18n.t('widgets.temperature.help.ColumnsTitle')}</h4>
+        <p>{i18n.t('widgets.temperature.help.ColumnsText')}</p>
 
-    <h4>{i18n.t('widgets.temperature.help.HoldTitle')}</h4>
-    <p>{i18n.t('widgets.temperature.help.HoldText')}</p>
-  </HeaderHelp>
-</div>
+        <h4>{i18n.t('widgets.temperature.help.HoldTitle')}</h4>
+        <p>{i18n.t('widgets.temperature.help.HoldText')}</p>
+      </HeaderHelp>
+    </div>
+  {/snippet}
+</ExtensionPoint>
 
 {#if menuOpen}
   <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>

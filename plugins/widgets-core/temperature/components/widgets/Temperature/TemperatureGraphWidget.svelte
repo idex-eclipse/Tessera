@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useI18n, useWidget } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useI18n, useWidget } from '../../../../../../plugin-sdk/src/svelte/index';
 
   import KlipperNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
   import TargetInput from '../../shared/TargetInput.svelte';
@@ -21,6 +21,14 @@
 
   let hasPrinter = $derived(api.printer.url !== '');
   let ready = $derived(temp.klippyState === 'ready');
+
+  // Re-read on any registry change (plugin enabled/disabled, availability, conflict resolution).
+  let extVersion = $state(0);
+  $effect(() => api.extensions.onChange(() => extVersion++));
+  let hasExtra = $derived.by(() => {
+    void extVersion;
+    return api.extensions.list('temperature-extra').length > 0;
+  });
 
   const offLabel = $derived(i18n.t('widgets.temperature.off'));
 
@@ -82,147 +90,170 @@
   }
 </script>
 
-<div class="temp-widget" use:observeWidth={(w) => (width = w)}>
-  {#if !hasPrinter}
-    <p class="notice">{i18n.t('widgets.temperature.noPrinter')}</p>
-  {:else if !ready}
-    <KlipperNotReady />
-  {:else if cards}
-    <ul class="sensor-cards">
-      {#each temp.sensors as s (s.name)}
-        {@const v = cardValue(s)}
-        <li>
-          <button
-            class="sensor-card"
-            class:dim={!s.chartVisible}
-            class:open={openSensor === s.name}
-            style="--sensor-color: {s.color}"
-            aria-haspopup="dialog"
-            aria-expanded={openSensor === s.name}
-            onclick={(e) => openPopover(s.name, e)}
-          >
-            <span class="card-name">
-              <span class="icon-wrap" style="color: {s.color}">
-                <TempKindIcon kind={s.kind} speed={s.kind === 'fan' ? s.power : null} size={18} />
-              </span>
-              <span class="label">{s.displayName}</span>
-            </span>
-            <span class="card-value">
-              <span class="card-main">{v.main}</span>
-              {#if v.sub}<span class="card-sub">{v.sub}</span>{/if}
-            </span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-
-    {#if openSensor && openAnchor}
-      <SensorPopover
-        anchor={openAnchor}
-        name={openSensor}
-        {temp}
-        columns={prefs.columns}
-        onClose={closePopover}
-      />
-    {/if}
-  {:else}
-    <div class="table-wrap">
-    <table class="temp-table" style:min-width="{needed}px">
-      <colgroup>
-        <col />
-        {#if prefs.columns.power}<col class="w-power" />{/if}
-        {#if prefs.columns.rate}<col class="w-rate" />{/if}
-        {#if prefs.columns.current}<col class="w-current" />{/if}
-        {#if prefs.columns.target}<col class="w-target" />{/if}
-        {#if prefs.columns.hold}<col class="w-hold" />{/if}
-      </colgroup>
-
-      <thead>
-        <tr>
-          <th>{i18n.t('widgets.temperature.sensor')}</th>
-          {#if prefs.columns.power}<th class="col-power">{i18n.t('widgets.temperature.power')}</th>{/if}
-          {#if prefs.columns.rate}<th class="col-rate">{i18n.t('widgets.temperature.rate')}</th>{/if}
-          {#if prefs.columns.current}<th class="col-current">{i18n.t('widgets.temperature.current')}</th>{/if}
-          {#if prefs.columns.target}<th class="col-target">{i18n.t('widgets.temperature.target')}</th>{/if}
-          {#if prefs.columns.hold}<th class="col-hold" title={i18n.t('widgets.temperature.holdHint')}>{i18n.t('widgets.temperature.heaterTime')}</th>{/if}
-        </tr>
-      </thead>
-
-      <tbody>
-        {#each temp.sensors as s (s.name)}
-          <tr>
-            <td>
-              <button
-                class="sensor-name"
-                class:dim={!s.chartVisible}
-                onclick={() => toggleChart(s.name)}
-                title={i18n.t('widgets.temperature.toggleSeries')}
-              >
-                <span class="icon-wrap" style="color: {s.color}">
-                  <TempKindIcon
-                    kind={s.kind}
-                    speed={s.kind === 'fan' ? s.power : null}
-                    size={20}
-                  />
-                </span>
-                <span class="label">{s.displayName}</span>
-              </button>
-            </td>
-
-            {#if prefs.columns.power}
-              <td class="col-power">
-                {#if s.kind !== 'sensor'}
+<!-- widget-temperature (replacement): the whole widget body; the header (TemperatureHeader) is a separate element, replace it with header-temperature too -->
+<ExtensionPoint point="widget-temperature">
+  {#snippet original()}
+    <div class="temp-widget" use:observeWidth={(w) => (width = w)}>
+      <!-- temperature-sensors (replacement): the sensor table / cards including the "no printer" and "not ready" notices; the chart stays -->
+      <ExtensionPoint point="temperature-sensors">
+        {#snippet original()}
+          {#if !hasPrinter}
+            <p class="notice">{i18n.t('widgets.temperature.noPrinter')}</p>
+          {:else if !ready}
+            <KlipperNotReady />
+          {:else if cards}
+            <ul class="sensor-cards">
+              {#each temp.sensors as s (s.name)}
+                {@const v = cardValue(s)}
+                <li>
                   <button
-                    class="power-btn"
-                    class:active={s.powerVisible}
-                    onclick={() => togglePower(s.name)}
-                    title={i18n.t('widgets.temperature.togglePower')}
+                    class="sensor-card"
+                    class:dim={!s.chartVisible}
+                    class:open={openSensor === s.name}
+                    style="--sensor-color: {s.color}"
+                    aria-haspopup="dialog"
+                    aria-expanded={openSensor === s.name}
+                    onclick={(e) => openPopover(s.name, e)}
                   >
-                    {fmtPower(s.power, offLabel)}
+                    <span class="card-name">
+                      <span class="icon-wrap" style="color: {s.color}">
+                        <TempKindIcon kind={s.kind} speed={s.kind === 'fan' ? s.power : null} size={18} />
+                      </span>
+                      <span class="label">{s.displayName}</span>
+                    </span>
+                    <span class="card-value">
+                      <span class="card-main">{v.main}</span>
+                      {#if v.sub}<span class="card-sub">{v.sub}</span>{/if}
+                    </span>
                   </button>
-                {/if}
-              </td>
-            {/if}
+                </li>
+              {/each}
+            </ul>
 
-            {#if prefs.columns.rate}<td class="col-rate">{fmtRate(s.rate)}</td>{/if}
-            {#if prefs.columns.current}<td class="col-current">{fmtTemp(s.temperature)}</td>{/if}
-
-            {#if prefs.columns.target}
-              <td class="col-target">
-                {#if s.kind !== 'sensor'}
-                  <TargetInput value={s.target} onCommit={(v) => setTarget(s.name, v)} />
-                {/if}
-              </td>
+            {#if openSensor && openAnchor}
+              <SensorPopover
+                anchor={openAnchor}
+                name={openSensor}
+                {temp}
+                columns={prefs.columns}
+                onClose={closePopover}
+              />
             {/if}
+          {:else}
+            <div class="table-wrap">
+            <table class="temp-table" style:min-width="{needed}px">
+              <colgroup>
+                <col />
+                {#if prefs.columns.power}<col class="w-power" />{/if}
+                {#if prefs.columns.rate}<col class="w-rate" />{/if}
+                {#if prefs.columns.current}<col class="w-current" />{/if}
+                {#if prefs.columns.target}<col class="w-target" />{/if}
+                {#if prefs.columns.hold}<col class="w-hold" />{/if}
+              </colgroup>
 
-            {#if prefs.columns.hold}
-              <td class="col-hold">
-                {#if s.kind === 'heater'}
-                  {@const st = temp.holdStatus(s.name)}
-                  <HoldInput
-                    value={temp.holdMinutes[s.name] ?? 0}
-                    phase={st.phase}
-                    remainingMs={st.remainingMs}
-                    onCommit={(m) => temp.setHoldMinutes(s.name, m)}
-                  />
-                {/if}
-              </td>
-            {/if}
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+              <thead>
+                <tr>
+                  <th>{i18n.t('widgets.temperature.sensor')}</th>
+                  {#if prefs.columns.power}<th class="col-power">{i18n.t('widgets.temperature.power')}</th>{/if}
+                  {#if prefs.columns.rate}<th class="col-rate">{i18n.t('widgets.temperature.rate')}</th>{/if}
+                  {#if prefs.columns.current}<th class="col-current">{i18n.t('widgets.temperature.current')}</th>{/if}
+                  {#if prefs.columns.target}<th class="col-target">{i18n.t('widgets.temperature.target')}</th>{/if}
+                  {#if prefs.columns.hold}<th class="col-hold" title={i18n.t('widgets.temperature.holdHint')}>{i18n.t('widgets.temperature.heaterTime')}</th>{/if}
+                </tr>
+              </thead>
+
+              <tbody>
+                {#each temp.sensors as s (s.name)}
+                  <tr>
+                    <td>
+                      <button
+                        class="sensor-name"
+                        class:dim={!s.chartVisible}
+                        onclick={() => toggleChart(s.name)}
+                        title={i18n.t('widgets.temperature.toggleSeries')}
+                      >
+                        <span class="icon-wrap" style="color: {s.color}">
+                          <TempKindIcon
+                            kind={s.kind}
+                            speed={s.kind === 'fan' ? s.power : null}
+                            size={20}
+                          />
+                        </span>
+                        <span class="label">{s.displayName}</span>
+                      </button>
+                    </td>
+
+                    {#if prefs.columns.power}
+                      <td class="col-power">
+                        {#if s.kind !== 'sensor'}
+                          <button
+                            class="power-btn"
+                            class:active={s.powerVisible}
+                            onclick={() => togglePower(s.name)}
+                            title={i18n.t('widgets.temperature.togglePower')}
+                          >
+                            {fmtPower(s.power, offLabel)}
+                          </button>
+                        {/if}
+                      </td>
+                    {/if}
+
+                    {#if prefs.columns.rate}<td class="col-rate">{fmtRate(s.rate)}</td>{/if}
+                    {#if prefs.columns.current}<td class="col-current">{fmtTemp(s.temperature)}</td>{/if}
+
+                    {#if prefs.columns.target}
+                      <td class="col-target">
+                        {#if s.kind !== 'sensor'}
+                          <TargetInput value={s.target} onCommit={(v) => setTarget(s.name, v)} />
+                        {/if}
+                      </td>
+                    {/if}
+
+                    {#if prefs.columns.hold}
+                      <td class="col-hold">
+                        {#if s.kind === 'heater'}
+                          {@const st = temp.holdStatus(s.name)}
+                          <HoldInput
+                            value={temp.holdMinutes[s.name] ?? 0}
+                            phase={st.phase}
+                            remainingMs={st.remainingMs}
+                            onCommit={(m) => temp.setHoldMinutes(s.name, m)}
+                          />
+                        {/if}
+                      </td>
+                    {/if}
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            </div>
+          {/if}
+        {/snippet}
+      </ExtensionPoint>
+
+      <div class="chart-slot">
+        <!-- temperature-chart (replacement): the chart only; the slot keeps the sizing rules whatever the extension brings -->
+        <ExtensionPoint point="temperature-chart">
+          {#snippet original()}
+            <TemperatureChart
+              sensors={temp.sensors}
+              buffers={temp.buffers}
+              tick={temp.tick}
+            />
+          {/snippet}
+        </ExtensionPoint>
+      </div>
+
+      <!-- temperature-extra (append): rendered only while some extension contributes, so an unextended widget
+           keeps its full height -->
+      {#if hasExtra}
+        <div class="extra">
+          <ExtensionPoint point="temperature-extra" />
+        </div>
+      {/if}
     </div>
-  {/if}
-
-  <div class="chart-slot">
-    <TemperatureChart
-      sensors={temp.sensors}
-      buffers={temp.buffers}
-      tick={temp.tick}
-    />
-  </div>
-</div>
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   .temp-widget {
@@ -362,6 +393,17 @@
   .chart-slot {
     flex: 1 1 0;
     min-height: clamp(220px, 45dvh, 400px);
+  }
+
+  /* Extra panels sit under the chart and scroll on their own, so they never squeeze the chart below its minimum. */
+  .extra {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-height: 40%;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   /* принудительная «Таблица» в узком виджете: таблица держит нужную ширину, виджет скроллится вбок */
