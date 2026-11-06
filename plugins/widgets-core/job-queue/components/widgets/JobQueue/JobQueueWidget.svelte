@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
   import { useKlippyState } from '../../../../../shared/klippy-state/use-klippy-state.svelte.ts';
@@ -37,71 +37,76 @@
   }
 </script>
 
-{#if !store.available}
-  <p class="empty">{i18n.t('widgets.jobQueue.unavailable')}</p>
-{:else if store.jobs.length === 0}
-  <p class="empty">
-    {i18n.t('widgets.jobQueue.empty')}
-    <span class="st {stateClass(store.state)}">{stateLabel(store.state)}</span>
-  </p>
-{:else}
-  <div class="jq">
-    <div class="jq-head">
-      <span class="st {stateClass(store.state)}">{stateLabel(store.state)}</span>
+<!-- widget-job-queue (replacement): the whole widget body; the clear-queue confirm dialog below belongs to the original and stays outside (no header: this widget has none) -->
+<ExtensionPoint point="widget-job-queue">
+  {#snippet original()}
+    {#if !store.available}
+      <p class="empty">{i18n.t('widgets.jobQueue.unavailable')}</p>
+    {:else if store.jobs.length === 0}
+      <p class="empty">
+        {i18n.t('widgets.jobQueue.empty')}
+        <span class="st {stateClass(store.state)}">{stateLabel(store.state)}</span>
+      </p>
+    {:else}
+      <div class="jq">
+        <div class="jq-head">
+          <span class="st {stateClass(store.state)}">{stateLabel(store.state)}</span>
 
-      <div class="jq-actions">
-        {#if store.state === 'paused'}
-          <button
-            class="jq-btn"
-            disabled={!klippy.ready}
-            title={!klippy.ready ? i18n.t('common.klipperNotReady') : undefined}
-            onclick={() => store.start()}
-          >
-            <Icon name="play" size={13} /> {i18n.t('widgets.jobQueue.start')}
-          </button>
-        {:else}
-          <button class="jq-btn" onclick={() => store.pause()}>
-            <Icon name="pause" size={13} /> {i18n.t('widgets.jobQueue.pause')}
-          </button>
-        {/if}
-        <button class="jq-btn" onclick={() => (confirmClear = true)}>
-          <Icon name="trash" size={13} /> {i18n.t('widgets.jobQueue.clear')}
-        </button>
+          <div class="jq-actions">
+            {#if store.state === 'paused'}
+              <button
+                class="jq-btn"
+                disabled={!klippy.ready}
+                title={!klippy.ready ? i18n.t('common.klipperNotReady') : undefined}
+                onclick={() => store.start()}
+              >
+                <Icon name="play" size={13} /> {i18n.t('widgets.jobQueue.start')}
+              </button>
+            {:else}
+              <button class="jq-btn" onclick={() => store.pause()}>
+                <Icon name="pause" size={13} /> {i18n.t('widgets.jobQueue.pause')}
+              </button>
+            {/if}
+            <button class="jq-btn" onclick={() => (confirmClear = true)}>
+              <Icon name="trash" size={13} /> {i18n.t('widgets.jobQueue.clear')}
+            </button>
+          </div>
+        </div>
+
+        <ol class="jq-list">
+          {#each store.jobs as j, i (j.job_id)}
+            <li class="jq-row">
+              <span class="jq-idx">{i + 1}</span>
+              <bdi class="jq-name" title={j.filename}>
+                {j.filename.split('/').pop() ?? j.filename}
+              </bdi>
+              <span class="jq-time" dir="ltr" title={i18n.t('widgets.jobQueue.inQueue')}>
+                {formatInQueue(j.time_in_queue)}
+              </span>
+              <button
+                class="jq-ico"
+                title={i18n.t('widgets.jobQueue.jump')}
+                aria-label={i18n.t('widgets.jobQueue.jump')}
+                disabled={i === 0}
+                onclick={() => store.jump(j.job_id)}
+              >
+                <Icon name="skip-next" size={13} />
+              </button>
+              <button
+                class="jq-ico danger"
+                title={i18n.t('widgets.jobQueue.remove')}
+                aria-label={i18n.t('widgets.jobQueue.remove')}
+                onclick={() => store.remove([j.job_id])}
+              >
+                <Icon name="trash" size={13} />
+              </button>
+            </li>
+          {/each}
+        </ol>
       </div>
-    </div>
-
-    <ol class="jq-list">
-      {#each store.jobs as j, i (j.job_id)}
-        <li class="jq-row">
-          <span class="jq-idx">{i + 1}</span>
-          <bdi class="jq-name" title={j.filename}>
-            {j.filename.split('/').pop() ?? j.filename}
-          </bdi>
-          <span class="jq-time" dir="ltr" title={i18n.t('widgets.jobQueue.inQueue')}>
-            {formatInQueue(j.time_in_queue)}
-          </span>
-          <button
-            class="jq-ico"
-            title={i18n.t('widgets.jobQueue.jump')}
-            aria-label={i18n.t('widgets.jobQueue.jump')}
-            disabled={i === 0}
-            onclick={() => store.jump(j.job_id)}
-          >
-            <Icon name="skip-next" size={13} />
-          </button>
-          <button
-            class="jq-ico danger"
-            title={i18n.t('widgets.jobQueue.remove')}
-            aria-label={i18n.t('widgets.jobQueue.remove')}
-            onclick={() => store.remove([j.job_id])}
-          >
-            <Icon name="trash" size={13} />
-          </button>
-        </li>
-      {/each}
-    </ol>
-  </div>
-{/if}
+    {/if}
+  {/snippet}
+</ExtensionPoint>
 
 <ConfirmDialog
   open={confirmClear}
