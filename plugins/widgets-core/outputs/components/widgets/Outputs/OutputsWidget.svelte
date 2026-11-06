@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
 
   import SectionAccordion from '../../../../../shared/accordion/SectionAccordion.svelte';
   import { useAccordionState } from '../../../../../shared/accordion/use-accordion-state.svelte.ts';
@@ -42,82 +42,87 @@
   );
 </script>
 
-{#if !klippy.ready}
-  <KlipperNotReady />
-{:else if store.items.length === 0}
-  <p class="empty">{i18n.t('widgets.outputs.empty')}</p>
-{:else}
-  <div class="outputs-box" use:observeWidgetBox={(b) => (box = b)}>
-    <div class="outputs">
-      {#if controlled.length > 0}
-        <SectionAccordion
-          title={i18n.t('widgets.outputs.groupControlled')}
-          {accordion}
-          open={sections.isOpen('controlled', box.narrow, true)}
-          onToggle={() => sections.toggle('controlled', box.narrow, true)}
-          bind:contentHeight={controlledHeight}
-        >
-          <SliderGrid {columns}>
-            {#each controlled as it (it.id)}
-              {#if it.kind === 'output_pin'}
-                <SliderField
-                  label={it.label}
-                  value={store.values[it.id] ?? it.min}
-                  min={it.min}
-                  max={it.max}
-                  step={it.step}
-                  decimals={it.decimals}
-                  onCommit={(v) => store.setValue(it.id, v)}
-                  onReset={() => store.setValue(it.id, Math.max(it.min, 0))}
-                />
-              {:else}
-                <SliderField
-                  label={it.kind === 'fan' ? i18n.t('widgets.outputs.fan') : it.label}
-                  value={Math.round((store.values[it.id] ?? 0) * 100)}
-                  min={0}
-                  max={100}
-                  step={1}
-                  unit="%"
-                  onCommit={(v) => store.setValue(it.id, v / 100)}
-                  onReset={() => store.setValue(it.id, 0)}
-                />
-              {/if}
-            {/each}
-          </SliderGrid>
-        </SectionAccordion>
-      {/if}
+<!-- widget-outputs (replacement): the whole widget body, including the "Klipper not ready" and empty states (no header: this widget has none) -->
+<ExtensionPoint point="widget-outputs">
+  {#snippet original()}
+    {#if !klippy.ready}
+      <KlipperNotReady />
+    {:else if store.items.length === 0}
+      <p class="empty">{i18n.t('widgets.outputs.empty')}</p>
+    {:else}
+      <div class="outputs-box" use:observeWidgetBox={(b) => (box = b)}>
+        <div class="outputs">
+          {#if controlled.length > 0}
+            <SectionAccordion
+              title={i18n.t('widgets.outputs.groupControlled')}
+              {accordion}
+              open={sections.isOpen('controlled', box.narrow, true)}
+              onToggle={() => sections.toggle('controlled', box.narrow, true)}
+              bind:contentHeight={controlledHeight}
+            >
+              <SliderGrid {columns}>
+                {#each controlled as it (it.id)}
+                  {#if it.kind === 'output_pin'}
+                    <SliderField
+                      label={it.label}
+                      value={store.values[it.id] ?? it.min}
+                      min={it.min}
+                      max={it.max}
+                      step={it.step}
+                      decimals={it.decimals}
+                      onCommit={(v) => store.setValue(it.id, v)}
+                      onReset={() => store.setValue(it.id, Math.max(it.min, 0))}
+                    />
+                  {:else}
+                    <SliderField
+                      label={it.kind === 'fan' ? i18n.t('widgets.outputs.fan') : it.label}
+                      value={Math.round((store.values[it.id] ?? 0) * 100)}
+                      min={0}
+                      max={100}
+                      step={1}
+                      unit="%"
+                      onCommit={(v) => store.setValue(it.id, v / 100)}
+                      onReset={() => store.setValue(it.id, 0)}
+                    />
+                  {/if}
+                {/each}
+              </SliderGrid>
+            </SectionAccordion>
+          {/if}
 
-      {#if automatic.length > 0}
-        <SectionAccordion
-          title={i18n.t('widgets.outputs.groupAuto')}
-          {accordion}
-          open={sections.isOpen('automatic', box.narrow, false)}
-          onToggle={() => sections.toggle('automatic', box.narrow, false)}
-          bind:contentHeight={automaticHeight}
-        >
-          <SliderGrid {columns}>
-            {#each automatic as it (it.id)}
-              <!-- авто-вентилятор: индикаторная строка, без слайдера -->
-              <div class="auto-row" title={i18n.t('widgets.outputs.autoNote')}>
-                <span class="auto-icon" class:lit={speedOf(it.id) > 0.001}>
-                  <Icon
-                    name="kind-fan"
-                    size={30}
-                    style={`--spin-d: ${(1.9 - 1.5 * speedOf(it.id)).toFixed(2)}s`}
-                  />
-                </span>
-                <span class="auto-label">{it.label}</span>
-                <span class="auto-value">
-                  {speedOf(it.id) > 0.001 ? `${Math.round(speedOf(it.id) * 100)}%` : i18n.t('widgets.outputs.stateOff')}
-                </span>
-              </div>
-            {/each}
-          </SliderGrid>
-        </SectionAccordion>
-      {/if}
-    </div>
-  </div>
-{/if}
+          {#if automatic.length > 0}
+            <SectionAccordion
+              title={i18n.t('widgets.outputs.groupAuto')}
+              {accordion}
+              open={sections.isOpen('automatic', box.narrow, false)}
+              onToggle={() => sections.toggle('automatic', box.narrow, false)}
+              bind:contentHeight={automaticHeight}
+            >
+              <SliderGrid {columns}>
+                {#each automatic as it (it.id)}
+                  <!-- авто-вентилятор: индикаторная строка, без слайдера -->
+                  <div class="auto-row" title={i18n.t('widgets.outputs.autoNote')}>
+                    <span class="auto-icon" class:lit={speedOf(it.id) > 0.001}>
+                      <Icon
+                        name="kind-fan"
+                        size={30}
+                        style={`--spin-d: ${(1.9 - 1.5 * speedOf(it.id)).toFixed(2)}s`}
+                      />
+                    </span>
+                    <span class="auto-label">{it.label}</span>
+                    <span class="auto-value">
+                      {speedOf(it.id) > 0.001 ? `${Math.round(speedOf(it.id) * 100)}%` : i18n.t('widgets.outputs.stateOff')}
+                    </span>
+                  </div>
+                {/each}
+              </SliderGrid>
+            </SectionAccordion>
+          {/if}
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   :global(mpu-widgets-outputs) {

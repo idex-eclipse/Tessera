@@ -1,4 +1,4 @@
-import type { WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const outputsWidgets: WidgetContribution[] = [
@@ -21,4 +21,10 @@ export const outputsChips: ChipContribution[] = [
     pickerElement: 'mpu-core-widgets-chip-output-picker',
     icon: 'kind-fan',
   },
+];
+
+/** Extension points of this feature (all version 1), collected in the plugin manifest. */
+export const outputsPoints: ExtensionPointDecl[] = [
+  // the whole widget body (this widget has no header)
+  { id: 'widget-outputs', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetOutputs' },
 ];
