@@ -10,6 +10,13 @@ export const en = {
     guard: {
       owner_only: 'Print history and statistics can only be erased from the History page',
     },
+    // names of the extension points in host dialogs and Settings → Plugins
+    ext: {
+      page: 'History page',
+      panelStats: 'History page: statistics panel',
+      panelHistory: 'History page: print history table',
+      panelsBottom: 'History page: bottom panels',
+    },
   },
   stats: {
     title: 'Printer statistics',
