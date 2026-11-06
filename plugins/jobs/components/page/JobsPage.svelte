@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import { createFileOps, type FileRef } from '../../../shared/file-table/file-ops.ts';
   import FileTable from '../../../shared/file-table/FileTable.svelte';
@@ -18,6 +18,14 @@
   const i18n = api.i18n;
   const ops = createFileOps(api);
   const klippy = useKlippyState(api);
+
+  // Re-read on any registry change (plugin enabled/disabled, availability, conflict resolution).
+  let extVersion = $state(0);
+  $effect(() => api.extensions.onChange(() => extVersion++));
+  let hasBottomPanels = $derived.by(() => {
+    void extVersion;
+    return api.extensions.list('panels-bottom').length > 0;
+  });
 
   /** Текст ошибки: отказ гарда → перевод reasonKey плагина-гарда, иначе общий текст. */
   function reasonOf(e: unknown): string | null {
@@ -153,16 +161,38 @@
 </script>
 
 <div class="jobs-page">
-  <FileTable
-    root="gcodes"
-    scope={JOBS_PAGE_SCOPE}
-    mode="gcode"
-    showAdd
-    title={i18n.t('jobs.title')}
-    menuItems={(ref, isDir) => jobsMenuItems(i18n, ref, isDir, klippy.ready)}
-    onAction={wrappedOnAction}
-    onThreeMF={handleThreeMF}
-  />
+  <!-- page (replacement): the content column below. The 3MF inspector and the error toast are
+       overlays and stay outside, so the `?inspect=` deep link works even on a replaced page. -->
+  <ExtensionPoint point="page">
+    {#snippet original()}
+      <div class="jobs-content">
+        <div class="slot-table">
+          <ExtensionPoint point="panel-table">
+            {#snippet original()}
+              <FileTable
+                root="gcodes"
+                scope={JOBS_PAGE_SCOPE}
+                mode="gcode"
+                showAdd
+                title={i18n.t('jobs.title')}
+                menuItems={(ref, isDir) => jobsMenuItems(i18n, ref, isDir, klippy.ready)}
+                onAction={wrappedOnAction}
+                onThreeMF={handleThreeMF}
+              />
+            {/snippet}
+          </ExtensionPoint>
+        </div>
+
+        <!-- panels-bottom (append): the area exists only while some extension contributes, so an
+             unextended page keeps its full height (an empty container would still add a flex gap) -->
+        {#if hasBottomPanels}
+          <div class="bottom">
+            <ExtensionPoint point="panels-bottom" />
+          </div>
+        {/if}
+      </div>
+    {/snippet}
+  </ExtensionPoint>
 
   <ThreeMFInspector
     open={inspectorOpen}
@@ -190,6 +220,35 @@
 
 <style>
   .jobs-page { height: 100%; }
+
+  .jobs-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    height: 100%;
+    min-height: 0;
+  }
+
+  /* The table takes the free height and scrolls inside; min-height 0 lets it shrink on small screens.
+     The slot is our own layout cell, so it keeps the sizing when an extension replaces the table. */
+  .slot-table {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* Bottom panels scroll on their own so they can never push the table out of the viewport. */
+  .bottom {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    max-height: 40%;
+    min-height: 0;
+    overflow-y: auto;
+  }
 
   .error-toast {
     position: fixed;

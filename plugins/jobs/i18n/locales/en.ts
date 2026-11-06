@@ -56,6 +56,16 @@ export const en = {
     guard: {
       three_mf_not_printable: '3MF is a project container, not G-code: open it in the 3MF inspector and print the extracted G-code',
     },
+    // names of the extension points in host dialogs and Settings → Plugins
+    ext: {
+      widgetTable: 'Jobs widget: file table',
+      page: 'Jobs page',
+      panelTable: 'Jobs page: file table',
+      panelsBottom: 'Jobs page: bottom panels',
+      fileActions: 'File table: file menu actions',
+      fileEditor: 'File table: text editor',
+      fileViewer: 'File table: image viewer',
+    },
     uploadPrint: {
       startFailed: 'G-code was uploaded, but the print could not be started.',
       busyPrinting: 'A print is already in progress.',
