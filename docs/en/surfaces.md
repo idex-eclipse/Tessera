@@ -724,3 +724,76 @@ Not extensible on purpose: the E-stop button, upload & print, and the Pause/Resu
 buttons (see "Modes" above). Only a replacement of `banner-status` as a whole takes them over,
 and then the contribution must provide print controls itself. A contribution in `panels-right`
 is mounted in a narrow column, so it should lay out by its own width.
+
+`@core/config` (all `version: 1`; a contribution gets only its own api), since owner version
+`4.0.0`:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `page` | element | replacement | the whole content of the Config files page (both tables and the bottom panels) |
+| `table-config`, `table-other` | element | replacement | the config files table / the logs, docs and samples table (the latter with its tab strip) |
+| `panels-bottom` | panel | append | extra panels at the very bottom of the page (inside `page`) |
+| `file-actions` | action | append | extra items in the context menu of a file or folder (shared file table, see below) |
+| `file-editor` | element | replacement | the text editor dialog (shared file table) |
+| `file-viewer` | element | replacement | the image viewer dialog (shared file table) |
+
+Not extensible on purpose: the tabs of the right table (they map to fixed Moonraker roots:
+`logs`, `docs`, `config_examples`) and the rename/delete dialogs. Guards are not inherited: an
+extension that edits or deletes files declares guards for its own commands.
+
+`@core/history` (all `version: 1`; a contribution gets only its own api), since owner version
+`4.0.0`:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `page` | element | replacement | the whole content of the History page (both panels and the bottom panels) |
+| `panel-stats` | element | replacement | the printer statistics panel (including its reset button) |
+| `panel-history` | element | replacement | the print history table |
+| `panels-bottom` | panel | append | extra panels at the very bottom of the page (inside `page`) |
+
+The two replaceable panels are `element` points, not `panel`: both draw their own card, so a
+host panel shell would double the chrome. The shared file table points are not declared here:
+the history table has no file operations. Erasing history and statistics stays protected by
+the plugin's guard `history-owner-only`; an extension that calls `server.history.*` itself
+declares guards for its own commands.
+
+`@core/jobs` (all `version: 1`; a contribution gets only its own api), since owner version
+`4.0.0`:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `widget-table` | element | replacement | the whole body of the Jobs widget (its header with the toolbar stays) |
+| `page` | element | replacement | the whole content of the Jobs page (the table panel and the bottom panels) |
+| `panel-table` | element | replacement | the file table panel of the page |
+| `panels-bottom` | panel | append | extra panels at the very bottom of the page (inside `page`) |
+| `file-actions`, `file-editor`, `file-viewer` | action / element | append / replacement | the points of the shared file table, see below; they serve both the widget and the page |
+
+`panel-table` is an `element` point, not `panel`: the table draws its own card. The 3MF
+inspector and its error toast are overlays and stay outside `page`, so the `?inspect=<path>`
+deep link keeps working on a replaced page. Note that the file menu of the table carries
+"Print": replacing `widget-table`, `page` or `panel-table` takes over that way to start a
+print, and the replacement must provide its own controls and go through the guards (the plugin
+refuses to print `.3mf` projects with `jobs-no-3mf-print`).
+
+#### Points of the shared file table
+
+The file table (`plugins/shared/file-table`) is bundled into every plugin that embeds it and
+talks to the host **as that plugin**, so its three points live in the manifest of each such
+plugin (`fileTablePoints('<i18nPrefix>')` from `plugins/shared/file-table/extension-points.ts`
+declares all three). A plugin that does not declare them keeps the built-in behavior. Today
+`@core/config` and `@core/jobs` declare them.
+
+- `file-actions` — context `{ root: string, path: string, isDir: boolean }` is passed to the
+  handler. The same fields are passed to `available(api, params)` as **strings** (`isDir` is
+  `'true'` or `'false'`), so an extension can limit its item to a root or a file name, e.g.
+  `.cfg` files in `config`. Items are shown after the plugin's own ones. The point serves every
+  table of the plugin, `root` tells them apart.
+- `file-editor` — params `{ root, path, isDir, readonly }` (strings). Replaces the editor
+  whatever opened it (a click on a file or the "Edit" item). The extension reads and saves the
+  file itself through its api and dispatches a bubbling, composed `mpu:editor-close` event when
+  the session ends. The file table still reads the file for its own editor, so when `available`
+  resolves late the built-in editor may flash before the extension takes over.
+- `file-viewer` — params `{ root, path, isDir }`; closes with `mpu:viewer-close`. Otherwise the
+  same as `file-editor`.
+- A dialog of a contribution must live in the browser's top layer (`<dialog>.showModal()`), see
+  "Other rules".
