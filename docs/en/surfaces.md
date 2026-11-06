@@ -775,6 +775,23 @@ deep link keeps working on a replaced page. Note that the file menu of the table
 print, and the replacement must provide its own controls and go through the guards (the plugin
 refuses to print `.3mf` projects with `jobs-no-3mf-print`).
 
+`@core/console` (all `version: 1`; a contribution gets only its own api), since owner version
+`4.0.0`:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `widget-console` | element | replacement | the whole body of the Console widget (its header with the actions stays) |
+| `page` | element | replacement | the whole content of the Console page (both panels and the bottom panels) |
+| `panel-console` | element | alternative | the console panel of the page (title, buttons, command input and log) |
+| `panel-commands` | element | alternative | the command list panel of the page |
+| `panels-bottom` | panel | append | extra panels under both panels, across the whole page width (inside `page`) |
+
+The two panels are `element` points, not `panel`: both draw their own card, so a host panel
+shell would double the chrome. They are `alternative`, so the user picks between the original
+and a contribution (right-click, long press or the ContextMenu key). The console sends G-code:
+replacing `widget-console`, `page` or `panel-console` takes over the built-in command input, so
+the replacement must provide its own and go through the guards itself (they are not inherited).
+
 #### Points of the shared file table
 
 The file table (`plugins/shared/file-table`) is bundled into every plugin that embeds it and

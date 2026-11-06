@@ -13,6 +13,14 @@ export const en = {
     commandListEmpty: 'No commands yet — connect to a printer.',
     emptyFiltered: 'All lines are hidden by filters.',
     confirmRestart: 'A print is in progress — this command restarts Klipper and will abort it. Press Enter again to confirm, or edit the command.',
+    // names of the extension points in host dialogs and Settings → Plugins
+    ext: {
+      widget: 'Console widget: body',
+      page: 'Console page',
+      panelConsole: 'Console page: console panel',
+      panelCommands: 'Console page: command list',
+      panelsBottom: 'Console page: bottom panels',
+    },
     hotkeys: {
       open: 'Open the Console page',
       focusInput: 'Console: focus the command input',

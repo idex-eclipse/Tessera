@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import KlippyNotReadyChip from '../../../shared/klippy-state/KlippyNotReadyChip.svelte';
 
@@ -17,66 +17,95 @@
   const i18n = api.i18n;
 
   const view = useConsoleView(api);
+
+  // Re-read on any registry change (plugin enabled/disabled, availability, conflict resolution).
+  let extVersion = $state(0);
+  $effect(() => api.extensions.onChange(() => extVersion++));
+  let hasBottomPanels = $derived.by(() => {
+    void extVersion;
+    return api.extensions.list('panels-bottom').length > 0;
+  });
 </script>
 
-<div class="console-page">
-  <div class="console-layout">
-    <div class="console-main">
-      <div class="console-card">
-        <div class="page-header">
-          <span class="page-title">{i18n.t('console.title')}</span>
-          <div class="actions">
-            {#if !view.connected}
-              <span class="console-offline">{i18n.t('console.disconnected')}</span>
-            {:else}
-              <KlippyNotReadyChip />
-            {/if}
-            <ConsoleControls />
-            <ConsoleFilterMenu />
+<!-- page (replacement): the whole content below, including the bottom panels -->
+<ExtensionPoint point="page">
+  {#snippet original()}
+    <div class="console-page">
+      <div class="console-layout">
+        <div class="console-main">
+          <ExtensionPoint point="panel-console">
+            {#snippet original()}
+              <div class="console-card">
+                <div class="page-header">
+                  <span class="page-title">{i18n.t('console.title')}</span>
+                  <div class="actions">
+                    {#if !view.connected}
+                      <span class="console-offline">{i18n.t('console.disconnected')}</span>
+                    {:else}
+                      <KlippyNotReadyChip />
+                    {/if}
+                    <ConsoleControls />
+                    <ConsoleFilterMenu />
 
-            <button class="btn btn-secondary" onclick={() => clearLines(view.printerId)}>
-              {i18n.t('console.clear')}
-            </button>
+                    <button class="btn btn-secondary" onclick={() => clearLines(view.printerId)}>
+                      {i18n.t('console.clear')}
+                    </button>
 
-            <ConsoleHelp />
-          </div>
+                    <ConsoleHelp />
+                  </div>
+                </div>
+
+                <div class="console-body" class:reversed={view.prefs.reverse}>
+                  <div class="input-slot">
+                    <ConsoleInput
+                      catalog={view.catalog}
+                      objects={view.objects}
+                      history={view.history}
+                      printerId={view.printerId}
+                      placeholder={i18n.t('console.placeholder')}
+                      above={!view.prefs.reverse}
+                      onSend={view.send}
+                      fillTrigger={view.fillTrigger}
+                      disabled={view.inputDisabled}
+                    />
+                  </div>
+
+                  <ConsoleOutput
+                    lines={view.displayLines}
+                    reverse={view.prefs.reverse}
+                    autoscroll={view.prefs.autoscroll}
+                    emptyText={view.lines.length > 0 ? i18n.t('console.emptyFiltered') : i18n.t('console.empty')}
+                    showTime
+                    onPick={view.fill}
+                  />
+                </div>
+              </div>
+            {/snippet}
+          </ExtensionPoint>
         </div>
 
-        <div class="console-body" class:reversed={view.prefs.reverse}>
-          <div class="input-slot">
-            <ConsoleInput
-              catalog={view.catalog}
-              objects={view.objects}
-              history={view.history}
-              printerId={view.printerId}
-              placeholder={i18n.t('console.placeholder')}
-              above={!view.prefs.reverse}
-              onSend={view.send}
-              fillTrigger={view.fillTrigger}
-              disabled={view.inputDisabled}
-            />
-          </div>
-
-          <ConsoleOutput
-            lines={view.displayLines}
-            reverse={view.prefs.reverse}
-            autoscroll={view.prefs.autoscroll}
-            emptyText={view.lines.length > 0 ? i18n.t('console.emptyFiltered') : i18n.t('console.empty')}
-            showTime
-            onPick={view.fill}
-          />
+        <div class="console-sidebar">
+          <ExtensionPoint point="panel-commands">
+            {#snippet original()}
+              <CommandList
+                catalog={view.catalog}
+                onCommandClick={(command) => view.fill(`${command} `)}
+              />
+            {/snippet}
+          </ExtensionPoint>
         </div>
       </div>
-    </div>
 
-    <div class="console-sidebar">
-      <CommandList
-        catalog={view.catalog}
-        onCommandClick={(command) => view.fill(`${command} `)}
-      />
+      <!-- panels-bottom (append): rendered only while some extension contributes, so an unextended page
+           keeps its full height (an empty container would still add a flex gap) -->
+      {#if hasBottomPanels}
+        <div class="bottom">
+          <ExtensionPoint point="panels-bottom" />
+        </div>
+      {/if}
     </div>
-  </div>
-</div>
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   /* Контейнер: раскладка зависит от ширины страницы, а не окна (сайдбар и правая панель
@@ -87,9 +116,12 @@
     container-type: inline-size;
   }
 
+  /* Column: the two-panel grid on top, the optional bottom panels under both of them. */
   .console-page {
     height: 100%;
     display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
   }
 
   .console-layout {
@@ -97,7 +129,7 @@
     grid-template-columns: 1fr 300px;
     gap: var(--space-md);
     width: 100%;
-    height: 100%;
+    flex: 1 1 0;
     min-height: 0;
   }
 
@@ -113,6 +145,17 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  /* Bottom panels scroll on their own so they can never push the console out of the viewport. */
+  .bottom {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    max-height: 40%;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .console-card {

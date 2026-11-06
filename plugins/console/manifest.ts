@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const consoleManifest: PluginManifest = {
   id: '@core/console',
   name: 'Console',
-  version: '3.0.0',
+  version: '4.0.0',
   entry: '/plugins/console/index.js',
   pages: [
     {
@@ -35,6 +35,21 @@ export const consoleManifest: PluginManifest = {
     { id: 'toggle-autoscroll', scope: 'plugin', keys: 'Alt+S', handler: 'hotkeyToggleAutoscroll', titleKey: 'console.hotkeys.autoscroll' },
     { id: 'toggle-reverse', scope: 'plugin', keys: 'Alt+O', handler: 'hotkeyToggleReverse', titleKey: 'console.hotkeys.reverse' },
     { id: 'toggle-filters', scope: 'plugin', keys: 'Alt+F', handler: 'hotkeyToggleFilters', titleKey: 'console.hotkeys.filters' },
+  ],
+  // Extensions embed into the dashboard widget and the page. All points are version 1.
+  // Note for extension authors: the console sends G-code, so replacing the widget body, the page or
+  // the console panel also replaces the built-in command input; the replacement goes through guards itself.
+  extensionPoints: [
+    // the whole widget body (its header with the actions stays)
+    { id: 'widget-console', kind: 'element', mode: 'replacement', version: 1, titleKey: 'console.ext.widget' },
+    // the whole page content (both panels and the bottom panels)
+    { id: 'page', kind: 'element', mode: 'replacement', version: 1, titleKey: 'console.ext.page' },
+    // 'element', not 'panel': both panels draw their own card, a host panel shell would double the chrome.
+    // 'alternative': the original console and the command list stay available next to a contribution.
+    { id: 'panel-console', kind: 'element', mode: 'alternative', version: 1, titleKey: 'console.ext.panelConsole' },
+    { id: 'panel-commands', kind: 'element', mode: 'alternative', version: 1, titleKey: 'console.ext.panelCommands' },
+    // extra panels under both panels, across the whole page width
+    { id: 'panels-bottom', kind: 'panel', mode: 'append', version: 1, titleKey: 'console.ext.panelsBottom' },
   ],
   locales: ['en', 'ru'],
   defaultSettings: {},
