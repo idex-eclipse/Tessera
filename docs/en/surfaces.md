@@ -792,6 +792,17 @@ and a contribution (right-click, long press or the ContextMenu key). The console
 replacing `widget-console`, `page` or `panel-console` takes over the built-in command input, so
 the replacement must provide its own and go through the guards itself (they are not inherited).
 
+`@core/gcode-preview` (all `version: 1`; a contribution gets only its own api), since owner
+version `4.0.0`:
+
+| Point | kind | mode | Where |
+|---|---|---|---|
+| `widget-preview` | element | replacement | the whole body of the G-code preview widget (its header with the actions stays) |
+| `page` | element | replacement | the whole content of the G-code preview page |
+
+Nothing finer is extensible on purpose: the viewer is a single canvas with its own controls.
+The file to show comes in `?file=` (page) and `?preview=` (widget), as for the original.
+
 #### Points of the shared file table
 
 The file table (`plugins/shared/file-table`) is bundled into every plugin that embeds it and

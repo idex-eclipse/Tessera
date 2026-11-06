@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const gcodePreviewManifest: PluginManifest = {
   id: '@core/gcode-preview',
   name: 'G-code Preview',
-  version: '3.0.0',
+  version: '4.0.0',
   entry: '/plugins/gcode-preview/index.js',
   pages: [
     { id: 'gcode-preview', titleKey: 'gcodePreview.title', icon: 'cube', element: 'mpu-gcode-preview-page', },
@@ -37,6 +37,14 @@ export const gcodePreviewManifest: PluginManifest = {
     { id: 'toggle-color', scope: 'plugin', keys: 'Alt+C', handler: 'hotkeyToggleColor', titleKey: 'gcodePreview.hotkeys.color' },
     { id: 'clear-preview', scope: 'plugin', keys: 'Alt+X', handler: 'hotkeyClearPreview', titleKey: 'gcodePreview.hotkeys.clear' },
     { id: 'reload-preview', scope: 'plugin', keys: 'Alt+R', handler: 'hotkeyReloadPreview', titleKey: 'gcodePreview.hotkeys.reload' },
+  ],
+  // Extensions replace the whole widget body or the whole page. All points are version 1.
+  // Nothing finer on purpose: the viewer is one canvas with its own controls, there is no part worth swapping.
+  extensionPoints: [
+    // the whole widget body (its header with the actions stays)
+    { id: 'widget-preview', kind: 'element', mode: 'replacement', version: 1, titleKey: 'gcodePreview.ext.widget' },
+    // the whole page content
+    { id: 'page', kind: 'element', mode: 'replacement', version: 1, titleKey: 'gcodePreview.ext.page' },
   ],
   locales: ['en', 'ru'],
   defaultSettings: {},

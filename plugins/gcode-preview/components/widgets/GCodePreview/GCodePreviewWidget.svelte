@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
   import { segmentAtOffset } from '../../../lib/parse-gcode';
   import { ensureParsed, getEntry } from '../../../data/gcode-store.svelte';
@@ -51,21 +51,26 @@
   );
 </script>
 
-<div class="widget">
-  {#if !path}
-    <p class="empty">{i18n.t('gcodePreview.noPrint')}</p>
-  {:else if !entry || entry.status === 'loading'}
-    <Loader block text={i18n.t('gcodePreview.loading')} />
-  {:else if entry.status === 'error'}
-    <p class="empty error">{entry.message}</p>
-  {:else}
-    <GCodeViewer parsed={entry.parsed} progressSeg={progressSeg} allow3d={false} />
-    <div class="widget-footer">
-      <bdi class="file-name">{path.split('/').pop() ?? ''}</bdi>
-      <a class="open-page" href={pageHref}>{i18n.t('gcodePreview.openPage')}</a>
+<!-- widget-preview (replacement): the whole widget body; the header (actions) is a separate element and stays -->
+<ExtensionPoint point="widget-preview">
+  {#snippet original()}
+    <div class="widget">
+      {#if !path}
+        <p class="empty">{i18n.t('gcodePreview.noPrint')}</p>
+      {:else if !entry || entry.status === 'loading'}
+        <Loader block text={i18n.t('gcodePreview.loading')} />
+      {:else if entry.status === 'error'}
+        <p class="empty error">{entry.message}</p>
+      {:else}
+        <GCodeViewer parsed={entry.parsed} progressSeg={progressSeg} allow3d={false} />
+        <div class="widget-footer">
+          <bdi class="file-name">{path.split('/').pop() ?? ''}</bdi>
+          <a class="open-page" href={pageHref}>{i18n.t('gcodePreview.openPage')}</a>
+        </div>
+      {/if}
     </div>
-  {/if}
-</div>
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   .widget { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--space-xs); }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import GCodeViewer from '../shared/GCodeViewer.svelte';
   import { ensureParsed, getEntry, reloadParsed } from '../../data/gcode-store.svelte';
@@ -66,50 +66,55 @@
   });
 </script>
 
-<div class="preview-page">
-  <div class="preview-card">
-    <div class="page-header">
-      <span class="page-title">{i18n.t('gcodePreview.title')}</span>
-      {#if fileName}
-        <bdi class="file-name">{fileName}</bdi>
-        <button
-          class="clear-btn"
-          title={i18n.t('gcodePreview.clear')}
-          aria-label={i18n.t('gcodePreview.clear')}
-          onclick={() => clearPreview(api, 'page')}
-        >
-          <Icon name="x" size={14} />
-        </button>
-      {/if}
-      <HeaderHelp title={i18n.t('gcodePreview.help.Title')}>
-        <h4>{i18n.t('gcodePreview.help.FollowTitle')}</h4>
-        <p>{i18n.t('gcodePreview.help.FollowText')}</p>
+<!-- page (replacement): the whole page content -->
+<ExtensionPoint point="page">
+  {#snippet original()}
+    <div class="preview-page">
+      <div class="preview-card">
+        <div class="page-header">
+          <span class="page-title">{i18n.t('gcodePreview.title')}</span>
+          {#if fileName}
+            <bdi class="file-name">{fileName}</bdi>
+            <button
+              class="clear-btn"
+              title={i18n.t('gcodePreview.clear')}
+              aria-label={i18n.t('gcodePreview.clear')}
+              onclick={() => clearPreview(api, 'page')}
+            >
+              <Icon name="x" size={14} />
+            </button>
+          {/if}
+          <HeaderHelp title={i18n.t('gcodePreview.help.Title')}>
+            <h4>{i18n.t('gcodePreview.help.FollowTitle')}</h4>
+            <p>{i18n.t('gcodePreview.help.FollowText')}</p>
 
-        <h4>{i18n.t('gcodePreview.help.LayersTitle')}</h4>
-        <p>{i18n.t('gcodePreview.help.LayersText')}</p>
+            <h4>{i18n.t('gcodePreview.help.LayersTitle')}</h4>
+            <p>{i18n.t('gcodePreview.help.LayersText')}</p>
 
-        <h4>{i18n.t('gcodePreview.help.ColorsTitle')}</h4>
-        <p>{i18n.t('gcodePreview.help.ColorsText')}</p>
+            <h4>{i18n.t('gcodePreview.help.ColorsTitle')}</h4>
+            <p>{i18n.t('gcodePreview.help.ColorsText')}</p>
 
-        <h4>{i18n.t('gcodePreview.help.ExcludeTitle')}</h4>
-        <p>{i18n.t('gcodePreview.help.ExcludeText')}</p>
-      </HeaderHelp>
+            <h4>{i18n.t('gcodePreview.help.ExcludeTitle')}</h4>
+            <p>{i18n.t('gcodePreview.help.ExcludeText')}</p>
+          </HeaderHelp>
+        </div>
+
+        <div class="preview-body">
+          {#if !path}
+            <p class="empty">{i18n.t('gcodePreview.noFile')}</p>
+            <p class="empty-hint">{i18n.t('gcodePreview.noFileHint')}</p>
+          {:else if !entry || entry.status === 'loading'}
+            <Loader size="lg" block text={i18n.t('gcodePreview.loading')} />
+          {:else if entry.status === 'error'}
+            <p class="error">{entry.message}</p>
+          {:else}
+            <GCodeViewer parsed={entry.parsed} progressSeg={progressSeg} />
+          {/if}
+        </div>
+      </div>
     </div>
-
-    <div class="preview-body">
-      {#if !path}
-        <p class="empty">{i18n.t('gcodePreview.noFile')}</p>
-        <p class="empty-hint">{i18n.t('gcodePreview.noFileHint')}</p>
-      {:else if !entry || entry.status === 'loading'}
-        <Loader size="lg" block text={i18n.t('gcodePreview.loading')} />
-      {:else if entry.status === 'error'}
-        <p class="error">{entry.message}</p>
-      {:else}
-        <GCodeViewer parsed={entry.parsed} progressSeg={progressSeg} />
-      {/if}
-    </div>
-  </div>
-</div>
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   .preview-page { height: 100%; }

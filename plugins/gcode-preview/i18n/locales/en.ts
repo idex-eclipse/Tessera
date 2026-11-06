@@ -25,6 +25,11 @@ export const en = {
     excludeConfirmMessage: 'Exclude "{name}" from the print? The object will stop printing; this cannot be undone.',
     excludeConfirmLabel: 'Exclude',
     summary: '{moves} moves · {layers} layers · {extruders} extruder(s)',
+    // names of the extension points in host dialogs and Settings → Plugins
+    ext: {
+      widget: 'G-code preview widget: body',
+      page: 'G-code preview page',
+    },
     hotkeys: {
       open: 'Open the G-code preview page',
       layerUp: 'Preview: layer above',
