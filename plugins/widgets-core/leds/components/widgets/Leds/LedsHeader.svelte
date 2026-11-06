@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
   import { isRtl } from '../../../../../shared/popover-align';
@@ -32,28 +32,33 @@
   });
 </script>
 
-<div class="hdr">
-  {#if store.templates.length > 0}
-    <button
-      class="hdr-btn"
-      class:active={menuOpen}
-      bind:this={btnEl}
-      title={i18n.t('widgets.leds.hiddenTemplates')}
-      onclick={toggleMenu}
-    >
-      <Icon name="settings" size={15} />
-    </button>
-  {/if}
+<!-- header-leds (replacement): the header bar; its menu below opens only from the original. Replace it together with widget-leds: the buttons drive the original body -->
+<ExtensionPoint point="header-leds">
+  {#snippet original()}
+    <div class="hdr">
+      {#if store.templates.length > 0}
+        <button
+          class="hdr-btn"
+          class:active={menuOpen}
+          bind:this={btnEl}
+          title={i18n.t('widgets.leds.hiddenTemplates')}
+          onclick={toggleMenu}
+        >
+          <Icon name="settings" size={15} />
+        </button>
+      {/if}
 
-  <HeaderHelp title={i18n.t('widgets.leds.help.title')}>
-    <h4>{i18n.t('widgets.leds.help.pixelsTitle')}</h4>
-    <p>{i18n.t('widgets.leds.help.pixelsText')}</p>
+      <HeaderHelp title={i18n.t('widgets.leds.help.title')}>
+        <h4>{i18n.t('widgets.leds.help.pixelsTitle')}</h4>
+        <p>{i18n.t('widgets.leds.help.pixelsText')}</p>
 
-    <h4>{i18n.t('widgets.leds.help.templatesTitle')}</h4>
-    <p>{i18n.t('widgets.leds.help.templatesText')}</p>
-    <p>{i18n.t('widgets.leds.help.templatesMemory')}</p>
-  </HeaderHelp>
-</div>
+        <h4>{i18n.t('widgets.leds.help.templatesTitle')}</h4>
+        <p>{i18n.t('widgets.leds.help.templatesText')}</p>
+        <p>{i18n.t('widgets.leds.help.templatesMemory')}</p>
+      </HeaderHelp>
+    </div>
+  {/snippet}
+</ExtensionPoint>
 
 {#if menuOpen}
   <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>

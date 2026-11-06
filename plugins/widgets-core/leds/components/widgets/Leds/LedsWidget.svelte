@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
 
   import SectionAccordion from '../../../../../shared/accordion/SectionAccordion.svelte';
   import { useAccordionState } from '../../../../../shared/accordion/use-accordion-state.svelte.ts';
@@ -38,60 +38,65 @@
   }
 </script>
 
-{#if !klippy.ready}
-  <KlipperNotReady />
-{:else if store.items.length === 0}
-  <p class="empty">{i18n.t('widgets.leds.empty')}</p>
-{:else}
-  <div class="leds-box" use:observeWidgetBox={(b) => (box = b)}>
-    <div class="leds">
-      {#each store.items as it, n (it.id)}
-        {@const pixels = pixelsOf(it.id, it.count)}
-        {@const lit = pixels.some(isLit)}
-        <SectionAccordion
-          title={it.label}
-          {accordion}
-          open={sections.isOpen(it.id, box.narrow, n === 0)}
-          onToggle={() => sections.toggle(it.id, box.narrow, n === 0)}
-          bind:contentHeight={heights[it.id]}
-        >
-          <div class="led">
-            <div class="led-head">
-              {#if !accordion}
-                <span class="led-label" title={it.id}>{it.label}</span>
-              {/if}
-              <span class="led-kind" dir="ltr">
-                {it.kind}{it.count > 1 ? ` × ${it.count}` : ''}{it.hasWhite ? ' · RGBW' : ''}
-              </span>
-              <button
-                class="power"
-                class:on={lit}
-                title={lit ? i18n.t('widgets.leds.turnOff') : i18n.t('widgets.leds.turnOn')}
-                onclick={() => store.toggle(it.id)}
-              >
-                <Icon name="kind-power" size={16} />
-              </button>
-            </div>
+<!-- widget-leds (replacement): the whole widget body, including the "Klipper not ready" and empty states; the header (LedsHeader) is a separate element, replace it with header-leds too -->
+<ExtensionPoint point="widget-leds">
+  {#snippet original()}
+    {#if !klippy.ready}
+      <KlipperNotReady />
+    {:else if store.items.length === 0}
+      <p class="empty">{i18n.t('widgets.leds.empty')}</p>
+    {:else}
+      <div class="leds-box" use:observeWidgetBox={(b) => (box = b)}>
+        <div class="leds">
+          {#each store.items as it, n (it.id)}
+            {@const pixels = pixelsOf(it.id, it.count)}
+            {@const lit = pixels.some(isLit)}
+            <SectionAccordion
+              title={it.label}
+              {accordion}
+              open={sections.isOpen(it.id, box.narrow, n === 0)}
+              onToggle={() => sections.toggle(it.id, box.narrow, n === 0)}
+              bind:contentHeight={heights[it.id]}
+            >
+              <div class="led">
+                <div class="led-head">
+                  {#if !accordion}
+                    <span class="led-label" title={it.id}>{it.label}</span>
+                  {/if}
+                  <span class="led-kind" dir="ltr">
+                    {it.kind}{it.count > 1 ? ` × ${it.count}` : ''}{it.hasWhite ? ' · RGBW' : ''}
+                  </span>
+                  <button
+                    class="power"
+                    class:on={lit}
+                    title={lit ? i18n.t('widgets.leds.turnOff') : i18n.t('widgets.leds.turnOn')}
+                    onclick={() => store.toggle(it.id)}
+                  >
+                    <Icon name="kind-power" size={16} />
+                  </button>
+                </div>
 
-            <LedStrip
-              {pixels}
-              selected={selection[it.id] ?? []}
-              allLabel={i18n.t('widgets.leds.allPixels')}
-              onSelect={(next) => (selection[it.id] = next)}
-            />
-            {#if (selection[it.id] ?? []).length > 0}
-              <span class="sel-note">
-                {i18n.t('widgets.leds.pixelsSelected', { n: selection[it.id]!.length })}
-              </span>
-            {/if}
+                <LedStrip
+                  {pixels}
+                  selected={selection[it.id] ?? []}
+                  allLabel={i18n.t('widgets.leds.allPixels')}
+                  onSelect={(next) => (selection[it.id] = next)}
+                />
+                {#if (selection[it.id] ?? []).length > 0}
+                  <span class="sel-note">
+                    {i18n.t('widgets.leds.pixelsSelected', { n: selection[it.id]!.length })}
+                  </span>
+                {/if}
 
-            <LedControls {store} item={it} selected={selection[it.id] ?? []} {i18n} />
-          </div>
-        </SectionAccordion>
-      {/each}
-    </div>
-  </div>
-{/if}
+                <LedControls {store} item={it} selected={selection[it.id] ?? []} {i18n} />
+              </div>
+            </SectionAccordion>
+          {/each}
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   :global(mpu-widgets-leds) {

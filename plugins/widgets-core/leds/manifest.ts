@@ -1,4 +1,4 @@
-import type { WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const ledsWidgets: WidgetContribution[] = [
@@ -22,4 +22,12 @@ export const ledsChips: ChipContribution[] = [
     pickerElement: 'mpu-core-widgets-chip-led-picker',
     icon: 'kind-led',
   },
+];
+
+/** Extension points of this feature (all version 1), collected in the plugin manifest. */
+export const ledsPoints: ExtensionPointDecl[] = [
+  // the whole widget body; its header is a separate element (header-leds)
+  { id: 'widget-leds', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetLeds' },
+  // the header bar; replace it together with the body
+  { id: 'header-leds', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.headerLeds' },
 ];
