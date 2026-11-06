@@ -1,13 +1,16 @@
 <script lang="ts">
   import type { HostI18n } from '../../core/host-i18n.svelte.ts';
   import type { PrinterManager, PrinterConnectionState } from '../../core/printer-manager.svelte.ts';
+  import type { Router } from '../../core/router.svelte.ts';
 
   let {
     printerManager,
     i18n,
+    router,
   }: {
     printerManager: PrinterManager;
     i18n: HostI18n;
+    router: Router;
   } = $props();
 
   // Local reactive state (printer-manager теперь event-based, не $state)
@@ -37,12 +40,21 @@
     return new Date(activeConnection.lastSuccessfulAt).toLocaleTimeString();
   });
 
+  // Settings is a host page: it must stay reachable while the printer is down, otherwise
+  // the user cannot fix a wrong URL. The connection state stays visible as the tab badge.
+  let onHostPage = $derived(router.route.kind === 'settings');
+
   function handleRetry() {
     printerManager.retry();
   }
+
+  function handleOpenSettings() {
+    // The printers section is where the URL of the unreachable printer is edited.
+    router.navigateToSettings('printers');
+  }
 </script>
 
-{#if shouldShow}
+{#if shouldShow && !onHostPage}
   <div class="overlay">
     <div class="overlay-content">
       <div class="overlay-icon">📡</div>
@@ -57,6 +69,10 @@
 
       <button class="retry-btn" onclick={handleRetry}>
         {i18n.t('printer.retryConnection')}
+      </button>
+
+      <button class="settings-btn" onclick={handleOpenSettings}>
+        {i18n.t('printer.openSettings')}
       </button>
     </div>
   </div>
@@ -116,5 +132,31 @@
 
   .retry-btn:hover {
     background: var(--accent-hover);
+  }
+
+  .settings-btn {
+    padding: var(--space-sm) var(--space-lg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+  }
+
+  .settings-btn:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  /* Narrow screens: the card must not overflow and long localized labels must wrap. */
+  .overlay-content {
+    max-inline-size: calc(100% - 2 * var(--space-md));
+  }
+
+  .retry-btn,
+  .settings-btn {
+    min-block-size: 44px;
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
   }
 </style>

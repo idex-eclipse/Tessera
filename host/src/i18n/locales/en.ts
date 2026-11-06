@@ -103,6 +103,7 @@ const en: I18nMessages = {
     statusOnline: 'Online',
     lastSuccessfulConnection: 'Last successful connection',
     retryConnection: 'Retry connection',
+    openSettings: 'Open settings',
     noPrinters: 'No printers configured',
     addFirstPrinter: 'Add your first printer',
   },

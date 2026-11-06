@@ -26,7 +26,7 @@ notification center   — 450, the list beside the right panel (host only)
 host dialogs          — 300, confirmations and settings dialogs
 printer tabs menu     — 250
 fleet mode            — 200, full-screen drawer
-offline-overlay       — 100, connection status (host only)
+offline-overlay       — 100, connection status (host only; hidden on Settings)
 plugin overlays       — 60, modal windows
 side panels, narrow   — 40, menu and right panel over the content
 right panel           — 30, the column on the right

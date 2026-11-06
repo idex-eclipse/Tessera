@@ -185,6 +185,9 @@ tab leads to that printer's dashboard.
   unreachable: status, a Retry button, the time of the last connection. The user can
   switch to another printer without closing the overlay. The overlay shows only
   infrastructure status and does not read printer data.
+- The overlay is **not shown on host pages** (Settings), so a wrong printer URL can
+  always be fixed; its **Open settings** button leads there from any other page. There
+  is deliberately no close button: plugins would be left with a dead connection.
 - The Klipper banner (in `@core/system`) is a separate thing: firmware state, not
   connection state.
 

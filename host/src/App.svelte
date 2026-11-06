@@ -233,9 +233,9 @@
 
   </div>
 
-  {#if printerManager.shouldShowOfflineOverlay}
-    <OfflineOverlay {printerManager} {i18n} />
-  {/if}
+  <!-- Always mounted: printerManager is event-based (not reactive), so an outer {#if} on its
+       state would be evaluated once. The overlay subscribes and decides visibility itself. -->
+  <OfflineOverlay {printerManager} {i18n} {router} />
 
   <ConfirmDialog />
   <ExtensionChooser />

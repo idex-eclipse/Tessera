@@ -100,6 +100,7 @@ const ru: I18nMessages = {
     statusOnline: 'В сети',
     lastSuccessfulConnection: 'Последняя успешная связь',
     retryConnection: 'Повторить подключение',
+    openSettings: 'Открыть настройки',
     noPrinters: 'Принтеры не настроены',
     addFirstPrinter: 'Добавьте первый принтер',
   },
