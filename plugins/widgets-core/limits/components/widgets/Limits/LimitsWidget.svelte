@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
 
   import SectionAccordion from '../../../../../shared/accordion/SectionAccordion.svelte';
   import { useAccordionState } from '../../../../../shared/accordion/use-accordion-state.svelte.ts';
@@ -27,76 +27,81 @@
   let accordion = $derived(sectionsNeedAccordion([speedHeight, cornersHeight], SECTION_GAP, box.height));
 </script>
 
-{#if !klippy.ready}
-  <KlipperNotReady />
-{:else}
-  <div class="limits-box" use:observeWidgetBox={(b) => (box = b)}>
-    <div class="limits">
-      <SectionAccordion
-        title={i18n.t('widgets.limits.groupSpeed')}
-        {accordion}
-        open={sections.isOpen('speed', box.narrow, true)}
-        onToggle={() => sections.toggle('speed', box.narrow, true)}
-        bind:contentHeight={speedHeight}
-      >
-        <SliderGrid {columns}>
-          <SliderField
-            label={i18n.t('widgets.limits.velocity')}
-            value={store.limits.velocity}
-            min={1}
-            max={Math.max(limDef.velocity, 1)}
-            step={1}
-            unit="mm/s"
-            onCommit={(v) => store.setLimit({ velocity: v })}
-            onReset={() => store.setLimit({ velocity: limDef.velocity })}
-          />
-          <SliderField
-            label={i18n.t('widgets.limits.accel')}
-            value={store.limits.accel}
-            min={1}
-            max={Math.max(limDef.accel, 1)}
-            step={1}
-            unit="mm/s²"
-            onCommit={(v) => store.setLimit({ accel: v })}
-            onReset={() => store.setLimit({ accel: limDef.accel })}
-          />
-        </SliderGrid>
-      </SectionAccordion>
+<!-- widget-limits (replacement): the whole widget body, including the "Klipper not ready" and empty states (no header: this widget has none) -->
+<ExtensionPoint point="widget-limits">
+  {#snippet original()}
+    {#if !klippy.ready}
+      <KlipperNotReady />
+    {:else}
+      <div class="limits-box" use:observeWidgetBox={(b) => (box = b)}>
+        <div class="limits">
+          <SectionAccordion
+            title={i18n.t('widgets.limits.groupSpeed')}
+            {accordion}
+            open={sections.isOpen('speed', box.narrow, true)}
+            onToggle={() => sections.toggle('speed', box.narrow, true)}
+            bind:contentHeight={speedHeight}
+          >
+            <SliderGrid {columns}>
+              <SliderField
+                label={i18n.t('widgets.limits.velocity')}
+                value={store.limits.velocity}
+                min={1}
+                max={Math.max(limDef.velocity, 1)}
+                step={1}
+                unit="mm/s"
+                onCommit={(v) => store.setLimit({ velocity: v })}
+                onReset={() => store.setLimit({ velocity: limDef.velocity })}
+              />
+              <SliderField
+                label={i18n.t('widgets.limits.accel')}
+                value={store.limits.accel}
+                min={1}
+                max={Math.max(limDef.accel, 1)}
+                step={1}
+                unit="mm/s²"
+                onCommit={(v) => store.setLimit({ accel: v })}
+                onReset={() => store.setLimit({ accel: limDef.accel })}
+              />
+            </SliderGrid>
+          </SectionAccordion>
 
-      <SectionAccordion
-        title={i18n.t('widgets.limits.groupCorners')}
-        {accordion}
-        open={sections.isOpen('corners', box.narrow, false)}
-        onToggle={() => sections.toggle('corners', box.narrow, false)}
-        bind:contentHeight={cornersHeight}
-      >
-        <SliderGrid {columns}>
-          <SliderField
-            label={i18n.t('widgets.limits.scv')}
-            value={store.limits.scv}
-            min={0.1}
-            max={Math.max(limDef.scv, 0.1)}
-            step={0.1}
-            unit="mm/s"
-            decimals={1}
-            onCommit={(v) => store.setLimit({ scv: v })}
-            onReset={() => store.setLimit({ scv: limDef.scv })}
-          />
-          <SliderField
-            label={i18n.t('widgets.limits.mcr')}
-            value={store.limits.mcr * 100}
-            min={0}
-            max={100}
-            step={1}
-            unit="%"
-            onCommit={(v) => store.setLimit({ mcr: v / 100 })}
-            onReset={() => store.setLimit({ mcr: limDef.mcr })}
-          />
-        </SliderGrid>
-      </SectionAccordion>
-    </div>
-  </div>
-{/if}
+          <SectionAccordion
+            title={i18n.t('widgets.limits.groupCorners')}
+            {accordion}
+            open={sections.isOpen('corners', box.narrow, false)}
+            onToggle={() => sections.toggle('corners', box.narrow, false)}
+            bind:contentHeight={cornersHeight}
+          >
+            <SliderGrid {columns}>
+              <SliderField
+                label={i18n.t('widgets.limits.scv')}
+                value={store.limits.scv}
+                min={0.1}
+                max={Math.max(limDef.scv, 0.1)}
+                step={0.1}
+                unit="mm/s"
+                decimals={1}
+                onCommit={(v) => store.setLimit({ scv: v })}
+                onReset={() => store.setLimit({ scv: limDef.scv })}
+              />
+              <SliderField
+                label={i18n.t('widgets.limits.mcr')}
+                value={store.limits.mcr * 100}
+                min={0}
+                max={100}
+                step={1}
+                unit="%"
+                onCommit={(v) => store.setLimit({ mcr: v / 100 })}
+                onReset={() => store.setLimit({ mcr: limDef.mcr })}
+              />
+            </SliderGrid>
+          </SectionAccordion>
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   :global(mpu-widgets-limits) {
