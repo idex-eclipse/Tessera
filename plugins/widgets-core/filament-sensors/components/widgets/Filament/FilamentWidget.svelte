@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
 
   import KlippyNotReady from '../../../../../shared/klippy-state/KlippyNotReady.svelte';
@@ -27,62 +27,67 @@
   }
 </script>
 
-{#if !klippy.ready}
-  <KlippyNotReady />
-{:else if store.sensors.length === 0}
-  <p class="empty">{i18n.t('widgets.filament.noSensors')}</p>
-{:else}
-  <div class="fil">
-    {#each store.sensors as s (s.id)}
-      {@const st = store.states[s.id]}
-      {@const status = statusOf(s)}
+<!-- widget-filament (replacement): the whole widget body, including the "Klipper not ready" and empty states (no header: this widget has none) -->
+<ExtensionPoint point="widget-filament">
+  {#snippet original()}
+    {#if !klippy.ready}
+      <KlippyNotReady />
+    {:else if store.sensors.length === 0}
+      <p class="empty">{i18n.t('widgets.filament.noSensors')}</p>
+    {:else}
+      <div class="fil">
+        {#each store.sensors as s (s.id)}
+          {@const st = store.states[s.id]}
+          {@const status = statusOf(s)}
 
-      <div class="fil-row">
-        <div class="fil-info">
-          <bdi class="fil-name" title={s.id}>{s.name}</bdi>
-          <span class="fil-kind">{kindLabel(s)}</span>
-        </div>
+          <div class="fil-row">
+            <div class="fil-info">
+              <bdi class="fil-name" title={s.id}>{s.name}</bdi>
+              <span class="fil-kind">{kindLabel(s)}</span>
+            </div>
 
-        {#if s.kind === 'hall'}
-          <span class="fil-value" dir="ltr" title="{i18n.t('widgets.filament.diameter')}{st?.raw != null ? ` · raw ${st.raw}` : ''}">
-            {(st?.diameter ?? 0).toFixed(2)} mm
-          </span>
-        {/if}
+            {#if s.kind === 'hall'}
+              <span class="fil-value" dir="ltr" title="{i18n.t('widgets.filament.diameter')}{st?.raw != null ? ` · raw ${st.raw}` : ''}">
+                {(st?.diameter ?? 0).toFixed(2)} mm
+              </span>
+            {/if}
 
-        <span class="fil-status {status.cls}">{status.text}</span>
+            <span class="fil-status {status.cls}">{status.text}</span>
 
-        <label class="fil-check" title={i18n.t('widgets.filament.enable')}>
-          <input
-            type="checkbox"
-            checked={st?.enabled ?? false}
-            onchange={(e) => store.setEnabled(s, e.currentTarget.checked)}
-          />
-        </label>
+            <label class="fil-check" title={i18n.t('widgets.filament.enable')}>
+              <input
+                type="checkbox"
+                checked={st?.enabled ?? false}
+                onchange={(e) => store.setEnabled(s, e.currentTarget.checked)}
+              />
+            </label>
+          </div>
+
+          {#if s.kind === 'hall'}
+            <div class="fil-sub">
+              <label class="fil-check flow">
+                <input
+                  type="checkbox"
+                  checked={st?.flowComp ?? false}
+                  onchange={(e) => store.setFlowComp(e.currentTarget.checked)}
+                />
+                {i18n.t('widgets.filament.flowComp')}
+              </label>
+
+              <button
+                class="fil-reset"
+                title={i18n.t('widgets.filament.reset')}
+                onclick={() => store.resetWidth()}
+              >
+                <Icon name="rollback" size={13} />
+              </button>
+            </div>
+          {/if}
+        {/each}
       </div>
-
-      {#if s.kind === 'hall'}
-        <div class="fil-sub">
-          <label class="fil-check flow">
-            <input
-              type="checkbox"
-              checked={st?.flowComp ?? false}
-              onchange={(e) => store.setFlowComp(e.currentTarget.checked)}
-            />
-            {i18n.t('widgets.filament.flowComp')}
-          </label>
-
-          <button
-            class="fil-reset"
-            title={i18n.t('widgets.filament.reset')}
-            onclick={() => store.resetWidth()}
-          >
-            <Icon name="rollback" size={13} />
-          </button>
-        </div>
-      {/if}
-    {/each}
-  </div>
-{/if}
+    {/if}
+  {/snippet}
+</ExtensionPoint>
 
 <style>
   :global(mpu-widgets-filament) {

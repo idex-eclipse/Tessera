@@ -1,4 +1,4 @@
-import type { WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const filamentWidgets: WidgetContribution[] = [
@@ -21,4 +21,10 @@ export const filamentChips: ChipContribution[] = [
     pickerElement: 'mpu-core-widgets-chip-filament-picker',
     icon: 'kind-filament',
   },
+];
+
+/** Extension points of this feature (all version 1), collected in the plugin manifest. */
+export const filamentPoints: ExtensionPointDecl[] = [
+  // the whole widget body (this widget has no header)
+  { id: 'widget-filament', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetFilament' },
 ];
