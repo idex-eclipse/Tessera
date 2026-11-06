@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
   import KlippyNotReadyChip from '../../../../../shared/klippy-state/KlippyNotReadyChip.svelte'
@@ -40,44 +40,49 @@
   });
 </script>
 
-<div class="hdr">
-  <KlippyNotReadyChip />
+<!-- header-macros (replacement): the header bar; its menu below opens only from the original. Replace it together with widget-macros: the buttons drive the original body -->
+<ExtensionPoint point="header-macros">
+  {#snippet original()}
+    <div class="hdr">
+      <KlippyNotReadyChip />
 
-  <button
-    class="hdr-btn"
-    class:active={store.editMode}
-    title={store.editMode
-      ? i18n.t('widgets.macros.exitEdit')
-      : i18n.t('widgets.macros.edit')}
-    onclick={() => store.setEditMode(!store.editMode)}
-  >
-    <Icon name="edit" size={15} />
-  </button>
+      <button
+        class="hdr-btn"
+        class:active={store.editMode}
+        title={store.editMode
+          ? i18n.t('widgets.macros.exitEdit')
+          : i18n.t('widgets.macros.edit')}
+        onclick={() => store.setEditMode(!store.editMode)}
+      >
+        <Icon name="edit" size={15} />
+      </button>
 
-  <button
-    class="hdr-btn"
-    class:active={menuOpen}
-    bind:this={btnEl}
-    title={i18n.t('widgets.macros.settings')}
-    onclick={toggleMenu}
-  >
-    <Icon name="settings" size={15} />
-  </button>
+      <button
+        class="hdr-btn"
+        class:active={menuOpen}
+        bind:this={btnEl}
+        title={i18n.t('widgets.macros.settings')}
+        onclick={toggleMenu}
+      >
+        <Icon name="settings" size={15} />
+      </button>
 
-  <HeaderHelp title={i18n.t('widgets.macros.help.Title')}>
-    <h4>{i18n.t('widgets.macros.help.EditModeTitle')}</h4>
-    <p>{i18n.t('widgets.macros.help.EditModeText')}</p>
+      <HeaderHelp title={i18n.t('widgets.macros.help.Title')}>
+        <h4>{i18n.t('widgets.macros.help.EditModeTitle')}</h4>
+        <p>{i18n.t('widgets.macros.help.EditModeText')}</p>
 
-    <h4>{i18n.t('widgets.macros.help.HiddenTitle')}</h4>
-    <p>{i18n.t('widgets.macros.help.HiddenText')}</p>
+        <h4>{i18n.t('widgets.macros.help.HiddenTitle')}</h4>
+        <p>{i18n.t('widgets.macros.help.HiddenText')}</p>
 
-    <h4>{i18n.t('widgets.macros.help.ParamsTitle')}</h4>
-    <p>{i18n.t('widgets.macros.help.ParamsText')}</p>
+        <h4>{i18n.t('widgets.macros.help.ParamsTitle')}</h4>
+        <p>{i18n.t('widgets.macros.help.ParamsText')}</p>
 
-    <h4>{i18n.t('widgets.macros.help.DndTitle')}</h4>
-    <p>{i18n.t('widgets.macros.help.DndText')}</p>
-  </HeaderHelp>
-</div>
+        <h4>{i18n.t('widgets.macros.help.DndTitle')}</h4>
+        <p>{i18n.t('widgets.macros.help.DndText')}</p>
+      </HeaderHelp>
+    </div>
+  {/snippet}
+</ExtensionPoint>
 
 {#if menuOpen}
   <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>

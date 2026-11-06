@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
   import ColorPickerMenu from '../../../../../shared/color-picker/ColorPickerMenu.svelte';
@@ -217,106 +217,111 @@
   </span>
 {/snippet}
 
-{#if store.liveNames.length === 0}
-  <p class="empty">{i18n.t('widgets.macros.empty')}</p>
-{:else}
-  <div class="macros">
-    {#each store.viewGroups() as g (g.id)}
-      <section class="grp" ondragover={(e) => groupDragOver(e, g.id)} ondrop={dropCommit}>
+<!-- widget-macros (replacement): the whole widget body (the groups, or the "no macros" notice); the tooltip, dialogs and menus below belong to the original and stay outside; the header (MacrosHeader) is a separate element, replace it with header-macros too -->
+<ExtensionPoint point="widget-macros">
+  {#snippet original()}
+    {#if store.liveNames.length === 0}
+      <p class="empty">{i18n.t('widgets.macros.empty')}</p>
+    {:else}
+      <div class="macros">
+        {#each store.viewGroups() as g (g.id)}
+          <section class="grp" ondragover={(e) => groupDragOver(e, g.id)} ondrop={dropCommit}>
+            {#if store.editMode}
+              <header class="grp-head edit">
+                <span
+                  class="grip"
+                  draggable="true"
+                  title={i18n.t('widgets.macros.dragGroup')}
+                  ondragstart={(e) => dragStartGroup(e, g.id)}
+                  ondragend={endDrag}
+                >
+                  <Icon name="grip" size={14} />
+                </span>
+                <input
+                  class="grp-input"
+                  value={g.name}
+                  onchange={(e) => store.renameGroup(g.id, e.currentTarget.value)}
+                />
+                <button
+                  class="grp-del"
+                  title={i18n.t('widgets.macros.deleteGroup')}
+                  onclick={() => (confirmGroup = { id: g.id, name: g.name })}
+                >
+                  <Icon name="x" size={14} />
+                </button>
+              </header>
+            {:else}
+              <header class="grp-head">
+                <button class="grp-toggle" onclick={() => store.toggleCollapsed(g.id)}>
+                  <span class="chev" class:open={!g.collapsed}>
+                    <Icon name="chevron-down" size={14} />
+                  </span>
+                  <bdi class="grp-name">{g.name}</bdi>
+                  <span class="grp-count">{g.macros.length}</span>
+                </button>
+              </header>
+            {/if}
+
+            {#if store.editMode || !g.collapsed}
+              <div class="grp-body">
+                {#each g.macros as name (name)}
+                  {@render macroBtn(name, false)}
+                {/each}
+              </div>
+            {/if}
+          </section>
+        {/each}
+
         {#if store.editMode}
-          <header class="grp-head edit">
-            <span
-              class="grip"
-              draggable="true"
-              title={i18n.t('widgets.macros.dragGroup')}
-              ondragstart={(e) => dragStartGroup(e, g.id)}
-              ondragend={endDrag}
-            >
-              <Icon name="grip" size={14} />
-            </span>
-            <input
-              class="grp-input"
-              value={g.name}
-              onchange={(e) => store.renameGroup(g.id, e.currentTarget.value)}
-            />
-            <button
-              class="grp-del"
-              title={i18n.t('widgets.macros.deleteGroup')}
-              onclick={() => (confirmGroup = { id: g.id, name: g.name })}
-            >
-              <Icon name="x" size={14} />
-            </button>
-          </header>
-        {:else}
+          <button class="add-group" onclick={() => store.addGroup(i18n.t('widgets.macros.newGroup'))}>
+            <Icon name="plus" size={14} />
+            {i18n.t('widgets.macros.addGroup')}
+          </button>
+        {/if}
+
+        <!-- Без группы -->
+        <section class="grp" ondragover={ungroupedDragOver} ondrop={dropCommit}>
           <header class="grp-head">
-            <button class="grp-toggle" onclick={() => store.toggleCollapsed(g.id)}>
-              <span class="chev" class:open={!g.collapsed}>
+            <button class="grp-toggle" onclick={() => store.toggleUngrouped()}>
+              <span class="chev" class:open={store.editMode || !store.cfg.ui.ungroupedCollapsed}>
                 <Icon name="chevron-down" size={14} />
               </span>
-              <bdi class="grp-name">{g.name}</bdi>
-              <span class="grp-count">{g.macros.length}</span>
+              <span class="grp-name">{i18n.t('widgets.macros.ungrouped')}</span>
+              <span class="grp-count">{store.ungrouped().length}</span>
             </button>
           </header>
+
+          {#if store.editMode || !store.cfg.ui.ungroupedCollapsed}
+            <div class="grp-body">
+              {#each store.ungrouped() as name (name)}
+                {@render macroBtn(name, false)}
+              {/each}
+            </div>
+          {/if}
+        </section>
+
+        {#if store.editMode}
+          <section
+            class="grp hidden-grp"
+            class:drag-over={dragOverHidden}
+            ondragover={hiddenDragOver}
+            ondragleave={() => (dragOverHidden = false)}
+            ondrop={hiddenDrop}
+          >
+            <header class="grp-head">
+              <span class="grp-static">{i18n.t('widgets.macros.hidden')}</span>
+            </header>
+            <div class="grp-body">
+              {#each store.hiddenList() as name (name)}
+                {@render macroBtn(name, true)}
+              {/each}
+            </div>
+          </section>
         {/if}
-
-        {#if store.editMode || !g.collapsed}
-          <div class="grp-body">
-            {#each g.macros as name (name)}
-              {@render macroBtn(name, false)}
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {/each}
-
-    {#if store.editMode}
-      <button class="add-group" onclick={() => store.addGroup(i18n.t('widgets.macros.newGroup'))}>
-        <Icon name="plus" size={14} />
-        {i18n.t('widgets.macros.addGroup')}
-      </button>
+      </div>
     {/if}
-
-    <!-- Без группы -->
-    <section class="grp" ondragover={ungroupedDragOver} ondrop={dropCommit}>
-      <header class="grp-head">
-        <button class="grp-toggle" onclick={() => store.toggleUngrouped()}>
-          <span class="chev" class:open={store.editMode || !store.cfg.ui.ungroupedCollapsed}>
-            <Icon name="chevron-down" size={14} />
-          </span>
-          <span class="grp-name">{i18n.t('widgets.macros.ungrouped')}</span>
-          <span class="grp-count">{store.ungrouped().length}</span>
-        </button>
-      </header>
-
-      {#if store.editMode || !store.cfg.ui.ungroupedCollapsed}
-        <div class="grp-body">
-          {#each store.ungrouped() as name (name)}
-            {@render macroBtn(name, false)}
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    {#if store.editMode}
-      <section
-        class="grp hidden-grp"
-        class:drag-over={dragOverHidden}
-        ondragover={hiddenDragOver}
-        ondragleave={() => (dragOverHidden = false)}
-        ondrop={hiddenDrop}
-      >
-        <header class="grp-head">
-          <span class="grp-static">{i18n.t('widgets.macros.hidden')}</span>
-        </header>
-        <div class="grp-body">
-          {#each store.hiddenList() as name (name)}
-            {@render macroBtn(name, true)}
-          {/each}
-        </div>
-      </section>
-    {/if}
-  </div>
-{/if}
+  {/snippet}
+</ExtensionPoint>
 
 {#if tip}
   <div class="tip" style:left="{Math.max(8, Math.min(tip.x, window.innerWidth - 288))}px" style:top="{tip.y}px">

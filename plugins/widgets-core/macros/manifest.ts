@@ -1,4 +1,4 @@
-import type { WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const macrosWidgets: WidgetContribution[] = [
@@ -22,4 +22,12 @@ export const macrosChips: ChipContribution[] = [
     pickerElement: 'mpu-core-widgets-chip-macro-picker',
     icon: 'macro',
   },
+];
+
+/** Extension points of this feature (all version 1), collected in the plugin manifest. */
+export const macrosPoints: ExtensionPointDecl[] = [
+  // the whole widget body; its header (edit mode, menu) is a separate element (header-macros)
+  { id: 'widget-macros', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetMacros' },
+  // the header bar; replace it together with the body
+  { id: 'header-macros', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.headerMacros' },
 ];
