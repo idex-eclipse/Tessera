@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import type { MpuParams } from '../../../../../../plugin-sdk/src/types';
   import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import { isRtl } from '../../../../../shared/popover-align';
@@ -63,72 +64,103 @@
     e.preventDefault();
     viewerOpen = true;
   }
+
+  // What a contribution needs to draw the stream instead of ours (params are strings by contract).
+  // The URLs are passed as stored: they may be relative to the printer, resolve them against api.printer.url.
+  let streamParams = $derived<MpuParams>(
+    store.active
+      ? {
+          uid: store.active.uid,
+          name: store.active.name,
+          service: store.active.service,
+          streamUrl: store.active.stream_url,
+          snapshotUrl: store.active.snapshot_url,
+          rotation: String(store.active.rotation),
+          flipHorizontal: String(store.active.flip_horizontal),
+          flipVertical: String(store.active.flip_vertical),
+          targetFps: String(store.active.target_fps),
+        }
+      : {},
+  );
 </script>
 
-<div class="cam-widget">
-  {#if !store.active}
-    <div class="no-cam">
-      <p>{i18n.t('widgets.camera.noCameras')}</p>
-      <button class="btn" onclick={() => store.openAdd()}>
-        {i18n.t('widgets.camera.add')}
-      </button>
-    </div>
-  {:else}
-    <div class="stage">
-      {#if multi}
-        <button
-          class="nav"
-          title={i18n.t('widgets.camera.prevCamera')}
-          aria-label={i18n.t('widgets.camera.prevCamera')}
-          onclick={() => store.step(-1)}
-        >
-          <span class="nav-icon"><Icon name="chevron-left" size={18} /></span>
-        </button>
-      {/if}
+<!-- widget-camera (replacement): the whole widget body; the viewer and the dialogs below belong to the original and stay outside. The header (CameraHeader) is a separate element, replace it with header-camera too -->
+<ExtensionPoint point="widget-camera">
+  {#snippet original()}
+    <div class="cam-widget">
+      {#if !store.active}
+        <div class="no-cam">
+          <p>{i18n.t('widgets.camera.noCameras')}</p>
+          <button class="btn" onclick={() => store.openAdd()}>
+            {i18n.t('widgets.camera.add')}
+          </button>
+        </div>
+      {:else}
+        <div class="stage">
+          {#if multi}
+            <button
+              class="nav"
+              title={i18n.t('widgets.camera.prevCamera')}
+              aria-label={i18n.t('widgets.camera.prevCamera')}
+              onclick={() => store.step(-1)}
+            >
+              <span class="nav-icon"><Icon name="chevron-left" size={18} /></span>
+            </button>
+          {/if}
 
-      <div
-        class="pic"
-        role="button"
-        tabindex="0"
-        aria-label={i18n.t('widgets.camera.expand')}
-        title={i18n.t('widgets.camera.expand')}
-        bind:this={picEl}
-        onclick={onPicClick}
-        onkeydown={onPicKey}
-        onpointerdown={onPointerDown}
-        onpointerup={onPointerUp}
-        onpointercancel={() => (gesture = null)}
-      >
-        <CameraStream camera={store.active} paused={viewerOpen} bind:fps />
-        {#if store.active.service === 'iframe'}
-          <!-- иначе клик по iframe не доходит до виджета -->
-          <div class="hit"></div>
-        {/if}
-      </div>
+          <div
+            class="pic"
+            role="button"
+            tabindex="0"
+            aria-label={i18n.t('widgets.camera.expand')}
+            title={i18n.t('widgets.camera.expand')}
+            bind:this={picEl}
+            onclick={onPicClick}
+            onkeydown={onPicKey}
+            onpointerdown={onPointerDown}
+            onpointerup={onPointerUp}
+            onpointercancel={() => (gesture = null)}
+          >
+            <!-- camera-stream (alternative): the stream (and the iframe click overlay); the nav buttons, caption and the click-to-expand stay. Right-click / long press opens the chooser -->
+            <ExtensionPoint point="camera-stream" params={streamParams}>
+              {#snippet original()}
+                <!-- the guard only re-narrows `store.active` for TypeScript: it is lost inside a snippet -->
+                {#if store.active}
+                  <CameraStream camera={store.active} paused={viewerOpen} bind:fps />
+                  {#if store.active.service === 'iframe'}
+                    <!-- иначе клик по iframe не доходит до виджета -->
+                    <div class="hit"></div>
+                  {/if}
+                {/if}
+              {/snippet}
+            </ExtensionPoint>
+          </div>
 
-      {#if multi}
-        <button
-          class="nav"
-          title={i18n.t('widgets.camera.nextCamera')}
-          aria-label={i18n.t('widgets.camera.nextCamera')}
-          onclick={() => store.step(1)}
-        >
-          <span class="nav-icon"><Icon name="chevron-right" size={18} /></span>
-        </button>
+          {#if multi}
+            <button
+              class="nav"
+              title={i18n.t('widgets.camera.nextCamera')}
+              aria-label={i18n.t('widgets.camera.nextCamera')}
+              onclick={() => store.step(1)}
+            >
+              <span class="nav-icon"><Icon name="chevron-right" size={18} /></span>
+            </button>
+          {/if}
+        </div>
+
+        <div class="caption">
+          <bdi class="cap-name" title={store.active.name}>{store.active.name}</bdi>
+          {#if fps != null}
+            <span class="cap-fps">{Math.round(fps)} {i18n.t('widgets.camera.fpsUnit')}</span>
+          {/if}
+          {#if multi}
+            <span class="cap-idx">{index + 1} / {store.enabled.length}</span>
+          {/if}
+        </div>
       {/if}
     </div>
-
-    <div class="caption">
-      <bdi class="cap-name" title={store.active.name}>{store.active.name}</bdi>
-      {#if fps != null}
-        <span class="cap-fps">{Math.round(fps)} {i18n.t('widgets.camera.fpsUnit')}</span>
-      {/if}
-      {#if multi}
-        <span class="cap-idx">{index + 1} / {store.enabled.length}</span>
-      {/if}
-    </div>
-  {/if}
-</div>
+  {/snippet}
+</ExtensionPoint>
 
 <CameraViewer
   open={viewerOpen}

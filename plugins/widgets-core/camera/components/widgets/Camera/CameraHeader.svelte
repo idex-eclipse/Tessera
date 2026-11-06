@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, useWidget, useI18n } from '../../../../../../plugin-sdk/src/svelte/index';
   import Icon from '../../../../../shared/icons/Icon.svelte';
   import { isRtl } from '../../../../../shared/popover-align';
 
@@ -35,17 +35,22 @@
   });
 </script>
 
-<div class="hdr">
-  <button
-    class="hdr-btn"
-    class:active={menuOpen}
-    bind:this={btnEl}
-    onclick={toggleMenu}
-    title={i18n.t('widgets.camera.settings')}
-  >
-    <Icon name="settings" size={15} />
-  </button>
-</div>
+<!-- header-camera (replacement): the header bar; its menu below opens only from the original. Replace it together with widget-camera: the buttons drive the original body -->
+<ExtensionPoint point="header-camera">
+  {#snippet original()}
+    <div class="hdr">
+      <button
+        class="hdr-btn"
+        class:active={menuOpen}
+        bind:this={btnEl}
+        onclick={toggleMenu}
+        title={i18n.t('widgets.camera.settings')}
+      >
+        <Icon name="settings" size={15} />
+      </button>
+    </div>
+  {/snippet}
+</ExtensionPoint>
 
 {#if menuOpen}
   <div class="menu-backdrop" onclick={() => (menuOpen = false)} role="presentation"></div>

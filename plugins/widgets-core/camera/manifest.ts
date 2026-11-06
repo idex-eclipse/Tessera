@@ -1,4 +1,4 @@
-import type { PrinterPanelContribution, WidgetContribution } from '../../../plugin-sdk/src/types';
+import type { PrinterPanelContribution, WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
 
 export const cameraWidgets: WidgetContribution[] = [
   {
@@ -18,4 +18,14 @@ export const cameraFleet: PrinterPanelContribution[] = [
     element: 'mpu-core-widgets-fleet-camera',
     titleKey: 'fleet.camera.title',
   },
+];
+
+/** Extension points of this feature (all version 1), collected in the plugin manifest. */
+export const cameraPoints: ExtensionPointDecl[] = [
+  // the whole widget body; its header is a separate element (header-camera)
+  { id: 'widget-camera', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetCamera' },
+  // the header bar; replace it together with the body
+  { id: 'header-camera', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.headerCamera' },
+  // the stream only: 'alternative', so the original player stays one choice away (a custom WebRTC/HLS player is the typical contribution)
+  { id: 'camera-stream', kind: 'element', mode: 'alternative', version: 1, titleKey: 'widgets.ext.cameraStream' },
 ];
