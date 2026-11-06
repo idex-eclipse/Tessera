@@ -37,6 +37,16 @@ export const en = {
     guard: {
       critical_file: 'printer.cfg and moonraker.conf cannot be deleted, renamed or overwritten this way',
     },
+    // names of the extension points in host dialogs and Settings → Plugins
+    ext: {
+      page: 'Config files page',
+      tableConfig: 'Config files page: config files table',
+      tableOther: 'Config files page: logs, docs and samples table',
+      panelsBottom: 'Config files page: bottom panels',
+      fileActions: 'File table: file menu actions',
+      fileEditor: 'File table: text editor',
+      fileViewer: 'File table: image viewer',
+    },
   },
   ft: {
     name: 'Name', 
