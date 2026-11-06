@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import { ExtensionPoint, usePluginApi } from '../../../plugin-sdk/src/svelte/index';
+  import type { MpuParams } from '../../../plugin-sdk/src/types';
 
   import ConfirmDialog from '../confirm-dialog.svelte';
   import ContextMenu, { type ContextMenuItem } from '../context-menu.svelte';
@@ -12,6 +13,7 @@
   import ImageViewerDialog from '../image-viewer-dialog/image-viewer-dialog.svelte';
 
   import { createFileOps, type FileRef } from './file-ops';
+  import { FILE_TABLE_POINT_IDS } from './extension-points';
   import { formatDate, formatSize } from '../format';
 
   import { COLUMNS, PAGE_DEFAULTS, WIDGET_DEFAULTS, type ColumnDef } from './columns';
@@ -256,7 +258,30 @@ let {
   }
 
   let menu = $state<{ x:number; y:number; ref:FileRef; isDir:boolean } | null>(null);
-  let items = $derived(menu ? (menuItems?.(menu.ref, menu.isDir) ?? []) : []);
+
+  // ---------------- extension points (see extension-points.ts) ----------------
+  // Re-read on any registry change (plugin enabled/disabled, availability, conflict resolution).
+  // Without the tick, an `available()` that resolves after the menu opened would never show its item.
+  let extTick = $state(0);
+  $effect(() => api.extensions.onChange(() => extTick++));
+
+  /** Point params are strings only (MpuParams); they also reach the extension's `available(api, params)`. */
+  function fileParams(ref: FileRef): MpuParams {
+    return { root: ref.root, path: ref.path, isDir: String(ref.isDir) };
+  }
+
+  /** Extension actions of `file-actions`, appended after the page's own menu items. */
+  function extMenuItems(ref: FileRef): ContextMenuItem[] {
+    return api.extensions
+      .list(FILE_TABLE_POINT_IDS.actions, fileParams(ref))
+      .map((a) => ({ id: `ext:${a.ref}`, label: a.title, ...(a.icon ? { icon: a.icon } : {}) }));
+  }
+
+  let items = $derived.by<ContextMenuItem[]>(() => {
+    if (!menu) return [];
+    void extTick;
+    return [...(menuItems?.(menu.ref, menu.isDir) ?? []), ...extMenuItems(menu.ref)];
+  });
 
   let renameRef = $state<FileRef | null>(null);
   let renameOpen = $state(false);
@@ -356,6 +381,7 @@ let {
         : 'plain';
     editorRef = ref;
     editorSeq++;
+    editorByExt = false;
     editorOpen = true;
     editorLoading = true;
     editorContent = '';
@@ -376,8 +402,55 @@ let {
     viewerSrc = ops.viewUrl(ref);
     viewerRef = ref;
     viewerSeq++;
+    viewerByExt = false;
     viewerOpen = true;
   }
+
+  // ---------------- file-editor / file-viewer replacement ----------------
+  // The file is still read for the built-in editor even when an extension replaces it: the
+  // availability of a contribution is async, and the built-in dialog must be ready to take
+  // over (an empty buffer saved over a config would be destructive).
+  // `*ByExt` latches once the extension has taken a session over, so the built-in dialog
+  // never pops up next to a running extension when its availability is re-evaluated.
+  let editorByExt = $state(false);
+  let viewerByExt = $state(false);
+
+  let editorWanted = $derived.by(() => {
+    void extTick;
+    if (!editorOpen || !editorRef) return false;
+    return !api.extensions.resolve(FILE_TABLE_POINT_IDS.editor, {
+      ...fileParams(editorRef),
+      readonly: String(editorReadonly),
+    }).original;
+  });
+  let viewerWanted = $derived.by(() => {
+    void extTick;
+    if (!viewerOpen || !viewerRef) return false;
+    return !api.extensions.resolve(FILE_TABLE_POINT_IDS.viewer, fileParams(viewerRef)).original;
+  });
+  $effect(() => { if (editorWanted) editorByExt = true; });
+  $effect(() => { if (viewerWanted) viewerByExt = true; });
+
+  let editorExtParams = $derived<MpuParams>(
+    editorRef ? { ...fileParams(editorRef), readonly: String(editorReadonly) } : {},
+  );
+  let viewerExtParams = $derived<MpuParams>(viewerRef ? fileParams(viewerRef) : {});
+
+  // A replacing extension owns its dialog and tells us when the session is over with a bubbling
+  // composed event (like the banner's `mpu:banner-expand`), because it cannot reach our state.
+  let cardEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const el = cardEl;
+    if (!el) return;
+    const closeEditor = () => { editorOpen = false; editorByExt = false; };
+    const closeViewer = () => { viewerOpen = false; viewerByExt = false; };
+    el.addEventListener('mpu:editor-close', closeEditor);
+    el.addEventListener('mpu:viewer-close', closeViewer);
+    return () => {
+      el.removeEventListener('mpu:editor-close', closeEditor);
+      el.removeEventListener('mpu:viewer-close', closeViewer);
+    };
+  });
 
   async function handleMenuSelect(id: string): Promise<void> {
     if (!menu) return;
@@ -389,6 +462,10 @@ let {
       else if (id === 'rename') { renameRef = ref; renameOpen = true; }
       else if (id === 'copy') await ops.copy(ref);
       else if (id === 'delete') { deleteRef = ref; deleteOpen = true; }
+      else if (id.startsWith('ext:')) {
+        // `file-actions` contribution: the extension gets the file it was invoked on (typed context).
+        await api.extensions.invoke(id.slice('ext:'.length), { root: ref.root, path: ref.path, isDir: ref.isDir });
+      }
       else await onAction?.(id, ref);
     } catch (e) {
       setNotice(api, scope, errText(e));
@@ -460,7 +537,7 @@ let {
     }
 </script>
 
-<div class="ft-card">
+<div class="ft-card" bind:this={cardEl}>
   {#if showHeader}
     <div class="page-header">
       <span class="page-title">{title}</span>
@@ -537,7 +614,7 @@ let {
           {/if}
 
           {#each sortedDirs as d (d.name)}
-            <tr class="row-dir" onclick={(e) => onRowLeft(e, d.name, true)} oncontextmenu={(e) => onRowRight(e, d.name, true)}>
+            <tr class="row-dir" class:inert={!menuEnabled} onclick={(e) => onRowLeft(e, d.name, true)} oncontextmenu={(e) => onRowRight(e, d.name, true)}>
               <td class="td-name"><span class="cell"><span class="file-ico dir"><Icon name="folder" size={15} /></span><bdi>{d.name}</bdi></span></td>
               {#if mode === 'simple'}
                 <td>{formatDate(d.modified)}</td>
@@ -552,7 +629,7 @@ let {
 
           {#each sortedFiles as f (mode === 'history' ? (f.raw?.job_id ?? f.name ?? f.filename) : (f.name ?? f.filename))}
             {@const fname = f.name ?? f.filename}
-            <tr class="row-file" onclick={(e) => onRowLeft(e, fname, false)} oncontextmenu={(e) => onRowRight(e, fname, false)}>
+            <tr class="row-file" class:inert={!menuEnabled} onclick={(e) => onRowLeft(e, fname, false)} oncontextmenu={(e) => onRowRight(e, fname, false)}>
               {#if mode === 'simple'}
                 <td class="td-name"><span class="cell"><span class="file-ico"><Icon name="file" size={15} /></span><bdi>{fname}</bdi></span></td>
                 <td>{formatDate(f.modified)}</td>
@@ -625,30 +702,41 @@ let {
     onConfirm={()=>{ if(deleteRef) ops.remove(deleteRef).catch((e) => setNotice(api, scope, errText(e))); }} 
     onClose={() => (deleteOpen = false)} 
   />
-  {#key `${editorRef?.path ?? ''}#${editorSeq}`}
-    <TextEditorDialog
-        open={editorOpen}
-        title={editorRef?.path.split('/').pop() ?? ''}
-        loading={editorLoading}
-        content={editorContent}
-        readonly={editorReadonly}
-        canRestart={editorCanRestart}
-        restartKind={editorRestartKind}
-        lang={editorLang}
-        onSave={handleSave}
-        onSaveRestart={saveAndRestart}
-        onClose={() => (editorOpen = false)}
-    />
+  <!-- file-editor / file-viewer (replacement): a contribution takes the whole dialog and is mounted
+       only for the duration of a session, not while the table is merely shown. Its UI must live in
+       the top layer (<dialog>.showModal()): this card clips in-flow content. -->
+  {#if editorByExt}
+    <ExtensionPoint point={FILE_TABLE_POINT_IDS.editor} params={editorExtParams} />
+  {:else}
+    {#key `${editorRef?.path ?? ''}#${editorSeq}`}
+      <TextEditorDialog
+          open={editorOpen}
+          title={editorRef?.path.split('/').pop() ?? ''}
+          loading={editorLoading}
+          content={editorContent}
+          readonly={editorReadonly}
+          canRestart={editorCanRestart}
+          restartKind={editorRestartKind}
+          lang={editorLang}
+          onSave={handleSave}
+          onSaveRestart={saveAndRestart}
+          onClose={() => (editorOpen = false)}
+      />
     {/key}
-  {#key `${viewerRef?.path ?? ''}#${viewerSeq}`}
-    <ImageViewerDialog
-      open={viewerOpen}
-      title={viewerRef?.path.split('/').pop() ?? ''}
-      src={viewerSrc}
-      onDownload={viewerRef ? () => { if (viewerRef) ops.download(viewerRef); } : null}
-      onClose={() => (viewerOpen = false)}
-    />
-  {/key}
+  {/if}
+  {#if viewerByExt}
+    <ExtensionPoint point={FILE_TABLE_POINT_IDS.viewer} params={viewerExtParams} />
+  {:else}
+    {#key `${viewerRef?.path ?? ''}#${viewerSeq}`}
+      <ImageViewerDialog
+        open={viewerOpen}
+        title={viewerRef?.path.split('/').pop() ?? ''}
+        src={viewerSrc}
+        onDownload={viewerRef ? () => { if (viewerRef) ops.download(viewerRef); } : null}
+        onClose={() => (viewerOpen = false)}
+      />
+    {/key}
+  {/if}
 </div>
 
 <style>
@@ -750,8 +838,16 @@ let {
     .row-dir,.row-file { 
         cursor:pointer;
     }
-    .row-dir:hover td,.row-file:hover td { 
+    .row-dir:hover td,.row-file:hover td {
         background:var(--bg-surface-hover);
+    }
+    /* menuEnabled=false (History): rows do nothing on click, so they must not look clickable —
+       no pointer cursor and no hover highlight. */
+    .row-dir.inert,.row-file.inert {
+        cursor:default;
+    }
+    .row-dir.inert:hover td,.row-file.inert:hover td {
+        background:transparent;
     }
     .td-name .cell,.td-dir .cell { 
         display:flex;
