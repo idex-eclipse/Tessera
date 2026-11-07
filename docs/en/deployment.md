@@ -86,7 +86,7 @@ What the CLI checks before anything lands in `extensions/`:
   paths, no `..`;
 - the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
-- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.12`;
+- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `0.13`;
   see [plugin-development.md](plugin-development.md#plugin-api-version)). The integer `1`
   of older entries means `0.7`;
 - its [dependencies](plugin-development.md#dependencies) fit: plugins from `requires` are
@@ -333,11 +333,50 @@ write to `extensions/`.
 - **Protection from other sites.** POST requests require `Content-Type: application/json`,
   `Origin`, when present, must match `Host`, and there are no CORS headers.
 - **Sandbox.** The service runs as the printer user, not root. The socket is open to the
-  nginx group only. The service can write to `extensions/` only: `ProtectHome=tmpfs`,
+  nginx group only. The service can write to `extensions/` and to the folder of service
+  secrets (`~/.config/tessera/services/`, see below) only: `ProtectHome=tmpfs`,
   `ProtectSystem=strict`, `NoNewPrivileges`.
 
 The archive checks are the same as in the CLI: it is the same code. Logs:
 `journalctl -u tessera-ext`.
+
+### Proxy to plugin services (`api.services`, plugin API 0.13)
+
+The same service forwards requests of plugins to their external HTTP services: those that
+send no CORS headers (Obico), speak plain `http://` to an HTTPS page, or need a secret that
+must not live in the browser. The plugin side is described in
+[plugin-api.md](plugin-api.md#services).
+
+- **Routes.** `GET` / `PUT {"url", "secret"?}` / `DELETE`
+  `/tessera-api/v1/services/<plugin id, percent-encoded>/<name>` read, save and forget a
+  service; `/tessera-api/v1/services/<plugin>/<name>/proxy/<path>` is forwarded to
+  `<address>/<path>` with `GET`, `POST`, `PUT`, `PATCH` or `DELETE`. nginx passes the URI as
+  sent (`proxy_pass` without a URI part), `%2F` in the plugin id included.
+- **What a service is comes from the installed manifest** (`manifest.services`): the header
+  that carries the secret and the allowed path prefixes. A request sets only the address and
+  the secret, so it cannot point the secret at another header or path. A plugin that is not in
+  `extensions/` (added by URL) has no services.
+- **The secret stays on the printer.** Addresses and secrets are kept in
+  `~/.config/tessera/services/services.json` (folder `0700`, file `0600`), outside
+  `extensions/`, which nginx serves. The API answers whether a secret is set, never its value.
+- **What leaves the printer.** Only `Accept`, `Accept-Language`, `Content-Type`, the body and
+  the secret header. `Authorization`, `X-Api-Key` and cookies of the browser are for Moonraker
+  and are never forwarded. Redirects are not followed (the proxy refuses them), environment
+  proxies are ignored. Limits: request body 1 MiB (`client_max_body_size 1m` of
+  `/tessera-api/`), answer 16 MiB, 30 s.
+- **Protection.** The same Moonraker check and `Origin` check as for installs. In addition every
+  services request must carry `X-Tessera-Plugin: <plugin id>` (the host adds it): a cross-site
+  form or `<img>` cannot send a custom header, so another site open in the browser cannot use the
+  proxy of a trusted LAN client. Answers are sent with `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: default-src 'none'; sandbox`, so a page of the service never runs
+  on the Tessera origin. Addresses in the LAN are allowed on purpose: a self-hosted service
+  lives there. Whoever may install plugins may use the proxy.
+- **Terminal.** `tessera-ext service` lists the services of installed plugins;
+  `service set <plugin> <name> <url>` asks for the secret without echoing it (Enter keeps the
+  saved one, `--clear-secret` removes it); `service show` and `service remove` do the rest.
+- **Installations before 0.13** need one `tessera update` on the printer: it creates the
+  secrets folder, mounts it writable for the service and raises the nginx body limit. Until
+  then saving a service answers 503 with this hint.
 
 To turn it off, use the menu: `tessera` → **S) Settings** → **3) Plugins from UI** (or
 `TESSERA_UI_INSTALL=0` when installing): the units are removed, nginx answers 502 on

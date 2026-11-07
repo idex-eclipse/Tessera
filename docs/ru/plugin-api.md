@@ -42,6 +42,9 @@ interface PluginApi {
   // центр уведомлений (только запись, 0.10)
   readonly notifications: { push(n: NotificationInput): void };
 
+  // прокси к внешним сервисам плагина из manifest.services (0.13)
+  readonly services: PluginServicesApi;
+
   // гарды
   guards: { resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void };
 }
@@ -188,7 +191,9 @@ api.settings.onChange((_key, all) => {
 - Храните компактные значения. Всё лежит в `localStorage` (лимит браузера
   ~5 МБ на origin).
 - Не храните секреты: настройки попадают в экспорт Settings → About / Debug
-  (из него исключены только собственные токены авторизации хоста).
+  (из него исключены только собственные токены авторизации хоста). Токену или API-ключу
+  внешнего сервиса место в [`api.services`](#services): он хранится на принтере и в браузер
+  не возвращается.
 
 ---
 
@@ -269,6 +274,107 @@ Klipper отдаёт `M118` как `echo: MPU_NOTIFY …` в `notify_gcode_respo
 Важность не зависит от регистра, текст — остаток строки. Это вход извне браузера: он
 работает только пока включён `@core/system` и принтер подключён. Плагину следует
 использовать `api.notifications.push`, а не этот путь.
+
+---
+
+## Сервисы
+
+<a id="services"></a>
+
+`api.services` обращается к **внешнему HTTP-сервису** плагина (Obico, сервер камер, облачный
+API) через прокси на принтере. Доступно с `pluginApi: "0.13"`. Нужно, когда браузер не может
+обратиться к сервису сам:
+
+- сервис не отдаёт CORS-заголовки, и запрос со страницы Tessera падает;
+- страница открыта по HTTPS, а сервис работает по `http://` (mixed content);
+- запросу нужен секрет (токен, API-ключ), которому не место в браузере.
+
+Прокси — часть службы `tessera-ext` этого хоста Tessera
+([deployment.md](deployment.md#служба-tessera-ext-установка-из-ui)). Он общий для всех принтеров
+хоста, права проверяет Moonraker принтера, который обслуживает хост, как и при установке
+плагинов.
+
+**1. Объявите сервис в манифесте.** Прокси читает объявление из *установленного* манифеста;
+запрос не может поменять ни заголовок, ни пути.
+
+```json
+"pluginApi": "0.13",
+"services": [
+  { "name": "obico", "authHeader": "X-Api-Key", "allowPaths": ["api/v1/", "media/"] }
+]
+```
+
+| Поле | Значение |
+|---|---|
+| `name` | уникально в плагине, `[a-z0-9][a-z0-9-]{0,31}` |
+| `authHeader` | заголовок, в котором уходит секрет (`X-Api-Key`, `Authorization`, …); нет — сервис без секрета. Заголовки, которыми управляет прокси (`Host`, `Cookie`, `Content-Type`, `Accept`, …), не принимаются |
+| `authPrefix` | текст перед секретом, например `"Bearer "`; по умолчанию нет |
+| `allowPaths` | 1–20 префиксов путей, которые прокси пропускает: относительно адреса сервиса, без `/` в начале, без `..` |
+
+Некорректное объявление отбрасывается целиком: для прокси такого сервиса нет.
+
+**2. Дайте пользователю задать адрес и секрет** (в своём интерфейсе настроек):
+
+```ts
+interface PluginServicesApi {
+  status(name: string): Promise<ServiceStatus>;
+  configure(name: string, config: { url: string; secret?: string }): Promise<ServiceStatus>;
+  remove(name: string): Promise<void>;
+  fetch(name: string, path: string, init?: ServiceRequestInit): Promise<Response>;
+}
+interface ServiceStatus { name: string; configured: boolean; url: string | null; hasSecret: boolean }
+
+await api.services.configure('obico', { url: 'http://192.168.1.20:3334', secret: token });
+const { configured, hasSecret } = await api.services.status('obico');
+```
+
+- Адрес — `http(s)://host[:port][/base]` без логина, query и fragment; частные адреса
+  разрешены (свой сервер живёт в локальной сети). Завершающий `/` отбрасывается.
+- Секрет — печатный ASCII, не длиннее 4096 символов. Он **только записывается**: `status`
+  сообщает, сохранён ли он, но не его значение. `configure` без `secret` оставляет сохранённый,
+  `''` стирает. Вместо значения показывайте пустое поле пароля и пометку «сохранён».
+- То же пользователь может сделать в терминале: `tessera-ext service set <plugin> <name> <url>`.
+
+**3. Делайте запросы:**
+
+```ts
+const res = await api.services.fetch('obico', 'api/v1/printers/');
+if (res.ok) printers = await res.json();
+
+await api.services.fetch('obico', `api/v1/printers/${id}/`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action_on_failure: 'PAUSE' }),
+});
+```
+
+- `path` — относительно адреса сервиса: без `/` в начале, уже закодированный, может содержать
+  `?query`. Должен начинаться с одного из `allowPaths`.
+- Ответ сервиса приходит как `Response` **с любым статусом** (404 сервиса — это `Response`
+  со статусом 404). Перенаправления не выполняются, прокси их отклоняет: проверяйте
+  завершающие `/` в путях.
+- До сервиса доходят только `Accept`, `Accept-Language` и `Content-Type`; секрет добавляет
+  прокси. Токен Moonraker, cookies и прочие заголовки принтер не покидают.
+- Методы: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`. Тело запроса до 1 МиБ, ответ до 16 МиБ,
+  таймаут 30 с. Ответы отдаются с `Content-Security-Policy: sandbox`: картинки из них
+  показывайте через `URL.createObjectURL(await res.blob())`; `<img src>` на прокси не
+  сработает, каждому запросу нужен заголовок плагина, который добавляет хост.
+
+**Ошибки.** Когда отказывает сам прокси или его нет, промис отклоняется с `ServiceError`
+(узнавайте по `name === 'ServiceError'`: плагины импортируют из SDK только типы):
+
+| `status` | Значение |
+|---|---|
+| `0`, `unavailable: true` | у этой Tessera нет прокси: dev-сервер, выключенная служба `tessera-ext`, Tessera старше 0.13 |
+| `401` | нет входа в Moonraker хоста |
+| `403` | путь вне `allowPaths` |
+| `404` | сервис не объявлен или плагин установлен не через `tessera-ext` (у плагинов по URL прокси нет) |
+| `409` | сервис ещё не настроен: попросите у пользователя адрес |
+| `502` | сервис недоступен, перенаправил запрос или ответил больше 16 МиБ |
+| `503` | хост установлен до 0.13: прокси не может сохранить настройки до `tessera update` |
+
+Id плагина только разводит сервисы разных плагинов: все плагины работают в одной странице,
+поэтому изоляцией между ними это не является.
 
 ---
 

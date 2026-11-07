@@ -427,6 +427,7 @@ interface PluginManifest {
   guards?: GuardContribution[];
   extensionPoints?: ExtensionPointDecl[];   // точки, в которые могут встраиваться другие плагины
   extensions?: ExtensionContribution[];     // вклады в точки других плагинов
+  services?: ServiceDecl[];                 // внешние HTTP-сервисы за прокси хоста (0.13)
 
   rightPanel?: RightPanelContribution; // принимается ТОЛЬКО от '@core/system'
 
@@ -442,7 +443,7 @@ interface PluginManifest {
 
 `pluginApi` — версия контракта плагинов, которая нужна плагину: `PluginApi`, манифест и
 CE-контракт. Своя версия у хоста — в `plugin-sdk/src/api-level.ts` (`PLUGIN_API`,
-сейчас `0.12`; её показывает Settings → About).
+сейчас `0.13`; её показывает Settings → About).
 
 - **MINOR** растёт при каждом обратно совместимом добавлении: новый метод `PluginApi`,
   поле или поверхность манифеста. **MAJOR** зарезервирован для несовместимых изменений.
@@ -466,6 +467,7 @@ CE-контракт. Своя версия у хоста — в `plugin-sdk/src/
 | `0.10` | `api.notifications.push`: центр уведомлений хоста (только запись) |
 | `0.11` | `klippyStream` разрешает и `load_cell_probe/dump_taps` (кривые касаний при зондировании) |
 | `0.12` | `klippyStream`: чёрный список вместо белого (мост открыт для чтения), `onAck`; `klippyRequest`: разовые запросы с ответом по `/klippysocket` |
+| `0.13` | `manifest.services` и `api.services`: прокси хоста к внешним HTTP-сервисам плагина, секрет хранится на принтере ([plugin-api.md](plugin-api.md#services)) |
 
 ### Зависимости
 

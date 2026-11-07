@@ -259,7 +259,7 @@ Klipper. Ветка и «плагины по URL» берутся из **S) Sett
 |---|---|
 | **1) Install** | первая установка (см. выше) |
 | **2) Update** | показывает установленный коммит и коммит опубликованной сборки ветки. *Update Tessera* скачивает сборку и переписывает конфиги nginx и Klipper без вопросов. *Reinstall* скачивает сборку заново, даже если она актуальна |
-| **3) Remove** | полное удаление. Сначала показывает список и просит подтверждения: сайт nginx и логи, `[include]` в `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`), `tessera-shell.cfg`, обе команды, юниты службы, `~/tessera`, `install.conf` и upgrade-map nginx, если его не использует другой сайт. Установленные расширения можно сохранить в `~/tessera-extensions-backup`. Пакеты (nginx, python3) и ваши графики `shapers/` остаются |
+| **3) Remove** | полное удаление. Сначала показывает список и просит подтверждения: сайт nginx и логи, `[include]` в `printer.cfg` (резервная копия — `printer.cfg.tessera-bak`), `tessera-shell.cfg`, обе команды, юниты службы, `~/tessera`, `install.conf`, адреса и токены сервисов плагинов и upgrade-map nginx, если его не использует другой сайт. Установленные расширения можно сохранить в `~/tessera-extensions-backup`. Пакеты (nginx, python3) и ваши графики `shapers/` остаются |
 | **S) Settings** | ветка (выбор из веток с опубликованной сборкой; после смены предлагается Update), плагины по URL и установка из UI (применяются сразу) |
 | **E) Extensions** | менеджер расширений, см. [Расширения](#installing-extensions) |
 
@@ -407,6 +407,8 @@ api.settingsFor(printerId)  // тот же PluginSettingsApi, но scoped на �
 api.i18n                    // t(key, params), живая locale
 api.theme                   // текущая тема
 api.fleet                   // публикация тегов и текста для поиска и фильтров флита
+api.services                // прокси к HTTP-сервисам самого плагина (CORS не нужен,
+                            // токен остаётся на принтере)
 api.setActivePrinter(id)    // смена активного принтера
 api.guards.resume(...)      // продолжить припаркованную цепочку гардов
 api.printers               // реестр принтеров (read-only); onPrintersChange

@@ -42,6 +42,9 @@ interface PluginApi {
   // notification center (write only, 0.10)
   readonly notifications: { push(n: NotificationInput): void };
 
+  // proxy to the plugin's external services from manifest.services (0.13)
+  readonly services: PluginServicesApi;
+
   // guards
   guards: { resume(token: string, decision: 'accept' | 'deny', reasonKey?: string): void };
 }
@@ -188,7 +191,9 @@ api.settings.onChange((_key, all) => {
 - Store compact values. Everything sits in `localStorage` (the browser limit is
   about 5 MB per origin).
 - Do not store secrets: settings end up in the Settings → About / Debug export
-  (only the host's own authorization tokens are left out of it).
+  (only the host's own authorization tokens are left out of it). A token or API key of an
+  external service belongs in [`api.services`](#services): it is kept on the printer and
+  never returns to the browser.
 
 ---
 
@@ -269,6 +274,107 @@ Klipper echoes `M118` as `echo: MPU_NOTIFY …` in `notify_gcode_response`, and
 The severity is case-insensitive, and the text is the rest of the line. This is an
 input from outside the browser and works only while `@core/system` is enabled and the
 printer is connected. A plugin should use `api.notifications.push`, not this route.
+
+---
+
+## Services
+
+<a id="services"></a>
+
+`api.services` reaches an **external HTTP service** of the plugin (Obico, a camera
+server, a cloud API) through a proxy on the printer. It is available with
+`pluginApi: "0.13"` and newer. Use it when the browser cannot call the service itself:
+
+- the service sends no CORS headers, so a request from the Tessera page fails;
+- the page is served over HTTPS and the service speaks plain `http://` (mixed content);
+- the request needs a secret (token, API key) that should not live in the browser.
+
+The proxy is part of the `tessera-ext` service of this Tessera host
+([deployment.md](deployment.md#the-tessera-ext-service-installing-from-the-ui)). It is shared by
+all printers of the host and is authorized with the Moonraker of the printer that serves the
+host, like installing plugins.
+
+**1. Declare the service in the manifest.** The proxy reads the declaration from the
+*installed* manifest; a request can never change the header or the paths.
+
+```json
+"pluginApi": "0.13",
+"services": [
+  { "name": "obico", "authHeader": "X-Api-Key", "allowPaths": ["api/v1/", "media/"] }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | unique within the plugin, `[a-z0-9][a-z0-9-]{0,31}` |
+| `authHeader` | header that carries the secret (`X-Api-Key`, `Authorization`, …); none — the service takes no secret. Headers the proxy owns (`Host`, `Cookie`, `Content-Type`, `Accept`, …) are refused |
+| `authPrefix` | text before the secret, e.g. `"Bearer "`; default none |
+| `allowPaths` | 1–20 path prefixes the proxy forwards, relative to the service address, no leading `/`, no `..` |
+
+An invalid declaration is ignored as a whole: the service then does not exist for the proxy.
+
+**2. Let the user set the address and the secret** (your settings UI):
+
+```ts
+interface PluginServicesApi {
+  status(name: string): Promise<ServiceStatus>;
+  configure(name: string, config: { url: string; secret?: string }): Promise<ServiceStatus>;
+  remove(name: string): Promise<void>;
+  fetch(name: string, path: string, init?: ServiceRequestInit): Promise<Response>;
+}
+interface ServiceStatus { name: string; configured: boolean; url: string | null; hasSecret: boolean }
+
+await api.services.configure('obico', { url: 'http://192.168.1.20:3334', secret: token });
+const { configured, hasSecret } = await api.services.status('obico');
+```
+
+- The address is `http(s)://host[:port][/base]`, without a login, query or fragment; private
+  addresses are allowed (a self-hosted service lives in the LAN). The trailing `/` is removed.
+- The secret is printable ASCII, at most 4096 characters. It is **write only**: `status` tells
+  whether one is saved, never its value. `configure` without `secret` keeps the saved one, `''`
+  clears it. Show an empty password field with "saved" next to it instead of the value.
+- The user can do the same in a terminal: `tessera-ext service set <plugin> <name> <url>`.
+
+**3. Make requests:**
+
+```ts
+const res = await api.services.fetch('obico', 'api/v1/printers/');
+if (res.ok) printers = await res.json();
+
+await api.services.fetch('obico', `api/v1/printers/${id}/`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action_on_failure: 'PAUSE' }),
+});
+```
+
+- `path` is relative to the service address: no leading slash, already percent-encoded, may
+  carry `?query`. It must start with one of `allowPaths`.
+- The answer of the service comes back as a `Response` **whatever its status** (a 404 of the
+  service is a 404 `Response`). Redirects are not followed: the proxy refuses them, so check
+  trailing slashes in your paths.
+- Only `Accept`, `Accept-Language` and `Content-Type` reach the service; the proxy adds the
+  secret. The Moonraker token, cookies and other headers never leave the printer.
+- Methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`. Request body up to 1 MiB, answer up to
+  16 MiB, 30 s timeout. Answers are served with `Content-Security-Policy: sandbox`: show images
+  from them through `URL.createObjectURL(await res.blob())`; `<img src>` to the proxy does not
+  work, every request needs the plugin header the host adds.
+
+**Errors.** When the proxy itself refuses or is missing, the promise rejects with a
+`ServiceError` (recognise it by `name === 'ServiceError'`; plugins import SDK types only):
+
+| `status` | Meaning |
+|---|---|
+| `0`, `unavailable: true` | this Tessera has no proxy: dev server, `tessera-ext` service turned off, a Tessera older than 0.13 |
+| `401` | not logged in to the host's Moonraker |
+| `403` | the path is outside `allowPaths` |
+| `404` | the service is not declared, or the plugin is not installed through `tessera-ext` (plugins added by URL have no proxy) |
+| `409` | the service is not set up yet: ask the user for the address |
+| `502` | the service is unreachable, redirected, or answered more than 16 MiB |
+| `503` | the host was installed before 0.13: the proxy cannot save settings until `tessera update` |
+
+The plugin id only keeps services of different plugins apart: all plugins run in the same
+page, so this is not an isolation boundary between them.
 
 ---
 

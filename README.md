@@ -262,7 +262,7 @@ Enter.
 |---|---|
 | **1) Install** | first installation (see above) |
 | **2) Update** | shows the installed commit and the commit of the branch's published build. *Update Tessera* downloads the build and rewrites the nginx/Klipper config without asking anything. *Reinstall* downloads the build again even if it is current |
-| **3) Remove** | complete uninstall. It lists everything first and asks for confirmation: nginx site and logs, the `[include]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`), `tessera-shell.cfg`, both commands, the service units, `~/tessera`, `install.conf`, and the nginx upgrade map unless another site uses it. Installed extensions can be kept in `~/tessera-extensions-backup`. Packages (nginx, python3) and your `shapers/` graphs stay |
+| **3) Remove** | complete uninstall. It lists everything first and asks for confirmation: nginx site and logs, the `[include]` in `printer.cfg` (backup: `printer.cfg.tessera-bak`), `tessera-shell.cfg`, both commands, the service units, `~/tessera`, `install.conf`, the addresses and tokens of plugin services, and the nginx upgrade map unless another site uses it. Installed extensions can be kept in `~/tessera-extensions-backup`. Packages (nginx, python3) and your `shapers/` graphs stay |
 | **S) Settings** | branch (picked from the branches with a published build; Update is offered after a change), plugins by URL and installing from the UI (applied at once) |
 | **E) Extensions** | the plugin manager, see [Extensions](#installing-extensions) |
 
@@ -408,6 +408,8 @@ api.settingsFor(printerId)  // same PluginSettingsApi, but scoped to a specific 
 api.i18n                    // t(key, params), live locale
 api.theme                   // current theme
 api.fleet                   // publish tags and search text for fleet search and filters
+api.services                // proxy to the plugin's own HTTP services (no CORS needed,
+                            // the token stays on the printer)
 api.setActivePrinter(id)    // switch the active printer
 api.guards.resume(...)      // continue a frozen request chain
 api.printers               // printer registry (read-only); onPrintersChange

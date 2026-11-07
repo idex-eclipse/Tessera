@@ -427,6 +427,7 @@ interface PluginManifest {
   guards?: GuardContribution[];
   extensionPoints?: ExtensionPointDecl[];   // points other plugins may extend
   extensions?: ExtensionContribution[];     // contributions to points of other plugins
+  services?: ServiceDecl[];                 // external HTTP services behind the host proxy (0.13)
 
   rightPanel?: RightPanelContribution; // accepted ONLY from '@core/system'
 
@@ -442,7 +443,7 @@ manifest; the host itself ignores them, and they are not in the SDK type.
 
 `pluginApi` is the version of the plugin contract the plugin needs: `PluginApi`, the
 manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-level.ts`
-(`PLUGIN_API`, now `0.12`; Settings → About shows it).
+(`PLUGIN_API`, now `0.13`; Settings → About shows it).
 
 - **MINOR** grows with every backward-compatible addition: a new `PluginApi` method, a
   manifest field or surface. **MAJOR** is reserved for incompatible changes.
@@ -466,6 +467,7 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 | `0.10` | `api.notifications.push`: the host notification center (write only) |
 | `0.11` | `klippyStream` also allows `load_cell_probe/dump_taps` (probing tap traces) |
 | `0.12` | `klippyStream`: denylist instead of allowlist (the bridge is open for reads), `onAck`; `klippyRequest`: one-shot requests with an answer over `/klippysocket` |
+| `0.13` | `manifest.services` and `api.services`: the host proxy to the plugin's external HTTP services, the secret kept on the printer ([plugin-api.md](plugin-api.md#services)) |
 
 ### Dependencies
 
