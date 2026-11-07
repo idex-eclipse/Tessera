@@ -431,6 +431,96 @@ export interface PluginManifest {
   extensionPoints?: ExtensionPointDecl[];
   /** Вклады в точки других плагинов. */
   extensions?: ExtensionContribution[];
+
+  /**
+   * External services the plugin reaches through the host's proxy (`api.services`,
+   * pluginApi "0.13"). The proxy reads these declarations from the INSTALLED manifest:
+   * a request can set only the address and the secret, never the header or the paths.
+   */
+  services?: ServiceDecl[];
+}
+
+/**
+ * An external HTTP service of a plugin (manifest.services). The user sets its address and
+ * secret (Settings of the plugin → api.services.configure, or `tessera-ext service set`);
+ * the proxy adds the secret to every forwarded request.
+ */
+export interface ServiceDecl {
+  /** Unique within the plugin: `[a-z0-9][a-z0-9-]{0,31}`. */
+  name: string;
+  /**
+   * Request header that carries the secret, e.g. `X-Api-Key` or `Authorization`. Without it
+   * the service takes no secret. Headers the proxy owns (Host, Cookie, Content-Type, …) are refused.
+   */
+  authHeader?: string;
+  /** Text before the secret in that header, e.g. `"Bearer "`. Default: none. */
+  authPrefix?: string;
+  /**
+   * Path prefixes the proxy forwards, relative to the service address and without a leading
+   * slash, e.g. `["api/v1/", "media/"]`. 1–20 entries; `..` is never allowed.
+   */
+  allowPaths: string[];
+}
+
+/** What the browser may know about a configured service: never the secret itself. */
+export interface ServiceStatus {
+  name: string;
+  /** An address is saved. */
+  configured: boolean;
+  /** The saved address (`http(s)://host[:port][/base]`), null when not configured. */
+  url: string | null;
+  /** A secret is saved. Its value is never returned. */
+  hasSecret: boolean;
+}
+
+/** Request options of `api.services.fetch`: the proxy forwards only these. */
+export interface ServiceRequestInit {
+  /** GET (default), POST, PUT, PATCH or DELETE. */
+  method?: string;
+  /** Only `Accept`, `Accept-Language` and `Content-Type` reach the service. */
+  headers?: Record<string, string>;
+  /** At most 1 MiB. */
+  body?: BodyInit | null;
+  signal?: AbortSignal;
+}
+
+/**
+ * Thrown by `api.services` when the proxy itself refuses or is not there. An answer of the
+ * service, errors included, is returned as a Response instead. Plugins import SDK types only,
+ * so they recognise it by `name === 'ServiceError'`.
+ */
+export interface ServiceError extends Error {
+  name: 'ServiceError';
+  /** HTTP status of the refusal: 401 not logged in, 403 path not allowed, 404 not declared, 409 not set up, 502 service unreachable; 0 — no proxy. */
+  status: number;
+  /** The host has no proxy (dev server, a Tessera without the tessera-ext service, an older Tessera). */
+  unavailable: boolean;
+}
+
+/**
+ * Server-side proxy to the plugin's own services (pluginApi "0.13"). Needed when a service
+ * sends no CORS headers or speaks plain http to an HTTPS page. The proxy is a part of the
+ * Tessera host (the tessera-ext service), shared by all printers of this host; the address and
+ * the secret are stored on it, outside the browser. Every call is authorized by Moonraker of
+ * that host, like installing plugins.
+ */
+export interface PluginServicesApi {
+  /** The saved state of a service declared in the manifest. */
+  status(name: string): Promise<ServiceStatus>;
+  /**
+   * Saves the address and, when `secret` is given, the secret (`''` clears it; omitted keeps
+   * the saved one).
+   */
+  configure(name: string, config: { url: string; secret?: string }): Promise<ServiceStatus>;
+  /** Forgets the address and the secret. */
+  remove(name: string): Promise<void>;
+  /**
+   * A request to the service. `path` is relative to the service address (no leading slash,
+   * already percent-encoded, may carry `?query`) and must start with one of `allowPaths`.
+   * Resolves with the service's answer whatever its status; rejects with a ServiceError when
+   * the proxy refuses or is missing.
+   */
+  fetch(name: string, path: string, init?: ServiceRequestInit): Promise<Response>;
 }
 
 /**
@@ -686,4 +776,6 @@ export interface PluginApi {
   readonly theme: PluginThemeApi;
   /** Точки расширения этого плагина (для владельца). */
   readonly extensions: PluginExtensionsApi;
+  /** Proxy to the plugin's external services from manifest.services (pluginApi "0.13"). */
+  readonly services: PluginServicesApi;
 }

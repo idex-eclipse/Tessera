@@ -22,8 +22,10 @@
  *   0.11 — klippyStream: поток load_cell_probe/dump_taps в списке разрешённых методов
  *   0.12 — klippyStream: чёрный список вместо белого (мост свободен для чтения), onAck;
  *          klippyRequest: разовые запросы с ответом по /klippysocket
+ *   0.13 — manifest.services и api.services: прокси хоста к внешним сервисам плагина
+ *          (tessera-ext serve, секрет хранится на принтере)
  */
-export const PLUGIN_API = '0.12';
+export const PLUGIN_API = '0.13';
 
 export const LEGACY_PLUGIN_API = '0.7';
 
