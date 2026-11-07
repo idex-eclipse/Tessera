@@ -109,27 +109,8 @@ export interface ExtensionsInstallerDeps {
 
 export type ExtensionsInstaller = ReturnType<typeof createExtensionsInstaller>;
 
-/**
- * Принтер, чей Moonraker обслуживает этот хост. Запись по умолчанию — http://<хост>:7125
- * (settings-store), поэтому главный признак — совпадение hostname, а не origin страницы.
- */
-export function findHostPrinter<T extends { url: string }>(
-  printers: readonly T[],
-  location: { origin: string; hostname: string },
-): T | null {
-  const parse = (url: string): URL | null => {
-    try {
-      return new URL(url);
-    } catch {
-      return null;
-    }
-  };
-  return (
-    printers.find((p) => parse(p.url)?.origin === location.origin) ??
-    printers.find((p) => parse(p.url)?.hostname === location.hostname) ??
-    null
-  );
-}
+// Moved to host-printer.ts (shared with the plugin service proxy); kept here for its callers.
+export { findHostPrinter } from './host-printer.ts';
 
 export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
   const { getToken, catalog, settings, loader } = deps;

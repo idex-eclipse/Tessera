@@ -21,8 +21,8 @@
   import { createNotificationCenter } from './core/notification-center.svelte.ts';
   import { guardNotification } from './core/guard-notification.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
-  import { readStoredAuth } from './core/auth-store.svelte.ts';
-  import { createExtensionsInstaller, findHostPrinter } from './core/extensions-installer.svelte.ts';
+  import { createExtensionsInstaller } from './core/extensions-installer.svelte.ts';
+  import { hostMoonrakerToken } from './core/host-printer.ts';
   import { createUiUpdater } from './core/ui-updater.svelte.ts';
   import { runUpdateCheck } from './core/update-check.ts';
 
@@ -123,10 +123,7 @@
   // Новости об обновлениях Tessera и плагинов при открытии UI (не чаще интервала из настроек).
   // Нет служб обновления (CLI-установка, dev-сервер) → тихо ничего не происходит.
   onMount(() => {
-    const getToken = () => {
-      const host = findHostPrinter(printerManager.printers, window.location);
-      return host ? (readStoredAuth(host.id)?.token ?? null) : null;
-    };
+    const getToken = () => hostMoonrakerToken(printerManager.printers);
     const updater = createUiUpdater({ getToken });
     // Каталог не нужен: для проверки служба только читает статус. Заглушка вместо
     // extensions-catalog, чтобы не читать /extensions/index.json при каждом открытии.

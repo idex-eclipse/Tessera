@@ -12,6 +12,8 @@ import type {
 
 import { getMoonrakerProxy } from './moonraker-proxy';
 import { guardAgent } from './guard-agent';
+import { hostMoonrakerToken } from './host-printer';
+import { createServicesApi } from './plugin-services';
 
 import type { AppContext } from '../app-context';
 
@@ -452,6 +454,11 @@ export function createPluginApi(
     },
 
     extensions: createExtensionsApi(ctx, pluginId),
+
+    // The proxy belongs to this Tessera host, not to the active printer: always the host's token.
+    services: createServicesApi(pluginId, manifest, {
+      getToken: () => hostMoonrakerToken(printerManager.printers),
+    }),
   };
 
   return api;
