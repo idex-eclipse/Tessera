@@ -68,6 +68,7 @@ class Base(unittest.TestCase):
             'CONF_FILE': os.path.join(self.tmp, 'tessera-ext.conf'),
             # no build by default: core versions unknown (see DependencyVersionTests)
             'CORE_PLUGINS_FILE': os.path.join(self.tmp, 'core-plugins.json'),
+            'SERVICES_DIR': os.path.join(self.tmp, 'services'),
             'local_sources_allowed': True,
         }
         for key, value in patches.items():
@@ -974,7 +975,9 @@ class UnixConnection(http.client.HTTPConnection):
 
 
 @unittest.skipUnless(hasattr(socket, 'AF_UNIX') and os.name != 'nt', 'unix sockets')
-class ApiTests(Base):
+class ApiBase(Base):
+    """The service on a real unix socket with a fake Moonraker; shared by the API test classes."""
+
     def setUp(self):
         super().setUp()
         FakeMoonraker.status = 200
@@ -1044,6 +1047,8 @@ class ApiTests(Base):
         conn.close()
         return res.status, json.loads(data) if data else None
 
+
+class ApiTests(ApiBase):
     def test_status(self):
         self.publish(plugin_files())
         self.put_manual('manual', 'acme/manual')
@@ -1366,6 +1371,267 @@ class ApiTests(Base):
         with open(path, 'w', encoding='utf-8') as f:
             f.write(text)
         return path
+
+
+# ------------------------------------------------------------------ plugin services (api.services)
+
+SERVICE_DECL = {'name': 'obico', 'authHeader': 'X-Api-Key', 'allowPaths': ['api/v1/', 'media/']}
+
+
+def put_service_plugin(base, services=(SERVICE_DECL,), pid='acme/svc', directory='svc'):
+    """A hand-installed plugin whose manifest declares services."""
+    os.makedirs(base.path(directory), exist_ok=True)
+    data = {'id': pid, 'name': 'Svc', 'version': '1.0.0', 'entry': 'index.js', 'services': list(services)}
+    with open(base.path(directory, 'manifest.json'), 'w', encoding='utf-8') as f:
+        json.dump(data, f)
+
+
+class ServiceTests(Base):
+    """The store and the checks, without sockets (they run on Windows too)."""
+
+    def test_manifest_declarations_are_validated(self):
+        good = dict(SERVICE_DECL)
+        bad = [
+            {**good, 'name': 'Bad Name'},
+            {**good, 'authHeader': 'Host'},
+            {**good, 'authHeader': 'Cookie'},
+            {**good, 'authHeader': 'X-Api-Key\r\nX-Evil'},
+            {**good, 'authPrefix': 'Bearer\n'},
+            {**good, 'allowPaths': []},
+            {**good, 'allowPaths': ['/api/']},
+            {**good, 'allowPaths': ['api/../admin/']},
+            {**good, 'allowPaths': 'api/'},
+        ]
+        for decl in bad:
+            with self.subTest(decl=decl):
+                self.assertEqual(ext.manifest_services({'services': [decl]}), {})
+        found = ext.manifest_services({'services': [good, {**good, 'authHeader': 'Other'}]})
+        self.assertEqual(list(found), ['obico'])  # a repeated name is ignored, not merged
+        self.assertEqual(found['obico']['authPrefix'], '')
+
+    def test_set_keeps_the_secret_private_and_the_file_owner_only(self):
+        put_service_plugin(self)
+        view = ext.set_service('acme/svc', 'obico', 'http://192.168.1.20:3334/', 'tok')
+        self.assertEqual(view, {'name': 'obico', 'configured': True, 'url': 'http://192.168.1.20:3334', 'hasSecret': True})
+        self.assertNotIn('tok', json.dumps(ext.get_service('acme/svc', 'obico')))
+        if os.name != 'nt':
+            mode = os.stat(os.path.join(ext.SERVICES_DIR, ext.SERVICES_FILE)).st_mode & 0o777
+            self.assertEqual(mode, 0o600)
+
+        # No secret in the request: the saved one stays; '' clears it.
+        ext.set_service('acme/svc', 'obico', 'http://obico.local:3334', None)
+        self.assertEqual(ext.read_services()['acme/svc']['obico'], {'url': 'http://obico.local:3334', 'secret': 'tok'})
+        self.assertFalse(ext.set_service('acme/svc', 'obico', 'http://obico.local:3334', '')['hasSecret'])
+
+        self.assertTrue(ext.remove_service('acme/svc', 'obico')['changed'])
+        self.assertEqual(ext.read_services(), {})
+        self.assertFalse(ext.get_service('acme/svc', 'obico')['configured'])
+
+    def test_only_declared_services_of_installed_plugins(self):
+        put_service_plugin(self)
+        for pid, name in (('acme/svc', 'other'), ('acme/nope', 'obico')):
+            with self.subTest(pid=pid, name=name):
+                with self.assertRaises(ext.ExtError) as e:
+                    ext.set_service(pid, name, 'http://x', 's')
+                self.assertEqual(e.exception.status, 404)
+
+    def test_addresses_and_secrets_are_checked(self):
+        put_service_plugin(self)
+        for url in ('ftp://x', 'http://u:p@x', 'http://x/?a=1', 'http://x/#f', 'x', '', 'http://' + 'a' * 400):
+            with self.subTest(url=url):
+                with self.assertRaises(ext.ExtError):
+                    ext.set_service('acme/svc', 'obico', url, 's')
+        for secret in ('a\r\nX-Evil: 1', 'тест', 'x' * 5000):
+            with self.subTest(secret=secret[:10]):
+                with self.assertRaises(ext.ExtError):
+                    ext.set_service('acme/svc', 'obico', 'http://x', secret)
+        self.assertEqual(ext.read_services(), {})
+
+    def test_proxy_paths(self):
+        decl = ext.manifest_services({'services': [SERVICE_DECL]})['obico']
+        ext.check_proxy_path('api/v1/printers/', decl)
+        ext.check_proxy_path('media/tsd-pics/a%20b.jpg', decl)
+        for path, status in (('admin/', 403), ('api/v2/x', 403), ('', 400), ('/api/v1/', 400),
+                             ('api/v1/../../admin/', 400), ('api/v1/%2e%2e/%2e%2e/admin/', 400),
+                             ('api/v1/a%5c..%5cb', 400), ('api/v1/%0d%0a', 400)):
+            with self.subTest(path=path):
+                with self.assertRaises(ext.ExtError) as e:
+                    ext.check_proxy_path(path, decl)
+                self.assertEqual(e.exception.status, status)
+
+    def test_services_paths(self):
+        self.assertEqual(ext.parse_services_path('services/acme%2Fsvc/obico'), ('acme/svc', 'obico', None))
+        self.assertEqual(ext.parse_services_path('services/acme%2Fsvc/obico/proxy/api/v1/x'), ('acme/svc', 'obico', 'api/v1/x'))
+        for path in ('services/acme%2Fsvc', 'services/acme%2Fsvc/obico/proxy', 'services/acme%2Fsvc/obico/other/x',
+                     'services/acme%2Fsvc/Bad', 'services/%0a/obico'):
+            with self.subTest(path=path):
+                with self.assertRaises(ext.ExtError):
+                    ext.parse_services_path(path)
+
+    def test_cli(self):
+        put_service_plugin(self)
+        out = io.StringIO()
+        stdin = sys.stdin
+        self.addCleanup(setattr, sys, 'stdin', stdin)
+        sys.stdin = io.StringIO('tok\n')
+        with contextlib.redirect_stdout(out):
+            ext.main(['service', 'set', 'svc', 'obico', 'http://obico.local:3334'])
+            ext.main(['service', 'list'])
+            ext.main(['service', 'show', 'acme/svc', 'obico'])
+            ext.main(['service', 'set', 'svc', 'obico', 'http://obico.local:3334', '--clear-secret'])
+            ext.main(['service', 'remove', 'svc', 'obico'])
+        text = out.getvalue()
+        self.assertIn('acme/svc obico  http://obico.local:3334', text)
+        self.assertIn('secret set', text)
+        self.assertIn('secret not set', text)
+        self.assertNotIn('tok', text)
+        self.assertEqual(ext.read_services(), {})
+
+
+class FakeService(http.server.BaseHTTPRequestHandler):
+    """The upstream: echoes what reached it, or answers what a test asks for."""
+    seen = []
+    reply = None  # (status, headers, body) or None for the echo
+
+    def answer(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        body = self.rfile.read(length) if length else b''
+        FakeService.seen.append((self.command, self.path, dict(self.headers), body))
+        status, headers, payload = FakeService.reply or (200, {'Content-Type': 'application/json'},
+                                                         json.dumps({'path': self.path}).encode())
+        self.send_response(status)
+        for k, v in headers.items():
+            self.send_header(k, v)
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = answer
+
+    def log_message(self, *args):
+        pass
+
+
+class ServicesApiTests(ApiBase):
+    """The services routes on the real socket, with Moonraker and the upstream faked."""
+
+    def setUp(self):
+        super().setUp()
+        FakeService.seen = []
+        FakeService.reply = None
+        self.upstream = http.server.HTTPServer(('127.0.0.1', 0), FakeService)
+        threading.Thread(target=self.upstream.serve_forever, daemon=True).start()
+        self.addCleanup(self.upstream.server_close)
+        self.addCleanup(self.upstream.shutdown)
+        self.base = f'http://127.0.0.1:{self.upstream.server_port}/obico'
+        put_service_plugin(self)
+
+    def svc(self, method, path, body=None, headers=None, raw=False):
+        """A services request; `raw` returns (status, headers, bytes) instead of JSON."""
+        conn = UnixConnection(self.socket_path)
+        all_headers = {'X-Real-IP': '192.168.1.50', 'Host': 'printer:8000', 'X-Tessera-Plugin': 'acme/svc'}
+        if isinstance(body, dict):
+            all_headers['Content-Type'] = 'application/json'
+            body = json.dumps(body)
+        all_headers.update(headers or {})
+        all_headers = {k: v for k, v in all_headers.items() if v is not None}
+        conn.request(method, f'/tessera-api/v1/services/acme%2Fsvc/{path}', body, all_headers)
+        res = conn.getresponse()
+        data = res.read()
+        conn.close()
+        if raw:
+            return res.status, res.headers, data
+        return res.status, json.loads(data) if data else None
+
+    def configure(self, secret='tok'):
+        return self.svc('PUT', 'obico', {'url': self.base, 'secret': secret})
+
+    def test_configure_view_remove(self):
+        self.assertEqual(self.svc('GET', 'obico')[1]['configured'], False)
+        code, body = self.configure()
+        self.assertEqual((code, body['hasSecret'], body['url']), (200, True, self.base))
+        code, body = self.svc('GET', 'obico')
+        self.assertEqual((code, body['configured']), (200, True))
+        self.assertNotIn('tok', json.dumps(body))
+        self.assertEqual(self.svc('DELETE', 'obico')[1]['changed'], True)
+        self.assertEqual(self.svc('GET', 'obico')[1]['configured'], False)
+
+    def test_proxy_forwards_with_the_secret_and_nothing_of_the_browser(self):
+        self.configure()
+        code, headers, data = self.svc('GET', 'obico/proxy/api/v1/printers/?with_archived=true', raw=True,
+                                       headers={'Authorization': 'Bearer moonraker', 'Cookie': 'a=b',
+                                                'X-Api-Key': 'moonraker-key', 'Accept': 'application/json'})
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(data), {'path': '/obico/api/v1/printers/?with_archived=true'})
+        self.assertEqual(headers['X-Tessera-Service'], 'upstream')
+        self.assertIn('sandbox', headers['Content-Security-Policy'])
+        _, _, seen, _ = FakeService.seen[0]
+        seen = {k.lower(): v for k, v in seen.items()}
+        self.assertEqual(seen['x-api-key'], 'tok')
+        self.assertEqual(seen['accept'], 'application/json')
+        self.assertNotIn('authorization', seen)
+        self.assertNotIn('cookie', seen)
+        self.assertNotIn('x-real-ip', seen)
+
+    def test_proxy_forwards_bodies_and_upstream_errors(self):
+        self.configure()
+        payload = json.dumps({'action_on_failure': 'PAUSE'})
+        code, _, _ = self.svc('PATCH', 'obico/proxy/api/v1/printers/3/', payload, raw=True,
+                              headers={'Content-Type': 'application/json'})
+        self.assertEqual(code, 200)
+        method, _, seen, body = FakeService.seen[0]
+        self.assertEqual((method, body.decode()), ('PATCH', payload))
+        self.assertEqual({k.lower(): v for k, v in seen.items()}['content-type'], 'application/json')
+
+        FakeService.reply = (404, {'Content-Type': 'application/json'}, b'{"detail": "Not found."}')
+        code, headers, data = self.svc('GET', 'obico/proxy/api/v1/printers/99/', raw=True)
+        self.assertEqual((code, headers['X-Tessera-Service'], data), (404, 'upstream', b'{"detail": "Not found."}'))
+
+    def test_proxy_refusals_are_its_own(self):
+        code, headers, _ = self.svc('GET', 'obico/proxy/api/v1/x', raw=True)
+        self.assertEqual((code, headers['X-Tessera-Service']), (409, None))  # not set up yet
+        self.configure()
+        self.assertEqual(self.svc('GET', 'obico/proxy/admin/')[0], 403)
+        self.assertEqual(self.svc('GET', 'obico/proxy/api/v1/%2e%2e/%2e%2e/admin/')[0], 400)
+        self.assertEqual(FakeService.seen, [])
+
+        FakeService.reply = (302, {'Location': 'http://elsewhere/'}, b'')
+        code, body = self.svc('GET', 'obico/proxy/api/v1/x')
+        self.assertEqual(code, 502)
+        self.assertIn('redirected', body['error'])
+
+        self.upstream.shutdown()
+        self.upstream.server_close()
+        self.assertEqual(self.svc('GET', 'obico/proxy/api/v1/x')[0], 502)
+
+    def test_protection(self):
+        self.configure()
+        self.assertEqual(self.svc('GET', 'obico/proxy/api/v1/x', headers={'X-Tessera-Plugin': None})[0], 403)
+        self.assertEqual(self.svc('GET', 'obico/proxy/api/v1/x', headers={'X-Tessera-Plugin': 'acme/other'})[0], 403)
+        self.assertEqual(self.svc('GET', 'obico', headers={'Origin': 'http://evil.example'})[0], 403)
+        self.assertEqual(self.svc('PUT', 'obico', json.dumps({'url': self.base}), headers={'Content-Type': 'text/plain'})[0], 415)
+        self.assertEqual(self.svc('PUT', 'obico', {'url': self.base, 'authHeader': 'Host'})[0], 400)
+        FakeService.seen = []
+        FakeMoonraker.status = 401
+        for method, path in (('GET', 'obico'), ('DELETE', 'obico'), ('GET', 'obico/proxy/api/v1/x')):
+            with self.subTest(method=method, path=path):
+                self.assertEqual(self.svc(method, path)[0], 401)
+        self.assertEqual(FakeService.seen, [])
+
+    def test_body_limit(self):
+        self.configure()
+        # A small limit: a body larger than what the service drains would break the pipe before
+        # the answer (behind nginx it never arrives, client_max_body_size stops it first).
+        self.addCleanup(setattr, ext, 'MAX_PROXY_BODY', ext.MAX_PROXY_BODY)
+        ext.MAX_PROXY_BODY = 1000
+        code, _ = self.svc('POST', 'obico/proxy/api/v1/x', 'x' * 1001, headers={'Content-Type': 'text/plain'})
+        self.assertEqual(code, 413)
+        self.assertEqual(FakeService.seen, [])
+
+    def test_other_methods_and_paths(self):
+        self.assertEqual(self.svc('POST', 'obico', {'url': self.base})[0], 404)
+        self.assertEqual(self.call('PUT', 'install', {'id': 'x'})[0], 404)
+        self.assertEqual(self.call('DELETE', 'status')[0], 404)
 
 
 if __name__ == '__main__':

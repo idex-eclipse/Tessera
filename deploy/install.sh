@@ -551,7 +551,9 @@ step_service() {
   esac
   group="$(nginx_group)" || { warn "cannot find the nginx user: plugins cannot be installed from the UI"; return 0; }
   cfg_dir="$(dirname "$CONF_FILE")"
-  mkdir -p "$cfg_dir" "$INSTALL_DIR/extensions"
+  mkdir -p "$cfg_dir" "$INSTALL_DIR/extensions" "$cfg_dir/services"
+  # Addresses and secrets of plugin services (api.services): owner only.
+  chmod 700 "$cfg_dir/services"
 
   cat > /tmp/tessera-ext.socket <<SOCKET
 [Unit]
@@ -578,12 +580,13 @@ ExecStart=$python $INSTALL_DIR/deploy/tessera-ext.py serve
 Environment=TESSERA_MOONRAKER=$MOONRAKER
 Environment=XDG_CONFIG_HOME=$(dirname "$cfg_dir")
 UMask=0022
-# The only thing it may write is extensions/.
+# It may write only extensions/ and the secrets of plugin services. services/ lies inside
+# the read-only config folder: systemd mounts the deeper path last, so it stays writable.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=tmpfs
-BindPaths=$INSTALL_DIR/extensions
+BindPaths=$INSTALL_DIR/extensions $cfg_dir/services
 BindReadOnlyPaths=$INSTALL_DIR/deploy $cfg_dir
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=128M
@@ -748,8 +751,11 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
-    # tessera-ext service: install plugins from the UI. It authorizes requests with
-    # Moonraker using the headers set here; no service → 502, the UI does not offer it.
+    # tessera-ext service: install plugins from the UI and the proxy to plugin services
+    # (/tessera-api/v1/services/). It authorizes requests with Moonraker using the headers
+    # set here; no service → 502, the UI does not offer it. proxy_pass has no URI part on
+    # purpose: the request URI reaches the service as sent, %2F in plugin ids included.
+    # 1m: the largest body the service proxy forwards (MAX_PROXY_BODY).
     location /tessera-api/ {
         proxy_pass http://unix:/run/tessera-ext.sock;
         proxy_set_header Host $http_host;
@@ -757,7 +763,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_read_timeout 180s;
         proxy_request_buffering on;
-        client_max_body_size 16k;
+        client_max_body_size 1m;
     }
 
     # tessera-update-manager service: "Update Tessera" in Settings → About. Same Moonraker
@@ -992,6 +998,7 @@ do_remove() {
   [ -f "$KLIPPER_CFG_DIR/tessera-shell.cfg" ] && echo "  - $KLIPPER_CFG_DIR/tessera-shell.cfg"
   echo "  - commands $CMD_MENU, $CMD_EXT"
   echo "  - settings $CONF_FILE"
+  [ -d "$(dirname "$CONF_FILE")/services" ] && echo "  - addresses and tokens of plugin services $(dirname "$CONF_FILE")/services"
   echo "Kept: nginx, curl, python3 packages; graphs in $KLIPPER_CFG_DIR/shapers."
   echo "Tessera no longer needs Node.js: remove it yourself if nothing else uses it."
   confirm "Remove Tessera?" || { log "cancelled"; return 0; }
@@ -1048,6 +1055,11 @@ do_remove() {
     dry "rm -rf $INSTALL_DIR" || rm -rf "$INSTALL_DIR"
   fi
   dry "rm -f $CONF_FILE" || rm -f "$CONF_FILE"
+  # Tokens of plugin services (api.services) are secrets: they do not outlive Tessera, even
+  # when the extensions are kept.
+  local services_dir
+  services_dir="$(dirname "$CONF_FILE")/services"
+  dry "rm -rf $services_dir" || rm -rf "$services_dir"
 
   log "Tessera removed."
   [ "$klipper_changed" = 1 ] && warn "printer.cfg changed: apply FIRMWARE_RESTART when ready."

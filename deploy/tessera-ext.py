@@ -13,6 +13,7 @@ Usage (on the printer usually via the `tessera-ext` command, deploy/install-ext.
   tessera-ext.py sync
   tessera-ext.py branch [<name>]   show / switch the registry branch
   tessera-ext.py repo [list | add <url> [<name>] | remove <name>]   additional registries
+  tessera-ext.py service [list | show | set | remove] ...   external services of plugins
   tessera-ext.py serve [--socket <path>]   HTTP API on a unix socket (systemd unit)
 <name> is the plugin id ("tessera/spoolman") or its short name ("spoolman").
 install / update take --source <name> when a plugin id exists in several registries.
@@ -26,6 +27,8 @@ Env:
   TESSERA_REGISTRY_URL   — registry.json (https://, file:// or local path); overrides the branch
   TESSERA_EXT_BRANCH     — branch for this run only
   TESSERA_MOONRAKER      — Moonraker host:port that authorizes `serve` requests
+  TESSERA_SERVICES_DIR   — where addresses and secrets of plugin services are kept
+                           (default: services/ next to tessera-ext.conf)
 
 Dependencies: a plugin that extends another plugin's extension point depends on
 it (manifest.extensions[].point = "<owner>#<point>"; the registry lists them in
@@ -103,7 +106,7 @@ SOURCE_NAME_RE = re.compile(r'[a-z0-9][a-z0-9._-]{0,31}')
 # "MAJOR.MINOR". A plugin fits when MAJOR is the same and its MINOR is not above ours.
 # Same value as PLUGIN_API in plugin-sdk/src/api-level.ts. Extension points are not part of
 # it: they come with the owner's version (manifest.dependencies).
-HOST_PLUGIN_API = '0.12'
+HOST_PLUGIN_API = '0.13'
 # Registry entries without pluginApi or with the integer 1 of the first registries.
 LEGACY_PLUGIN_API = '0.7'
 PLUGIN_API_RE = re.compile(r'(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})')
@@ -1250,6 +1253,295 @@ def cmd_repo(args):
 
 
 # ------------------------------------------------------------------
+# External services: a server-side proxy for plugins (api.services)
+# ------------------------------------------------------------------
+#
+# Why a proxy: services such as Obico send no CORS headers, so the browser cannot call
+# them from the Tessera page, and a page served over HTTPS may not call a plain-http
+# service at all. Requests go to /tessera-api/v1/services/<plugin>/<name>/proxy/<path>
+# instead: same origin for the browser, the service forwards them.
+#
+# Trust: what a service is (auth header, allowed paths) comes from the manifest of the
+# INSTALLED plugin, never from a request; a request only sets the address and the secret.
+# The secret is kept here, outside extensions/ (nginx serves that folder), and is never
+# returned: the browser only learns whether one is set. Every request is authorized by
+# Moonraker like the rest of this API, so whoever may install plugins may use the proxy.
+# Plugin ids namespace the services against mistakes, not against other plugins: all
+# plugins run in the same page.
+
+SERVICES_DIR = os.path.abspath(
+    os.environ.get('TESSERA_SERVICES_DIR') or os.path.join(os.path.dirname(CONF_FILE), 'services')
+)
+SERVICES_FILE = 'services.json'
+SERVICE_NAME_RE = re.compile(r'[a-z0-9][a-z0-9-]{0,31}')
+# An HTTP header name (RFC 9110 token), short.
+HEADER_NAME_RE = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}")
+# Headers the proxy sets itself or must never be steered by a manifest.
+RESERVED_HEADERS = {
+    'host', 'content-length', 'content-type', 'transfer-encoding', 'connection', 'cookie',
+    'accept', 'accept-encoding', 'user-agent', 'te', 'upgrade', 'proxy-authorization',
+}
+# Printable ASCII only: a header value, so no CR/LF that could split the request.
+SECRET_RE = re.compile(r'[\x20-\x7e]{0,4096}')
+AUTH_PREFIX_RE = re.compile(r'[\x20-\x7e]{0,32}')
+ALLOW_PATH_RE = re.compile(r'[A-Za-z0-9._~!$&\'()*+,;=:@/-]{1,100}')
+MAX_ALLOW_PATHS = 20
+MAX_SERVICE_URL = 300
+MAX_PROXY_BODY = 1024 * 1024
+# PUT of a service: an address and a secret of at most 4096 characters, as JSON.
+MAX_SERVICE_BODY = 8192
+MAX_PROXY_RESPONSE = 16 * 1024 * 1024
+PROXY_METHODS = ('GET', 'POST', 'PUT', 'PATCH', 'DELETE')
+# Request headers of the browser that reach the service. Authorization, X-Api-Key and
+# cookies are for Moonraker and Tessera: they never leave the printer.
+PROXY_REQUEST_HEADERS = ('Accept', 'Accept-Language', 'Content-Type')
+# Marks answers that come from the service, so the client can tell them from the proxy's
+# own refusals (which are JSON {"error": ...} like the rest of this API).
+UPSTREAM_MARK = 'X-Tessera-Service'
+# Required on every services request: a plain cross-site form or <img> cannot send it,
+# so another site in the browser cannot use the proxy of a trusted LAN client.
+PLUGIN_HEADER = 'X-Tessera-Plugin'
+
+
+def manifest_services(manifest):
+    """manifest.services → {name: declaration}; invalid entries are left out, not guessed."""
+    result = {}
+    items = manifest.get('services') if isinstance(manifest, dict) else None
+    if not isinstance(items, list):
+        return result
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name, header = item.get('name'), item.get('authHeader')
+        prefix, paths = item.get('authPrefix', ''), item.get('allowPaths')
+        if not isinstance(name, str) or not SERVICE_NAME_RE.fullmatch(name) or name in result:
+            continue
+        if header is not None and (not isinstance(header, str) or not HEADER_NAME_RE.fullmatch(header)
+                                   or header.lower() in RESERVED_HEADERS):
+            continue
+        if not isinstance(prefix, str) or not AUTH_PREFIX_RE.fullmatch(prefix):
+            continue
+        if (not isinstance(paths, list) or not 1 <= len(paths) <= MAX_ALLOW_PATHS
+                or not all(isinstance(p, str) and ALLOW_PATH_RE.fullmatch(p) and not p.startswith('/')
+                           and '..' not in p.split('/') for p in paths)):
+            continue
+        result[name] = {'name': name, 'authHeader': header, 'authPrefix': prefix, 'allowPaths': list(paths)}
+    return result
+
+
+def service_declaration(pid, name):
+    """The declaration of an installed plugin's service; ExtError 404 when there is none."""
+    cur = scan_installed().get(pid)
+    manifest = read_json_safe(os.path.join(EXTENSIONS_DIR, cur['dir'], 'manifest.json')) if cur else None
+    decl = manifest_services(manifest).get(name) if manifest else None
+    if not decl:
+        raise ExtError(f'{clean(pid)} is not installed or declares no service "{clean(name)}"', 404)
+    return decl
+
+
+def read_services():
+    """{plugin id: {service name: {url, secret}}}; a missing or broken file is empty."""
+    data = read_json_safe(os.path.join(SERVICES_DIR, SERVICES_FILE))
+    return data if isinstance(data, dict) else {}
+
+
+def write_services(data):
+    """Atomic write, readable by the owner only: the file holds secrets."""
+    try:
+        os.makedirs(SERVICES_DIR, mode=0o700, exist_ok=True)
+        path = os.path.join(SERVICES_DIR, SERVICES_FILE)
+        tmp = f'{path}.tmp'
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        # The service of an older install has no writable folder for it (see install.sh).
+        raise ExtError(f'Cannot save the service settings in {SERVICES_DIR}: run `tessera update` once on the printer ({e.strerror})', 503) from e
+
+
+class ServicesLock:
+    """One writer of services.json at a time: the CLI and the service share it."""
+
+    def __enter__(self):
+        try:
+            os.makedirs(SERVICES_DIR, mode=0o700, exist_ok=True)
+            self.file = open(os.path.join(SERVICES_DIR, LOCK_FILE), 'w')
+        except OSError as e:
+            raise ExtError(f'Cannot write {SERVICES_DIR}: run `tessera update` once on the printer ({e.strerror})', 503) from e
+        if fcntl:
+            fcntl.flock(self.file, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        self.file.close()
+
+
+def normalize_service_url(url):
+    """http(s)://host[:port][/base], no credentials, query or fragment; no trailing slash."""
+    if not isinstance(url, str) or not url or len(url) > MAX_SERVICE_URL or CONTROL_RE.search(url):
+        raise ExtError('Invalid service address')
+    parts = urllib.parse.urlsplit(url.strip())
+    if parts.scheme not in ('http', 'https') or not parts.hostname:
+        raise ExtError('The service address must start with http:// or https://')
+    if parts.username or parts.password or parts.query or parts.fragment:
+        raise ExtError('The service address may not contain a login, a query or a fragment')
+    # Private addresses are allowed on purpose: a self-hosted service lives in the LAN.
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip('/'), '', ''))
+
+
+def service_view(name, entry):
+    """What the browser may know about a configured service: never the secret itself."""
+    return {
+        'name': name,
+        'configured': bool(entry),
+        'url': clean(entry['url']) if entry else None,
+        'hasSecret': bool(entry and entry.get('secret')),
+    }
+
+
+def get_service(pid, name):
+    service_declaration(pid, name)
+    return service_view(name, read_services().get(pid, {}).get(name))
+
+
+def set_service(pid, name, url, secret=None):
+    """Saves the address and, unless `secret` is None (keep the current one), the secret."""
+    service_declaration(pid, name)
+    url = normalize_service_url(url)
+    if secret is not None and (not isinstance(secret, str) or not SECRET_RE.fullmatch(secret)):
+        raise ExtError('The secret must be printable ASCII, at most 4096 characters')
+    with ServicesLock():
+        data = read_services()
+        services = data.setdefault(pid, {})
+        old = services.get(name) or {}
+        services[name] = {'url': url, 'secret': old.get('secret', '') if secret is None else secret}
+        write_services(data)
+        return service_view(name, services[name])
+
+
+def remove_service(pid, name):
+    """Forgets a service. A plugin that is gone already may still be cleaned up."""
+    with ServicesLock():
+        data = read_services()
+        removed = data.get(pid, {}).pop(name, None) is not None
+        if pid in data and not data[pid]:
+            del data[pid]
+        if removed:
+            write_services(data)
+    return {'name': name, 'changed': removed}
+
+
+def check_proxy_path(raw_path, decl):
+    """
+    The path is forwarded as sent (still percent-encoded); the check runs on its decoded
+    form, so `%2e%2e` cannot climb out of an allowed prefix.
+    """
+    decoded = urllib.parse.unquote(raw_path)
+    if (not decoded or decoded.startswith('/') or '\\' in decoded or CONTROL_RE.search(decoded)
+            or any(seg in ('.', '..') for seg in decoded.split('/'))):
+        raise ExtError('Invalid service path', 400)
+    if not any(decoded.startswith(prefix) for prefix in decl['allowPaths']):
+        raise ExtError(f'Path not allowed by the plugin manifest: {clean(decoded)}', 403)
+
+
+def proxy_request(pid, name, method, raw_path, query, headers, body):
+    """Forwards one request to the service. → (status, content type, body bytes)."""
+    decl = service_declaration(pid, name)
+    check_proxy_path(raw_path, decl)
+    entry = read_services().get(pid, {}).get(name)
+    if not entry:
+        raise ExtError(f'The service "{clean(name)}" of {clean(pid)} is not set up', 409)
+
+    url = f'{entry["url"]}/{raw_path}' + (f'?{query}' if query else '')
+    request = urllib.request.Request(url, data=body if body else None, method=method)
+    request.add_header('User-Agent', 'Tessera')
+    for header in PROXY_REQUEST_HEADERS:
+        value = headers.get(header)
+        if value:
+            request.add_header(header, value)
+    if decl['authHeader'] and entry.get('secret'):
+        request.add_header(decl['authHeader'], decl['authPrefix'] + entry['secret'])
+
+    # No environment proxies and no redirects: a redirect would send the browser (or the
+    # secret) somewhere else. Its target is reported instead.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+    try:
+        res = opener.open(request, timeout=NETWORK_TIMEOUT)
+    except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:
+            raise ExtError(f'The service redirected to {clean(e.headers.get("Location") or "?")}; '
+                           'check the address of the service', 502) from e
+        res = e  # 4xx/5xx of the service: forwarded to the plugin as is
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+        reason = getattr(e, 'reason', e)
+        raise ExtError(f'The service is unreachable: {clean(reason)}', 502) from e
+
+    with res:
+        data = res.read(MAX_PROXY_RESPONSE + 1)
+        if len(data) > MAX_PROXY_RESPONSE:
+            raise ExtError('The service answer is too large', 502)
+        return res.status if hasattr(res, 'status') else res.code, res.headers.get('Content-Type'), data
+
+
+def parse_services_path(path):
+    """
+    `services/<plugin id, percent-encoded>/<name>[/proxy/<path>]` (after API_PREFIX), query
+    already removed → (plugin id, name, proxy path or None). ExtError 404 for anything else.
+    """
+    parts = path.split('/', 4)
+    if len(parts) < 3 or parts[0] != 'services' or (len(parts) > 3 and parts[3] != 'proxy') or len(parts) == 4:
+        raise ExtError('Not found', 404)
+    pid, name = urllib.parse.unquote(parts[1]), parts[2]
+    if not PLUGIN_ID_RE.fullmatch(pid) or not SERVICE_NAME_RE.fullmatch(name):
+        raise ExtError('Not found', 404)
+    return pid, name, parts[4] if len(parts) == 5 else None
+
+
+def cmd_service(args, clear_secret=False):
+    """service [list] | show <plugin> <name> | set <plugin> <name> <url> | remove <plugin> <name>"""
+    action = args[0] if args else 'list'
+    installed = scan_installed()
+    if action == 'list' and len(args) <= 1:
+        data = read_services()
+        for pid, cur in sorted(installed.items()):
+            manifest = read_json_safe(os.path.join(EXTENSIONS_DIR, cur['dir'], 'manifest.json'))
+            for name in manifest_services(manifest):
+                entry = data.get(pid, {}).get(name)
+                state = f'{clean(entry["url"])}{"" if entry.get("secret") else "  (no secret)"}' if entry else 'not set up'
+                print(f'{clean(pid)} {name}  {state}')
+        return
+    if action in ('show', 'remove', 'set') and len(args) >= 3:
+        pid = resolve_id(args[1], [], installed)
+        name = args[2]
+        if action == 'show' and len(args) == 3:
+            view = get_service(pid, name)
+            print(f'{clean(pid)} {name}: ' + (f'{view["url"]}, secret {"set" if view["hasSecret"] else "not set"}'
+                                               if view['configured'] else 'not set up'))
+            return
+        if action == 'remove' and len(args) == 3:
+            changed = remove_service(pid, name)['changed']
+            print(f'Removed {clean(pid)} {name}' if changed else f'{clean(pid)} {name} was not set up')
+            return
+        if action == 'set' and len(args) == 4:
+            secret = '' if clear_secret else read_secret()
+            view = set_service(pid, name, args[3], secret)
+            print(f'Saved {clean(pid)} {name}: {view["url"]}, secret {"set" if view["hasSecret"] else "not set"}')
+            return
+    raise ExtError('Usage: service [list] | show <plugin> <name> | set <plugin> <name> <url> [--clear-secret] | remove <plugin> <name>')
+
+
+def read_secret():
+    """The secret from a hidden prompt (or the first stdin line); empty keeps the current one."""
+    if sys.stdin.isatty():
+        import getpass  # pylint: disable=import-outside-toplevel
+        value = getpass.getpass('Secret (token, API key; Enter keeps the current one): ')
+    else:
+        value = sys.stdin.readline().rstrip('\r\n')
+    return value or None
+
+
+# ------------------------------------------------------------------
 # Service: HTTP API for the UI
 # ------------------------------------------------------------------
 
@@ -1506,7 +1798,89 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                 raise ExtError('Invalid registry name')
         return body
 
+    def is_services(self):
+        return self.path.startswith(f'{API_PREFIX}services/')
+
+    def read_proxy_body(self):
+        """Like read_body, but the proxy forwards bodies up to MAX_PROXY_BODY and GET has none."""
+        try:
+            length = int(self.headers.get('Content-Length') or '0')
+        except ValueError as e:
+            raise ExtError('Invalid Content-Length') from e
+        if length < 0:
+            raise ExtError('Invalid Content-Length')
+        if length > MAX_PROXY_BODY:
+            self.rfile.read(min(length, MAX_DRAINED_BODY))
+            raise ExtError('Request body too large', 413)
+        return self.rfile.read(length) if length else b''
+
+    def handle_services(self, method):
+        """
+        /tessera-api/v1/services/<plugin>/<name>: GET the view, PUT {url, secret?}, DELETE.
+        /tessera-api/v1/services/<plugin>/<name>/proxy/<path>: forwarded to the service.
+        """
+        try:
+            data = self.read_proxy_body()
+            path, _, query = self.path[len(API_PREFIX):].partition('?')
+            pid, name, proxy_path = parse_services_path(path)
+            check_same_origin(self.headers)
+            if self.headers.get(PLUGIN_HEADER) != pid:
+                raise ExtError(f'{PLUGIN_HEADER} must name the plugin of the service', 403)
+            if proxy_path is None:
+                if query or method not in ('GET', 'PUT', 'DELETE'):
+                    raise ExtError('Not found', 404)
+                body = self.parse_service_body(data) if method == 'PUT' else None
+                check_moonraker_auth(self.headers)
+                if method == 'GET':
+                    result = get_service(pid, name)
+                elif method == 'PUT':
+                    result = set_service(pid, name, body['url'], body.get('secret'))
+                else:
+                    result = remove_service(pid, name)
+                self.send_json(200, result)
+                return
+            if method not in PROXY_METHODS:
+                raise ExtError('Method not allowed', 405)
+            check_moonraker_auth(self.headers)
+            status, content_type, payload = proxy_request(pid, name, method, proxy_path, query, self.headers, data)
+        except ExtError as e:
+            self.send_json(e.status, {'error': str(e)})
+            return
+        except Exception as e:  # pylint: disable=broad-except
+            print(f'[tessera-ext] {e!r}', file=sys.stderr)
+            self.send_json(500, {'error': 'Internal error, see: journalctl -u tessera-ext'})
+            return
+
+        self.send_response(status)
+        self.send_header('Content-Type', content_type or 'application/octet-stream')
+        self.send_header('Content-Length', str(len(payload)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header(UPSTREAM_MARK, 'upstream')
+        # The answer is served from the Tessera origin: it must never run as a page there.
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def parse_service_body(self, data):
+        """PUT body: {"url": str, "secret"?: str}; nothing else."""
+        if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
+            raise ExtError('Content-Type must be application/json', 415)
+        if len(data) > MAX_SERVICE_BODY:
+            raise ExtError('Request body too large', 413)
+        try:
+            body = json.loads(data.decode('utf-8'))
+        except ValueError as e:
+            raise ExtError('Request body must be JSON') from e
+        if (not isinstance(body, dict) or 'url' not in body or not set(body) <= {'url', 'secret'}
+                or not all(isinstance(v, str) for v in body.values())):
+            raise ExtError('Request body must be a JSON object with "url" and optionally "secret"')
+        return body
+
     def do_GET(self):
+        if self.is_services():
+            self.handle_services('GET')
+            return
         def handler():
             if self.path != f'{API_PREFIX}status':
                 raise ExtError('Not found', 404)
@@ -1516,6 +1890,9 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
         self.respond(handler)
 
     def do_POST(self):
+        if self.is_services():
+            self.handle_services('POST')
+            return
         def handler():
             data = self.read_body()
             if not self.path.startswith(API_PREFIX) or self.path[len(API_PREFIX):] not in API_ACTIONS:
@@ -1525,6 +1902,25 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             body = self.parse_body(data, action)
             check_moonraker_auth(self.headers)
             return API_ACTIONS[action](body)
+        self.respond(handler)
+
+    # Only the services routes take these methods.
+    def do_PUT(self):
+        self.handle_services_only('PUT')
+
+    def do_PATCH(self):
+        self.handle_services_only('PATCH')
+
+    def do_DELETE(self):
+        self.handle_services_only('DELETE')
+
+    def handle_services_only(self, method):
+        if self.is_services():
+            self.handle_services(method)
+            return
+        def handler():
+            self.read_proxy_body()  # drained before the refusal, see read_body
+            raise ExtError('Not found', 404)
         self.respond(handler)
 
 
@@ -2053,6 +2449,10 @@ USAGE = f"""Usage: tessera-ext [command]
   repo [list]           registries: the built-in one and the ones you added
   repo add <url> [<name>]  add a registry.json (https://); its plugins run in the UI
   repo remove <name>    forget an added registry (its plugins stay installed)
+  service [list]        external services of installed plugins (api.services)
+  service show <plugin> <name>
+  service set <plugin> <name> <url>   asks for the secret (Enter keeps it); --clear-secret
+  service remove <plugin> <name>
   serve                 HTTP API for the UI (started by systemd, see tessera-ext.socket)
 Options: --force (replace a hand-installed plugin / reinstall the same version)"""
 
@@ -2095,6 +2495,8 @@ def main(argv):
         cmd_branch(arg)
     elif cmd == 'repo':
         cmd_repo(args)
+    elif cmd == 'service':
+        cmd_service(args, clear_secret='--clear-secret' in flags)
     elif cmd == 'serve':
         cmd_serve(arg if '--socket' in flags else None)
     elif cmd is None:
