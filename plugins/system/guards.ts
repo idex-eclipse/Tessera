@@ -1,6 +1,7 @@
 import type { GuardContext, GuardDecision } from '../../plugin-sdk/src/types';
 
 import { isPrinting } from './data/print-tracker.ts';
+import { peekKlippyState, type KlippyState } from '../shared/klippy-state/use-klippy-state.svelte.ts';
 
 interface GuardRequest {
   method: string;
@@ -41,6 +42,19 @@ export function endangersPrint(request: GuardRequest): boolean {
 }
 
 /**
+ * Identify recovery restarts that can bypass a stale print_stats value after Klippy faults.
+ * @param request Guarded Moonraker command and parameters.
+ * @param state Live Klippy state for the target printer.
+ * @returns Whether the command restarts Klippy in error or shutdown.
+ */
+export function isFaultRecoveryRestart(request: GuardRequest, state: KlippyState): boolean {
+  if (state !== 'error' && state !== 'shutdown') return false;
+  if (request.method === 'printer.restart' || request.method === 'printer.firmware_restart') return true;
+  return request.method === 'machine.services.restart'
+    && String((request.params as { service?: unknown } | undefined)?.service ?? '').trim().toLowerCase() === 'klipper';
+}
+
+/**
  * Guard `system-print-safety`: пока на принтере-адресате идёт печать (или пауза), другим
  * плагинам нельзя перезапускать Klipper/прошивку, перезагружать или выключать хост и
  * запускать обновления. Состояние печати — из трекера, при его отсутствии разовый запрос
@@ -56,6 +70,10 @@ export const guardSystemPrintSafety = async (
   ctx: GuardContext,
 ): Promise<GuardDecision> => {
   if (!endangersPrint(request)) return { action: 'allow' };
+
+  if (isFaultRecoveryRestart(request, peekKlippyState(ctx.targetPrinterId))) {
+    return { action: 'allow' };
+  }
 
   const printing = await isPrinting(ctx.targetPrinterId);
   return printing === true

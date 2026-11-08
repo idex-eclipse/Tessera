@@ -187,13 +187,6 @@ export function createFileOps(api: PluginApi) {
     return null;
   }
 
-  /** Restore the saved bytes without overwriting the backup itself. */
-  async function restoreConfigBackup(ref: FileRef, target: MoonrakerProxyHandle = handle()): Promise<void> {
-    const backup = await readConfigBackup(ref, target);
-    if (!backup) throw new Error('config.backupMissing');
-    await target.request('server.files.copy', { source: fullPath(backup.ref), dest: fullPath(ref) });
-  }
-
   async function upload(
     root: string,
     dir: string,
@@ -235,7 +228,7 @@ export function createFileOps(api: PluginApi) {
 
   return {
     fileUrl, viewUrl, startPrint, refreshMetadata, createZip, download,
-    rename, copy, remove, readText, readBlob, saveText, saveConfigText, readConfigBackup, restoreConfigBackup,
+    rename, copy, remove, readText, readBlob, saveText, saveConfigText, readConfigBackup,
     upload, createDirectory, createFile
   };
 }

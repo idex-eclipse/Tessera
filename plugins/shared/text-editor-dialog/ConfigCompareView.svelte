@@ -10,14 +10,15 @@
 
   let rows = $derived(configComparisonRows(before, after));
   let oldHtml = $derived(lang === 'klipper' ? highlightKlipperLines(before) : highlightPlainLines(before));
+  let removedLines = $derived(new Set(rows.filter((row) => row.kind === 'removed').map((row) => row.beforeLine)));
 </script>
 
-<!-- The backup is read-only; the existing editor textarea stays mounted beside it. -->
+<!-- Only physical backup lines are rendered: diff placeholders cannot align with a textarea. -->
 <div class="backup-lines" dir="ltr">
-  {#each rows as row, index (index)}
-    <div class="backup-line" class:removed={row.kind === 'removed'}>
-      <span class="number">{row.beforeLine ?? ''}</span>
-      <code>{#if row.beforeLine !== null}{@html oldHtml[row.beforeLine - 1] ?? ''}{:else}&nbsp;{/if}</code>
+  {#each oldHtml as line, index (index)}
+    <div class="backup-line" class:removed={removedLines.has(index + 1)}>
+      <span class="number">{index + 1}</span>
+      <code>{@html line}</code>
     </div>
   {/each}
 </div>

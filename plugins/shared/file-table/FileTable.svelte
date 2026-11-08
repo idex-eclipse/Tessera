@@ -13,8 +13,8 @@
   import ImageViewerDialog from '../image-viewer-dialog/image-viewer-dialog.svelte';
 
   import { configBackupRef, createFileOps, type FileRef } from './file-ops';
-  import { checkConfigRestart } from './config-restart';
-  import ConfigBackupDialog from './ConfigBackupDialog.svelte';
+  import { dispatchConfigRestart } from './config-restart-command';
+  import type { KlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
   import { FILE_TABLE_POINT_IDS } from './extension-points';
   import { formatDate, formatSize } from '../format';
 
@@ -65,7 +65,7 @@ let {
   function errText(e: unknown): string {
     const reasonKey = (e as { rejection?: { reasonKey?: string } } | null)?.rejection?.reasonKey;
     if (reasonKey) return i18n.t(reasonKey);
-    if (e instanceof Error && (e.message === 'config.backupInvalid' || e.message === 'config.backupMissing')) {
+    if (e instanceof Error && e.message === 'config.backupInvalid') {
       return i18n.t(e.message);
     }
     return e instanceof Error ? e.message : String(e);
@@ -300,14 +300,6 @@ let {
   let editorLoading = $state(false);
   let editorContent = $state('');
   let saveBusy = $state(false);
-  let failureRef = $state<FileRef | null>(null);
-  let failurePrinterId = $state('');
-  let restartStatus = $state('');
-  let restartStatusPrinterId = $state('');
-  let backupDialogRef = $state<FileRef | null>(null);
-  let backupDialogPrinterId = $state('');
-  let backupDialogOpen = $state(false);
-  let backupDialogNotice = $state('');
   let editorCompareInitially = $state(false);
 
   /** Hidden backup files are read directly because Moonraker does not notify their changes. */
@@ -317,53 +309,9 @@ let {
     const printerId = api.printer.id;
     const backup = await ops.readConfigBackup(ref, api.moonrakerFor(printerId));
     if (api.printer.id !== printerId) return null;
-    return backup ? { text: backup.text, path: backup.ref.path } : null;
+    return backup ? { text: backup.text.replace(/\r\n?/g, '\n'), path: backup.ref.path } : null;
   }
 
-  /** A direct restore is available from the error banner and the editor comparison. */
-  async function restoreBackup(ref: FileRef | null = backupDialogRef): Promise<string | null> {
-    if (!ref || saveBusy) return null;
-    if (backupDialogOpen && backupDialogPrinterId !== api.printer.id) return null;
-    const printerId = api.printer.id;
-    saveBusy = true;
-    try {
-      await ops.restoreConfigBackup(ref, api.moonrakerFor(printerId));
-      if (api.printer.id !== printerId) return null;
-      backupDialogRef = ref;
-      backupDialogPrinterId = printerId;
-      backupDialogNotice = '';
-      backupDialogOpen = true;
-      editorOpen = false;
-      failureRef = null;
-      void source.refresh();
-      return null;
-    } catch (e) {
-      const message = errText(e);
-      setNotice(api, scope, message);
-      return message;
-    } finally {
-      saveBusy = false;
-    }
-  }
-
-  /** The restored bytes are already on disk; restarting must not replace their backup. */
-  async function restartRestored(): Promise<void> {
-    const ref = backupDialogRef;
-    if (!ref || saveBusy || backupDialogPrinterId !== api.printer.id) return;
-    const printerId = api.printer.id;
-    saveBusy = true;
-    // Close the prompt at once; the health check can continue in the file table.
-    backupDialogOpen = false;
-    try {
-      const result = await restartConfig(ref, printerId, true);
-      if (result === 'blocked') backupDialogOpen = true;
-    } catch (e) {
-      backupDialogNotice = errText(e);
-      backupDialogOpen = true;
-    } finally {
-      saveBusy = false;
-    }
-  }
   let editorReadonly = $state(false); // пригодится в шаге 3
   let editorCanRestart = $derived(
     editorRef ? /\.(conf|cfg)$/i.test(editorRef.path.split('/').pop() ?? '') : false,
@@ -375,78 +323,28 @@ let {
   let viewerSrc = $state('');
   let viewerSeq = $state(0);
 
-  /** Обрыв соединения при рестарте — норма; отказ гарда или ошибка Moonraker — показываем. */
+  /** Report explicit restart rejections after the editor has already closed. */
   function reportRestartError(e: unknown): void {
-    if ((e as { rejection?: unknown } | null)?.rejection || (e as { name?: string } | null)?.name === 'MoonrakerRequestError') {
-      setNotice(api, scope, errText(e));
-    }
-  }
-
-  /** A restart is verified against the same printer and file used by the save. */
-  async function restartConfig(ref: FileRef, printerId: string, protectedSave: boolean): Promise<'blocked' | void> {
-    const target = api.moonrakerFor(printerId);
-    const kind = ref.root === 'config' && /^moonraker\.conf$/i.test(ref.path) ? 'moonraker' : 'klipper';
-    const restart = () => kind === 'moonraker'
-      ? target.request('machine.services.restart', { service: 'moonraker' })
-      : target.request('printer.firmware_restart', {});
-    if (!protectedSave) {
-      await restart().catch(reportRestartError);
-      return;
-    }
-    // Recovery may run while Klipper is in error; only an active print blocks restart.
-    const info = await target.request<{ state?: string }>('printer.info');
-    if (info.state === 'ready') {
-      const status = await target.request<{ status?: { print_stats?: { state?: string } } }>(
-        'printer.objects.query', { objects: { print_stats: ['state'] } },
-      );
-      const printState = status.status?.print_stats?.state;
-      if (printState === 'printing' || printState === 'paused') {
-        failureRef = ref;
-        failurePrinterId = printerId;
-        setNotice(api, scope, i18n.t('config.restartDuringPrint'));
-        backupDialogNotice = i18n.t('config.restartDuringPrint');
-        return 'blocked';
-      }
-    }
-    restartStatus = i18n.t('config.restartChecking');
-    restartStatusPrinterId = printerId;
-    const outcome = await checkConfigRestart(target, kind, restart);
-    if (outcome === 'ready') {
-      failureRef = null;
-      restartStatus = i18n.t('config.restartReady');
-    } else {
-      restartStatus = '';
-      failureRef = ref;
-      failurePrinterId = printerId;
-      const key = outcome === 'error' ? 'config.restartError'
-        : outcome === 'rejected' ? 'config.restartRejected' : 'config.restartTimeout';
-      setNotice(api, scope, i18n.t(key));
-      if (kind === 'moonraker' && outcome === 'timeout') {
-        const backup = configBackupRef(ref)!;
-        setNotice(api, scope, i18n.t('config.moonrakerRecovery', {
-          path: backup.path, target: ref.path,
-        }));
-      }
-    }
+    setNotice(api, scope, errText(e));
   }
 
   /** Both save buttons share the same backup-first path for protected config files. */
-  async function saveAndRestart(text: string): Promise<boolean> {
+  async function saveAndRestart(text: string, klippyState: KlippyState): Promise<boolean> {
     if (!editorRef || saveBusy) return false;
     const ref = editorRef;
     const printerId = api.printer.id;
-    const protectedSave = configBackupRef(ref) !== null;
     saveBusy = true;
-    restartStatus = '';
     try {
-      if (protectedSave) await ops.saveConfigText(ref, text, api.moonrakerFor(printerId));
+      if (configBackupRef(ref)) await ops.saveConfigText(ref, text, api.moonrakerFor(printerId));
       else await ops.saveText(ref, text);
       editorContent = text;
       editorOpen = false;
-      failureRef = null;
       setNotice(api, scope, null);
       void source.refresh();
-      await restartConfig(ref, printerId, protectedSave);
+      // Klippy can take a long time to answer during a startup fault; saving is already complete.
+      dispatchConfigRestart(api.moonrakerFor(printerId), ref, klippyState, (error) => {
+        if (api.printer.id === printerId) reportRestartError(error);
+      });
       return true;
     } catch (e) {
       setNotice(api, scope, errText(e));
@@ -659,12 +557,10 @@ let {
     const ref = editorRef;
     const printerId = api.printer.id;
     saveBusy = true;
-    restartStatus = '';
     try {
       if (configBackupRef(ref)) await ops.saveConfigText(ref, t, api.moonrakerFor(printerId));
       else await ops.saveText(ref, t);
       editorContent = t; // Confirm the editor buffer only after both backup and upload succeed.
-      failureRef = null;
       setNotice(api, scope, null);
       void source.refresh();
       return true;
@@ -707,16 +603,6 @@ let {
   {#if notice}
     <p class="notice">{notice}</p>
   {/if}
-  {#if restartStatus && api.printer.id === restartStatusPrinterId}
-    <p class="restart-status" role="status">{restartStatus}</p>
-  {/if}
-  {#if failureRef && root === 'config' && api.printer.id === failurePrinterId}
-    <button class="backup-recovery" disabled={saveBusy} onclick={() => void restoreBackup(failureRef!)}>
-      <Icon name="refresh" size={16} />
-      {i18n.t('config.restoreBackup')}
-    </button>
-  {/if}
-
   {#if sourceError}
     <div class="ft-state">
       <Icon name="warning" size={18} />
@@ -834,17 +720,6 @@ let {
 
   <input hidden type="file" multiple />
 
-  {#if root === 'config'}
-    <ConfigBackupDialog
-      open={backupDialogOpen}
-      name={backupDialogRef?.path.split('/').pop() ?? ''}
-      busy={saveBusy}
-      notice={backupDialogNotice}
-      onRestart={() => void restartRestored()}
-      onClose={() => (backupDialogOpen = false)}
-    />
-  {/if}
-
   <PromptDialog 
     open={renameOpen} 
     title={i18n.t('ft.renameTitle')} 
@@ -881,7 +756,6 @@ let {
           lang={editorLang}
           compareInitially={editorCompareInitially}
           loadBackup={editorRef && configBackupRef(editorRef) ? loadEditorBackup : undefined}
-          onRestoreBackup={() => restoreBackup(editorRef)}
           onSave={handleSave}
           onSaveRestart={saveAndRestart}
           onClose={() => (editorOpen = false)}
@@ -951,28 +825,6 @@ let {
         padding:0 var(--space-md);
         overflow-wrap:anywhere;
     }
-    .restart-status {
-        color: var(--text-secondary);
-        font-size: var(--font-size-sm);
-        padding-inline: var(--space-md);
-        overflow-wrap: anywhere;
-    }
-    .backup-recovery {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-xs);
-        align-self: flex-start;
-        min-height: 44px;
-        margin-inline: var(--space-md);
-        padding-inline: var(--space-md);
-        border: 1px solid var(--accent);
-        border-radius: var(--radius-sm);
-        background: var(--accent);
-        color: var(--bg-surface);
-        font-size: var(--font-size-sm);
-        cursor: pointer;
-    }
-    .backup-recovery:disabled { opacity: 0.5; cursor: not-allowed; }
     .ft-scroll { 
         flex:1;
         min-height:0;

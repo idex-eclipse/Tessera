@@ -8,7 +8,7 @@ import { calibrationsManifest } from '../../calibrations/manifest';
 import { configManifest } from '../../config/manifest';
 import { historyManifest } from '../../history/manifest';
 import { jobsManifest } from '../../jobs/manifest';
-import { endangersPrint, guardSystemPrintSafety } from '../guards';
+import { endangersPrint, guardSystemPrintSafety, isFaultRecoveryRestart } from '../guards';
 import * as hotkeys from '../hotkeys';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
@@ -17,6 +17,7 @@ import { ensurePrintTracker, stopPrintTracker } from '../data/print-tracker';
 import { durationUnits, fmtClock, fmtDuration } from '../data/use-print-status.svelte';
 import { updateRequestFor } from '../data/use-system.svelte';
 import { systemUiState } from '../state/system-ui-state.svelte';
+import * as klippyState from '../../shared/klippy-state/use-klippy-state.svelte.ts';
 
 // ------------------------------------------------------------------
 // Fake PluginApi: подписки и запросы по принтерам
@@ -109,6 +110,29 @@ describe('endangersPrint', () => {
     expect(endangersPrint(req('machine.services.restart', { service: 'moonraker' }))).toBe(false);
     expect(endangersPrint(req('machine.services.start', { service: 'klipper' }))).toBe(false);
     expect(endangersPrint(req('machine.services.restart', undefined))).toBe(false);
+  });
+});
+
+describe('fault recovery restart', () => {
+  it('allows Klipper restarts in a live fault despite stale printing status', () => {
+    expect(isFaultRecoveryRestart(req('machine.services.restart', { service: 'klipper' }), 'error')).toBe(true);
+    expect(isFaultRecoveryRestart(req('printer.firmware_restart'), 'shutdown')).toBe(true);
+    expect(isFaultRecoveryRestart(req('printer.restart'), 'error')).toBe(true);
+  });
+
+  it('keeps normal print protection and other machine operations guarded', () => {
+    expect(isFaultRecoveryRestart(req('printer.firmware_restart'), 'ready')).toBe(false);
+    expect(isFaultRecoveryRestart(req('machine.services.restart', { service: 'moonraker' }), 'error')).toBe(false);
+    expect(isFaultRecoveryRestart(req('machine.reboot'), 'error')).toBe(false);
+  });
+
+  it('lets the guard dispatch recovery even when print_stats is stale', async () => {
+    const f = fakeApi(['a']);
+    ensurePrintTracker(f.api);
+    f.emit('a', { print_stats: { state: 'printing' } });
+    vi.spyOn(klippyState, 'peekKlippyState').mockReturnValue('error');
+    expect(await decide('machine.services.restart', { service: 'klipper' }, 'a')).toEqual(ALLOW);
+    expect(f.requests).toEqual([]);
   });
 });
 

@@ -3,6 +3,7 @@
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
   import { useKlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
+  import type { KlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
   import { editorUi } from './editor-state.svelte.ts';
 
   import Icon from '../icons/Icon.svelte';
@@ -33,10 +34,11 @@
     type DeviceKind,
   } from './peripherals';
   import { copyText } from './clipboard';
+  import { replaceEditorRange } from './editor-replacement';
   import { useNarrow } from '../responsive/use-narrow.svelte.ts';
   import ConfigHelpPopover from './ConfigHelpPopover.svelte';
   import ConfigCompareView from './ConfigCompareView.svelte';
-  import { configCurrentLineMarks } from '../file-table/config-diff';
+  import { configBackupHunkEdit, configCurrentLineMarks, configDiffHunks, type ConfigDiffHunk } from '../file-table/config-diff';
   import {
     pointToCell,
     resolveSection,
@@ -75,7 +77,6 @@
     lang = 'plain',
     compareInitially = false,
     loadBackup,
-    onRestoreBackup,
     onSave,
     onSaveRestart,
     onClose,
@@ -91,9 +92,8 @@
     lang?: 'klipper' | 'plain';
     compareInitially?: boolean;
     loadBackup?: () => Promise<{ text: string; path: string } | null>;
-    onRestoreBackup?: () => Promise<string | null>;
     onSave: (text: string) => Promise<boolean>;
-    onSaveRestart?: (text: string) => Promise<boolean>;
+    onSaveRestart?: (text: string, klippyState: KlippyState) => Promise<boolean>;
     onClose: () => void;
   } = $props();
 
@@ -107,6 +107,7 @@
   let compareLoading = $state(false);
   let compareBackup = $state<{ text: string; path: string } | null>(null);
   let compareError = $state('');
+  let editorScrollTop = $state(0);
   let compareStarted = false;
   let compareSeq = 0;
 
@@ -132,13 +133,6 @@
     } finally {
       if (seq === compareSeq) compareLoading = false;
     }
-  }
-
-  /** Keep restoration errors visible while the full-screen editor covers the file table. */
-  async function restoreFromCompare(): Promise<void> {
-    if (!onRestoreBackup) return;
-    const error = await onRestoreBackup();
-    if (error) compareError = error;
   }
 
   $effect(() => {
@@ -234,6 +228,7 @@
   let currentLineMarks = $derived(compareMode && compareBackup
     ? configCurrentLineMarks(compareBackup.text, text)
     : new Map<number, 'added' | 'removed' | 'changed'>());
+  let compareHunks = $derived(compareMode && compareBackup ? configDiffHunks(compareBackup.text, text) : []);
   let html = $derived.by(() => {
     const lines = toRenderLines(
       lang === 'klipper' ? highlightKlipperLines(text) : highlightPlainLines(text),
@@ -709,15 +704,26 @@
   function replaceRange(start: number, end: number, insert: string): void {
     const ta = inputEl;
     if (!ta) return;
-    ta.focus();
-    ta.setSelectionRange(start, end);
-
-    const ok = document.execCommand('insertText', false, insert);
-    if (!ok) {
-      // редкий fallback (execCommand недоступен): undo для этой правки не будет
-      text = text.slice(0, start) + insert + text.slice(end);
+    const result = replaceEditorRange(ta, start, end, insert);
+    if (!result.nativeUndo) {
+      text = result.value;
       dirty = true;
+      scheduleSuggestions();
     }
+  }
+
+  /** Stage the complete backup in the current editor without writing either file. */
+  function restoreBackupToBuffer(): void {
+    if (!compareBackup || readonly || savePending || saving || text === compareBackup.text) return;
+    replaceRange(0, text.length, compareBackup.text);
+  }
+
+  /** Apply one still-current diff hunk; a stale click must not replace another edit. */
+  function applyBackupHunk(hunk: ConfigDiffHunk): void {
+    if (!compareBackup || readonly || savePending || saving) return;
+    if (!compareHunks.includes(hunk)) return;
+    const edit = configBackupHunkEdit(compareBackup.text, text, hunk);
+    replaceRange(edit.start, edit.end, edit.insert);
   }
 
   function onInput(e: Event): void {
@@ -786,7 +792,7 @@
     savePending = true;
     const submitted = text;
     try {
-      if (await onSaveRestart(submitted) && text === submitted) dirty = false;
+      if (await onSaveRestart(submitted, klippy.state) && text === submitted) dirty = false;
     } finally {
       savePending = false;
     }
@@ -949,6 +955,7 @@
     }
     if (gutterPreEl) gutterPreEl.scrollTop = ta.scrollTop;
     if (comparePaneEl) comparePaneEl.scrollTop = ta.scrollTop;
+    editorScrollTop = ta.scrollTop;
   }
 
   /** Пересчитать подсказки по текущему положению курсора. */
@@ -1444,13 +1451,13 @@
           <Icon name="columns" size={15} />
           {#if !narrow}<span class="btn-label">{i18n.t(compareMode ? 'config.exitCompare' : 'config.compareBackup')}</span>{/if}
         </button>
-        {#if compareMode && compareBackup && onRestoreBackup}
+        {#if compareMode && compareBackup && !readonly}
           <button
             class="btn"
-            title={i18n.t(dirty ? 'config.restoreDirty' : 'config.restoreBackup')}
+            title={i18n.t('config.restoreBackup')}
             aria-label={i18n.t('config.restoreBackup')}
-            disabled={saving || dirty}
-            onclick={() => void restoreFromCompare()}
+            disabled={saving || savePending || text === compareBackup.text}
+            onclick={restoreBackupToBuffer}
           >
             <Icon name="refresh" size={15} />
             {#if !narrow}<span class="btn-label">{i18n.t('config.restoreBackup')}</span>{/if}
@@ -1509,8 +1516,24 @@
         {/if}
         <div class="code-wrap" class:compare-active={compareMode && !!compareBackup && !narrow} dir="ltr">
           {#if compareMode && compareBackup && !narrow}
-            <div class="compare-backup" bind:this={comparePaneEl} aria-label={compareBackup.path}>
+            <div class="compare-backup" class:with-actions={!readonly} bind:this={comparePaneEl} aria-label={compareBackup.path}>
               <ConfigCompareView before={compareBackup.text} after={text} {lang} />
+            </div>
+          {/if}
+          {#if compareMode && compareBackup && !readonly}
+            <!-- Code panes stay LTR even in RTL UI, so the arrow always points from backup into the editor. -->
+            <div class="hunk-rail" aria-label={i18n.t('config.applyBackupHunk')}>
+              {#each compareHunks as hunk, index (`${hunk.beforeStart}:${hunk.beforeEnd}:${hunk.afterStart}:${hunk.afterEnd}`)}
+                <button
+                  class="hunk-action"
+                  type="button"
+                  title={i18n.t('config.applyBackupHunk')}
+                  aria-label={i18n.t('config.applyBackupHunkNumber', { number: index + 1 })}
+                  disabled={saving || savePending}
+                  style:top="calc(var(--space-md) + {Math.min(hunk.afterStart, lineCount - 1) * 1.5}em - {editorScrollTop}px)"
+                  onclick={() => applyBackupHunk(hunk)}
+                ><Icon name="chevron-right" size={17} /></button>
+              {/each}
             </div>
           {/if}
           <!-- нумерация строк -->
@@ -1818,7 +1841,34 @@
     border-inline-end: 1px solid var(--border-color);
     background: var(--bg-surface);
   }
-  :global(.code-view .compare-line) { display: inline-block; min-width: 100%; }
+  .compare-backup.with-actions { flex-basis: calc(50% - 22px); }
+  /* A fixed rail keeps touch actions beside the first changed line without replacing the textarea. */
+  .hunk-rail {
+    position: relative;
+    flex: 0 0 44px;
+    min-width: 44px;
+    overflow: hidden;
+    background: var(--bg-surface-hover);
+    border-inline-end: 1px solid var(--border-color);
+    font-family: monospace;
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+  }
+  .hunk-action {
+    position: absolute;
+    inset-inline: 0;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .hunk-action:hover, .hunk-action:focus-visible { background: var(--bg-surface); }
+  .hunk-action:disabled { opacity: 0.5; cursor: not-allowed; }
+  :global(.code-view .compare-line) { display: inline; }
   :global(.code-view .compare-line.added) { background: color-mix(in srgb, var(--success) 18%, var(--bg-surface)); }
   :global(.code-view .compare-line.removed) { background: color-mix(in srgb, var(--danger) 14%, var(--bg-surface)); }
   :global(.code-view .compare-line.changed) { background: color-mix(in srgb, var(--accent) 18%, var(--bg-surface)); }

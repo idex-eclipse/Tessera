@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MoonrakerProxyHandle, PluginApi } from '../../../../plugin-sdk/src/types';
 import { configBackupRef, createFileOps } from '../file-ops';
-import { configComparisonRows, configCurrentLineMarks, diffConfigLines } from '../config-diff';
-import { checkConfigRestart } from '../config-restart';
+import { configBackupHunkEdit, configComparisonRows, configCurrentLineMarks, configDiffHunks, diffConfigLines } from '../config-diff';
+import { dispatchConfigRestart, sendConfigRestart } from '../config-restart-command';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -17,7 +17,7 @@ describe('config backup', () => {
     expect(configBackupRef({ root: 'gcodes', path: 'a.cfg', isDir: false })).toBeNull();
   });
 
-  it('copies before upload, replaces the same backup, and restores without consuming it', async () => {
+  it('copies before upload and replaces the same backup on the next save', async () => {
     const order: string[] = [];
     const directories = new Set<string>();
     const request = vi.fn(async (method: string, params: unknown) => {
@@ -26,9 +26,9 @@ describe('config backup', () => {
       if (method === 'server.files.get_directory' && path && !directories.has(path)) throw new Error('missing');
       if (method === 'server.files.post_directory' && path) directories.add(path);
     });
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      order.push(init?.method === 'POST' ? 'upload' : 'read-backup');
-      return { ok: true, text: async () => 'saved backup' };
+    const fetchMock = vi.fn(async () => {
+      order.push('upload');
+      return { ok: true };
     });
     vi.stubGlobal('fetch', fetchMock);
     const target = { request, httpBaseUrl: 'http://printer', authToken: null } as unknown as MoonrakerProxyHandle;
@@ -37,7 +37,6 @@ describe('config backup', () => {
     const ref = { root: 'config', path: 'sub/a.cfg', isDir: false };
     await ops.saveConfigText(ref, 'one');
     await ops.saveConfigText(ref, 'two');
-    await ops.restoreConfigBackup(ref);
     expect(order).toEqual([
       'server.files.get_directory:{"path":"config/.backup"}',
       'server.files.post_directory:{"path":"config/.backup"}',
@@ -47,8 +46,6 @@ describe('config backup', () => {
       'server.files.get_directory:{"path":"config/.backup"}',
       'server.files.get_directory:{"path":"config/.backup/sub"}',
       'server.files.copy:{"source":"config/sub/a.cfg","dest":"config/.backup/sub/a.cfg.bak"}', 'upload',
-      'read-backup',
-      'server.files.copy:{"source":"config/.backup/sub/a.cfg.bak","dest":"config/sub/a.cfg"}',
     ]);
   });
 
@@ -129,83 +126,82 @@ describe('config backup', () => {
     expect([...configCurrentLineMarks('first\nremoved\nlast', 'first\nlast')]).toEqual([[2, 'removed']]);
     expect([...configCurrentLineMarks('first\nlast', 'first\nlast\nnew')]).toEqual([[3, 'added']]);
   });
+
+  it('groups adjacent replacement lines but keeps separate changes independent', () => {
+    const before = 'a\nold1\nb\nold2\nc';
+    const after = 'a\nnew1\nb\nnew2\nc';
+    expect(configDiffHunks(before, after)).toEqual([
+      { beforeStart: 1, beforeEnd: 2, afterStart: 1, afterEnd: 2 },
+      { beforeStart: 3, beforeEnd: 4, afterStart: 3, afterEnd: 4 },
+    ]);
+    const edit = configBackupHunkEdit(before, after, configDiffHunks(before, after)[0]!);
+    expect(after.slice(0, edit.start) + edit.insert + after.slice(edit.end)).toBe('a\nold1\nb\nnew2\nc');
+  });
+
+  it.each([
+    ['a\nz', 'a\nnew\nz', 'a\nz'],
+    ['a\nold\nz', 'a\nz', 'a\nold\nz'],
+    ['a\n\nz', 'a\nx\nz', 'a\n\nz'],
+    ['a\nold\n', 'a\nnew\n', 'a\nold\n'],
+    ['a\n', 'a', 'a\n'],
+  ])('restores one insertion, deletion or trailing line (%j)', (before, after, expected) => {
+    const hunks = configDiffHunks(before, after);
+    expect(hunks).toHaveLength(1);
+    const edit = configBackupHunkEdit(before, after, hunks[0]!);
+    expect(after.slice(0, edit.start) + edit.insert + after.slice(edit.end)).toBe(expected);
+  });
 });
 
-describe('restart verification', () => {
-  function setup() {
-    const events = new Map<string, () => void>();
-    let connection: (state: 'open' | 'closed') => void = () => {};
-    const request = vi.fn(async (method: string) => method === 'printer.info' ? { state: 'ready' } : { klippy_state: 'ready' });
-    const handle = {
-      readyState: 'open', request,
-      onNotify: (event: string, cb: () => void) => { events.set(event, cb); return () => events.delete(event); },
-      onConnectionStatusChange: (cb: typeof connection) => { connection = cb; return () => { connection = () => {}; }; },
-    } as unknown as MoonrakerProxyHandle;
-    return { handle, events, request, emitConnection: (state: 'open' | 'closed') => connection(state) };
-  }
+describe('config restart command', () => {
+  it('sends only a Klipper restart request for a saved cfg', async () => {
+    const request = vi.fn(async () => ({}));
+    const target = { request } as unknown as MoonrakerProxyHandle;
+    await sendConfigRestart(target, { root: 'config', path: 'macros/a.cfg', isDir: false });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('printer.firmware_restart', {});
+  });
 
-  it('does not accept the old ready state before a Klipper lifecycle event', async () => {
+  it('sends only a Moonraker restart request for moonraker.conf', async () => {
+    const request = vi.fn(async () => ({}));
+    const target = { request } as unknown as MoonrakerProxyHandle;
+    await sendConfigRestart(target, { root: 'config', path: 'moonraker.conf', isDir: false });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('machine.services.restart', { service: 'moonraker' });
+  });
+
+  it('restarts the Klipper service when Klippy is in a startup error', async () => {
+    const request = vi.fn(async () => ({}));
+    const target = { request } as unknown as MoonrakerProxyHandle;
+    await sendConfigRestart(target, { root: 'config', path: 'printer.cfg', isDir: false }, 'error');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('machine.services.restart', { service: 'klipper' });
+  });
+
+  it('keeps firmware restart for an MCU shutdown', async () => {
+    const request = vi.fn(async () => ({}));
+    const target = { request } as unknown as MoonrakerProxyHandle;
+    await sendConfigRestart(target, { root: 'config', path: 'printer.cfg', isDir: false }, 'shutdown');
+    expect(request).toHaveBeenCalledWith('printer.firmware_restart', {});
+  });
+
+  it('does not keep the UI waiting for an unanswered restart request', async () => {
     vi.useFakeTimers();
-    const s = setup();
-    const result = checkConfigRestart(s.handle, 'klipper', async () => {});
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(s.request).not.toHaveBeenCalled();
-    s.events.get('notify_klippy_started')?.();
-    expect(await result).toBe('ready');
+    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const onError = vi.fn();
+    const target = { request } as unknown as MoonrakerProxyHandle;
+    expect(dispatchConfigRestart(target, { root: 'config', path: 'printer.cfg', isDir: false }, 'error', onError)).toBeUndefined();
+    expect(request).toHaveBeenCalledWith('machine.services.restart', { service: 'klipper' });
+    expect(onError).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onError).not.toHaveBeenCalled();
   });
 
-  it('does not count a Moonraker socket reconnect as a Klipper restart', async () => {
-    vi.useFakeTimers();
-    const s = setup();
-    const result = checkConfigRestart(s.handle, 'klipper', async () => {}, 3000);
-    s.emitConnection('closed');
-    s.emitConnection('open');
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(await result).toBe('timeout');
-    expect(s.request).not.toHaveBeenCalled();
-  });
-
-  it('does not mistake an early shutdown notification for a failed new startup', async () => {
-    vi.useFakeTimers();
-    const s = setup();
-    const result = checkConfigRestart(s.handle, 'klipper', async () => {}, 3000);
-    s.events.get('notify_klippy_shutdown')?.();
-    await vi.advanceTimersByTimeAsync(1500);
-    expect(s.request).not.toHaveBeenCalled();
-    s.events.get('notify_klippy_started')?.();
-    expect(await result).toBe('ready');
-  });
-
-  it('reports startup errors and keeps the backup available', async () => {
-    const s = setup();
-    s.request.mockResolvedValue({ state: 'error' });
-    const result = checkConfigRestart(s.handle, 'klipper', async () => {});
-    s.events.get('notify_klippy_started')?.();
-    expect(await result).toBe('error');
-  });
-
-  it('requires a Moonraker disconnect and reconnect', async () => {
-    const s = setup();
-    const result = checkConfigRestart(s.handle, 'moonraker', async () => {});
-    s.emitConnection('closed');
-    s.emitConnection('open');
-    expect(await result).toBe('ready');
-    expect(s.request).toHaveBeenCalledWith('server.info');
-  });
-
-  it('times out when no new lifecycle is observed', async () => {
-    vi.useFakeTimers();
-    const s = setup();
-    const result = checkConfigRestart(s.handle, 'klipper', async () => {}, 3000);
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(await result).toBe('timeout');
-  });
-
-  it('keeps the backup when the restart request is rejected', async () => {
-    const s = setup();
-    const result = await checkConfigRestart(s.handle, 'klipper', async () => {
-      throw new Error('guard denied');
-    });
-    expect(result).toBe('rejected');
+  it('reports a rejected service restart asynchronously', async () => {
+    const error = new Error('service restart denied');
+    const request = vi.fn(async () => { throw error; });
+    const onError = vi.fn();
+    const target = { request } as unknown as MoonrakerProxyHandle;
+    dispatchConfigRestart(target, { root: 'config', path: 'printer.cfg', isDir: false }, 'error', onError);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(error));
   });
 });

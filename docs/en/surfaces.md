@@ -731,15 +731,23 @@ is mounted in a narrow column, so it should lay out by its own width.
 The built-in Config editor copies each `.cfg` or `.conf` file in Moonraker's `config`
 root to `config/.backup/<relative path>.bak` before saving, creating matching subfolders.
 A failed copy cancels the save; each later save replaces that file's backup. Backups
-remain after a successful Save & Restart. The editor's Compare button compares the
+remain after Save & Restart. The editor's Compare button compares the
 backup with the current buffer: a read-only backup beside the editable current file
 on wide screens, and marked current lines on narrow screens. Edits remain in the
-buffer when Compare is closed; Save is available during comparison. A backup from
-an older Tessera build beside the source file can still be compared and restored.
-The file menu also opens Compare. A restart is
-checked for up to 100 seconds against Klipper `ready` or Moonraker reconnection for
-`moonraker.conf`. If a broken `moonraker.conf` prevents Moonraker from starting,
-restore the backup through SSH.
+buffer when Compare is closed; Save is available during comparison. The backup pane
+shows only its actual lines. In Compare, Return backup replaces the editor buffer;
+each changed block can also be copied from the backup into that buffer using an
+action between panes, or beside the changed line on narrow screens. These actions
+do not write either file until Save; the next Save replaces `.bak` with the file's
+state immediately before that save. A backup from an older Tessera build beside the
+source file can still be compared.
+The file menu also opens Compare. Save & Restart dispatches a restart after saving
+without waiting for the restart response or checking whether the service starts.
+For a Klipper startup `error`, it restarts the Klipper service through Moonraker;
+for a Klipper `shutdown` or normal state, it sends a firmware restart. A saved
+`moonraker.conf` restarts Moonraker. Explicit command errors are shown in the
+file table; a missing response does not keep the editor busy.
+The backup file remains available in `.backup` for manual recovery.
 An extension replacing the built-in editor owns its file writes and does not inherit
 this workflow.
 

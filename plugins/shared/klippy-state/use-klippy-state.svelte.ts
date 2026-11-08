@@ -276,6 +276,15 @@ function createKlippyStateCore(api: PluginApi, printerId: string) {
 
 export type KlippyStateStore = ReturnType<typeof createKlippyStateCore>;
 
+/**
+ * Read the live state only while a printer has an attached observer; detached snapshots may be stale.
+ * @param printerId Printer whose live state is needed by the guard.
+ * @returns The observed state, or unknown when no observer is attached.
+ */
+export function peekKlippyState(printerId: string): KlippyState {
+  return attachments.has(printerId) ? stateByPrinter[printerId] ?? 'unknown' : 'unknown';
+}
+
 // ------------------------------------------------------------------
 // Keeper: ядра живут per-printer, переживают unmount потребителей
 // (keep-alive, LRU cap 4). State module-level keyed по printerId.

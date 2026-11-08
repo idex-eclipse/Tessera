@@ -10,6 +10,53 @@ export interface ConfigComparisonRow extends ConfigDiffLine {
   afterLine: number | null;
 }
 
+/** Half-open line ranges for one contiguous difference between backup and editor. */
+export interface ConfigDiffHunk {
+  beforeStart: number;
+  beforeEnd: number;
+  afterStart: number;
+  afterEnd: number;
+}
+
+/** Group adjacent insertions and removals so each visible action applies one change. */
+export function configDiffHunks(before: string, after: string): ConfigDiffHunk[] {
+  const hunks: ConfigDiffHunk[] = [];
+  let beforeLine = 0;
+  let afterLine = 0;
+  let current: ConfigDiffHunk | null = null;
+  for (const line of diffConfigLines(before, after)) {
+    if (line.kind === 'same') {
+      if (current) hunks.push(current);
+      current = null;
+      beforeLine++;
+      afterLine++;
+      continue;
+    }
+    current ??= { beforeStart: beforeLine, beforeEnd: beforeLine, afterStart: afterLine, afterEnd: afterLine };
+    if (line.kind === 'removed') current.beforeEnd = ++beforeLine;
+    else current.afterEnd = ++afterLine;
+  }
+  if (current) hunks.push(current);
+  return hunks;
+}
+
+/** Return the smallest editor range needed to replace one current hunk with backup lines. */
+export function configBackupHunkEdit(before: string, after: string, hunk: ConfigDiffHunk): { start: number; end: number; insert: string } {
+  const oldLines = before.replace(/\r\n?/g, '\n').split('\n');
+  const currentLines = after.replace(/\r\n?/g, '\n').split('\n');
+  currentLines.splice(hunk.afterStart, hunk.afterEnd - hunk.afterStart, ...oldLines.slice(hunk.beforeStart, hunk.beforeEnd));
+  const result = currentLines.join('\n');
+  let start = 0;
+  while (start < after.length && start < result.length && after[start] === result[start]) start++;
+  let end = after.length;
+  let resultEnd = result.length;
+  while (end > start && resultEnd > start && after[end - 1] === result[resultEnd - 1]) {
+    end--;
+    resultEnd--;
+  }
+  return { start, end, insert: result.slice(start, resultEnd) };
+}
+
 /** Assign original and current line numbers without losing deletion positions on mobile. */
 export function configComparisonRows(before: string, after: string): ConfigComparisonRow[] {
   let beforeLine = 0;

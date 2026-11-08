@@ -20,6 +20,11 @@ Limits of the mechanism (important to understand what it does NOT do):
 - Guards **do not modify** the request. They have three verdicts: `allow`, `deny`,
   `freeze`.
 
+The built-in System print-safety guard blocks restarts while printing. When the live
+Klipper state is `error` or `shutdown`, it allows Klipper recovery restarts even if
+the last `print_stats` value still says `printing`; other machine operations remain
+guarded.
+
 ---
 
 ## Declaring a guard
