@@ -279,7 +279,7 @@
 
   .ac-sig {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     white-space: nowrap;
     flex-shrink: 0;
   }

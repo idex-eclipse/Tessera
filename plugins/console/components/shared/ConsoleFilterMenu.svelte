@@ -286,7 +286,7 @@
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--font-size-compact);
     line-height: 1;
     padding: 2px 5px;
     border-radius: var(--radius-xs);

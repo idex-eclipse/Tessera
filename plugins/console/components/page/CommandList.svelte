@@ -186,7 +186,7 @@
     padding: 1px var(--space-xs);
     background: var(--bg-surface-active);
     border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs, 11px);
+    font-size: var(--font-size-xs);
     white-space: nowrap;
   }
 
