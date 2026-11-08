@@ -59,6 +59,14 @@ export interface RemotePluginRecord {
  */
 export interface UiState {
   theme: ThemeMode;
+  /** Increase palette contrast without changing the public light/dark theme. */
+  highContrast: boolean;
+  /** Root text size as a percentage of the default 16px. */
+  fontScale: number;
+  /** Extra tracking, in hundredths of an em (0..12). */
+  letterSpacing: number;
+  /** Horizontal ink extension, in hundredths of an em (0..6). */
+  glyphWidth: number;
   locale: string;
   dir: LocaleDirection;
   sidebarCollapsed: boolean;
@@ -93,6 +101,12 @@ export interface UiState {
    * одно и то же при каждой перезагрузке страницы.
    */
   updateCheck: { intervalHours: number; lastCheckedAt: number; notified: Record<string, string> };
+}
+
+/** One browser font file, mirrored separately so normal UI edits stay small. */
+export interface CustomFont {
+  name: string;
+  dataUrl: string;
 }
 
 /**

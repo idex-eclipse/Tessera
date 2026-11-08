@@ -6,12 +6,18 @@ import { MemoryStorage } from '../storage';
 
 function createFakeDocument() {
   const attrs: Record<string, string> = {};
+  const styles: Record<string, string> = {};
 
   return {
     attrs,
+    styles,
     documentElement: {
       setAttribute(name: string, value: string): void {
         attrs[name] = value;
+      },
+      style: {
+        setProperty(name: string, value: string): void { styles[name] = value; },
+        removeProperty(name: string): string { const old = styles[name] ?? ''; delete styles[name]; return old; },
       },
     },
   };
@@ -50,6 +56,25 @@ describe('ui-store / initial state', () => {
 });
 
 describe('ui-store / theme', () => {
+  it('keeps the public theme while applying a contrast attribute', () => {
+    const { ui, doc } = setup();
+    ui.setTheme('dark');
+    ui.setHighContrast(true);
+    ui.setFontScale(80);
+    ui.setLetterSpacing(12);
+    ui.setGlyphWidth(3);
+    expect(ui.theme).toBe('dark');
+    expect(ui.fontScale).toBe(80);
+    expect(doc.attrs['data-contrast']).toBe('high');
+    expect(doc.styles['--font-scale']).toBe('0.8');
+    expect(doc.styles['--letter-spacing']).toBe('0.12em');
+    expect(doc.styles['--glyph-width']).toBe('0.03em');
+    expect(doc.attrs['data-glyph-width']).toBe('wide');
+    expect(doc.styles['--accent']).toBeDefined();
+    ui.setHighContrast(false);
+    expect(doc.attrs['data-contrast']).toBe('normal');
+    expect(doc.styles['--accent']).toBeUndefined();
+  });
   it('sets theme, persists through settings and updates DOM', () => {
     const { ui, settings, doc } = setup();
 

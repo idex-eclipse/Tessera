@@ -1016,7 +1016,7 @@
     align-items: center;
     padding: 0 6px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;

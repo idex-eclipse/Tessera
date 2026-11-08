@@ -2,6 +2,7 @@
   import { getAppContext } from '../../app-context.ts';
   import { CORE_LOCALE_OPTIONS } from '../../i18n/index.ts';
   import ColorPickerMenu from '../../../../plugins/shared/color-picker/ColorPickerMenu.svelte'
+  import { FONT_MAX_BYTES } from '../../core/settings-store.svelte.ts';
 
   const { ui, i18n } = getAppContext();
 
@@ -119,6 +120,51 @@
     error = '';
     ui.setAccent(null);
   }
+
+  // Validate the binary header because browsers often report empty or generic MIME types.
+  const FONT_FORMATS: Record<string, { magic: number[]; mime: string }> = {
+    woff2: { magic: [0x77, 0x4f, 0x46, 0x32], mime: 'woff2' },
+    woff: { magic: [0x77, 0x4f, 0x46, 0x46], mime: 'woff' },
+    ttf: { magic: [0x00, 0x01, 0x00, 0x00], mime: 'ttf' },
+    otf: { magic: [0x4f, 0x54, 0x54, 0x4f], mime: 'otf' },
+  };
+  let fontFileEl = $state<HTMLInputElement | null>(null);
+  let fontBusy = $state(false);
+  let fontError = $state('');
+
+  /** Decode before saving so a corrupt file never replaces the working font. */
+  async function onFontFile(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    fontError = '';
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const format = FONT_FORMATS[extension];
+    if (!format) { fontError = i18n.t('settings.fontInvalid'); return; }
+    if (file.size > FONT_MAX_BYTES) { fontError = i18n.t('settings.fontTooLarge'); return; }
+    fontBusy = true;
+    try {
+      const bytes = await file.arrayBuffer();
+      const header = new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength));
+      if (!format.magic.every((byte, at) => header[at] === byte)) throw new Error('font signature');
+      const face = new FontFace('Tessera Custom', bytes);
+      await face.load();
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      if (!data || !await ui.setCustomFont({ name: file.name, dataUrl: `data:font/${format.mime};base64,${data}` })) {
+        fontError = i18n.t('settings.fontSaveFailed');
+      }
+    } catch {
+      fontError = i18n.t('settings.fontInvalid');
+    } finally {
+      fontBusy = false;
+    }
+  }
 </script>
 
 <div class="section">
@@ -133,6 +179,46 @@
       </button>
     </div>
   </div>
+
+  <div class="row">
+    <label class="row-label" for="high-contrast">{i18n.t('settings.highContrast')}</label>
+    <input id="high-contrast" type="checkbox" checked={ui.highContrast} onchange={(e) => ui.setHighContrast(e.currentTarget.checked)} />
+  </div>
+
+  <div class="row">
+    <label class="row-label" for="font-scale">{i18n.t('settings.fontScale')}</label>
+    <div class="font-controls">
+      <input id="font-scale" type="range" min="80" max="150" step="10" value={ui.fontScale} oninput={(e) => ui.setFontScale(Number(e.currentTarget.value))} />
+      <output for="font-scale" dir="ltr">{ui.fontScale}%</output>
+    </div>
+  </div>
+
+  <div class="row">
+    <label class="row-label" for="letter-spacing">{i18n.t('settings.letterSpacing')}</label>
+    <div class="font-controls">
+      <input id="letter-spacing" type="range" min="0" max="12" step="2" value={ui.letterSpacing} oninput={(e) => ui.setLetterSpacing(Number(e.currentTarget.value))} />
+      <output for="letter-spacing" dir="ltr">+{ui.letterSpacing / 100}em</output>
+    </div>
+  </div>
+
+  <div class="row">
+    <label class="row-label" for="glyph-width">{i18n.t('settings.glyphWidth')}</label>
+    <div class="font-controls">
+      <input id="glyph-width" type="range" min="0" max="6" step="1" value={ui.glyphWidth} oninput={(e) => ui.setGlyphWidth(Number(e.currentTarget.value))} />
+      <output for="glyph-width" dir="ltr">+{ui.glyphWidth / 100}em</output>
+    </div>
+  </div>
+
+  <div class="row">
+    <span class="row-label">{i18n.t('settings.customFont')}</span>
+    <div class="font-controls">
+      {#if ui.customFont}<span class="font-name" title={ui.customFont.name} dir="auto">{ui.customFont.name}</span>{/if}
+      <button class="btn" disabled={fontBusy} onclick={() => fontFileEl?.click()}>{fontBusy ? i18n.t('common.loading') : i18n.t('settings.fontUpload')}</button>
+      {#if ui.customFont}<button class="btn" disabled={fontBusy} onclick={() => void ui.setCustomFont(null)}>{i18n.t('common.reset')}</button>{/if}
+    </div>
+  </div>
+  {#if fontError}<p class="error" role="alert">{fontError}</p>{/if}
+  <input hidden type="file" accept=".woff2,.woff,.ttf,.otf" bind:this={fontFileEl} onchange={onFontFile} />
 
   <div class="row">
     <span class="row-label">{i18n.t('settings.language')}</span>
@@ -220,9 +306,18 @@
   .row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-md); }
   .accent-row { align-items: flex-start; }
   .row-label { color: var(--text-secondary); }
+  /* Controls wrap in RTL and at narrow widths without hiding long file names. */
+  .font-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-sm); min-width: 0; max-width: 100%; }
+  .font-controls input[type='range'] { max-width: min(45vw, 220px); }
+  .font-controls input[type='range'] { min-height: var(--touch-target); accent-color: var(--accent); }
+  #high-contrast { width: 24px; height: 24px; margin: 10px; accent-color: var(--accent); }
+  .font-controls .btn { min-height: var(--touch-target); }
+  .font-controls output { min-width: 7ch; text-align: end; }
+  .font-name { max-width: min(45vw, 220px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .seg { display: flex; border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
   .seg button { padding: var(--space-sm) var(--space-lg); border: none; background: transparent; color: var(--text-secondary); cursor: pointer; }
   .seg button.active { background: var(--bg-surface-active); color: var(--accent); }
+  :global([data-contrast='high']) .seg button.active { background: var(--accent); color: var(--accent-text); }
   select { padding: var(--space-sm); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text-primary); }
 
   .accent-controls { display: flex; flex-direction: column; gap: var(--space-sm); align-items: flex-end; position: relative; }
@@ -252,7 +347,7 @@
     border-radius: 50%;
     border: 1px solid var(--border-color);
   }
-  .preset.custom .label { font-size: 14px; font-weight: 600; line-height: 1; }
+  .preset.custom .label { font-size: var(--font-size-compact); font-weight: 600; line-height: 1; }
 
   .picker-popover {
     position: absolute;

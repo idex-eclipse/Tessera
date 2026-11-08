@@ -4,6 +4,8 @@ import type {
 } from '../../../plugin-sdk/src/types';
 
 import type { SettingsStore } from './settings-store.svelte.ts';
+import { readableAccent } from './appearance';
+import type { CustomFont } from './types';
 
 /**
  * Modular Printer UI v2
@@ -29,6 +31,10 @@ import type { SettingsStore } from './settings-store.svelte.ts';
 export interface UiDocumentLike {
   documentElement: {
     setAttribute(name: string, value: string): void;
+    style?: {
+      setProperty(name: string, value: string): void;
+      removeProperty(name: string): string;
+    };
   };
 }
 
@@ -89,7 +95,11 @@ export function createUiStore(
   /**
    * Apply initial DOM state.
    */
+  let fontRevision = 0;
+  let loadedFace: FontFace | null = null;
+  let loadedDataUrl: string | null = null;
   applyDom();
+  void applyFont();
 
   // ------------------------------------------------------------------
   // Narrow viewport / mobile panels
@@ -140,14 +150,59 @@ export function createUiStore(
     }
 
     doc.documentElement.setAttribute('data-theme', settings.ui.theme);
+    doc.documentElement.setAttribute('data-contrast', settings.ui.highContrast ? 'high' : 'normal');
+    doc.documentElement.setAttribute('data-glyph-width', settings.ui.glyphWidth > 0 ? 'wide' : 'normal');
     doc.documentElement.setAttribute('dir', settings.ui.dir);
     doc.documentElement.setAttribute('data-locale', settings.ui.locale);
 
-    if (typeof document !== 'undefined') {
-      if (settings.ui.accent) {
-        document.documentElement.style.setProperty('--accent', settings.ui.accent);
+    const style = doc.documentElement.style;
+    if (style) {
+      const accent = settings.ui.accent ?? (settings.ui.theme === 'dark' ? '#669df6' : '#4285f4');
+      if (settings.ui.highContrast) {
+        const adjusted = readableAccent(accent, settings.ui.theme);
+        style.setProperty('--accent', adjusted);
+        style.setProperty('--accent-text', settings.ui.theme === 'dark' ? '#000000' : '#ffffff');
+      } else if (settings.ui.accent) {
+        style.setProperty('--accent', accent);
+        style.removeProperty('--accent-text');
       } else {
-        document.documentElement.style.removeProperty('--accent');
+        style.removeProperty('--accent');
+        style.removeProperty('--accent-text');
+      }
+      style.setProperty('--font-scale', String(settings.ui.fontScale / 100));
+      style.setProperty('--letter-spacing', `${settings.ui.letterSpacing / 100}em`);
+      style.setProperty('--glyph-width', `${settings.ui.glyphWidth / 100}em`);
+    }
+  }
+
+  /** Decode the mirrored font asynchronously; discard an outdated load after a later selection. */
+  async function applyFont(): Promise<void> {
+    if (typeof document === 'undefined' || typeof FontFace === 'undefined') return;
+    const revision = ++fontRevision;
+    const font = settings.customFont;
+    if (!font) {
+      if (loadedFace) document.fonts.delete(loadedFace);
+      loadedFace = null;
+      loadedDataUrl = null;
+      document.documentElement.style.removeProperty('--font-family');
+      return;
+    }
+    if (font.dataUrl === loadedDataUrl) return;
+    try {
+      const face = new FontFace('Tessera Custom', `url("${font.dataUrl}")`);
+      await face.load();
+      if (revision !== fontRevision) return;
+      if (loadedFace) document.fonts.delete(loadedFace);
+      document.fonts.add(face);
+      loadedFace = face;
+      loadedDataUrl = font.dataUrl;
+      document.documentElement.style.setProperty('--font-family', "'Tessera Custom', sans-serif");
+    } catch {
+      if (revision === fontRevision) {
+        if (loadedFace) document.fonts.delete(loadedFace);
+        loadedFace = null;
+        loadedDataUrl = null;
+        document.documentElement.style.removeProperty('--font-family');
       }
     }
   }
@@ -159,6 +214,8 @@ export function createUiStore(
    */
   function sync(): void {
     applyDom();
+    void applyFont();
+    notifyThemeChange();
   }
 
   // ------------------------------------------------------------------
@@ -169,6 +226,38 @@ export function createUiStore(
     settings.setTheme(theme);
     applyDom();
     notifyThemeChange();
+  }
+
+  /** Contrast changes the color tokens even though the public theme remains light/dark. */
+  function setHighContrast(value: boolean): void {
+    settings.setHighContrast(value);
+    applyDom();
+    notifyThemeChange();
+  }
+
+  /** Change all rem based text sizes while preserving browser zoom. */
+  function setFontScale(value: number): void {
+    settings.setFontScale(value);
+    applyDom();
+  }
+
+  /** Apply the user's tracking to every inherited text style. */
+  function setLetterSpacing(value: number): void {
+    settings.setLetterSpacing(value);
+    applyDom();
+  }
+
+  /** Expand glyph ink without transforming control boxes or hit targets. */
+  function setGlyphWidth(value: number): void {
+    settings.setGlyphWidth(value);
+    applyDom();
+  }
+
+  /** Apply the validated file from settings and expose failure to the upload control. */
+  async function setCustomFont(value: CustomFont | null): Promise<boolean> {
+    if (!settings.setCustomFont(value)) return false;
+    await applyFont();
+    return true;
   }
 
   function toggleTheme(): void {
@@ -290,6 +379,12 @@ export function createUiStore(
       return settings.ui.theme;
     },
 
+    get highContrast(): boolean { return settings.ui.highContrast; },
+    get fontScale(): number { return settings.ui.fontScale; },
+    get letterSpacing(): number { return settings.ui.letterSpacing; },
+    get glyphWidth(): number { return settings.ui.glyphWidth; },
+    get customFont(): CustomFont | null { return settings.customFont; },
+
     get locale(): string {
       return settings.ui.locale;
     },
@@ -351,6 +446,11 @@ export function createUiStore(
     toggleMobilePanel,
 
     setTheme,
+    setHighContrast,
+    setFontScale,
+    setLetterSpacing,
+    setGlyphWidth,
+    setCustomFont,
     toggleTheme,
     onThemeChange, 
 

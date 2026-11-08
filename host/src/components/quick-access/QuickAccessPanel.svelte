@@ -440,7 +440,7 @@
   .qa-x {
     position: absolute; top: -6px; inset-inline-end: -6px; z-index: 5;
     width: 16px; height: 16px; border-radius: 50%; border: none;
-    background: var(--danger); color: var(--accent-text); font-size: 10px; line-height: 1;
+    background: var(--danger); color: var(--accent-text); font-size: var(--font-size-2xs); line-height: 1;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
 
@@ -490,7 +490,7 @@
 
   /* ✕ 28px визуально, зона нажатия расширена до ~44px */
   .quick-access.narrow .qa-x {
-    width: 28px; height: 28px; font-size: 14px;
+    width: 28px; height: 28px; font-size: var(--font-size-compact);
     top: -10px; inset-inline-end: -10px;
   }
   .quick-access.narrow .qa-x::after {
@@ -523,5 +523,5 @@
     border-radius: var(--radius-sm);
     color: var(--text-muted);
   }
-  .qa-ghost-text { font-family: monospace; font-size: 11px; }
+  .qa-ghost-text { font-family: monospace; font-size: var(--font-size-xs); }
 </style>

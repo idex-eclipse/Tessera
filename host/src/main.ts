@@ -81,6 +81,7 @@ async function boot(): Promise<void> {
       return;
     }
     settings.reloadFromStorage();
+    if (r.keys.includes('mpu:v2:ui') || r.keys.includes('mpu:v2:custom-font')) ui.sync();
   }
 
   // Pick up changes when the window gets focus, and on every printer switch (the user

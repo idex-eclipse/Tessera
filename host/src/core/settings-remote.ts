@@ -113,7 +113,7 @@ export function routeKey(localKey: string, homePrinterId: string | null): KeyRou
   if (!localKey.startsWith(KEY_PREFIX)) return null;
   const rest = localKey.slice(KEY_PREFIX.length);
 
-  if (rest === 'ui' || rest === 'plugins' || rest === 'editor-colors' || rest === GLOBAL_SETTINGS) {
+  if (rest === 'ui' || rest === 'plugins' || rest === 'editor-colors' || rest === 'custom-font' || rest === GLOBAL_SETTINGS) {
     return homePrinterId ? { printerId: homePrinterId, remoteKey: rest } : null;
   }
   if (rest.startsWith(GLOBAL_PLUGIN_PREFIX)) {
@@ -151,7 +151,7 @@ export function localKeyFor(
   if (remoteKey.startsWith(PLUGIN_PREFIX)) {
     return `${KEY_PREFIX}${PLUGIN_PREFIX}${printerId}:${remoteKey.slice(PLUGIN_PREFIX.length)}`;
   }
-  if (remoteKey === 'ui' || remoteKey === 'plugins' || remoteKey === 'editor-colors') {
+  if (remoteKey === 'ui' || remoteKey === 'plugins' || remoteKey === 'editor-colors' || remoteKey === 'custom-font') {
     return printerId === homePrinterId ? `${KEY_PREFIX}${remoteKey}` : null;
   }
   return null;

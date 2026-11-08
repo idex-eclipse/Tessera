@@ -569,13 +569,13 @@
 .empty { color: var(--text-muted); font-style: italic; }
 .badge.installed { background: var(--success); color: #fff; }
 .badge.update { background: var(--warning); color: #fff; }
-.badge.external { background: var(--text-muted); color: #fff; font-size: 10px; }
-.badge.verified { background: var(--success); color: #fff; font-size: 10px; }
+.badge.external { background: var(--text-muted); color: #fff; font-size: var(--font-size-2xs); }
+.badge.verified { background: var(--success); color: #fff; font-size: var(--font-size-2xs); }
 .plugin-description { color: var(--text-secondary); font-size: var(--font-size-sm); }
 .warning { color: var(--warning); font-size: var(--font-size-sm); }
 .reload-notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border: 1px solid var(--warning); border-radius: var(--radius-md); }
 .btn-danger { background: var(--danger); color: #fff; }
-.badge.source { background: var(--text-muted); color: #fff; font-size: 10px; overflow-wrap: anywhere; }
+.badge.source { background: var(--text-muted); color: #fff; font-size: var(--font-size-2xs); overflow-wrap: anywhere; }
 
 /* Registry sources. Rows wrap on narrow screens instead of pushing the page sideways. */
 .sources { display: flex; flex-direction: column; gap: var(--space-sm); }

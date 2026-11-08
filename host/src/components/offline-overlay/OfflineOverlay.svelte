@@ -106,7 +106,7 @@
   }
 
   .overlay-icon {
-    font-size: 2rem;
+    font-size: var(--font-size-2xl);
   }
 
   .overlay-title {

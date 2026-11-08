@@ -521,7 +521,7 @@
     justify-content: center;
     pointer-events: none;
     font-family: monospace;
-    font-size: var(--font-size-xl, 1.25rem);
+    font-size: var(--font-size-xl);
     font-weight: 600;
     color: var(--text-muted);
     opacity: 0.8;

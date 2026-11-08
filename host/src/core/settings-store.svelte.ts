@@ -6,6 +6,7 @@ import type {
   PrinterSettingsState,
   RemotePluginRecord,
   UiState,
+  CustomFont,
 } from './types';
 import type { LocaleDirection, ThemeMode, QuickChipLayoutItem } from '../../../plugin-sdk/src/types';
 
@@ -44,6 +45,9 @@ export type {
 };
 
 export const BG_IMAGE_MAX_CHARS = 2_500_000;
+/** Base64 of a 1 MiB file plus its data URL prefix. */
+export const FONT_MAX_BYTES = 1024 * 1024;
+export const FONT_MAX_CHARS = Math.ceil(FONT_MAX_BYTES / 3) * 4 + 64;
 
 export interface LegacySchemaInfo {
   detected: boolean;
@@ -66,6 +70,7 @@ export const SETTINGS_STORAGE_KEYS = {
   activePrinter: 'mpu:v2:activePrinter',
   plugins: 'mpu:v2:plugins',
   ui: 'mpu:v2:ui',
+  customFont: 'mpu:v2:custom-font',
 } as const;
 
 export function printerSettingsStorageKey(printerId: string): string {
@@ -85,6 +90,10 @@ export function pluginSettingsStorageKey(
 
 const DEFAULT_UI_STATE: UiState = {
   theme: 'dark',
+  highContrast: false,
+  fontScale: 100,
+  letterSpacing: 0,
+  glyphWidth: 0,
   locale: 'en',
   dir: 'ltr',
   sidebarCollapsed: false,
@@ -145,6 +154,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   let activePrinterId = $state<string | null>(initialActivePrinterId);
   let plugins = $state<RemotePluginRecord[]>(readPlugins(storage));
   let ui = $state<UiState>(readUiState(storage));
+  let customFont = $state<CustomFont | null>(readCustomFont(storage));
   let legacy = $state<LegacySchemaInfo>(
     createLegacyInfo(detectLegacyKeys(storage)),
   );
@@ -215,6 +225,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
    */
   function reloadFromStorage(): void {
     ui = readUiState(storage);
+    customFont = readCustomFont(storage);
     plugins = readPlugins(storage);
     resyncCaches();
     // Keep every printer's settings cached (and so reactive), not only those read so far
@@ -483,6 +494,40 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
 
   function setTheme(theme: ThemeMode): void {
     patchUi({ theme });
+  }
+
+  /** Persist the independent accessibility palette setting. */
+  function setHighContrast(highContrast: boolean): void {
+    patchUi({ highContrast });
+  }
+
+  /** Limit the root text scale to the supported 10% steps. */
+  function setFontScale(fontScale: number): void {
+    patchUi({ fontScale: normalizeFontScale(fontScale) });
+  }
+
+  /** Persist tracking in two percent steps to avoid noisy mirror writes. */
+  function setLetterSpacing(letterSpacing: number): void {
+    patchUi({ letterSpacing: normalizeLetterSpacing(letterSpacing) });
+  }
+
+  /** Persist the optical width separately from tracking. */
+  function setGlyphWidth(glyphWidth: number): void {
+    patchUi({ glyphWidth: normalizeGlyphWidth(glyphWidth) });
+  }
+
+  /** Store one validated font under its own mirrored key. */
+  function setCustomFont(font: CustomFont | null): boolean {
+    if (font !== null && !normalizeCustomFont(font)) return false;
+    try {
+      // Font uploads must report quota failures; the generic write helper intentionally swallows them.
+      if (font) storage.setItem(SETTINGS_STORAGE_KEYS.customFont, JSON.stringify(font));
+      else storage.removeItem(SETTINGS_STORAGE_KEYS.customFont);
+      customFont = font;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function setLocale(locale: string, dir?: LocaleDirection): void {
@@ -1031,6 +1076,10 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
       return ui;
     },
 
+    get customFont(): CustomFont | null {
+      return customFont;
+    },
+
     get legacy(): LegacySchemaInfo {
       return legacy;
     },
@@ -1057,6 +1106,11 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
 
     patchUi,
     setTheme,
+    setHighContrast,
+    setFontScale,
+    setLetterSpacing,
+    setGlyphWidth,
+    setCustomFont,
     setLocale,
     setDir,
     toggleSidebar,
@@ -1241,10 +1295,51 @@ function readUiState(storage: StorageLike): UiState {
   return normalizeUiState(value);
 }
 
+/** Keep only a bounded font data URL whose prefix matches the declared format. */
+export function normalizeCustomFont(value: unknown): CustomFont | null {
+  if (!isRecord(value) || typeof value.name !== 'string' || typeof value.dataUrl !== 'string') return null;
+  if (!value.name.trim() || value.name.length > 160 || value.dataUrl.length > FONT_MAX_CHARS) return null;
+  const match = /^data:font\/(woff2?|ttf|otf);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value.dataUrl);
+  if (!match || !match[2] || match[2].length > Math.ceil(FONT_MAX_BYTES / 3) * 4) return null;
+  const signatures: Record<string, string> = { woff2: 'd09GMg', woff: 'd09GRg', ttf: 'AAEAAA', otf: 'T1RUTw' };
+  if (!match[2].startsWith(signatures[match[1] ?? ''] ?? 'invalid')) return null;
+  return { name: value.name, dataUrl: value.dataUrl };
+}
+
+/** Malformed mirrored data must never reach FontFace or the settings UI. */
+function readCustomFont(storage: StorageLike): CustomFont | null {
+  return normalizeCustomFont(readJson<unknown>(storage, SETTINGS_STORAGE_KEYS.customFont, null));
+}
+
+/** Normalize both stored values and slider input to supported steps. */
+export function normalizeFontScale(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(150, Math.max(80, Math.round(value / 10) * 10))
+    : 100;
+}
+
+/** Keep imported spacing values within the supported slider steps. */
+export function normalizeLetterSpacing(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(12, Math.max(0, Math.round(value / 2) * 2))
+    : 0;
+}
+
+/** Bound the painted extension so counters remain legible at large text scales. */
+export function normalizeGlyphWidth(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(6, Math.max(0, Math.round(value)))
+    : 0;
+}
+
 function normalizeUiState(value: unknown): UiState {
   const source = isRecord(value) ? value : {};
 
   const theme: ThemeMode = source.theme === 'dark' ? 'dark' : 'light';
+  const highContrast = source.highContrast === true;
+  const fontScale = normalizeFontScale(source.fontScale);
+  const letterSpacing = normalizeLetterSpacing(source.letterSpacing);
+  const glyphWidth = normalizeGlyphWidth(source.glyphWidth);
 
   const dir: LocaleDirection = source.dir === 'rtl' ? 'rtl' : 'ltr';
 
@@ -1366,6 +1461,10 @@ function normalizeUiState(value: unknown): UiState {
 
   return {
     theme,
+    highContrast,
+    fontScale,
+    letterSpacing,
+    glyphWidth,
     locale,
     dir,
     sidebarCollapsed,

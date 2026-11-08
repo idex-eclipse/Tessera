@@ -68,6 +68,8 @@ describe('settings-remote / key routing', () => {
 
   it('routes global keys to the home printer and never mirrors device-only keys', () => {
     expect(routeKey('mpu:v2:ui', 'p1')).toEqual({ printerId: 'p1', remoteKey: 'ui' });
+    expect(routeKey('mpu:v2:custom-font', 'p1')).toEqual({ printerId: 'p1', remoteKey: 'custom-font' });
+    expect(localKeyFor('custom-font', 'p1', 'p1')).toBe('mpu:v2:custom-font');
     expect(routeKey('mpu:v2:plugin-settings:GLOBAL:tessera/x', 'p1')?.printerId).toBe('p1');
     for (const k of [
       'mpu:v2:printers',
@@ -94,6 +96,23 @@ describe('settings-remote / key routing', () => {
 });
 
 describe('settings-remote / mirror', () => {
+  it('syncs a font separately without adding it to later UI writes', async () => {
+    const fm = fakeMoonraker();
+    const a = setup(fm);
+    await a.mirror.pull();
+    const font = { name: 'sample.woff2', dataUrl: 'data:font/woff2;base64,d09GMg==' };
+    a.mirror.storage.setItem('mpu:v2:custom-font', JSON.stringify(font));
+    await a.mirror.flush();
+    expect((fm.dbs.get(DB)?.['custom-font'] as RemoteEnvelope).data).toEqual(font);
+
+    const b = setup(fm);
+    expect((await b.mirror.pull()).keys).toContain('mpu:v2:custom-font');
+    expect(JSON.parse(b.storage.getItem('mpu:v2:custom-font')!)).toEqual(font);
+    b.mirror.storage.setItem('mpu:v2:ui', JSON.stringify({ fontScale: 150 }));
+    await b.mirror.flush();
+    expect(JSON.stringify((fm.dbs.get(DB)?.ui as RemoteEnvelope).data)).not.toContain('data:font');
+  });
+
   it('migrates existing local settings into an empty DB with app, rev and writer', async () => {
     const { fm, storage, mirror } = setup();
     storage.setItem('mpu:v2:settings:p1', JSON.stringify({ pages: { jobs: false } }));

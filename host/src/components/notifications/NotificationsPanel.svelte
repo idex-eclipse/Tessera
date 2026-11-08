@@ -409,7 +409,7 @@
   }
 
   .pat-title {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -417,7 +417,7 @@
   }
 
   .pat-hint {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -509,7 +509,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -536,7 +536,7 @@
     background: var(--bg-surface-active);
     color: var(--accent);
     font-weight: 600;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     overflow: hidden;

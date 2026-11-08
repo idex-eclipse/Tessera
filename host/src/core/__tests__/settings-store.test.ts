@@ -8,6 +8,8 @@ import {
   printerSettingsStorageKey,
   RIGHT_PANEL_DEFAULT_WIDTH,
   SETTINGS_STORAGE_KEYS,
+  FONT_MAX_CHARS,
+  normalizeCustomFont,
 } from '../settings-store.svelte.ts';
 
 function setup() {
@@ -42,6 +44,10 @@ describe('settings-store / base state', () => {
       logoAnimated: true,
       bgImage: null,
       theme: 'light',
+      highContrast: false,
+      fontScale: 100,
+      letterSpacing: 0,
+      glyphWidth: 0,
       locale: 'en',
       rightPanelCollapsed: false,
       rightPanelWidth: RIGHT_PANEL_DEFAULT_WIDTH,
@@ -285,6 +291,36 @@ describe('settings-store / remote plugins', () => {
 });
 
 describe('settings-store / ui state', () => {
+  it('rejects corrupt or oversized font data', () => {
+    expect(normalizeCustomFont({ name: 'bad.ttf', dataUrl: 'data:text/plain;base64,AAAA' })).toBeNull();
+    expect(normalizeCustomFont({ name: 'large.woff', dataUrl: `data:font/woff;base64,${'A'.repeat(FONT_MAX_CHARS)}` })).toBeNull();
+    const { store } = setup();
+    expect(store.setCustomFont({ name: 'bad.ttf', dataUrl: 'invalid' })).toBe(false);
+    expect(store.customFont).toBeNull();
+  });
+
+  it('normalizes accessibility settings and stores the font separately', () => {
+    const { storage, store } = setup();
+    store.setHighContrast(true);
+    store.setFontScale(147);
+    store.setLetterSpacing(7);
+    store.setGlyphWidth(20);
+    expect(store.ui.highContrast).toBe(true);
+    expect(store.ui.fontScale).toBe(150);
+    expect(store.ui.letterSpacing).toBe(8);
+    expect(store.ui.glyphWidth).toBe(6);
+    const restored = createSettingsStore({ storage });
+    expect(restored.ui.letterSpacing).toBe(8);
+    expect(restored.ui.glyphWidth).toBe(6);
+    const font = { name: 'test.woff2', dataUrl: 'data:font/woff2;base64,d09GMg==' };
+    expect(store.setCustomFont(font)).toBe(true);
+    expect(store.customFont).toEqual(font);
+    expect(storage.getItem(SETTINGS_STORAGE_KEYS.ui)).not.toContain('data:font');
+    expect(storage.getItem(SETTINGS_STORAGE_KEYS.customFont)).toContain('data:font');
+    store.setCustomFont(null);
+    expect(store.customFont).toBeNull();
+  });
+
   it('patches ui state and persists it', () => {
     const { storage, store } = setup();
 

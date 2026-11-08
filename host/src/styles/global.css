@@ -21,9 +21,21 @@
   /* Typography */
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
+  /* rem values follow the user's root scale, including compact widget labels. */
+  --font-scale: 1;
+  --letter-spacing: 0em;
+  --glyph-width: 0em;
+  --font-size-3xs: 0.5625rem;
+  --font-size-2xs: 0.625rem;
+  --font-size-xs: 0.6875rem;
+  --font-size-xs-plus: 0.75rem;
+  --font-size-compact: 0.875rem;
   --font-size-sm: 0.925rem;
   --font-size-md: 1rem;
+  --font-size-heading: 1.125rem;
   --font-size-lg: 1.2rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 2rem;
 
   /* Spacing */
   --space-xs: 4px;
@@ -140,6 +152,45 @@
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
+/* High contrast keeps the light/dark theme and preserves semantic color roles. */
+[data-theme='light'][data-contrast='high'] {
+  --bg-app: #f2f2f2;
+  --bg-surface: #ffffff;
+  --bg-surface-hover-no-override: #e6e6e6;
+  --bg-header: #111111;
+  --bg-sidebar: #ffffff;
+  --text-primary: #111111;
+  --text-secondary: #303030;
+  --text-muted: #4a4a4a;
+  --text-on-header-muted: #ffffff;
+  --border-color: #555555;
+  --border-focus: #111111;
+  --danger: #a50000;
+  --warning: #704700;
+  --success: #006b35;
+  --heat: #9c3900;
+  --cool: #005a91;
+}
+
+[data-theme='dark'][data-contrast='high'] {
+  --bg-app: #080808;
+  --bg-surface: #141414;
+  --bg-surface-hover-no-override: #303030;
+  --bg-header: #000000;
+  --bg-sidebar: #141414;
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --text-muted: #c2c2c2;
+  --text-on-header-muted: #ffffff;
+  --border-color: #aaaaaa;
+  --border-focus: #ffffff;
+  --danger: #ff7979;
+  --warning: #ffdc83;
+  --success: #8ce8ac;
+  --heat: #ff9d65;
+  --cool: #8bd9ff;
+}
+
 /* Производные акцента — общие для обеих тем, отталкиваются от --accent */
 :root {
   --accent-hover: color-mix(in srgb, var(--accent) 82%, #000);
@@ -152,14 +203,33 @@
   --bg-surface-hover: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
 }
 
+html {
+  /* Keep browser zoom and rem typography independent. */
+  font-size: calc(16px * var(--font-scale));
+}
+
 html,
 body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-family);
-  font-size: var(--font-size-md);
   background: var(--bg-app);
   color: var(--text-primary);
+}
+
+body { font-size: var(--font-size-md); }
+/* Tracking is inherited, so plugin text follows the same user preference. */
+body { letter-spacing: var(--letter-spacing); }
+/* Two sharp horizontal copies widen visible glyph ink without distorting UI boxes. */
+[data-glyph-width='wide'] body { text-shadow: var(--glyph-width) 0 currentColor, calc(-1 * var(--glyph-width)) 0 currentColor; }
+
+/* Native controls otherwise keep the browser font and ignore uploaded fonts. */
+button, input, select, textarea { font-family: inherit; font-size: inherit; }
+
+/* Make keyboard focus visible even when the selected accent is close to the surface. */
+[data-contrast='high'] :focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 #app {

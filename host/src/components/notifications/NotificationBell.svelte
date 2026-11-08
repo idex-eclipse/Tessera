@@ -82,7 +82,7 @@
     border-radius: 999px;
     background: var(--danger);
     color: #fff;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 700;
     display: flex;
     align-items: center;
