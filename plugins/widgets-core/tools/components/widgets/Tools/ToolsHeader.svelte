@@ -237,7 +237,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     font-weight: 600;
     cursor: pointer;
   }
@@ -326,7 +326,7 @@
 
   .menu-hint {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-muted);
   }

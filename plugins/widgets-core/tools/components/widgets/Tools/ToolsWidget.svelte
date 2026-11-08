@@ -918,7 +918,7 @@
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     color: var(--danger);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
   }
 
   .move-area {
@@ -1212,7 +1212,7 @@
 
   .dc-menu-title {
     padding: var(--space-xs) var(--space-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -1246,7 +1246,7 @@
     width: 14px;
     flex-shrink: 0;
     color: var(--accent);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
   }
 
   .dc-sep {
@@ -1282,13 +1282,13 @@
     color: var(--text-primary);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .spool-row { font-size: 12px; color: var(--text-secondary); }
+  .spool-row { font-size: var(--font-size-xs-plus); color: var(--text-secondary); }
   .spool-mat {
     display: inline-block; padding: 1px 6px;
     border-radius: 999px;
     background: var(--bg-surface-hover);
     border: 1px solid var(--border-color);
-    font-size: 11px; font-weight: 600;
+    font-size: var(--font-size-xs); font-weight: 600;
     color: var(--text-secondary);
     width: fit-content;
   }
