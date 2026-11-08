@@ -145,7 +145,7 @@
     });
     mo.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-theme'],
+      attributeFilter: ['data-theme', 'data-contrast'],
     });
     return () => mo.disconnect();
   });

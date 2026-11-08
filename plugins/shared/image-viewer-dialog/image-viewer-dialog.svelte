@@ -245,7 +245,7 @@
     width: auto;
     padding: 0 var(--space-xs);
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
   }
 
@@ -253,7 +253,7 @@
     min-width: 44px;
     text-align: center;
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 

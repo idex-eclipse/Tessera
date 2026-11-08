@@ -1682,7 +1682,7 @@
 
   .toc-title {
     padding: var(--space-xs) var(--space-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -1721,7 +1721,7 @@
     border-radius: 50%;
     background: transparent;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     font-weight: 700;
     cursor: pointer;
   }
@@ -1813,7 +1813,7 @@
     min-width: 52px;
     text-align: center;
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
@@ -1828,7 +1828,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     cursor: pointer;
     flex-shrink: 0;
@@ -1885,7 +1885,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: #fff;
     background: var(--text-muted);
@@ -1913,7 +1913,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   /* -------- настройка цветов подсветки -------- */
@@ -1951,7 +1951,7 @@
   }
 
   .hl-title {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -1981,7 +1981,7 @@
 
   .hl-hex {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -2030,7 +2030,7 @@
     font-size: var(--font-size-sm);
     text-align: center;
   }
-  .dev-err { font-family: monospace; font-size: 11px; word-break: break-word; }
+  .dev-err { font-family: monospace; font-size: var(--font-size-xs); word-break: break-word; }
 
   .dev-card {
     padding: var(--space-xs) var(--space-sm);
@@ -2046,7 +2046,7 @@
   }
   .dev-card-sub {
     margin-bottom: var(--space-xs);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     word-break: break-word;
   }
@@ -2061,7 +2061,7 @@
   .dev-key {
     flex: 0 0 110px;
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     overflow-wrap: anywhere;
   }

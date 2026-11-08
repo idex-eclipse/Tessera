@@ -168,7 +168,7 @@
 
   .help-body :global(code) {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 1px 4px;
     border-radius: 3px;
     background: var(--bg-surface-hover);

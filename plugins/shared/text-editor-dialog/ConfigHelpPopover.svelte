@@ -161,7 +161,7 @@
 
   .help-sub {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     word-break: break-all;
   }
@@ -218,7 +218,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-app, var(--bg-surface-hover));
     font-family: monospace;
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     line-height: 1.45;
     white-space: pre;
     tab-size: 4;
@@ -234,7 +234,7 @@
     text-align: center;
   }
 
-  .help-err { font-family: monospace; font-size: 11px; word-break: break-word; }
+  .help-err { font-family: monospace; font-size: var(--font-size-xs); word-break: break-word; }
 
   .help-retry {
     padding: var(--space-xs) var(--space-md);
