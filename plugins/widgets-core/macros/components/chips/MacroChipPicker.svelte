@@ -137,7 +137,7 @@
     border-radius: 4px;
     background: var(--bg-surface-active);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     flex-shrink: 0;
   }

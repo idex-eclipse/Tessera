@@ -691,14 +691,14 @@
 
   .tip-name {
     font-family: monospace;
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     font-weight: 600;
     color: var(--text-primary);
   }
 
   .tip-desc {
     margin-top: 2px;
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     color: var(--text-secondary);
     white-space: pre-wrap;
   }

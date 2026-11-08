@@ -175,7 +175,7 @@
     width: 14px;
     flex-shrink: 0;
     color: var(--accent);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
   }
 
   .hdr {
