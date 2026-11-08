@@ -200,7 +200,7 @@
 
   .jq-idx {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     width: 20px;
     text-align: center;
@@ -223,7 +223,7 @@
 
   .jq-time {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
