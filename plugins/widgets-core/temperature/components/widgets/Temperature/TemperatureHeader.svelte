@@ -219,7 +219,7 @@
 
   .menu-title {
     padding: var(--space-xs) var(--space-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -254,7 +254,7 @@
     width: 14px;
     flex-shrink: 0;
     color: var(--accent);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
   }
 
   /* сенсорный указатель: зона нажатия ≥ 36px */

@@ -369,7 +369,7 @@
     color: var(--accent-text); 
   }
   
-  .pop-hint { color: var(--text-muted); font-size: 11px; margin-inline-start: 4px; }
+  .pop-hint { color: var(--text-muted); font-size: var(--font-size-xs); margin-inline-start: 4px; }
 
   .kind {
     display: flex;
