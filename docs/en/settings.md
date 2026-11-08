@@ -74,6 +74,7 @@ interface PrinterSettingsState {
   dashboardLayoutCustomized?: boolean;          // false → a "virtual" default layout
   quickChips: QuickChipLayoutItem[];            // { instanceId, type, provider, id, label? }
   quickChipsCustomized?: boolean;
+  quickChipsLayout: 'grid' | 'scroll';          // wide dashboard; missing/invalid → grid
 }
 ```
 
@@ -81,6 +82,8 @@ Until the user changes the layout, the host shows the *default* set (it is not
 written to storage and adapts to the installed plugins); the first change fixes the
 layout and sets the `…Customized` flag. Reset clears the flag, and so can undo or
 discard in dashboard edit mode when they return to the default state.
+The chip layout preference is independent of the default chip set, is stored per
+printer, and participates in the editor's undo, redo and discard history.
 
 ---
 

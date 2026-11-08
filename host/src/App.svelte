@@ -78,6 +78,7 @@
         dashboardLayoutCustomized: Boolean(s.dashboardLayoutCustomized),
         quickChips: s.quickChips,
         quickChipsCustomized: Boolean(s.quickChipsCustomized),
+        quickChipsLayout: s.quickChipsLayout,
       });
     },
     write: (printerId, snapshot) => settings.restoreEditState(printerId, clone(snapshot)),

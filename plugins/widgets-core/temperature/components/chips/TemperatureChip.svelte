@@ -187,7 +187,7 @@
     display: flex;
     height: 100%;
     min-width: 96px;
-    max-width: 220px;
+    max-width: 240px;
     padding: 3px 8px 4px 10px;
     padding-inline: 10px 8px;
     border: 1px solid var(--border-color);

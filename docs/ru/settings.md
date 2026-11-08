@@ -73,6 +73,7 @@ interface PrinterSettingsState {
   dashboardLayoutCustomized?: boolean;          // false → «виртуальный» стандартный layout
   quickChips: QuickChipLayoutItem[];            // { instanceId, type, provider, id, label? }
   quickChipsCustomized?: boolean;
+  quickChipsLayout: 'grid' | 'scroll';          // широкий дашборд; нет/ошибка → grid
 }
 ```
 
@@ -81,6 +82,8 @@ interface PrinterSettingsState {
 первое изменение фиксирует раскладку и ставит флаг `…Customized`. Сброс снимает флаг, и
 то же могут сделать отмена или откат в режиме редактирования дашборда, если они возвращают
 к стандартному состоянию.
+Предпочтение раскладки чипов не зависит от стандартного состава, хранится отдельно для
+каждого принтера и входит в историю отмены, повтора и отката редактора.
 
 ---
 

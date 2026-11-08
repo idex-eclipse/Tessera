@@ -148,6 +148,9 @@ export interface DashboardWidgetLayoutItem {
   h: number;
 }
 
+/** Layout used by quick-access chips on a wide dashboard. */
+export type QuickChipsLayoutMode = 'grid' | 'scroll';
+
 /**
  * One fleet panel layout entry (device-global).
  * Position in array = display order in fleet cards.
@@ -171,6 +174,8 @@ export interface PrinterSettingsState {
   dashboardLayoutCustomized?: boolean;
   quickChips: QuickChipLayoutItem[];
   quickChipsCustomized?: boolean;
+  /** Wide-dashboard chip layout; narrow dashboards keep their fixed two-row strip. */
+  quickChipsLayout: QuickChipsLayoutMode;
   /**
    * Выбор варианта в точках alternative: адрес точки → ref вклада,
    * null — пользователь выбрал оригинал. Нет ключа — выбора не было.

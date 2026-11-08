@@ -353,9 +353,10 @@ interpret it. What items exist and how they look is up to the plugin.
   (otherwise the strip reflows). Open it **downward** by default (the strip sits under the
   banners and the header): `shouldOpenAbove()` and `shouldAlignToEnd()` from
   `plugins/shared/popover-align.ts` decide the side and the alignment (LTR/RTL).
-  On a narrow screen the strip scrolls and clips its content, so the popover must be
-  `position: fixed`: `placeChipPopover()` from the same file takes the chip's rectangle
-  and the estimated popover size, and returns a CSS style string for it.
+  The strip can scroll at any viewport width, so the popover must always use
+  `position: fixed` to escape its clipping area. `placeChipPopover()` from the same file
+  takes the chip's rectangle and the estimated popover size, and returns a CSS style
+  string for it.
 - When `edit === '1'` (dashboard edit mode) the host draws its own affordances
   (frame, "+", close buttons, order buttons, drag-and-drop). The chip must not perform
   actions in this mode.
@@ -523,6 +524,13 @@ entry. Undo and redo cover both (see [hotkeys.md](hotkeys.md)).
 - There is one layout for both modes, so the first up/down press stacks it into one
   column and overwrites the wide arrangement. Undo or discard brings it back.
 - In edit mode every chip has order buttons on any device, and drag-and-drop works too.
+- On a wide dashboard the chip editor also selects the strip layout per printer:
+  **Wrap** (the default two-row grid) or **One row**. Both layouts scroll horizontally
+  on overflow and keep the normal fixed gap between chips. The two-row grid uses the
+  same column-first order as the narrow layout, and both chips in a column use the
+  wider chip's width. A regular vertical mouse-wheel gesture scrolls either strip
+  horizontally without Shift; at its ends, the gesture continues scrolling the page.
+  On a narrow dashboard the two-row grid is always used.
 
 ### The Settings page
 

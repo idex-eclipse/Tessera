@@ -1,6 +1,7 @@
 import type { QuickChipLayoutItem } from '../../../plugin-sdk/src/types.ts';
 import type { Route } from './router.svelte.ts';
 import type { DashboardWidgetLayoutItem } from './settings-store.svelte.ts';
+import type { QuickChipsLayoutMode } from './types.ts';
 
 /** То, что правится в режиме редактирования дашборда: макет и быстрые чипы одного принтера. */
 export interface EditSnapshot {
@@ -8,6 +9,7 @@ export interface EditSnapshot {
   dashboardLayoutCustomized: boolean;
   quickChips: QuickChipLayoutItem[];
   quickChipsCustomized: boolean;
+  quickChipsLayout: QuickChipsLayoutMode;
 }
 
 export interface LayoutEditorDeps {

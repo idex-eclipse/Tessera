@@ -403,7 +403,7 @@
     display: flex;
     height: 100%;
     min-width: 104px;
-    max-width: 220px;
+    max-width: 240px;
     padding-block: 4px 6px;
     padding-inline: 12px 10px;
     border: 1px solid var(--border-color);

@@ -9,6 +9,7 @@ function setup(initial: Partial<EditSnapshot> = {}) {
     dashboardLayoutCustomized: false,
     quickChips: [],
     quickChipsCustomized: false,
+    quickChipsLayout: 'grid',
     ...initial,
   };
   let route = { kind: 'dashboard', printerId: 'p1', query: { edit: '1' } } as Route;
@@ -39,6 +40,9 @@ function setup(initial: Partial<EditSnapshot> = {}) {
     },
     setPrinter(id: string | null) {
       printerId = id;
+    },
+    setChipLayout(layout: EditSnapshot['quickChipsLayout']) {
+      stored = { ...stored, quickChipsLayout: layout };
     },
     get left() {
       return left;
@@ -131,6 +135,20 @@ describe('layout editor', () => {
     expect(t.stored.quickChips).toHaveLength(1);
     expect(t.left).toBe(1);
     expect(t.editor.canUndo).toBe(false);
+  });
+
+  it('undoes, redoes and cancels the chip layout mode', () => {
+    const t = setup();
+    t.editor.sync();
+    t.setChipLayout('scroll');
+    t.editor.changed();
+
+    t.editor.undo();
+    expect(t.stored.quickChipsLayout).toBe('grid');
+    t.editor.redo();
+    expect(t.stored.quickChipsLayout).toBe('scroll');
+    t.editor.cancel();
+    expect(t.stored.quickChipsLayout).toBe('grid');
   });
 
   it('end keeps the changes, leaves and clears the history', () => {

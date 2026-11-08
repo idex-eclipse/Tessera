@@ -4,6 +4,7 @@ import type {
   PluginSettingsState,
   PrinterRecord,
   PrinterSettingsState,
+  QuickChipsLayoutMode,
   RemotePluginRecord,
   UiState,
   CustomFont,
@@ -40,6 +41,7 @@ export type {
   PluginSettingsState,
   PrinterRecord,
   PrinterSettingsState,
+  QuickChipsLayoutMode,
   RemotePluginRecord,
   UiState,
 };
@@ -722,6 +724,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
       dashboardLayoutCustomized: boolean;
       quickChips: QuickChipLayoutItem[];
       quickChipsCustomized: boolean;
+      quickChipsLayout: QuickChipsLayoutMode;
     },
   ): void {
     updatePrinterSettings(printerId, (draft) => {
@@ -729,6 +732,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
       draft.dashboardLayoutCustomized = state.dashboardLayoutCustomized;
       draft.quickChips = state.quickChips;
       draft.quickChipsCustomized = state.quickChipsCustomized;
+      draft.quickChipsLayout = state.quickChipsLayout;
     });
   }
 
@@ -750,6 +754,16 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     updatePrinterSettings(printerId, (draft) => {
       draft.quickChips = [];
       draft.quickChipsCustomized = false;
+    });
+  }
+
+  /** Stores the wide-dashboard chip layout without pinning the virtual chip set. */
+  function setQuickChipsLayout(
+    printerId: string,
+    layout: QuickChipsLayoutMode,
+  ): void {
+    updatePrinterSettings(printerId, (draft) => {
+      draft.quickChipsLayout = layout;
     });
   }
 
@@ -1137,6 +1151,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     getQuickChips,
     setQuickChips,
     resetQuickChips,
+    setQuickChipsLayout,
 
     getFleetPanels,
     setFleetPanels,
@@ -1572,6 +1587,9 @@ function normalizePrinterSettings(value: unknown): PrinterSettingsState {
       typeof source.quickChipsCustomized === 'boolean'
         ? source.quickChipsCustomized
         : false,
+    // The former development-only "wrap" value maps to the final two-row grid.
+    quickChipsLayout:
+      source.quickChipsLayout === 'scroll' ? 'scroll' : 'grid',
   };
 }
 
@@ -1624,6 +1642,7 @@ function clonePrinterSettings(
     dashboardLayoutCustomized: source.dashboardLayoutCustomized,
     quickChips: source.quickChips.map((item) => ({ ...item })),
     quickChipsCustomized: source.quickChipsCustomized,
+    quickChipsLayout: source.quickChipsLayout,
   };
 }
 

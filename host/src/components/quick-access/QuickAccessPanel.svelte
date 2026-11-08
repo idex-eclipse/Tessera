@@ -2,6 +2,7 @@
   import type { PluginApi } from '../../../../plugin-sdk/src/types.ts';
   import type { QuickChipLayoutItem } from '../../../../plugin-sdk/src/types.ts';
   import type { Route } from '../../core/router.svelte.ts';
+  import type { QuickChipsLayoutMode } from '../../core/types.ts';
 
   import { getAppContext } from '../../app-context.ts';
   import { chipsNeedAccordion } from '../../core/chips-layout.ts';
@@ -35,6 +36,9 @@
 
   let chips = $derived<QuickChipLayoutItem[]>(
     printerId ? ctx.registry.getQuickChips(printerId) : [],
+  );
+  let quickChipsLayout = $derived<QuickChipsLayoutMode>(
+    printerId ? ctx.settings.getPrinterSettings(printerId).quickChipsLayout : 'grid',
   );
   let contributions = $derived(ctx.registry.getChips());
 
@@ -123,6 +127,44 @@
       chips.filter((c) => c.instanceId !== instanceId),
     );
     ctx.editor.changed();
+  }
+
+  /** Updates only the wide-screen presentation and records one editor history step. */
+  function setQuickChipsLayout(layout: QuickChipsLayoutMode): void {
+    if (!printerId || layout === quickChipsLayout) return;
+    ctx.settings.setQuickChipsLayout(printerId, layout);
+    ctx.editor.changed();
+  }
+
+  /** Converts an ordinary vertical wheel gesture into horizontal strip scrolling. */
+  function horizontalWheel(node: HTMLElement) {
+    function onWheel(event: WheelEvent): void {
+      if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (node.scrollWidth <= node.clientWidth) return;
+
+      // Fixed chip popovers remain DOM descendants, so only handle gestures over the strip itself.
+      const rect = node.getBoundingClientRect();
+      if (event.clientY < rect.top || event.clientY > rect.bottom) return;
+
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? node.clientWidth
+          : 1;
+      const direction = ctx.ui.isRtl ? -1 : 1;
+      const before = node.scrollLeft;
+      node.scrollLeft += event.deltaY * unit * direction;
+
+      // At either end, leave the event available for normal page scrolling.
+      if (node.scrollLeft !== before) event.preventDefault();
+    }
+
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return {
+      destroy(): void {
+        node.removeEventListener('wheel', onWheel);
+      },
+    };
   }
 
   async function resetChips(): Promise<void> {
@@ -271,6 +313,31 @@
     {#if editMode}
       <div class="qa-toolbar">
         <span class="qa-hint">{ctx.i18n.t('quickAccess.editHint')}</span>
+        {#if !narrow}
+          <fieldset class="qa-layout-options">
+            <legend>{ctx.i18n.t('quickAccess.layout')}</legend>
+            <label>
+              <input
+                type="radio"
+                name="quick-chips-layout"
+                value="grid"
+                checked={quickChipsLayout === 'grid'}
+                onchange={() => setQuickChipsLayout('grid')}
+              />
+              <span>{ctx.i18n.t('quickAccess.layoutWrap')}</span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="quick-chips-layout"
+                value="scroll"
+                checked={quickChipsLayout === 'scroll'}
+                onchange={() => setQuickChipsLayout('scroll')}
+              />
+              <span>{ctx.i18n.t('quickAccess.layoutScroll')}</span>
+            </label>
+          </fieldset>
+        {/if}
         <button
           class="qa-btn"
           disabled={chips.length >= QUICK_CHIPS_MAX}
@@ -293,7 +360,12 @@
 
     <!-- Collapsible, а не {#if}: иначе chips теряют состояние при сворачивании -->
     <Collapsible open={!collapsedByAccordion}>
-    <div class="qa-chips" bind:clientHeight={chipsHeight}>
+    <div
+      class="qa-chips"
+      class:wide-scroll={!narrow && quickChipsLayout === 'scroll'}
+      bind:clientHeight={chipsHeight}
+      use:horizontalWheel
+    >
       {#each resolved as r (r.item.instanceId)}
         {#if r.element && r.pluginId}
           {@const api = apiFor(r.pluginId)}
@@ -340,7 +412,9 @@
             ondragend={onDragEnd}
           >
             <span class="qa-ghost-text">
-              {ctx.i18n.t('quickAccess.providerMissing')} · {r.item.type} · {r.item.provider}
+              <span class="qa-ghost-title">{ctx.i18n.t('quickAccess.providerMissing')}</span>
+              <!-- Technical identifiers are inherently LTR: isolate them from RTL direction. -->
+              <span class="qa-ghost-sub" dir="ltr">{r.item.type} · {r.item.provider}</span>
             </span>
             {@render moveControls(r.index)}
             {#if editMode}
@@ -384,8 +458,47 @@
     border-radius: var(--radius-md);
     padding: var(--space-xs);
   }
-  .qa-toolbar { display: flex; align-items: center; gap: var(--space-sm); }
-  .qa-hint { flex: 1; color: var(--text-muted); font-size: var(--font-size-sm); }
+  .qa-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm); }
+  .qa-hint { flex: 1 1 240px; color: var(--text-muted); font-size: var(--font-size-sm); }
+  .qa-layout-options {
+    display: flex;
+    align-items: stretch;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+  }
+  .qa-layout-options legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .qa-layout-options label { position: relative; min-width: 0; cursor: pointer; }
+  .qa-layout-options label + label { border-inline-start: 1px solid var(--border-color); }
+  .qa-layout-options input { position: absolute; opacity: 0; pointer-events: none; }
+  .qa-layout-options span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding-inline: var(--space-sm);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
+  }
+  .qa-layout-options input:checked + span {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  .qa-layout-options input:focus-visible + span {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
   .qa-btn {
     padding: 2px var(--space-sm);
     border: 1px solid var(--border-color);
@@ -399,18 +512,44 @@
   .qa-btn.danger { background: var(--danger); border-color: var(--danger); color: var(--accent-text); }
   .qa-cap { color: var(--warning); font-size: var(--font-size-sm); }
 
-  .qa-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+  /* The default grid matches the mobile two-row strip and scrolls by columns. */
+  .qa-chips {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    gap: var(--space-xs);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-block-end: var(--space-xs);
+    overscroll-behavior-inline: contain;
+  }
+  .qa-chips.wide-scroll {
+    display: flex;
+    flex-wrap: nowrap;
+  }
   .qa-chip-wrap {
     position: relative;
     height: 80px;
     display: flex;
     align-items: center;
+    flex: 0 0 auto;
     transition: transform var(--transition-fast), opacity var(--transition-fast);
   }
   .qa-chip-wrap :global(.host) { height: 80px; }
+  /* Grid partners share their column width; one-row chips keep content width. */
+  .qa-chips:not(.wide-scroll) .qa-chip-wrap,
+  .qa-chips:not(.wide-scroll) .qa-chip-wrap :global(.host),
+  .qa-chips:not(.wide-scroll) .qa-chip-wrap :global(.host > *) {
+    inline-size: 100%;
+    height: 100%;
+  }
+  .qa-chips:not(.wide-scroll) .qa-chip-wrap :global(.host > *) { display: block; }
 
   /* Edit-mode: аффордансы DnD (HTML5) */
   .quick-access.edit .qa-chip-wrap { cursor: grab; }
+  /* The top padding keeps edit controls inside the scrolling strip's clipping area. */
+  .quick-access.edit .qa-chips { padding-block-start: 12px; }
   .quick-access.edit .qa-chip-wrap.dragging {
     cursor: grabbing;
     opacity: 0.35;
@@ -472,16 +611,6 @@
 
   /* Лента в две строки с горизонтальной прокруткой. Поповеры chips — position: fixed
      (plugins/shared/popover-align.ts), поэтому скролл-контейнер их не обрезает. */
-  .quick-access.narrow .qa-chips {
-    display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(2, auto);
-    grid-auto-columns: max-content;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: var(--space-xs);
-  }
-
   /* Лента клипует содержимое: место под ✕, который выступает за угол chip */
   .quick-access.narrow.edit .qa-chips {
     padding-block-start: 12px;
@@ -518,10 +647,31 @@
   .qa-move-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .quick-access:not(.narrow) .qa-move-btn { min-height: 28px; }
   .qa-chip-wrap.ghost {
+    /* Long provider/type ids must not blow up the strip: cap the chip and give it a
+       surface so the dashed border reads as a placeholder, not a layout artifact. */
+    max-inline-size: 240px;
     padding: 0 var(--space-sm);
     border: 1px dashed var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
     color: var(--text-muted);
   }
-  .qa-ghost-text { font-family: monospace; font-size: var(--font-size-xs); }
+  /* Column of title + ids; min-inline-size:0 lets the flex/grid item shrink so ellipsis works. */
+  .qa-ghost-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+  .qa-ghost-title { font-size: var(--font-size-sm); }
+  /* Provider/type ids can be very long: keep them on one line and truncate instead of
+     wrapping, so the chip stays within the 240px cap. */
+  .qa-ghost-sub {
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 </style>

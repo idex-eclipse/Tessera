@@ -326,6 +326,9 @@ const en: I18nMessages = {
     providerMissing: 'Provider missing',
     editHint: 'Click + to add chips, ✕ to remove. Chips act normally outside edit mode.',
     capReached: 'Limit reached: {max} chips max',
+    layout: 'Chip layout',
+    layoutWrap: 'Wrap',
+    layoutScroll: 'One row',
   },
 
   fleet: {

@@ -362,6 +362,23 @@ describe('settings-store / logo animation', () => {
 });
 
 describe('settings-store / per-printer settings', () => {
+  it('defaults invalid chip layouts to grid and persists an explicit choice', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      printerSettingsStorageKey('p1'),
+      JSON.stringify({ quickChipsLayout: 'invalid' }),
+    );
+    const store = createSettingsStore({ storage });
+
+    expect(store.getPrinterSettings('p1').quickChipsLayout).toBe('grid');
+    store.setQuickChipsLayout('p1', 'scroll');
+    expect(store.getPrinterSettings('p1').quickChipsLayout).toBe('scroll');
+    expect(parseStored<Record<string, unknown>>(storage, printerSettingsStorageKey('p1')))
+      .toMatchObject({ quickChipsLayout: 'scroll', quickChipsCustomized: false });
+    store.resetQuickChips('p1');
+    expect(store.getPrinterSettings('p1').quickChipsLayout).toBe('scroll');
+  });
+
   it('uses visible-by-default for pages and persists explicit visibility', () => {
     const { storage, store } = setup();
 
