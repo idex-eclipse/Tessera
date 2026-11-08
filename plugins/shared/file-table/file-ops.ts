@@ -1,4 +1,4 @@
-import type { PluginApi } from '../../../plugin-sdk/src/types';
+import type { MoonrakerProxyHandle, PluginApi } from '../../../plugin-sdk/src/types';
 
 export interface FileRef {
   root: string;   // 'gcodes' | 'config' | 'logs' | 'docs' | 'config_examples'
@@ -8,6 +8,13 @@ export interface FileRef {
 
 export function fullPath(ref: FileRef): string {
   return ref.path ? `${ref.root}/${ref.path}` : ref.root;
+}
+
+/** The Config editor protects Klipper and Moonraker config files in every subdirectory. */
+export function configBackupRef(ref: FileRef): FileRef | null {
+  return ref.root === 'config' && !ref.isDir && /\.(cfg|conf)$/i.test(ref.path)
+    ? { ...ref, path: `${ref.path}.bak`, isDir: false }
+    : null;
 }
 
 function dirOf(path: string): string {
@@ -104,9 +111,13 @@ export function createFileOps(api: PluginApi) {
     }
   }
 
-  async function readText(ref: FileRef): Promise<string> {
-    const url = `${fileUrl(ref)}?t=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store', headers: authHeaders() });
+  /** Read from a fixed printer handle so a printer-tab switch cannot mix comparison inputs. */
+  async function readText(ref: FileRef, target = handle()): Promise<string> {
+    const url = `${target.httpBaseUrl}/server/files/${encodeSegments(fullPath(ref))}?t=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: target.authToken ? { Authorization: `Bearer ${target.authToken}` } : {},
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   }
@@ -118,19 +129,34 @@ export function createFileOps(api: PluginApi) {
     return res.blob();
   }
 
-  async function saveText(ref: FileRef, content: string): Promise<void> {
+  async function saveText(ref: FileRef, content: string, target = handle()): Promise<void> {
     const blob = new Blob([content], { type: 'application/octet-stream' });
     const form = new FormData();
     form.append('file', blob, baseOf(ref.path));
     const dir = dirOf(ref.path);
     if (dir) form.append('path', dir);
     form.append('root', ref.root);
-    const res = await fetch(`${handle().httpBaseUrl}/server/files/upload`, {
+    const res = await fetch(`${target.httpBaseUrl}/server/files/upload`, {
       method: 'POST',
-      headers: authHeaders(),
+      headers: target.authToken ? { Authorization: `Bearer ${target.authToken}` } : {},
       body: form,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }
+
+  /** Copy the exact on-disk bytes before uploading edited text; a failed copy prevents the save. */
+  async function saveConfigText(ref: FileRef, content: string, target: MoonrakerProxyHandle = handle()): Promise<void> {
+    const backup = configBackupRef(ref);
+    if (!backup) throw new Error('config.backupInvalid');
+    await target.request('server.files.copy', { source: fullPath(ref), dest: fullPath(backup) });
+    await saveText(ref, content, target);
+  }
+
+  /** Restore the saved bytes without overwriting the backup itself. */
+  async function restoreConfigBackup(ref: FileRef, target: MoonrakerProxyHandle = handle()): Promise<void> {
+    const backup = configBackupRef(ref);
+    if (!backup) throw new Error('config.backupInvalid');
+    await target.request('server.files.copy', { source: fullPath(backup), dest: fullPath(ref) });
   }
 
   async function upload(
@@ -174,7 +200,7 @@ export function createFileOps(api: PluginApi) {
 
   return {
     fileUrl, viewUrl, startPrint, refreshMetadata, createZip, download,
-    rename, copy, remove, readText, readBlob, saveText,
+    rename, copy, remove, readText, readBlob, saveText, saveConfigText, restoreConfigBackup,
     upload, createDirectory, createFile
   };
 }

@@ -728,6 +728,16 @@ is mounted in a narrow column, so it should lay out by its own width.
 `@core/config` (all `version: 1`; a contribution gets only its own api), since owner version
 `4.0.0`:
 
+The built-in Config editor copies each `.cfg` or `.conf` file in Moonraker's `config`
+root, including nested directories, to a sibling `<filename>.bak` before saving.
+A failed copy cancels the save; the next save replaces the backup. The file menu offers
+a line comparison and restore while the backup exists. Save & Restart removes it only
+after a new Klipper startup reaches `ready`, or after Moonraker reconnects for
+`moonraker.conf`. Errors and a 90-second timeout leave it in place. If a broken
+`moonraker.conf` prevents Moonraker from starting, restore the backup through SSH.
+An extension replacing the built-in editor owns its file writes and does not inherit
+this workflow.
+
 | Point | kind | mode | Where |
 |---|---|---|---|
 | `page` | element | replacement | the whole content of the Config files page (both tables and the bottom panels) |

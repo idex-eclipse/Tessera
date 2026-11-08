@@ -65,6 +65,7 @@
     open,
     title,
     loading = false,
+    saving = false,
     content,
     readonly = false,
     canRestart = false,
@@ -77,13 +78,14 @@
     open: boolean;
     title: string;
     loading?: boolean;
+    saving?: boolean;
     content: string;
     readonly?: boolean;
     canRestart?: boolean;
     restartKind?: 'klipper' | 'moonraker';
     lang?: 'klipper' | 'plain';
-    onSave: (text: string) => void;
-    onSaveRestart?: (text: string) => void;
+    onSave: (text: string) => Promise<boolean>;
+    onSaveRestart?: (text: string) => Promise<boolean>;
     onClose: () => void;
   } = $props();
 
@@ -93,7 +95,6 @@
   let text = $state('');
   let dirty = $state(false);
   let savePending = $state(false);
-  let savePendingTimer: ReturnType<typeof setTimeout> | null = null;
   let printing = $state(false);
 
   const klippy = useKlippyState(api);
@@ -188,15 +189,6 @@
       if (open && !dirty && !savePending && text !== norm) {
           text = norm;
           if (inputEl && inputEl.value !== norm) inputEl.value = norm;
-      }
-      // Проп догнал text — считаем сохранение подтверждённым
-      if (savePending && text === norm) {
-          savePending = false;
-          dirty = false;
-          if (savePendingTimer) {
-              clearTimeout(savePendingTimer);
-              savePendingTimer = null;
-          }
       }
   });
 
@@ -691,26 +683,27 @@
     if (suggestTimer) clearTimeout(suggestTimer);
   });
 
-  function save(): void {
-      savePending = true;
-      if (savePendingTimer) clearTimeout(savePendingTimer);
-      savePendingTimer = setTimeout(() => {
-          // страховка: если проп не догнал за 5с, отпускаем
-          savePending = false;
-          dirty = false;
-      }, 5000);
-      onSave(text);
-      // dirty НЕ сбрасываем здесь — сбросится когда проп догонит
+  async function save(): Promise<void> {
+    if (savePending || saving) return;
+    savePending = true;
+    const submitted = text;
+    try {
+      if (await onSave(submitted) && text === submitted) dirty = false;
+    } finally {
+      // A failed backup or upload must leave the buffer dirty for another attempt.
+      savePending = false;
+    }
   }
 
-  function saveRestart(): void {
-      savePending = true;
-      if (savePendingTimer) clearTimeout(savePendingTimer);
-      savePendingTimer = setTimeout(() => {
-          savePending = false;
-          dirty = false;
-      }, 5000);
-      onSaveRestart?.(text);
+  async function saveRestart(): Promise<void> {
+    if (savePending || saving || !onSaveRestart) return;
+    savePending = true;
+    const submitted = text;
+    try {
+      if (await onSaveRestart(submitted) && text === submitted) dirty = false;
+    } finally {
+      savePending = false;
+    }
   }
 
   const INDENT = '    '; // 4 пробела
@@ -1357,8 +1350,8 @@
           class="btn primary"
           title={i18n.t('ft.save')}
           aria-label={i18n.t('ft.save')}
-          disabled={loading || !dirty}
-          onclick={save}
+          disabled={loading || saving || savePending || !dirty}
+          onclick={() => void save()}
         >
           <Icon name="save" size={15} />
           {#if !narrow}<span class="btn-label">{i18n.t('ft.save')}</span>{/if}
@@ -1370,8 +1363,8 @@
             class="btn primary"
             title={restartLabel}
             aria-label={restartLabel}
-            disabled={loading || !dirty}
-            onclick={saveRestart}
+            disabled={loading || saving || savePending || !dirty}
+            onclick={() => void saveRestart()}
           >
             <Icon name="refresh" size={15} />
             {#if !narrow}<span class="btn-label">{restartLabel}</span>{/if}

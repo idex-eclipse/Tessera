@@ -12,7 +12,10 @@
   import TextEditorDialog from '../text-editor-dialog/text-editor-dialog.svelte';
   import ImageViewerDialog from '../image-viewer-dialog/image-viewer-dialog.svelte';
 
-  import { createFileOps, type FileRef } from './file-ops';
+  import { configBackupRef, createFileOps, fullPath, type FileRef } from './file-ops';
+  import { checkConfigRestart } from './config-restart';
+  import { diffConfigLines, type ConfigDiffLine } from './config-diff';
+  import ConfigBackupDialog from './ConfigBackupDialog.svelte';
   import { FILE_TABLE_POINT_IDS } from './extension-points';
   import { formatDate, formatSize } from '../format';
 
@@ -63,6 +66,7 @@ let {
   function errText(e: unknown): string {
     const reasonKey = (e as { rejection?: { reasonKey?: string } } | null)?.rejection?.reasonKey;
     if (reasonKey) return i18n.t(reasonKey);
+    if (e instanceof Error && e.message === 'config.backupInvalid') return i18n.t(e.message);
     return e instanceof Error ? e.message : String(e);
   }
 
@@ -280,7 +284,13 @@ let {
   let items = $derived.by<ContextMenuItem[]>(() => {
     if (!menu) return [];
     void extTick;
-    return [...(menuItems?.(menu.ref, menu.isDir) ?? []), ...extMenuItems(menu.ref)];
+    const backup = configBackupRef(menu.ref);
+    const hasBackup = backup && !menu.isDir && dataFiles.some((f) => f.name === backup.path.split('/').pop());
+    const safetyItems: ContextMenuItem[] = hasBackup
+      ? [{ id: 'compare-backup', label: i18n.t('config.compareBackup'), icon: 'file' },
+         { id: 'restore-backup', label: i18n.t('config.restoreBackup'), icon: 'refresh' }]
+      : [];
+    return [...(menuItems?.(menu.ref, menu.isDir) ?? []), ...safetyItems, ...extMenuItems(menu.ref)];
   });
 
   let renameRef = $state<FileRef | null>(null);
@@ -291,6 +301,79 @@ let {
   let editorOpen = $state(false);
   let editorLoading = $state(false);
   let editorContent = $state('');
+  let saveBusy = $state(false);
+  let failureRef = $state<FileRef | null>(null);
+  let failurePrinterId = $state('');
+  let restartStatus = $state('');
+  let restartStatusPrinterId = $state('');
+  let backupDialogRef = $state<FileRef | null>(null);
+  let backupDialogPrinterId = $state('');
+  let backupDialogOpen = $state(false);
+  let backupDiff = $state<ConfigDiffLine[]>([]);
+  let backupRestored = $state(false);
+  let backupDialogNotice = $state('');
+
+  /** Read both files from Moonraker so comparison still works after a page reload. */
+  async function openBackupDialog(ref: FileRef): Promise<void> {
+    const backup = configBackupRef(ref);
+    if (!backup) return;
+    const printerId = api.printer.id;
+    try {
+      const target = api.moonrakerFor(printerId);
+      const [previous, current] = await Promise.all([
+        ops.readText(backup, target), ops.readText(ref, target),
+      ]);
+      if (api.printer.id !== printerId) return;
+      backupDiff = diffConfigLines(previous, current);
+      backupDialogRef = ref;
+      backupDialogPrinterId = printerId;
+      backupRestored = false;
+      backupDialogNotice = '';
+      backupDialogOpen = true;
+    } catch (e) {
+      setNotice(api, scope, errText(e));
+    }
+  }
+
+  /** A direct restore is available from the error banner and the file menu. */
+  async function restoreBackup(ref: FileRef | null = backupDialogRef): Promise<void> {
+    if (!ref || saveBusy) return;
+    if (backupDialogOpen && backupDialogPrinterId !== api.printer.id) return;
+    const printerId = api.printer.id;
+    saveBusy = true;
+    try {
+      await ops.restoreConfigBackup(ref, api.moonrakerFor(printerId));
+      if (api.printer.id !== printerId) return;
+      backupDialogRef = ref;
+      backupDialogPrinterId = printerId;
+      backupDiff = [];
+      backupRestored = true;
+      backupDialogNotice = '';
+      backupDialogOpen = true;
+      failureRef = null;
+      void source.refresh();
+    } catch (e) {
+      setNotice(api, scope, errText(e));
+    } finally {
+      saveBusy = false;
+    }
+  }
+
+  /** The restored bytes are already on disk; restarting must not replace their backup. */
+  async function restartRestored(): Promise<void> {
+    const ref = backupDialogRef;
+    if (!ref || saveBusy || backupDialogPrinterId !== api.printer.id) return;
+    const printerId = api.printer.id;
+    saveBusy = true;
+    try {
+      const result = await restartConfig(ref, printerId, true);
+      if (result !== 'blocked') backupDialogOpen = false;
+    } catch (e) {
+      backupDialogNotice = errText(e);
+    } finally {
+      saveBusy = false;
+    }
+  }
   let editorReadonly = $state(false); // пригодится в шаге 3
   let editorCanRestart = $derived(
     editorRef ? /\.(conf|cfg)$/i.test(editorRef.path.split('/').pop() ?? '') : false,
@@ -309,27 +392,87 @@ let {
     }
   }
 
-  async function saveAndRestart(text: string): Promise<void> {
-    if (!editorRef) return;
-    try {
-        await ops.saveText(editorRef, text);
-        editorContent = text;
-        editorOpen = false;
-
-        if (editorRestartKind === 'moonraker') {
-        // Moonraker рестартится через machine-компонент (systemd), а не printer.*
-        await api
-            .moonraker()
-            .request('machine.services.restart', { service: 'moonraker' })
-            .catch(reportRestartError); // обрыв коннекта при рестарте — ожидаем
-        } else {
-        await api
-            .moonraker()
-            .request('printer.firmware_restart', {})
-            .catch(reportRestartError);
+  /** A restart is verified against the same printer and file used by the save. */
+  async function restartConfig(ref: FileRef, printerId: string, protectedSave: boolean): Promise<'blocked' | void> {
+    const target = api.moonrakerFor(printerId);
+    const kind = ref.root === 'config' && /^moonraker\.conf$/i.test(ref.path) ? 'moonraker' : 'klipper';
+    const restart = () => kind === 'moonraker'
+      ? target.request('machine.services.restart', { service: 'moonraker' })
+      : target.request('printer.firmware_restart', {});
+    if (!protectedSave) {
+      await restart().catch(reportRestartError);
+      return;
+    }
+    // Recovery may run while Klipper is in error; only an active print blocks restart.
+    const info = await target.request<{ state?: string }>('printer.info');
+    if (info.state === 'ready') {
+      const status = await target.request<{ status?: { print_stats?: { state?: string } } }>(
+        'printer.objects.query', { objects: { print_stats: ['state'] } },
+      );
+      const printState = status.status?.print_stats?.state;
+      if (printState === 'printing' || printState === 'paused') {
+        failureRef = ref;
+        failurePrinterId = printerId;
+        setNotice(api, scope, i18n.t('config.restartDuringPrint'));
+        backupDialogNotice = i18n.t('config.restartDuringPrint');
+        return 'blocked';
+      }
+    }
+    restartStatus = i18n.t('config.restartChecking');
+    restartStatusPrinterId = printerId;
+    const outcome = await checkConfigRestart(target, kind, restart);
+    if (outcome === 'ready') {
+      const backup = configBackupRef(ref);
+      if (backup) {
+        try {
+          await target.request('server.files.delete_file', { path: fullPath(backup) });
+          failureRef = null;
+          restartStatus = i18n.t('config.restartReady');
+          void source.refresh();
+        } catch (e) {
+          restartStatus = '';
+          setNotice(api, scope, i18n.t('config.backupDeleteError', { error: errText(e) }));
         }
+      }
+    } else {
+      restartStatus = '';
+      failureRef = ref;
+      failurePrinterId = printerId;
+      const key = outcome === 'error' ? 'config.restartError'
+        : outcome === 'rejected' ? 'config.restartRejected' : 'config.restartTimeout';
+      setNotice(api, scope, i18n.t(key));
+      if (kind === 'moonraker' && outcome === 'timeout') {
+        const backup = configBackupRef(ref)!;
+        setNotice(api, scope, i18n.t('config.moonrakerRecovery', {
+          path: backup.path, target: ref.path,
+        }));
+      }
+    }
+  }
+
+  /** Both save buttons share the same backup-first path for protected config files. */
+  async function saveAndRestart(text: string): Promise<boolean> {
+    if (!editorRef || saveBusy) return false;
+    const ref = editorRef;
+    const printerId = api.printer.id;
+    const protectedSave = configBackupRef(ref) !== null;
+    saveBusy = true;
+    restartStatus = '';
+    try {
+      if (protectedSave) await ops.saveConfigText(ref, text, api.moonrakerFor(printerId));
+      else await ops.saveText(ref, text);
+      editorContent = text;
+      editorOpen = false;
+      failureRef = null;
+      setNotice(api, scope, null);
+      void source.refresh();
+      await restartConfig(ref, printerId, protectedSave);
+      return true;
     } catch (e) {
-        setNotice(api, scope, errText(e));
+      setNotice(api, scope, errText(e));
+      return false;
+    } finally {
+      saveBusy = false;
     }
   }
 
@@ -371,10 +514,12 @@ let {
 
   let editorSeq = $state(0);
   let editorRestartKind = $derived<'klipper' | 'moonraker'>(
-    /^moonraker\.conf$/i.test(editorRef?.path.split('/').pop() ?? '') ? 'moonraker' : 'klipper',
+    editorRef?.root === 'config' && /^moonraker\.conf$/i.test(editorRef.path) ? 'moonraker' : 'klipper',
   );
   async function openEditor(ref: FileRef): Promise<void> {
-    editorReadonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly;
+    // A backup remains readable but cannot be edited through the ordinary file menu.
+    editorReadonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
+      (ref.root === 'config' && /\.(cfg|conf)\.bak$/i.test(ref.path));
     const name = ref.path.split('/').pop() ?? '';
     editorLang = /\.(conf|cfg)$/i.test(name)
         ? 'klipper'
@@ -461,6 +606,8 @@ let {
       else if (id === 'download') ops.download(ref);
       else if (id === 'rename') { renameRef = ref; renameOpen = true; }
       else if (id === 'copy') await ops.copy(ref);
+      else if (id === 'compare-backup') await openBackupDialog(ref);
+      else if (id === 'restore-backup') await restoreBackup(ref);
       else if (id === 'delete') { deleteRef = ref; deleteOpen = true; }
       else if (id.startsWith('ext:')) {
         // `file-actions` contribution: the extension gets the file it was invoked on (typed context).
@@ -526,15 +673,28 @@ let {
   }
   function hideBrokenImage(e: Event): void { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }
 
-  async function handleSave(t: string): Promise<void> {
-    if (!editorRef) return;
-      try {
-        await ops.saveText(editorRef, t);
-        editorContent = t; // синхронизация больше не откатит к старой версии
-      } catch (e) {
-        setNotice(api, scope, errText(e));
-      }
+  /** Confirm the editor buffer only after the backup and upload both succeeded. */
+  async function handleSave(t: string): Promise<boolean> {
+    if (!editorRef || saveBusy) return false;
+    const ref = editorRef;
+    const printerId = api.printer.id;
+    saveBusy = true;
+    restartStatus = '';
+    try {
+      if (configBackupRef(ref)) await ops.saveConfigText(ref, t, api.moonrakerFor(printerId));
+      else await ops.saveText(ref, t);
+      editorContent = t; // Confirm the editor buffer only after both backup and upload succeed.
+      failureRef = null;
+      setNotice(api, scope, null);
+      void source.refresh();
+      return true;
+    } catch (e) {
+      setNotice(api, scope, errText(e));
+      return false;
+    } finally {
+      saveBusy = false;
     }
+  }
 </script>
 
 <div class="ft-card" bind:this={cardEl}>
@@ -566,6 +726,12 @@ let {
 
   {#if notice}
     <p class="notice">{notice}</p>
+  {/if}
+  {#if restartStatus && api.printer.id === restartStatusPrinterId}
+    <p class="restart-status" role="status">{restartStatus}</p>
+  {/if}
+  {#if failureRef && root === 'config' && api.printer.id === failurePrinterId}
+    <button class="btn" onclick={() => void restoreBackup(failureRef!)}>{i18n.t('config.restoreBackup')}</button>
   {/if}
 
   {#if sourceError}
@@ -685,6 +851,20 @@ let {
 
   <input hidden type="file" multiple />
 
+  {#if root === 'config'}
+    <ConfigBackupDialog
+      open={backupDialogOpen}
+      name={backupDialogRef?.path.split('/').pop() ?? ''}
+      lines={backupDiff}
+      busy={saveBusy}
+      restored={backupRestored}
+      notice={backupDialogNotice}
+      onRestore={() => void restoreBackup()}
+      onRestart={() => void restartRestored()}
+      onClose={() => (backupDialogOpen = false)}
+    />
+  {/if}
+
   <PromptDialog 
     open={renameOpen} 
     title={i18n.t('ft.renameTitle')} 
@@ -713,6 +893,7 @@ let {
           open={editorOpen}
           title={editorRef?.path.split('/').pop() ?? ''}
           loading={editorLoading}
+          saving={saveBusy}
           content={editorContent}
           readonly={editorReadonly}
           canRestart={editorCanRestart}
@@ -785,6 +966,13 @@ let {
         color:var(--danger);
         font-size:var(--font-size-sm);
         padding:0 var(--space-md);
+        overflow-wrap:anywhere;
+    }
+    .restart-status {
+        color: var(--text-secondary);
+        font-size: var(--font-size-sm);
+        padding-inline: var(--space-md);
+        overflow-wrap: anywhere;
     }
     .ft-scroll { 
         flex:1;
