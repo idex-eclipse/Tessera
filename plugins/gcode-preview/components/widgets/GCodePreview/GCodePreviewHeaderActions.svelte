@@ -182,7 +182,7 @@
 
   .obj-menu-title {
     padding: var(--space-xs) var(--space-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -221,7 +221,7 @@
   .obj-badge {
     padding: 1px 6px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     text-transform: uppercase;
   }
