@@ -12,9 +12,8 @@
   import TextEditorDialog from '../text-editor-dialog/text-editor-dialog.svelte';
   import ImageViewerDialog from '../image-viewer-dialog/image-viewer-dialog.svelte';
 
-  import { configBackupRef, createFileOps, fullPath, type FileRef } from './file-ops';
+  import { configBackupRef, createFileOps, type FileRef } from './file-ops';
   import { checkConfigRestart } from './config-restart';
-  import { diffConfigLines, type ConfigDiffLine } from './config-diff';
   import ConfigBackupDialog from './ConfigBackupDialog.svelte';
   import { FILE_TABLE_POINT_IDS } from './extension-points';
   import { formatDate, formatSize } from '../format';
@@ -66,7 +65,9 @@ let {
   function errText(e: unknown): string {
     const reasonKey = (e as { rejection?: { reasonKey?: string } } | null)?.rejection?.reasonKey;
     if (reasonKey) return i18n.t(reasonKey);
-    if (e instanceof Error && e.message === 'config.backupInvalid') return i18n.t(e.message);
+    if (e instanceof Error && (e.message === 'config.backupInvalid' || e.message === 'config.backupMissing')) {
+      return i18n.t(e.message);
+    }
     return e instanceof Error ? e.message : String(e);
   }
 
@@ -284,11 +285,8 @@ let {
   let items = $derived.by<ContextMenuItem[]>(() => {
     if (!menu) return [];
     void extTick;
-    const backup = configBackupRef(menu.ref);
-    const hasBackup = backup && !menu.isDir && dataFiles.some((f) => f.name === backup.path.split('/').pop());
-    const safetyItems: ContextMenuItem[] = hasBackup
-      ? [{ id: 'compare-backup', label: i18n.t('config.compareBackup'), icon: 'file' },
-         { id: 'restore-backup', label: i18n.t('config.restoreBackup'), icon: 'refresh' }]
+    const safetyItems: ContextMenuItem[] = configBackupRef(menu.ref)
+      ? [{ id: 'compare-backup', label: i18n.t('config.compareBackup'), icon: 'columns' }]
       : [];
     return [...(menuItems?.(menu.ref, menu.isDir) ?? []), ...safetyItems, ...extMenuItems(menu.ref)];
   });
@@ -309,51 +307,40 @@ let {
   let backupDialogRef = $state<FileRef | null>(null);
   let backupDialogPrinterId = $state('');
   let backupDialogOpen = $state(false);
-  let backupDiff = $state<ConfigDiffLine[]>([]);
-  let backupRestored = $state(false);
   let backupDialogNotice = $state('');
+  let editorCompareInitially = $state(false);
 
-  /** Read both files from Moonraker so comparison still works after a page reload. */
-  async function openBackupDialog(ref: FileRef): Promise<void> {
-    const backup = configBackupRef(ref);
-    if (!backup) return;
+  /** Hidden backup files are read directly because Moonraker does not notify their changes. */
+  async function loadEditorBackup(): Promise<{ text: string; path: string } | null> {
+    const ref = editorRef;
+    if (!ref) return null;
     const printerId = api.printer.id;
-    try {
-      const target = api.moonrakerFor(printerId);
-      const [previous, current] = await Promise.all([
-        ops.readText(backup, target), ops.readText(ref, target),
-      ]);
-      if (api.printer.id !== printerId) return;
-      backupDiff = diffConfigLines(previous, current);
-      backupDialogRef = ref;
-      backupDialogPrinterId = printerId;
-      backupRestored = false;
-      backupDialogNotice = '';
-      backupDialogOpen = true;
-    } catch (e) {
-      setNotice(api, scope, errText(e));
-    }
+    const backup = await ops.readConfigBackup(ref, api.moonrakerFor(printerId));
+    if (api.printer.id !== printerId) return null;
+    return backup ? { text: backup.text, path: backup.ref.path } : null;
   }
 
-  /** A direct restore is available from the error banner and the file menu. */
-  async function restoreBackup(ref: FileRef | null = backupDialogRef): Promise<void> {
-    if (!ref || saveBusy) return;
-    if (backupDialogOpen && backupDialogPrinterId !== api.printer.id) return;
+  /** A direct restore is available from the error banner and the editor comparison. */
+  async function restoreBackup(ref: FileRef | null = backupDialogRef): Promise<string | null> {
+    if (!ref || saveBusy) return null;
+    if (backupDialogOpen && backupDialogPrinterId !== api.printer.id) return null;
     const printerId = api.printer.id;
     saveBusy = true;
     try {
       await ops.restoreConfigBackup(ref, api.moonrakerFor(printerId));
-      if (api.printer.id !== printerId) return;
+      if (api.printer.id !== printerId) return null;
       backupDialogRef = ref;
       backupDialogPrinterId = printerId;
-      backupDiff = [];
-      backupRestored = true;
       backupDialogNotice = '';
       backupDialogOpen = true;
+      editorOpen = false;
       failureRef = null;
       void source.refresh();
+      return null;
     } catch (e) {
-      setNotice(api, scope, errText(e));
+      const message = errText(e);
+      setNotice(api, scope, message);
+      return message;
     } finally {
       saveBusy = false;
     }
@@ -365,11 +352,14 @@ let {
     if (!ref || saveBusy || backupDialogPrinterId !== api.printer.id) return;
     const printerId = api.printer.id;
     saveBusy = true;
+    // Close the prompt at once; the health check can continue in the file table.
+    backupDialogOpen = false;
     try {
       const result = await restartConfig(ref, printerId, true);
-      if (result !== 'blocked') backupDialogOpen = false;
+      if (result === 'blocked') backupDialogOpen = true;
     } catch (e) {
       backupDialogNotice = errText(e);
+      backupDialogOpen = true;
     } finally {
       saveBusy = false;
     }
@@ -422,18 +412,8 @@ let {
     restartStatusPrinterId = printerId;
     const outcome = await checkConfigRestart(target, kind, restart);
     if (outcome === 'ready') {
-      const backup = configBackupRef(ref);
-      if (backup) {
-        try {
-          await target.request('server.files.delete_file', { path: fullPath(backup) });
-          failureRef = null;
-          restartStatus = i18n.t('config.restartReady');
-          void source.refresh();
-        } catch (e) {
-          restartStatus = '';
-          setNotice(api, scope, i18n.t('config.backupDeleteError', { error: errText(e) }));
-        }
-      }
+      failureRef = null;
+      restartStatus = i18n.t('config.restartReady');
     } else {
       restartStatus = '';
       failureRef = ref;
@@ -516,7 +496,7 @@ let {
   let editorRestartKind = $derived<'klipper' | 'moonraker'>(
     editorRef?.root === 'config' && /^moonraker\.conf$/i.test(editorRef.path) ? 'moonraker' : 'klipper',
   );
-  async function openEditor(ref: FileRef): Promise<void> {
+  async function openEditor(ref: FileRef, compareInitially = false): Promise<void> {
     // A backup remains readable but cannot be edited through the ordinary file menu.
     editorReadonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
       (ref.root === 'config' && /\.(cfg|conf)\.bak$/i.test(ref.path));
@@ -525,6 +505,7 @@ let {
         ? 'klipper'
         : 'plain';
     editorRef = ref;
+    editorCompareInitially = compareInitially;
     editorSeq++;
     editorByExt = false;
     editorOpen = true;
@@ -606,8 +587,7 @@ let {
       else if (id === 'download') ops.download(ref);
       else if (id === 'rename') { renameRef = ref; renameOpen = true; }
       else if (id === 'copy') await ops.copy(ref);
-      else if (id === 'compare-backup') await openBackupDialog(ref);
-      else if (id === 'restore-backup') await restoreBackup(ref);
+      else if (id === 'compare-backup') await openEditor(ref, true);
       else if (id === 'delete') { deleteRef = ref; deleteOpen = true; }
       else if (id.startsWith('ext:')) {
         // `file-actions` contribution: the extension gets the file it was invoked on (typed context).
@@ -731,7 +711,10 @@ let {
     <p class="restart-status" role="status">{restartStatus}</p>
   {/if}
   {#if failureRef && root === 'config' && api.printer.id === failurePrinterId}
-    <button class="btn" onclick={() => void restoreBackup(failureRef!)}>{i18n.t('config.restoreBackup')}</button>
+    <button class="backup-recovery" disabled={saveBusy} onclick={() => void restoreBackup(failureRef!)}>
+      <Icon name="refresh" size={16} />
+      {i18n.t('config.restoreBackup')}
+    </button>
   {/if}
 
   {#if sourceError}
@@ -855,11 +838,8 @@ let {
     <ConfigBackupDialog
       open={backupDialogOpen}
       name={backupDialogRef?.path.split('/').pop() ?? ''}
-      lines={backupDiff}
       busy={saveBusy}
-      restored={backupRestored}
       notice={backupDialogNotice}
-      onRestore={() => void restoreBackup()}
       onRestart={() => void restartRestored()}
       onClose={() => (backupDialogOpen = false)}
     />
@@ -899,6 +879,9 @@ let {
           canRestart={editorCanRestart}
           restartKind={editorRestartKind}
           lang={editorLang}
+          compareInitially={editorCompareInitially}
+          loadBackup={editorRef && configBackupRef(editorRef) ? loadEditorBackup : undefined}
+          onRestoreBackup={() => restoreBackup(editorRef)}
           onSave={handleSave}
           onSaveRestart={saveAndRestart}
           onClose={() => (editorOpen = false)}
@@ -974,6 +957,22 @@ let {
         padding-inline: var(--space-md);
         overflow-wrap: anywhere;
     }
+    .backup-recovery {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-xs);
+        align-self: flex-start;
+        min-height: 44px;
+        margin-inline: var(--space-md);
+        padding-inline: var(--space-md);
+        border: 1px solid var(--accent);
+        border-radius: var(--radius-sm);
+        background: var(--accent);
+        color: var(--bg-surface);
+        font-size: var(--font-size-sm);
+        cursor: pointer;
+    }
+    .backup-recovery:disabled { opacity: 0.5; cursor: not-allowed; }
     .ft-scroll { 
         flex:1;
         min-height:0;

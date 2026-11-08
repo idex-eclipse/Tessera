@@ -12,9 +12,14 @@ export function fullPath(ref: FileRef): string {
 
 /** The Config editor protects Klipper and Moonraker config files in every subdirectory. */
 export function configBackupRef(ref: FileRef): FileRef | null {
-  return ref.root === 'config' && !ref.isDir && /\.(cfg|conf)$/i.test(ref.path)
-    ? { ...ref, path: `${ref.path}.bak`, isDir: false }
+  return ref.root === 'config' && !ref.isDir && !ref.path.startsWith('.backup/') && /\.(cfg|conf)$/i.test(ref.path)
+    ? { ...ref, path: `.backup/${ref.path}.bak`, isDir: false }
     : null;
+}
+
+/** A previous Tessera build kept backups next to their source files. */
+function legacyConfigBackupRef(ref: FileRef): FileRef {
+  return { ...ref, path: `${ref.path}.bak`, isDir: false };
 }
 
 function dirOf(path: string): string {
@@ -148,15 +153,45 @@ export function createFileOps(api: PluginApi) {
   async function saveConfigText(ref: FileRef, content: string, target: MoonrakerProxyHandle = handle()): Promise<void> {
     const backup = configBackupRef(ref);
     if (!backup) throw new Error('config.backupInvalid');
+    // Moonraker requires every parent to exist before creating a directory.
+    const segments = dirOf(backup.path).split('/');
+    let directory = 'config';
+    for (const segment of segments) {
+      directory += `/${segment}`;
+      try {
+        await target.request('server.files.get_directory', { path: directory });
+      } catch {
+        try {
+          await target.request('server.files.post_directory', { path: directory });
+        } catch (error) {
+          // Another browser may have created the directory after our first check.
+          await target.request('server.files.get_directory', { path: directory }).catch(() => { throw error; });
+        }
+      }
+    }
     await target.request('server.files.copy', { source: fullPath(ref), dest: fullPath(backup) });
     await saveText(ref, content, target);
   }
 
+  /** Read the current backup, falling back to the old sibling location during migration. */
+  async function readConfigBackup(ref: FileRef, target: MoonrakerProxyHandle = handle()): Promise<{ text: string; ref: FileRef } | null> {
+    const backup = configBackupRef(ref);
+    if (!backup) return null;
+    for (const candidate of [backup, legacyConfigBackupRef(ref)]) {
+      try {
+        return { text: await readText(candidate, target), ref: candidate };
+      } catch (error) {
+        if (!(error instanceof Error && error.message === 'HTTP 404')) throw error;
+      }
+    }
+    return null;
+  }
+
   /** Restore the saved bytes without overwriting the backup itself. */
   async function restoreConfigBackup(ref: FileRef, target: MoonrakerProxyHandle = handle()): Promise<void> {
-    const backup = configBackupRef(ref);
-    if (!backup) throw new Error('config.backupInvalid');
-    await target.request('server.files.copy', { source: fullPath(backup), dest: fullPath(ref) });
+    const backup = await readConfigBackup(ref, target);
+    if (!backup) throw new Error('config.backupMissing');
+    await target.request('server.files.copy', { source: fullPath(backup.ref), dest: fullPath(ref) });
   }
 
   async function upload(
@@ -200,7 +235,7 @@ export function createFileOps(api: PluginApi) {
 
   return {
     fileUrl, viewUrl, startPrint, refreshMetadata, createZip, download,
-    rename, copy, remove, readText, readBlob, saveText, saveConfigText, restoreConfigBackup,
+    rename, copy, remove, readText, readBlob, saveText, saveConfigText, readConfigBackup, restoreConfigBackup,
     upload, createDirectory, createFile
   };
 }

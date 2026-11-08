@@ -4,6 +4,42 @@ export interface ConfigDiffLine {
   text: string;
 }
 
+/** One aligned row in the desktop comparison; either side may be empty for a change. */
+export interface ConfigComparisonRow extends ConfigDiffLine {
+  beforeLine: number | null;
+  afterLine: number | null;
+}
+
+/** Assign original and current line numbers without losing deletion positions on mobile. */
+export function configComparisonRows(before: string, after: string): ConfigComparisonRow[] {
+  let beforeLine = 0;
+  let afterLine = 0;
+  return diffConfigLines(before, after).map((line) => ({
+    ...line,
+    beforeLine: line.kind === 'added' ? null : ++beforeLine,
+    afterLine: line.kind === 'removed' ? null : ++afterLine,
+  }));
+}
+
+/** Map changes to current line numbers so the editable buffer can show additions and deletion anchors. */
+export function configCurrentLineMarks(before: string, after: string): Map<number, 'added' | 'removed' | 'changed'> {
+  const rows = configComparisonRows(before, after);
+  const marks = new Map<number, 'added' | 'removed' | 'changed'>();
+  const lastLine = after.replace(/\r\n?/g, '\n').split('\n').length;
+  let currentLine = 0;
+  for (const row of rows) {
+    if (row.afterLine !== null) currentLine = row.afterLine;
+    if (row.kind === 'added' && row.afterLine !== null) {
+      marks.set(row.afterLine, marks.get(row.afterLine) === 'removed' ? 'changed' : 'added');
+    } else if (row.kind === 'removed') {
+      // A deleted line has no current row; mark its nearest surviving neighbour.
+      const anchor = Math.min(currentLine + 1, lastLine);
+      marks.set(anchor, marks.get(anchor) === 'added' ? 'changed' : 'removed');
+    }
+  }
+  return marks;
+}
+
 /**
  * Use a line LCS for ordinary config files so insertions do not mark every later line as
  * changed. The large-file fallback keeps the browser responsive on generated configs.

@@ -1,6 +1,6 @@
 import type { MoonrakerProxyHandle } from '../../../plugin-sdk/src/types';
 
-/** The backup is removed only after the service affected by the restart has come back. */
+/** A confirmed restart is reported without changing the retained backup. */
 export type RestartOutcome = 'ready' | 'error' | 'timeout' | 'rejected';
 
 /**
@@ -11,7 +11,7 @@ export async function checkConfigRestart(
   handle: MoonrakerProxyHandle,
   kind: 'klipper' | 'moonraker',
   restart: () => Promise<unknown>,
-  timeoutMs = 90_000,
+  timeoutMs = 100_000,
 ): Promise<RestartOutcome> {
   return new Promise((resolve) => {
     let finished = false;

@@ -35,6 +35,8 @@
   import { copyText } from './clipboard';
   import { useNarrow } from '../responsive/use-narrow.svelte.ts';
   import ConfigHelpPopover from './ConfigHelpPopover.svelte';
+  import ConfigCompareView from './ConfigCompareView.svelte';
+  import { configCurrentLineMarks } from '../file-table/config-diff';
   import {
     pointToCell,
     resolveSection,
@@ -71,6 +73,9 @@
     canRestart = false,
     restartKind = 'klipper',
     lang = 'plain',
+    compareInitially = false,
+    loadBackup,
+    onRestoreBackup,
     onSave,
     onSaveRestart,
     onClose,
@@ -84,6 +89,9 @@
     canRestart?: boolean;
     restartKind?: 'klipper' | 'moonraker';
     lang?: 'klipper' | 'plain';
+    compareInitially?: boolean;
+    loadBackup?: () => Promise<{ text: string; path: string } | null>;
+    onRestoreBackup?: () => Promise<string | null>;
     onSave: (text: string) => Promise<boolean>;
     onSaveRestart?: (text: string) => Promise<boolean>;
     onClose: () => void;
@@ -95,6 +103,50 @@
   let text = $state('');
   let dirty = $state(false);
   let savePending = $state(false);
+  let compareMode = $state(false);
+  let compareLoading = $state(false);
+  let compareBackup = $state<{ text: string; path: string } | null>(null);
+  let compareError = $state('');
+  let compareStarted = false;
+  let compareSeq = 0;
+
+  /** Load a fresh backup on every entry; compare the saved version with the live editor buffer. */
+  async function toggleCompare(): Promise<void> {
+    if (!loadBackup) return;
+    if (compareMode) {
+      compareMode = false;
+      compareSeq++;
+      compareLoading = false;
+      return;
+    }
+    compareMode = true;
+    compareLoading = true;
+    compareBackup = null;
+    compareError = '';
+    const seq = ++compareSeq;
+    try {
+      const result = await loadBackup();
+      if (seq === compareSeq) compareBackup = result;
+    } catch (error) {
+      if (seq === compareSeq) compareError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (seq === compareSeq) compareLoading = false;
+    }
+  }
+
+  /** Keep restoration errors visible while the full-screen editor covers the file table. */
+  async function restoreFromCompare(): Promise<void> {
+    if (!onRestoreBackup) return;
+    const error = await onRestoreBackup();
+    if (error) compareError = error;
+  }
+
+  $effect(() => {
+    if (open && !loading && compareInitially && !compareStarted) {
+      compareStarted = true;
+      void toggleCompare();
+    }
+  });
   let printing = $state(false);
 
   const klippy = useKlippyState(api);
@@ -166,6 +218,11 @@
   let preEl = $state<HTMLPreElement | null>(null);
   let inputEl = $state<HTMLTextAreaElement | null>(null);
   let gutterPreEl = $state<HTMLPreElement | null>(null);
+  let comparePaneEl = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    // Switching layouts must not reset the current editor's scroll position.
+    if (comparePaneEl && inputEl) comparePaneEl.scrollTop = inputEl.scrollTop;
+  });
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let replaceInputEl = $state<HTMLInputElement | null>(null);
 
@@ -174,12 +231,23 @@
   // готовый HTML нативно и быстрее, чем Svelte обслуживает по блоку на каждую из
   // строк ({#each} + {@html} на строку заметно тормозил набор).
   // + zero-width space на пустой последней строке (см. toRenderLines в highlight.ts).
-  let html = $derived(
-    toRenderLines(
+  let currentLineMarks = $derived(compareMode && compareBackup
+    ? configCurrentLineMarks(compareBackup.text, text)
+    : new Map<number, 'added' | 'removed' | 'changed'>());
+  let html = $derived.by(() => {
+    const lines = toRenderLines(
       lang === 'klipper' ? highlightKlipperLines(text) : highlightPlainLines(text),
       text,
-    ).join(''),
-  );
+    );
+    // Keep the syntax layer under the same textarea while comparison changes live.
+    return lines.map((line, index) => {
+      const mark = currentLineMarks.get(index + 1);
+      if (!mark) return line;
+      const newline = line.endsWith('\n') ? '\n' : '';
+      const body = newline ? line.slice(0, -1) : line;
+      return `<span class="compare-line ${mark}">${body}</span>${newline}`;
+    }).join('');
+  });
 
   $effect(() => {
       void content;
@@ -268,12 +336,19 @@
 
   let gutterText = $derived.by(() => {
     let s = '';
-    for (let i = 1; i <= lineCount; i++) s += `${i}\n`;
+    for (let i = 1; i <= lineCount; i++) {
+      if (compareMode && compareBackup) {
+        const mark = currentLineMarks.get(i);
+        s += `${mark === 'changed' ? '±' : mark === 'added' ? '+' : mark === 'removed' ? '−' : ' '}${i}\n`;
+      } else {
+        s += `${i}\n`;
+      }
+    }
     return s;
   });
 
   // ширина гаттера в ch: цифры + отступ; моноширинный шрифт → ch точен
-  let gutterWidthCh = $derived(String(lineCount).length + 3);
+  let gutterWidthCh = $derived(String(lineCount).length + (compareMode && compareBackup ? 4 : 3));
 
   // ------------------------------------------------------------------
   // Оглавление секций (только lang=klipper)
@@ -688,7 +763,18 @@
     savePending = true;
     const submitted = text;
     try {
-      if (await onSave(submitted) && text === submitted) dirty = false;
+      if (await onSave(submitted)) {
+        if (text === submitted) dirty = false;
+        // A successful save replaces the backup; refresh the visible comparison baseline.
+        if (compareMode && loadBackup) {
+          try {
+            compareBackup = await loadBackup();
+            compareError = '';
+          } catch (error) {
+            compareError = error instanceof Error ? error.message : String(error);
+          }
+        }
+      }
     } finally {
       // A failed backup or upload must leave the buffer dirty for another attempt.
       savePending = false;
@@ -862,6 +948,7 @@
       preEl.scrollLeft = ta.scrollLeft;
     }
     if (gutterPreEl) gutterPreEl.scrollTop = ta.scrollTop;
+    if (comparePaneEl) comparePaneEl.scrollTop = ta.scrollTop;
   }
 
   /** Пересчитать подсказки по текущему положению курсора. */
@@ -1345,6 +1432,32 @@
         {#if !narrow}<span class="btn-label">{i18n.t('ft.lbl.search')}</span>{/if}
       </button>
 
+      {#if loadBackup}
+        <button
+          class="btn icon"
+          class:active={compareMode}
+          title={i18n.t(compareMode ? 'config.exitCompare' : 'config.compareBackup')}
+          aria-label={i18n.t(compareMode ? 'config.exitCompare' : 'config.compareBackup')}
+          aria-pressed={compareMode}
+          onclick={() => void toggleCompare()}
+        >
+          <Icon name="columns" size={15} />
+          {#if !narrow}<span class="btn-label">{i18n.t(compareMode ? 'config.exitCompare' : 'config.compareBackup')}</span>{/if}
+        </button>
+        {#if compareMode && compareBackup && onRestoreBackup}
+          <button
+            class="btn"
+            title={i18n.t(dirty ? 'config.restoreDirty' : 'config.restoreBackup')}
+            aria-label={i18n.t('config.restoreBackup')}
+            disabled={saving || dirty}
+            onclick={() => void restoreFromCompare()}
+          >
+            <Icon name="refresh" size={15} />
+            {#if !narrow}<span class="btn-label">{i18n.t('config.restoreBackup')}</span>{/if}
+          </button>
+        {/if}
+      {/if}
+
       {#if !readonly}
         <button
           class="btn primary"
@@ -1388,7 +1501,18 @@
           <Loader size="lg" text={i18n.t('ft.loading')} />
         </div>
       {:else}
-        <div class="code-wrap" dir="ltr">
+        {#if compareMode && compareBackup && !narrow}
+          <div class="compare-headings" dir="ltr">
+            <div title={compareBackup.path}>{compareBackup.path}</div>
+            <div title={title}>{title}</div>
+          </div>
+        {/if}
+        <div class="code-wrap" class:compare-active={compareMode && !!compareBackup && !narrow} dir="ltr">
+          {#if compareMode && compareBackup && !narrow}
+            <div class="compare-backup" bind:this={comparePaneEl} aria-label={compareBackup.path}>
+              <ConfigCompareView before={compareBackup.text} after={text} {lang} />
+            </div>
+          {/if}
           <!-- нумерация строк -->
           <div class="gutter" style:width="{gutterWidthCh}ch">
             <pre class="gutter-pre" bind:this={gutterPreEl} aria-hidden="true">{gutterText}</pre>
@@ -1540,6 +1664,12 @@
         </div>
       {/if}
 
+      {#if compareMode && (compareLoading || compareError || !compareBackup)}
+        <div class="compare-message" role={compareError ? 'alert' : 'status'}>
+          {compareLoading ? i18n.t('ft.loading') : compareError || i18n.t('config.backupMissing')}
+        </div>
+      {/if}
+
       {#if acPos && suggestions.length > 0}
         <div class="ac-popup" style="top: {acPos.top}px; left: {acPos.left}px">
           {#each suggestions as s, i (s.kind + s.label)}
@@ -1641,12 +1771,57 @@
     gap: var(--space-md);
     color: var(--text-muted);
   }
+  .compare-message {
+    position: absolute;
+    inset-block-start: var(--space-sm);
+    inset-inline: var(--space-md);
+    z-index: 30;
+    padding: var(--space-sm) var(--space-md);
+    color: var(--text-secondary);
+    background: var(--bg-surface-hover);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
 
   /* -------- раскладка: гаттер + оглавление + код -------- */
   .code-wrap {
     position: absolute; inset: 0;
     display: flex;
   }
+  .code-wrap.compare-active { inset-block-start: 2rem; }
+  /* Labels sit outside both scroll areas so their first code lines stay aligned. */
+  .compare-headings {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: 2rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    background: var(--bg-surface-hover);
+    border-block-end: 1px solid var(--border-color);
+  }
+  .compare-headings > div {
+    min-width: 0;
+    padding: var(--space-xs) var(--space-md);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--font-size-sm) monospace;
+  }
+  /* The backup takes half the desktop width; mobile keeps the editable file full width. */
+  .compare-backup {
+    flex: 0 0 50%;
+    min-width: 0;
+    overflow: auto;
+    border-inline-end: 1px solid var(--border-color);
+    background: var(--bg-surface);
+  }
+  :global(.code-view .compare-line) { display: inline-block; min-width: 100%; }
+  :global(.code-view .compare-line.added) { background: color-mix(in srgb, var(--success) 18%, var(--bg-surface)); }
+  :global(.code-view .compare-line.removed) { background: color-mix(in srgb, var(--danger) 14%, var(--bg-surface)); }
+  :global(.code-view .compare-line.changed) { background: color-mix(in srgb, var(--accent) 18%, var(--bg-surface)); }
 
   .gutter {
     position: relative;
@@ -2098,8 +2273,11 @@
   .editor-overlay.narrow .editor-header {
     gap: var(--space-xs);
     padding: var(--space-xs) var(--space-sm);
+    /* Wrapping keeps icon actions reachable when translations or viewport width grow. */
+    flex-wrap: wrap;
   }
-  .editor-overlay.narrow .btn { padding: var(--space-xs); }
+  .editor-overlay.narrow .spacer { flex-basis: 100%; height: 0; }
+  .editor-overlay.narrow .btn { min-width: 44px; min-height: 44px; justify-content: center; padding: var(--space-xs); }
 
   .editor-overlay.narrow .hl-wrap { position: static; }
   .editor-overlay.narrow .hl-popover {

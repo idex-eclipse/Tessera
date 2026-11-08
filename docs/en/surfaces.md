@@ -729,12 +729,17 @@ is mounted in a narrow column, so it should lay out by its own width.
 `4.0.0`:
 
 The built-in Config editor copies each `.cfg` or `.conf` file in Moonraker's `config`
-root, including nested directories, to a sibling `<filename>.bak` before saving.
-A failed copy cancels the save; the next save replaces the backup. The file menu offers
-a line comparison and restore while the backup exists. Save & Restart removes it only
-after a new Klipper startup reaches `ready`, or after Moonraker reconnects for
-`moonraker.conf`. Errors and a 90-second timeout leave it in place. If a broken
-`moonraker.conf` prevents Moonraker from starting, restore the backup through SSH.
+root to `config/.backup/<relative path>.bak` before saving, creating matching subfolders.
+A failed copy cancels the save; each later save replaces that file's backup. Backups
+remain after a successful Save & Restart. The editor's Compare button compares the
+backup with the current buffer: a read-only backup beside the editable current file
+on wide screens, and marked current lines on narrow screens. Edits remain in the
+buffer when Compare is closed; Save is available during comparison. A backup from
+an older Tessera build beside the source file can still be compared and restored.
+The file menu also opens Compare. A restart is
+checked for up to 100 seconds against Klipper `ready` or Moonraker reconnection for
+`moonraker.conf`. If a broken `moonraker.conf` prevents Moonraker from starting,
+restore the backup through SSH.
 An extension replacing the built-in editor owns its file writes and does not inherit
 this workflow.
 
