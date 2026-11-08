@@ -94,6 +94,18 @@ The host sets the `data-theme="light|dark"` attribute on `<html>`. Variables are
 defined for both themes. The user can set an **accent color** — the host overrides
 `--accent` inline on `<html>`; derived colors recompute automatically.
 
+Settings → General also offers high contrast in either theme (`data-contrast="high"`),
+a root text scale from 80% to 150%, and one custom font. High contrast strengthens
+muted text, borders and focus. The selected accent is brightened or darkened just
+enough for readable text; its stored value is unchanged. `onThemeChange` also fires
+when contrast changes, with the same `light | dark` argument, so canvas colors can
+be redrawn.
+
+The letter spacing control adds 0–0.12em in 0.02em steps through `--letter-spacing`.
+Character width optically extends the painted glyph contour horizontally by 0–0.06em
+on each side through `--glyph-width`. It works with static fonts and does not change
+layout metrics or stretch controls and icons. These two controls are independent.
+
 Rule: **do not use hex colors in plugin components.** Variables only, otherwise the
 plugin breaks on another theme or with another accent. For canvas/WebGL, read the
 variable's value at draw time and redraw on `onThemeChange`:
@@ -143,7 +155,7 @@ const accent = getComputedStyle(document.documentElement).getPropertyValue('--ac
 |---|---|
 | Spacing | `--space-xs` 4px, `--space-sm` 8px, `--space-md` 16px, `--space-lg` 24px, `--space-xl` 32px |
 | Radii | `--radius-sm` 4px, `--radius-md` 8px, `--radius-lg` 12px |
-| Typography | `--font-family`, `--font-size-sm` (0.925rem), `--font-size-md` (1rem), `--font-size-lg` (1.2rem) |
+| Typography | `--font-family`; `--font-size-3xs` (9px), `--font-size-2xs` (10px), `--font-size-xs` (11px), `--font-size-xs-plus` (12px), `--font-size-compact` (14px), `--font-size-sm` (0.925rem), `--font-size-md` (1rem), `--font-size-heading` (18px), `--font-size-lg` (1.2rem), `--font-size-xl` (20px), `--font-size-2xl` (32px) at 100% scale. All follow the root text scale. |
 | Shadows | `--shadow-sm`, `--shadow-md`, `--shadow-lg` |
 | Transitions | `--transition-fast` (150ms), `--transition-normal` (250ms) |
 | Dashboard grid | `--grid-row-height` (80px) |

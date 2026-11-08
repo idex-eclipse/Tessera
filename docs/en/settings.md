@@ -13,6 +13,7 @@ The schema is versioned with the `mpu:v2:` prefix.
 | `mpu:v2:activePrinter` | the active printer's `id` |
 | `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
 | `mpu:v2:ui` | device UI: theme, language, `dir`, panel sizes, background, accent, fleet, hotkey overrides |
+| `mpu:v2:custom-font` | one uploaded WOFF2, WOFF, TTF or OTF font (up to 1 MiB), as a data URL and file name; mirrored separately |
 | `mpu:v2:editor-colors` | config editor syntax colors: `{ v: 1, light: { <token>: '#rrggbb' }, dark: { … } }` — only the tokens the user changed; applied as CSS variables `--tok-<token>` (editor header → settings button) |
 | `mpu:v2:settings:<printerId>` | printer settings: page visibility, widget providers, dashboard layout, chips |
 | `mpu:v2:settings:GLOBAL` | the same, shared by all printers (if dashboard sync is on; see below) |
@@ -39,6 +40,10 @@ bundle.
 ```ts
 interface UiState {
   theme: 'light' | 'dark';
+  highContrast: boolean;            // independent of the light/dark theme
+  fontScale: number;                 // 80–150 in steps of 10; default 100
+  letterSpacing: number;             // extra tracking: 0–12% of an em, in steps of 2
+  glyphWidth: number;                // optical ink extension: 0–6% of an em, in steps of 1
   locale: string;
   dir: 'ltr' | 'rtl';
   sidebarCollapsed: boolean;
@@ -53,6 +58,11 @@ interface UiState {
   hotkeyOverrides: Record<string, string | null>;   // "<pluginId>:<id>" → combination | null
 }
 ```
+
+The font key is separate from `ui`, so changing appearance settings does not upload
+the font again. The file is included in settings export/import and mirrored to
+Moonraker; without Moonraker it remains available in this browser. Code and G-code
+keep their monospaced fonts.
 
 ### `mpu:v2:settings:<printerId>`
 
@@ -155,7 +165,7 @@ seen are published on the first start).
 
 | Mirrored | Stays on the device only |
 |---|---|
-| `ui`, `plugins`, `editor-colors`, `settings:*`, `plugin-settings:*` | `printers`, `activePrinter`, `auth:*` (tokens), `deviceId`, `settingsSync`, the background image (`ui.bgImage`) |
+| `ui`, `custom-font`, `plugins`, `editor-colors`, `settings:*`, `plugin-settings:*` | `printers`, `activePrinter`, `auth:*` (tokens), `deviceId`, `settingsSync`, the background image (`ui.bgImage`) |
 
 Where a key goes: per-printer keys (`settings:<id>`, `plugin-settings:<id>:*`) to that
 printer's own DB; global keys (`ui`, `plugins`, `GLOBAL` sets) to the DB of the printer

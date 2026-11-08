@@ -406,7 +406,8 @@ resolve colors yourself.
 
 ### `onThemeChange(cb)` → `unsubscribe`
 
-`cb(theme)` on a theme change. A change of the user's *accent color* does not
+`cb(theme)` on a theme or high contrast change; `theme` remains `'light' | 'dark'`.
+A change of the user's *accent color* does not
 raise an event — read `--accent` through `getComputedStyle` when drawing.
 
 ---

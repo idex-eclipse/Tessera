@@ -13,6 +13,7 @@
 | `mpu:v2:activePrinter` | `id` активного принтера |
 | `mpu:v2:plugins` | remote-плагины: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
 | `mpu:v2:ui` | UI устройства: тема, язык, `dir`, размеры панелей, фон, акцент, fleet, переопределения hotkeys |
+| `mpu:v2:custom-font` | один загруженный шрифт WOFF2, WOFF, TTF или OTF (до 1 МиБ), имя и data URL; синхронизируется отдельно |
 | `mpu:v2:editor-colors` | цвета подсветки в редакторе конфигов: `{ v: 1, light: { <токен>: '#rrggbb' }, dark: { … } }` — только изменённые пользователем токены; применяются как CSS-переменные `--tok-<токен>` (шапка редактора → кнопка настроек) |
 | `mpu:v2:settings:<printerId>` | настройки принтера: видимость страниц, провайдеры виджетов, раскладка дашборда, чипы |
 | `mpu:v2:settings:GLOBAL` | то же, общее для всех принтеров (если включена синхронизация дашборда; см. ниже) |
@@ -38,6 +39,10 @@ Core-плагины в `mpu:v2:plugins` **не записываются**: он�
 ```ts
 interface UiState {
   theme: 'light' | 'dark';
+  highContrast: boolean;            // независимо от светлой/тёмной темы
+  fontScale: number;                 // 80–150 с шагом 10; по умолчанию 100
+  letterSpacing: number;             // дополнительный интервал: 0–12% от em, шаг 2
+  glyphWidth: number;                // оптическое расширение контура: 0–6% от em, шаг 1
   locale: string;
   dir: 'ltr' | 'rtl';
   sidebarCollapsed: boolean;
@@ -52,6 +57,11 @@ interface UiState {
   hotkeyOverrides: Record<string, string | null>;   // "<pluginId>:<id>" → комбинация | null
 }
 ```
+
+Шрифт хранится отдельно от `ui`, поэтому смена внешнего вида не пересылает его
+заново. Файл входит в экспорт/импорт настроек и синхронизируется через Moonraker;
+без Moonraker остаётся доступным в этом браузере. Для кода и G-code сохраняется
+моноширинный шрифт.
 
 ### `mpu:v2:settings:<printerId>`
 
@@ -153,7 +163,7 @@ Settings → About / Debug:
 
 | Зеркалируется | Остаётся только на устройстве |
 |---|---|
-| `ui`, `plugins`, `editor-colors`, `settings:*`, `plugin-settings:*` | `printers`, `activePrinter`, `auth:*` (токены), `deviceId`, `settingsSync`, фоновое изображение (`ui.bgImage`) |
+| `ui`, `custom-font`, `plugins`, `editor-colors`, `settings:*`, `plugin-settings:*` | `printers`, `activePrinter`, `auth:*` (токены), `deviceId`, `settingsSync`, фоновое изображение (`ui.bgImage`) |
 
 Куда попадает ключ: ключи принтера (`settings:<id>`, `plugin-settings:<id>:*`) — в DB
 этого принтера; глобальные (`ui`, `plugins`, наборы `GLOBAL`) — в DB принтера, который
