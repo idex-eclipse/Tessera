@@ -137,7 +137,7 @@
   }
 
   .fil-kind {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -149,7 +149,7 @@
   }
 
   .fil-status {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     padding: 2px 8px;
     border-radius: 999px;
