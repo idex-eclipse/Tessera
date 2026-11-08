@@ -356,7 +356,7 @@
     display: flex; flex-direction: column; gap: 2px; padding: var(--space-xs) var(--space-sm);
     background: var(--bg-surface-hover); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
   }
-  .acc-cell .k { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .acc-cell .k { font-size: var(--font-size-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .acc-cell .v { font-size: var(--font-size-sm); color: var(--text-primary); }
 
   .log { display: flex; flex-direction: column; gap: var(--space-xs); }
@@ -364,7 +364,7 @@
     margin: 0; direction: ltr; text-align: start; max-height: 140px; overflow-y: auto; padding: var(--space-sm);
     background: var(--bg-surface-hover-no-override); border: 1px solid var(--border-color);
     border-radius: var(--radius-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+    font-size: var(--font-size-xs); color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
   }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>

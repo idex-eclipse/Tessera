@@ -58,7 +58,7 @@
     padding: var(--space-xs) var(--space-sm);
     border: 1px solid var(--border-color); border-radius: var(--radius-sm);
     background: transparent; color: var(--text-secondary); cursor: pointer;
-    font-size: 11px; max-width: 220px;
+    font-size: var(--font-size-xs); max-width: 220px;
   }
   .g-item:hover { background: var(--bg-surface-hover); }
   .g-item.active { border-color: var(--accent); color: var(--accent); }
@@ -67,7 +67,7 @@
   .g-meta { display: flex; gap: 4px; }
   .tag {
     padding: 0 5px; border-radius: 4px; background: var(--bg-surface-active);
-    color: var(--accent); font-size: 10px; font-weight: 600;
+    color: var(--accent); font-size: var(--font-size-2xs); font-weight: 600;
   }
   .tag.new { background: var(--accent); color: var(--accent-text); }
 

@@ -186,7 +186,7 @@
 
   .z-value {
     font-family: monospace;
-    font-size: 32px;
+    font-size: var(--font-size-2xl);
     font-weight: 700;
     color: var(--text-primary);
   }

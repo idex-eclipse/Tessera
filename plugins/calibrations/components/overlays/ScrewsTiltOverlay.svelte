@@ -249,7 +249,7 @@
     background: var(--bg-surface-hover);
     border: 1px solid var(--border-color);
     color: var(--text-muted);
-    font-size: var(--font-size-xs, 11px);
+    font-size: var(--font-size-xs);
   }
 
   .col-num {
@@ -269,7 +269,7 @@
     margin-inline-end: var(--space-xs);
     padding: 1px 6px;
     border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs, 11px);
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: #fff;
   }
@@ -284,7 +284,7 @@
   .hint {
     margin: 0;
     color: var(--text-muted);
-    font-size: var(--font-size-xs, 11px);
+    font-size: var(--font-size-xs);
     line-height: 1.5;
   }
 

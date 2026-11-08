@@ -191,7 +191,7 @@
     background: var(--bg-surface-hover); border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11px; color: var(--text-secondary);
+    font-size: var(--font-size-xs); color: var(--text-secondary);
     white-space: pre-wrap; word-break: break-word;
   }
 
