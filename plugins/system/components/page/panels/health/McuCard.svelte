@@ -157,7 +157,7 @@
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--warning) 18%, transparent);
     color: var(--warning);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
   }
 

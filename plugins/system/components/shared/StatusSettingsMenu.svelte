@@ -242,7 +242,7 @@
 
   .menu-title {
     padding: var(--space-xs) var(--space-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -251,7 +251,7 @@
 
   .menu-title.sub {
     padding-top: var(--space-xs);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 
   .menu-item {
@@ -276,7 +276,7 @@
     width: 14px;
     flex-shrink: 0;
     color: var(--accent);
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     display: inline-flex;
     align-items: center;
     justify-content: center;

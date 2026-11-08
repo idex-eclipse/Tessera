@@ -871,7 +871,7 @@
     border-radius: 999px;
     background: var(--danger);
     color: #fff;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -1149,7 +1149,7 @@
   }
 
   .row-sub {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1215,7 +1215,7 @@
   .badge {
     padding: 1px 8px;
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     background: var(--bg-surface-hover);
     color: var(--text-muted);

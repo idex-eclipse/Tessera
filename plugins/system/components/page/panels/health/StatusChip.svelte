@@ -17,7 +17,7 @@
     padding: 1px var(--space-sm);
     border-radius: 999px;
     border: 1px solid currentColor;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     white-space: nowrap;
     color: var(--text-muted);

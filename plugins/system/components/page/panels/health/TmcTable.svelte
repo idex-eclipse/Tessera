@@ -107,7 +107,7 @@
     padding: var(--space-xs) var(--space-sm);
     color: var(--text-muted);
     font-weight: 600;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     border-bottom: 1px solid var(--border-color);
@@ -140,7 +140,7 @@
 
   .type {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: monospace;
   }
 
@@ -156,7 +156,7 @@
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--warning) 18%, transparent);
     color: var(--warning);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
   }
 

@@ -180,7 +180,7 @@
     border: 1px dashed var(--border-color);
     border-radius: 999px;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .warn-list {

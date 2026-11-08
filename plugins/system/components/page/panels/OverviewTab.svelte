@@ -123,7 +123,7 @@
     padding: 2px var(--space-sm);
     border: 1px solid var(--border-color);
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: monospace;
   }
 

@@ -420,7 +420,7 @@
   }
 
   .row-sub {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: monospace;
     color: var(--text-muted);
     overflow: hidden;
@@ -439,7 +439,7 @@
   .badge {
     padding: 1px 8px;
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     white-space: nowrap;
   }
@@ -598,7 +598,7 @@
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: monospace;
     color: var(--text-primary);
   }
@@ -626,18 +626,18 @@
   .commit-sha {
     font-family: monospace;
     color: var(--accent);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .commit-author {
     color: var(--text-primary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .commit-date {
     margin-inline-start: auto;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .commit-subject {
@@ -650,7 +650,7 @@
   .commit-body {
     margin: var(--space-xs) 0 0;
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: pre-wrap;
     word-break: break-word;
@@ -677,7 +677,7 @@
     padding: var(--space-sm) var(--space-md);
     background: var(--bg-app);
     font-family: monospace;
-    font-size: 12px;
+    font-size: var(--font-size-xs-plus);
     line-height: 1.5;
     color: var(--text-secondary);
     white-space: pre-wrap;
