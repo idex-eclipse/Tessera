@@ -1,6 +1,10 @@
 import type { PluginApi } from '../../../plugin-sdk/src/types';
 
 import { attachHints, dropHints } from '../../shared/gcode-hints/gcode-hints-store.svelte.ts';
+import {
+  matchKlipperError,
+  type KlipperErrorHintId,
+} from '../../shared/klipper-errors/catalog.ts';
 
 import { isPrintActive } from '../lib/print-safety';
 
@@ -25,6 +29,8 @@ export interface ConsoleLine {
   kind: ConsoleLineKind;
   text: string;
   time: string;
+  /** Present only for recognised Klipper response errors, never for commands typed by the user. */
+  klipperErrorHintId?: KlipperErrorHintId;
 }
 
 interface GcodeStoreEntry {
@@ -211,11 +217,14 @@ function mapEntries(entries: GcodeStoreEntry[]): ConsoleLine[] {
     const dupIdx = seen.get(key) ?? 0;
     seen.set(key, dupIdx + 1);
 
+    const kind: ConsoleLineKind = e.type === 'command' ? 'sent' : 'response';
+    const hintId = kind === 'response' ? matchKlipperError(e.message) : null;
     lines.push({
       id: `${key}|${dupIdx}`,
-      kind: e.type === 'command' ? 'sent' : 'response',
+      kind,
       text: e.message,
       time: formatStoreTime(e.time),
+      ...(hintId ? { klipperErrorHintId: hintId } : {}),
     });
   }
 

@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const consoleManifest: PluginManifest = {
   id: '@core/console',
   name: 'Console',
-  version: '4.0.0',
+  version: '4.1.0',
   entry: '/plugins/console/index.js',
   pages: [
     {

@@ -219,6 +219,31 @@ describe('session lifecycle', () => {
     off2();
   });
 
+  it('marks recognised response errors but never commands or unknown responses', async () => {
+    const f = fakeApi(['p-hints'], async () => ({
+      gcode_store: [
+        entry('Move out of range: 250.000 0.000 0.000 [0.000]', 3),
+        { message: 'Timer too close', time: 1, type: 'command' },
+        entry('ordinary response', 2),
+      ],
+    }));
+    const off = attach(f.api);
+    try {
+      await vi.waitFor(() => expect(getLines('p-hints')).toHaveLength(3));
+      expect(getLines('p-hints').map((line) => [line.kind, line.klipperErrorHintId])).toEqual([
+        ['sent', undefined],
+        ['response', undefined],
+        ['response', 'move-out-of-range'],
+      ]);
+
+      // Reversing is a presentation concern; filtering must preserve the hint metadata.
+      const reversed = [...applyFilters(getLines('p-hints'), compileFilters([]))].reverse();
+      expect(reversed[0]!.klipperErrorHintId).toBe('move-out-of-range');
+    } finally {
+      off();
+    }
+  });
+
   it('ignores a stale store response that arrives after Clear', async () => {
     let release: (v: unknown) => void = () => {};
     let first = true;

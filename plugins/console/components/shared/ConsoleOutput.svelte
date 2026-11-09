@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConsoleLine } from '../../data/console-session.svelte';
+  import KlipperErrorHelp from '../../../shared/klipper-errors/KlipperErrorHelp.svelte';
 
   /**
    * Лог консоли — общий для страницы и виджета. Строки — G-code / ответы Klipper, поэтому
@@ -58,7 +59,12 @@
     {:else}
       <div class="line line-{line.kind}">
         {#if showTime}<span class="line-time">{line.time}</span>{/if}
-        <span class="line-text">{line.text}</span>
+        <span class="line-content">
+          <span class="line-text">{line.text}</span>
+          {#if line.klipperErrorHintId}
+            <KlipperErrorHelp hintId={line.klipperErrorHintId} compact />
+          {/if}
+        </span>
       </div>
     {/if}
   {:else}
@@ -85,10 +91,12 @@
     font-size: var(--font-size-sm);
   }
 
-  .line { display: flex; gap: var(--space-sm); padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+  .line { display: flex; gap: var(--space-sm); padding: 1px 0; }
   .compact .line { gap: var(--space-xs); }
   .line-time { color: var(--text-muted); flex-shrink: 0; }
   .line-prefix { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+  .line-content { min-width: 0; white-space: pre-wrap; word-break: break-all; }
+  .line-text { white-space: pre-wrap; word-break: break-all; }
   .line-sent .line-text { color: var(--accent); font-weight: 600; }
   .line-response .line-text { color: var(--text-primary); }
   .line-system .line-text { color: var(--text-muted); font-style: italic; }
