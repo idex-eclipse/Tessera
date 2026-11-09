@@ -2,6 +2,7 @@
   import { ExtensionPoint, usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
 
   import Icon from '../../../shared/icons/Icon.svelte';
+  import KlipperErrorHelp from '../../../shared/klipper-errors/KlipperErrorHelp.svelte';
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
 
   import { useSystem } from '../../data/use-system.svelte.ts';
@@ -143,6 +144,7 @@
           <div class="kb-title">
             <Icon name="warning" size={16} />
             <span>{title}</span>
+            <KlipperErrorHelp message={klippy.stateMessage} />
           </div>
 
           {#if klippy.stateMessage}

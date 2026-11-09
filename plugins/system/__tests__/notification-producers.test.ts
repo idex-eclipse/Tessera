@@ -135,6 +135,28 @@ describe('startNotificationProducers', () => {
       ['critical', 'system.notifications.src.klippy', 'system.notifications.klipperShutdownReason:{"reason":"Lost communication with MCU"}'],
       ['critical', 'system.notifications.src.klippy', 'system.notifications.klipperShutdown'],
     ]);
+    expect(t.pushed[0]!.actions).toEqual([
+      {
+        element: 'mpu-system-klipper-error-help-action',
+        params: { hintId: 'mcu-connection' },
+      },
+    ]);
+    expect(t.pushed[1]!.actions).toBeUndefined();
+  });
+
+  it('adds help only to recognised Klipper gcode errors, never to macro messages', () => {
+    const t = setup();
+    startNotificationProducers(t.api);
+    t.emit('notify_gcode_response', ['!! Move out of range: 300 0 0']);
+    t.emit('notify_gcode_response', ['!! A future unknown error']);
+    t.emit('notify_gcode_response', ['echo: MPU_NOTIFY error Move out of range']);
+
+    expect(t.pushed[0]!.actions?.[0]).toEqual({
+      element: 'mpu-system-klipper-error-help-action',
+      params: { hintId: 'move-out-of-range' },
+    });
+    expect(t.pushed[1]!.actions).toBeUndefined();
+    expect(t.pushed[2]!.actions).toBeUndefined();
   });
 
   it('ignores gcode responses that are not notifications', () => {

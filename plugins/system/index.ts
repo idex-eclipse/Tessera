@@ -5,6 +5,7 @@ import SystemRightPanel from './components/right-panel/SystemRightPanel.svelte';
 import StateBanner from './components/banners/SystemBanner.svelte';
 import StateBannerCollapsed from './components/banners/SystemBannerCollapsed.svelte';
 import NotificationProducers from './components/overlays/NotificationProducers.svelte';
+import KlipperErrorHelpAction from './components/shared/KlipperErrorHelpAction.svelte';
 import PowerChip from './components/chips/PowerChip.svelte';
 import PowerChipPicker from './components/chips/PowerChipPicker.svelte';
 
@@ -32,6 +33,7 @@ defineMpuElement('mpu-system-right-panel', SystemRightPanel);
 defineMpuElement('mpu-system-state-banner', StateBanner);
 defineMpuElement('mpu-system-state-banner-collapsed', StateBannerCollapsed);
 defineMpuElement('mpu-system-notifications', NotificationProducers);
+defineMpuElement('mpu-system-klipper-error-help-action', KlipperErrorHelpAction);
 defineMpuElement('mpu-core-system-chip-power', PowerChip);
 defineMpuElement('mpu-core-system-chip-power-picker', PowerChipPicker);
 

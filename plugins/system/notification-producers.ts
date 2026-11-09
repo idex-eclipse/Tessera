@@ -1,8 +1,11 @@
 import type {
   MoonrakerProxyHandle,
+  NotificationActionInput,
   NotificationSeverity,
   PluginApi,
 } from '../../plugin-sdk/src/types.ts';
+
+import { matchKlipperError, type KlipperErrorHintId } from '../shared/klipper-errors/catalog.ts';
 
 import { createHealthWatch, type HealthAlert, type HealthWatch } from './lib/health-alerts.ts';
 import { CANBUS_FIELDS, MCU_FIELDS } from './lib/health-model.ts';
@@ -22,6 +25,14 @@ import {
  */
 
 const KLIPPER_CRITICAL_RE = /shutdown|mcu |thermistor|heater .* not heating|lost communication|tmc .* reports/i;
+const KLIPPER_HELP_ACTION_ELEMENT = 'mpu-system-klipper-error-help-action';
+
+/** Builds the opaque action descriptor; the host never sees Klipper-specific data. */
+function helpAction(hintId: KlipperErrorHintId | null): NotificationActionInput[] | undefined {
+  return hintId
+    ? [{ element: KLIPPER_HELP_ACTION_ELEMENT, params: { hintId } }]
+    : undefined;
+}
 
 /**
  * Внешний вход: макрос Klipper `M118 MPU_NOTIFY <critical|error|info> <текст>`.
@@ -101,12 +112,15 @@ export function startNotificationProducers(api: PluginApi): () => void {
     severity: NotificationSeverity,
     source: 'gcode' | 'macro' | 'klippy' | 'tmc' | 'host' | 'mcu',
     text: string,
+    hintId: KlipperErrorHintId | null = null,
   ): void {
+    const actions = helpAction(hintId);
     api.notifications.push({
       printerId,
       severity,
       label: api.i18n.t(`system.notifications.src.${source}`),
       text,
+      ...(actions ? { actions } : {}),
     });
   }
 
@@ -115,7 +129,10 @@ export function startNotificationProducers(api: PluginApi): () => void {
   // ------------------------------------------------------------------
   function onGcodeResponse(printerId: string, params: unknown): void {
     const n = parseGcodeResponse(params);
-    if (n) push(printerId, n.severity, n.source, n.text);
+    if (n) {
+      const hintId = n.source === 'gcode' ? matchKlipperError(n.text) : null;
+      push(printerId, n.severity, n.source, n.text, hintId);
+    }
   }
 
   function onKlippyShutdown(printerId: string, params: any): void {
@@ -130,7 +147,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
     const text = reason
       ? api.i18n.t('system.notifications.klipperShutdownReason', { reason })
       : api.i18n.t('system.notifications.klipperShutdown');
-    push(printerId, 'critical', 'klippy', text);
+    push(printerId, 'critical', 'klippy', text, matchKlipperError(reason));
   }
 
   function applyTmcDelta(printerId: string, delta: any): void {
