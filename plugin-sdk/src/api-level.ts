@@ -24,8 +24,9 @@
  *          klippyRequest: разовые запросы с ответом по /klippysocket
  *   0.13 — manifest.services и api.services: прокси хоста к внешним сервисам плагина
  *          (tessera-ext serve, секрет хранится на принтере)
+ *   0.14 — api.notifications.push actions: plugin-owned Custom Element actions in notifications
  */
-export const PLUGIN_API = '0.13';
+export const PLUGIN_API = '0.14';
 
 export const LEGACY_PLUGIN_API = '0.7';
 

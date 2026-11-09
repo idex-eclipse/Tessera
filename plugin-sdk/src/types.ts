@@ -706,6 +706,17 @@ export interface PluginFleetApi {
 export type NotificationSeverity = 'critical' | 'error' | 'info';
 
 /**
+ * A compact plugin-owned action mounted next to a notification message.
+ *
+ * The host injects the notification author's PluginApi and the provided string params into the
+ * Custom Element. The same action may be mounted independently in the toast and history list.
+ */
+export interface NotificationActionInput {
+  element: string;
+  params?: MpuParams;
+}
+
+/**
  * Уведомление в центр уведомлений хоста (api.notifications.push).
  */
 export interface NotificationInput {
@@ -719,6 +730,8 @@ export interface NotificationInput {
   label?: string;
   /** Принтер, к которому относится уведомление. По умолчанию — активный принтер. */
   printerId?: string;
+  /** Up to two compact Custom Element actions owned by the notification author (pluginApi 0.14). */
+  actions?: NotificationActionInput[];
 }
 
 /**
