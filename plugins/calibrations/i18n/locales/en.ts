@@ -244,6 +244,8 @@ export const en = {
       tabProbe: 'Calibrations: Probe & Z Offset tab',
       tabHeaters: 'Calibrations: Heaters tab',
       tabShaper: 'Calibrations: Input Shaper tab',
+      tabLeft: 'Calibrations: tab to the left',
+      tabRight: 'Calibrations: tab to the right',
       testzUp: 'Manual probe: raise Z by 0.1 mm',
       testzDown: 'Manual probe: lower Z by 0.1 mm',
       testzUpFine: 'Manual probe: raise Z by 0.01 mm',

@@ -10,7 +10,7 @@ import { calibrationsManifest } from '../manifest';
 import { SURFACE_SPECS } from '../../../host/src/core/surfaces';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
-import { pageUi } from '../state/page-ui-state.svelte';
+import { moveCalibrationsTab, pageUi } from '../state/page-ui-state.svelte';
 import { ensurePrinterTracker, stopPrinterTracker } from '../data/printer-tracker';
 
 // ------------------------------------------------------------------
@@ -238,6 +238,39 @@ describe('hotkey handlers', () => {
     hotkeys.hotkeyTabMesh();
     expect(pageUi.requestedTab).toBe('mesh');
     expect(pageUi.seq).toBe(seq + 1);
+  });
+
+  it('moves only through rendered tabs in visual LTR and RTL order', () => {
+    pageUi.tabOrder = ['mesh', 'heaters', 'extension/details'];
+    pageUi.activeTab = 'heaters';
+
+    moveCalibrationsTab('left', false);
+    expect(pageUi.requestedTab).toBe('mesh');
+    pageUi.activeTab = 'mesh';
+    moveCalibrationsTab('left', false);
+    expect(pageUi.requestedTab).toBe('extension/details');
+
+    pageUi.activeTab = 'heaters';
+    moveCalibrationsTab('left', true);
+    expect(pageUi.requestedTab).toBe('extension/details');
+    pageUi.activeTab = 'extension/details';
+    moveCalibrationsTab('right', true);
+    expect(pageUi.requestedTab).toBe('heaters');
+  });
+
+  it('declares plugin-scoped digit and arrow tab hotkeys with exported handlers', () => {
+    const tabs = (calibrationsManifest.hotkeys ?? []).filter((entry) => entry.id.startsWith('tab-'));
+    expect(tabs.map((entry) => [entry.keys, entry.scope, entry.handler])).toEqual([
+      ['Alt+1', 'plugin', 'hotkeyTabMesh'],
+      ['Alt+2', 'plugin', 'hotkeyTabProbe'],
+      ['Alt+3', 'plugin', 'hotkeyTabHeaters'],
+      ['Alt+4', 'plugin', 'hotkeyTabShaper'],
+      ['Alt+ArrowLeft', 'plugin', 'hotkeyTabLeft'],
+      ['Alt+ArrowRight', 'plugin', 'hotkeyTabRight'],
+    ]);
+    for (const entry of tabs) {
+      expect(typeof (hotkeys as Record<string, unknown>)[entry.handler], entry.handler).toBe('function');
+    }
   });
 });
 

@@ -9,6 +9,8 @@ export const en = {
       tabOverview: 'Machine: System tab',
       tabMonitoring: 'Machine: Monitoring tab',
       tabMaintenance: 'Machine: Storage & updates tab',
+      tabLeft: 'Machine: tab to the left',
+      tabRight: 'Machine: tab to the right',
     },
     units: { d: 'd', h: 'h', m: 'm', s: 's' },
 

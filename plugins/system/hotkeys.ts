@@ -1,7 +1,8 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
-import { systemUiState } from './state/system-ui-state.svelte.ts';
+import { isRtl } from '../shared/popover-align';
+import { moveSystemTab, systemUiState } from './state/system-ui-state.svelte.ts';
 
 /** id страницы «Система» в manifest.pages. */
 export const MACHINE_PAGE_ID = 'machine';
@@ -48,4 +49,14 @@ export function hotkeyTabMonitoring(): void {
 
 export function hotkeyTabMaintenance(): void {
   systemUiState.activeTab = 'maintenance';
+}
+
+/** Selects the tab visually to the left, including contributed tabs and RTL order. */
+export function hotkeyTabLeft(): void {
+  moveSystemTab('left', isRtl());
+}
+
+/** Selects the tab visually to the right, including contributed tabs and RTL order. */
+export function hotkeyTabRight(): void {
+  moveSystemTab('right', isRtl());
 }

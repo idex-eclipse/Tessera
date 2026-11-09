@@ -140,6 +140,21 @@ export const systemManifest = definePlugin({
       handler: 'hotkeyTabMaintenance',
       titleKey: 'system.hotkeys.tabMaintenance',
     },
+    // Arrow shortcuts follow the complete visual row and reverse their logical step in RTL.
+    {
+      id: 'tab-left',
+      scope: 'plugin',
+      keys: 'Alt+ArrowLeft',
+      handler: 'hotkeyTabLeft',
+      titleKey: 'system.hotkeys.tabLeft',
+    },
+    {
+      id: 'tab-right',
+      scope: 'plugin',
+      keys: 'Alt+ArrowRight',
+      handler: 'hotkeyTabRight',
+      titleKey: 'system.hotkeys.tabRight',
+    },
   ],
 
   // Extensions embed into the Machine page, the Status widget, the banners and the right panel.

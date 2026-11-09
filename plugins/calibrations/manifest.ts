@@ -74,6 +74,9 @@ export const calibrationsManifest = definePlugin({
     { id: 'tab-probe', scope: 'plugin', keys: 'Alt+2', handler: 'hotkeyTabProbe', titleKey: 'calibrations.hotkeys.tabProbe' },
     { id: 'tab-heaters', scope: 'plugin', keys: 'Alt+3', handler: 'hotkeyTabHeaters', titleKey: 'calibrations.hotkeys.tabHeaters' },
     { id: 'tab-shaper', scope: 'plugin', keys: 'Alt+4', handler: 'hotkeyTabShaper', titleKey: 'calibrations.hotkeys.tabShaper' },
+    // Arrow shortcuts follow only rendered tabs and reverse their logical step in RTL.
+    { id: 'tab-left', scope: 'plugin', keys: 'Alt+ArrowLeft', handler: 'hotkeyTabLeft', titleKey: 'calibrations.hotkeys.tabLeft' },
+    { id: 'tab-right', scope: 'plugin', keys: 'Alt+ArrowRight', handler: 'hotkeyTabRight', titleKey: 'calibrations.hotkeys.tabRight' },
 
     // ручное зондирование (оверлей TEST_Z виден на любой странице → global)
     { id: 'testz-up', scope: 'global', keys: 'Alt+ArrowUp', handler: 'hotkeyTestzUp', titleKey: 'calibrations.hotkeys.testzUp' },

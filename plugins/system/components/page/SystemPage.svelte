@@ -53,6 +53,11 @@
     ...extTabs.map((t) => ({ id: t.ref, label: t.title })),
   ]);
 
+  // Keep hotkey navigation aligned with the rendered order, including extension tabs.
+  $effect(() => {
+    systemUiState.tabOrder = tabs.map((t) => t.id);
+  });
+
   // Deep link ?section=<builtin id> or ?section=<plugin>/<id>; unknown values are ignored.
   // Applied once per value: `tabs` is recomputed on every health badge change, and re-applying
   // the link then would snap the user back from the tab they picked by hand. An extension tab

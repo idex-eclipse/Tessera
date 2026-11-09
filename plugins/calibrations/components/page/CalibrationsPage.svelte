@@ -106,6 +106,12 @@
     ...extTabs.map((t) => ({ id: t.ref, label: t.title })),
   ]);
 
+  // Keep hotkey navigation aligned with the rendered order and available printer features.
+  $effect(() => {
+    pageUi.activeTab = tab;
+    pageUi.tabOrder = tabs.map((t) => t.id);
+  });
+
   // deep-link ?section=…; belts уводит в shaper-таб; вкладка дополнения — ?section=<plugin>/<id>
   $effect(() => {
     const s = params.section;

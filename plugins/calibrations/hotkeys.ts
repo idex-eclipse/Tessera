@@ -1,8 +1,9 @@
 import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
+import { isRtl } from '../shared/popover-align';
 import { gcode, runGcode } from './lib/commands.ts';
-import { requestTab, type CalibrationsTab } from './state/page-ui-state.svelte.ts';
+import { moveCalibrationsTab, requestTab, type CalibrationsTab } from './state/page-ui-state.svelte.ts';
 import { isManualProbeActive } from './data/printer-tracker.ts';
 
 /**
@@ -29,6 +30,16 @@ export const hotkeyTabMesh = openTab('mesh');
 export const hotkeyTabProbe = openTab('probe');
 export const hotkeyTabHeaters = openTab('heaters');
 export const hotkeyTabShaper = openTab('shaper');
+
+/** Selects the available tab visually to the left, including contributed tabs and RTL order. */
+export function hotkeyTabLeft(): void {
+  moveCalibrationsTab('left', isRtl());
+}
+
+/** Selects the available tab visually to the right, including contributed tabs and RTL order. */
+export function hotkeyTabRight(): void {
+  moveCalibrationsTab('right', isRtl());
+}
 
 /** Шаги ручного зондирования для hotkeys: обычный и точный (мм). */
 export const TESTZ_STEP = '0.1';

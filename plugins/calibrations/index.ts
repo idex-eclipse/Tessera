@@ -13,6 +13,7 @@ import LiveZChipPicker from './components/chips/LiveZChipPicker.svelte';
 export { guardCalibScript, guardCalibPrintStart } from './guards.ts';
 export {
   hotkeyTabMesh, hotkeyTabProbe, hotkeyTabHeaters, hotkeyTabShaper,
+  hotkeyTabLeft, hotkeyTabRight,
   hotkeyTestzUp, hotkeyTestzDown, hotkeyTestzUpFine, hotkeyTestzDownFine,
   hotkeyProbeAccept, hotkeyProbeAbort,
   hotkeyOpenCalibrations,

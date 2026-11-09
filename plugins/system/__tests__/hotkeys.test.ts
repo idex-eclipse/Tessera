@@ -5,10 +5,11 @@ import { createHostHotkeys } from '../../../host/src/core/host-hotkeys';
 import { analyzeHotkeys } from '../../../host/src/core/hotkeys';
 import * as hotkeys from '../hotkeys';
 import { systemManifest } from '../manifest';
-import { systemUiState } from '../state/system-ui-state.svelte';
+import { moveSystemTab, systemUiState } from '../state/system-ui-state.svelte';
 
 afterEach(() => {
   systemUiState.activeTab = 'overview';
+  systemUiState.tabOrder = ['overview', 'monitoring', 'maintenance'];
 });
 
 describe('system hotkeys', () => {
@@ -41,12 +42,30 @@ describe('system hotkeys', () => {
     expect(systemUiState.activeTab).toBe('overview');
   });
 
-  it('declares the tab hotkeys as plugin-scoped Alt+digits with exported handlers', () => {
+  it('moves through built-in and contributed tabs in visual LTR and RTL order', () => {
+    systemUiState.tabOrder = ['overview', 'monitoring', 'maintenance', 'extension/details'];
+    systemUiState.activeTab = 'monitoring';
+
+    moveSystemTab('left', false);
+    expect(systemUiState.activeTab).toBe('overview');
+    moveSystemTab('left', false);
+    expect(systemUiState.activeTab).toBe('extension/details');
+
+    systemUiState.activeTab = 'monitoring';
+    moveSystemTab('left', true);
+    expect(systemUiState.activeTab).toBe('maintenance');
+    moveSystemTab('right', true);
+    expect(systemUiState.activeTab).toBe('monitoring');
+  });
+
+  it('declares plugin-scoped digit and arrow tab hotkeys with exported handlers', () => {
     const tabs = (systemManifest.hotkeys ?? []).filter((h) => h.id.startsWith('tab-'));
     expect(tabs.map((h) => [h.keys, h.scope, h.handler])).toEqual([
       ['Alt+1', 'plugin', 'hotkeyTabOverview'],
       ['Alt+2', 'plugin', 'hotkeyTabMonitoring'],
       ['Alt+3', 'plugin', 'hotkeyTabMaintenance'],
+      ['Alt+ArrowLeft', 'plugin', 'hotkeyTabLeft'],
+      ['Alt+ArrowRight', 'plugin', 'hotkeyTabRight'],
     ]);
     for (const h of tabs) {
       expect(typeof (hotkeys as Record<string, unknown>)[h.handler], h.handler).toBe('function');

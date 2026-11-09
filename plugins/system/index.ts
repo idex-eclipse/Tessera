@@ -23,6 +23,8 @@ export {
   hotkeyTabOverview,
   hotkeyTabMonitoring,
   hotkeyTabMaintenance,
+  hotkeyTabLeft,
+  hotkeyTabRight,
 } from './hotkeys.ts';
 
 defineMpuElement('mpu-system-page', SystemPage);

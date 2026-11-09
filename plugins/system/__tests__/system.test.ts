@@ -331,7 +331,8 @@ describe('locales', () => {
       'system.units.d', 'system.notifications.throttle', 'system.notifications.mcuLink',
       'system.notifications.canbus', 'system.tmc.idle', 'system.tmc.idleHint', 'system.health.idle',
       'system.hotkeys.tabOverview', 'system.hotkeys.tabMonitoring',
-      'system.hotkeys.tabMaintenance', 'system.charts.mcuRetrans', 'system.charts.mcuRtt',
+      'system.hotkeys.tabMaintenance', 'system.hotkeys.tabLeft', 'system.hotkeys.tabRight',
+      'system.charts.mcuRetrans', 'system.charts.mcuRtt',
     ];
     for (const k of dynamic) expect(keys[k], k).toBeTypeOf('string');
   });

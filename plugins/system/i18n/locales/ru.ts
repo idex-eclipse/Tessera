@@ -8,6 +8,8 @@ export const ru = {
       tabOverview: 'Вкладка «Система»',
       tabMonitoring: 'Вкладка «Мониторинг»',
       tabMaintenance: 'Вкладка «Хранилище и обновления»',
+      tabLeft: 'Система: вкладка слева',
+      tabRight: 'Система: вкладка справа',
     },
     units: { d: 'д', h: 'ч', m: 'м', s: 'с' },
 
