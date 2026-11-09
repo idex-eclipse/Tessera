@@ -368,6 +368,19 @@ describe('plugin-api-factory / notifications', () => {
     expect(push.mock.calls[0]![0]).toMatchObject({ printerId: 'b', pluginId: 'plugin-one' });
   });
 
+  it('forwards plugin-owned action elements while still assigning the author', () => {
+    const { ctx, push } = setupNotifications();
+    const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });
+    const actions = [{ element: 'acme-help', params: { hintId: 'x' } }];
+
+    api.notifications.push({ severity: 'error', text: 'x', actions });
+
+    expect(push.mock.calls[0]![0]).toMatchObject({
+      pluginId: 'plugin-one',
+      actions,
+    });
+  });
+
   it('a plugin cannot pass itself off as another author', () => {
     const { ctx, push } = setupNotifications();
     const api = createPluginApi(ctx, 'plugin-one', { ...MANIFEST, id: 'plugin-one' });

@@ -3,6 +3,7 @@
   import Icon from '../icons/Icon.svelte';
   import type { NotificationItem } from '../../core/notification-center.svelte.ts';
   import { fmtTime, printerName, sourceLabel } from './notification-labels';
+  import NotificationActions from './NotificationActions.svelte';
 
   const ctx = getAppContext();
   const center = ctx.notifications;
@@ -84,9 +85,15 @@
           <Icon name="x" size={12} />
         </button>
       </div>
-      <button class="toast-body" onclick={() => onToastClick(n)}>
-        {n.text}
-      </button>
+      <div class="toast-body-row">
+        <button class="toast-body" onclick={() => onToastClick(n)}>
+          {n.text}
+        </button>
+        <NotificationActions
+          pluginId={n.pluginId}
+          actions={n.actions}
+        />
+      </div>
     </div>
   {/each}
 </div>
@@ -189,9 +196,14 @@
     color: var(--text-primary);
   }
 
-  .toast-body {
+  .toast-body-row {
     display: block;
-    width: 100%;
+    min-width: 0;
+  }
+
+  .toast-body {
+    display: inline;
+    width: auto;
     border: none;
     background: transparent;
     color: var(--text-primary);

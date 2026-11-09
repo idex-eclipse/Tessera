@@ -443,6 +443,7 @@ export function createPluginApi(
           severity: n.severity,
           text: n.text,
           label: n.label,
+          ...(n.actions ? { actions: n.actions } : {}),
         });
       },
     },

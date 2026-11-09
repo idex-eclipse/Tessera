@@ -3,6 +3,7 @@
   import Icon from '../icons/Icon.svelte';
   import type { NotificationSeverity } from '../../../../plugin-sdk/src/types';
   import { fmtTime, printerName, sourceLabel } from './notification-labels';
+  import NotificationActions from './NotificationActions.svelte';
 
   const ctx = getAppContext();
   const center = ctx.notifications;
@@ -245,7 +246,10 @@
                 <Icon name="x" size={12} />
               </button>
             </div>
-            <div class="notif-text">{n.text}</div>
+            <div class="notif-text">
+              <span>{n.text}</span>
+              <NotificationActions pluginId={n.pluginId} actions={n.actions} />
+            </div>
           </div>
         {/each}
       {/if}
@@ -558,6 +562,7 @@
   }
 
   .notif-text {
+    min-width: 0;
     font-size: var(--font-size-sm);
     color: var(--text-primary);
     line-height: 1.4;
@@ -565,4 +570,5 @@
     word-break: break-word;
     font-family: monospace;
   }
+
 </style>

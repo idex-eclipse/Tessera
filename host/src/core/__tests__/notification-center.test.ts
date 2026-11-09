@@ -7,6 +7,7 @@ import {
   DEDUP_MS,
   HISTORY_CAP,
   LABEL_MAX,
+  NOTIFICATION_ACTION_CAP,
   TEXT_MAX,
   TOAST_CAP,
   type NotificationPush,
@@ -144,6 +145,34 @@ describe('notification center / history', () => {
     expect(long!.text).toHaveLength(TEXT_MAX);
     expect(long!.text.endsWith('…')).toBe(true);
     expect(long!.label).toHaveLength(LABEL_MAX);
+  });
+
+  it('copies at most two valid Custom Element actions and sanitizes string params', () => {
+    const { center } = setup();
+    const params = { hintId: 'timer-too-close', bad: 42 as unknown as string };
+    center.push(n('shutdown', {
+      actions: [
+        { element: 'mpu-system-help', params },
+        { element: 'notcustom' },
+        { element: 'acme-retry' },
+        { element: 'acme-third' },
+      ],
+    }));
+    params.hintId = 'mutated';
+
+    expect(NOTIFICATION_ACTION_CAP).toBe(2);
+    expect(center.items[0]!.actions).toEqual([
+      { element: 'mpu-system-help', params: { hintId: 'timer-too-close' } },
+      { element: 'acme-retry' },
+    ]);
+  });
+
+  it('deduplicates by text even when action descriptors differ', () => {
+    const { center } = setup();
+    center.push(n('same', { actions: [{ element: 'acme-one' }] }));
+    center.push(n('same', { actions: [{ element: 'acme-two' }] }));
+    expect(center.items).toHaveLength(1);
+    expect(center.items[0]!.actions?.[0]?.element).toBe('acme-one');
   });
 
   it('deduplicates the same text from the same author within the window only', () => {
