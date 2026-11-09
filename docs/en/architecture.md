@@ -223,9 +223,13 @@ owns the storage and the interface: toasts, the bell above the right panel's "Co
 menu" button, the list beside the panel, the `N` hotkey. It does not know where a
 notification comes from or what Klipper is.
 
-- A plugin writes with `api.notifications.push({ severity, text, label?, printerId? })`
+- A plugin writes with `api.notifications.push({ severity, text, label?, printerId?, actions? })`
   and **reads nothing**: the center is not a channel between plugins. The author
   (`pluginId`) is set by the host, so a plugin cannot sign as another one.
+- `actions` are opaque plugin-owned Custom Elements (at most two). The host mounts
+  them with the author's `PluginApi` and string parameters in both the toast and the
+  list; it does not interpret Klipper errors or store callbacks. Two independent
+  instances may exist at once.
 - The host itself writes the fail-closed events of the guard agent.
 - `@core/system` is an ordinary producer for everything bound to Klipper: `!!` errors,
   shutdowns, TMC flags, host throttling, MCU and CAN problems, and the
@@ -233,6 +237,7 @@ notification comes from or what Klipper is.
   [plugin-api.md](plugin-api.md#notifications)).
 - Dedup (100 ms), the history cap (200), the toast cap (5), the ignore patterns
   and the sound for `critical` live in the center and apply to every author alike.
+  Actions do not participate in deduplication or filtering.
   Patterns and the sound flag are device-global (`settings.ui.notifications`); the
   history lives in memory.
 

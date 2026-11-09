@@ -54,6 +54,12 @@ interface NotificationInput {
   text: string;          // already translated
   label?: string;        // short source caption, translated; defaults to the plugin name
   printerId?: string;    // defaults to the active printer
+  actions?: NotificationActionInput[]; // up to two plugin-owned elements (0.14)
+}
+
+interface NotificationActionInput {
+  element: string;       // registered Custom Element tag
+  params?: MpuParams;    // string values only
 }
 
 interface FleetTag { id: string; labelKey: string; icon?: string; order?: number }
@@ -242,6 +248,7 @@ api.notifications.push({
   severity: 'error',                                   // 'critical' | 'error' | 'info'
   text: api.i18n.t('acme.heater.drift', { heater }),   // already translated
   label: api.i18n.t('acme.heater.source'),             // optional
+  actions: [{ element: 'acme-heater-help', params: { heater } }], // optional, 0.14
 });
 ```
 
@@ -258,6 +265,13 @@ api.notifications.push({
 - The same text from the same plugin for the same printer within 100 ms is shown
   once. The user can filter messages by regular expression and enable a sound for
   `critical`; both apply to all plugins.
+- With `pluginApi: "0.14"`, `actions` may contain at most two registered Custom
+  Elements owned by the publishing plugin. The host passes the author's `PluginApi`
+  and a copied map of string `params`, but does not interpret the action or keep a
+  callback. Malformed and unavailable elements are omitted without dropping the
+  notification. The toast and history may mount independent instances at the same
+  time, so an action must not rely on singleton component state. Deduplication and
+  filters continue to use only the notification text.
 - Do not use it for chatter: every call adds a toast and a history entry. Report what
   the user must notice (an alarm, a failure), not progress.
 
