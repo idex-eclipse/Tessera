@@ -2,8 +2,9 @@
   import Icon from '../icons/Icon.svelte';
   import { isRtl } from '../popover-align';
 
-  let { title, children }: {
+  let { title, compact = false, children }: {
     title: string;
+    compact?: boolean;
     children: import('svelte').Snippet;
   } = $props();
 
@@ -12,7 +13,7 @@
   let menuEl = $state<HTMLDivElement | null>(null);
   let pos = $state<{ top: number; left?: number; right?: number }>({ top: -9999, right: -9999 });
 
-  /** Поповер выравнивается по «начальному» краю кнопки: справа в LTR, слева в RTL. */
+  /** Aligns to the button's logical start edge: right in LTR and left in RTL. */
   function place(): void {
     const r = btnEl?.getBoundingClientRect();
     const el = menuEl;
@@ -65,11 +66,15 @@
 <button
   class="hdr-btn"
   class:active={open}
+  class:compact
   bind:this={btnEl}
   onclick={toggle}
   title={title}
+  aria-label={title}
+  aria-haspopup="dialog"
+  aria-expanded={open}
 >
-  <Icon name="help-circle" size={15} />
+  <Icon name="help-circle" size={compact ? 14 : 15} />
 </button>
 
 {#if open}
@@ -82,6 +87,7 @@
     style:right={pos.right !== undefined ? `${pos.right}px` : undefined}
     role="dialog"
     aria-label={title}
+    dir={isRtl() ? 'rtl' : 'ltr'}
   >
     <div class="help-title">{title}</div>
     <div class="help-body">
@@ -106,6 +112,7 @@
   }
   .hdr-btn:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
   .hdr-btn.active { background: var(--accent); color: #fff; }
+  .hdr-btn.compact { width: 22px; height: 22px; border-radius: 50%; }
 
   .help-backdrop {
     position: fixed;
@@ -117,8 +124,9 @@
   .help-menu {
     position: fixed;
     z-index: 461;
-    min-width: 280px;
-    max-width: 380px;
+    width: min(380px, calc(100vw - 16px));
+    min-width: min(280px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
     max-height: calc(100vh - 16px);
     overflow-y: auto;
     padding: var(--space-sm);
@@ -178,5 +186,10 @@
   .help-body :global(.warn) {
     color: var(--warning);
     font-weight: 600;
+  }
+
+  /* Compact inline actions stay usable on touch without widening mouse layouts. */
+  @media (pointer: coarse) {
+    .hdr-btn.compact { width: 32px; height: 32px; }
   }
 </style>
