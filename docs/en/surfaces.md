@@ -772,21 +772,39 @@ Not extensible on purpose: the tabs of the right table (they map to fixed Moonra
 `logs`, `docs`, `config_examples`) and the rename/delete dialogs. Guards are not inherited: an
 extension that edits or deletes files declares guards for its own commands.
 
-`@core/history` (all `version: 1`; a contribution gets only its own api), since owner version
-`4.0.0`:
+`@core/history` (all `version: 1`; a contribution gets only its own api):
 
-| Point | kind | mode | Where |
-|---|---|---|---|
-| `page` | element | replacement | the whole content of the History page (both panels and the bottom panels) |
-| `panel-stats` | element | replacement | the printer statistics panel (including its reset button) |
-| `panel-history` | element | replacement | the print history table |
-| `panels-bottom` | panel | append | extra panels at the very bottom of the page (inside `page`) |
+| Point | kind | mode | Since | Where |
+|---|---|---|---|---|
+| `page` | element | replacement | 4.0.0 | the whole content of the History page (tabs and bottom panels) |
+| `tabs` | tab | append | 4.2.0 | extra full-height tabs after History and Statistics; deep link `?section=<extPluginId>/<id>` |
+| `panel-stats` | element | replacement | 4.0.0 | the body of the combined Statistics tab |
+| `panel-history` | element | replacement | 4.0.0 | the body of the History tab, including the print history table |
+| `panels-bottom` | panel | append | 4.0.0 | extra panels at the very bottom of the page (inside `page`) |
 
-The two replaceable panels are `element` points, not `panel`: both draw their own card, so a
-host panel shell would double the chrome. The shared file table points are not declared here:
-the history table has no file operations. Erasing history and statistics stays protected by
-the plugin's guard `history-owner-only`; an extension that calls `server.history.*` itself
+The original page owns one full-height card with **History** and **Statistics** tabs; `tabs`
+contributions follow them in the same row. The two replaceable built-in tab bodies are `element` points, not
+`panel`; the outer tab card remains in the page. The shared file table points are not declared
+here: the history table has no file operations. Erasing history and statistics stays protected
+by the plugin's guard `history-owner-only`; an extension that calls `server.history.*` itself
 declares guards for its own commands.
+
+The History tab has no duplicate table title: search, refresh and column selection live in the
+page-level tab row. The Statistics tab uses the same trailing area for Reset statistics.
+
+In the original `panel-history`, activating a row opens the print card with the recorded
+metadata, slicer estimate versus actual print time, a per-job note and **Print again**. The
+action is available only while Moonraker reports that the same, unmodified G-code still
+exists and no print is active; it uses `printer.print.start`, so guards declared by other
+plugins still run. Notes are stored on that printer in the writable Moonraker database
+namespace `tessera_history`, keyed by job id and validated against the job start time. The
+Statistics tab splits the available width equally between two independently scrolling areas:
+printer statistics in a two-column grid (including failure rate), and a filament table with
+per-material counts and actual usage derived from the retained history. On narrow screens the
+areas stack, and printer statistics becomes one column. `panel-stats` replaces this combined body.
+`Alt+1` and `Alt+2` select the built-in tabs. `Alt+Left` and `Alt+Right` move across the
+entire visible row, including contributed tabs, and reverse their logical step in RTL so the
+physical arrow still points toward the selected tab. Browsers may reserve `Alt+Left` for Back.
 
 `@core/jobs` (all `version: 1`; a contribution gets only its own api), since owner version
 `4.0.0`:

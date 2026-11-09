@@ -6,33 +6,114 @@ import {
   createDelegateStore,
 } from '../core-keeper/core-keeper';
 
-import type { GcodeFileEntry } from './use-gcode-files.svelte.ts';
+import type { GcodeFileEntry, GcodeThumbnail } from './use-gcode-files.svelte.ts';
 
 interface HistoryListResponse {
-  jobs?: Array<Record<string, any>>;
+  jobs?: Array<Record<string, unknown>>;
   count?: number;
 }
 
+/** A normalized Moonraker history job used by both the table and the History plugin. */
+export interface HistoryJobEntry extends GcodeFileEntry {
+  jobId: string;
+  exists: boolean;
+  status: string;
+  user: string | null;
+  startTime: number;
+  endTime: number | null;
+  printDuration: number;
+  totalDuration: number;
+  filamentUsed: number;
+  metadata: Record<string, unknown>;
+  auxiliaryData: Array<Record<string, unknown>>;
+}
+
+// Numeric normalization prevents malformed history data from leaking NaN into sorting and statistics.
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
+
+// Optional values stay absent so table cells can render their established empty state.
 function numOpt(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-// ------------------------------------------------------------------
-// Core factory: ядро СТАТИЧЕСКИ привязано к принтеру.
-// История плоская (без path).
-// ------------------------------------------------------------------
+// Nested Moonraker values are accepted only as plain record-like objects.
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+// Invalid thumbnail entries are ignored without rejecting the entire history job.
+function thumbnails(value: unknown): GcodeThumbnail[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is GcodeThumbnail => {
+    const thumb = record(item);
+    return typeof thumb.relative_path === 'string';
+  });
+}
+
+/** Converts an untrusted Moonraker history object into the table's stable entry shape. */
+export function normalizeHistoryJob(job: Record<string, unknown>): HistoryJobEntry | null {
+  if (typeof job.filename !== 'string') return null;
+  const metadata = record(job.metadata);
+  const startTime = num(job.start_time);
+  const jobId = typeof job.job_id === 'string' ? job.job_id : '';
+  const raw = { ...metadata, ...job };
+  return {
+    filename: job.filename,
+    size: num(metadata.size),
+    modified: num(metadata.modified) || startTime,
+    slicer: typeof metadata.slicer === 'string' ? metadata.slicer : undefined,
+    slicer_version: typeof metadata.slicer_version === 'string' ? metadata.slicer_version : undefined,
+    layer_height: numOpt(metadata.layer_height),
+    first_layer_height: numOpt(metadata.first_layer_height),
+    layer_count: numOpt(metadata.layer_count),
+    object_height: numOpt(metadata.object_height),
+    nozzle_diameter: numOpt(metadata.nozzle_diameter),
+    filament_name: typeof metadata.filament_name === 'string' || Array.isArray(metadata.filament_name)
+      ? metadata.filament_name as string | string[]
+      : undefined,
+    filament_type: typeof metadata.filament_type === 'string' || Array.isArray(metadata.filament_type)
+      ? metadata.filament_type as string | string[]
+      : undefined,
+    filament_total: numOpt(job.filament_used) ?? numOpt(metadata.filament_total),
+    filament_weight_total: numOpt(metadata.filament_weight_total),
+    estimated_time: numOpt(metadata.estimated_time) ?? numOpt(job.estimate),
+    first_layer_extruder_temp: numOpt(metadata.first_layer_extruder_temp),
+    first_layer_bed_temp: numOpt(metadata.first_layer_bed_temp),
+    chamber_temp: numOpt(metadata.chamber_temp),
+    print_start_time: startTime || null,
+    job_id: jobId || null,
+    thumbnails: thumbnails(metadata.thumbnails),
+    raw,
+    jobId,
+    exists: job.exists === true,
+    status: typeof job.status === 'string' ? job.status : 'unknown',
+    user: typeof job.user === 'string' ? job.user : null,
+    startTime,
+    endTime: numOpt(job.end_time) ?? null,
+    printDuration: num(job.print_duration),
+    totalDuration: num(job.total_duration),
+    filamentUsed: num(job.filament_used),
+    metadata,
+    auxiliaryData: Array.isArray(job.auxiliary_data)
+      ? job.auxiliary_data.map(record)
+      : [],
+  };
+}
+
+// History cores are statically bound to one printer and expose a flat, pathless list.
 function createHistoryFilesCore(api: PluginApi, printerId: string) {
-  let files = $state<GcodeFileEntry[]>([]);
+  let files = $state<HistoryJobEntry[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
   let statuses = $state<Record<string, string>>({});
   let currentPrint = $state<{ filename: string; state: string } | null>(null);
 
   const unsubs: Array<() => void> = [];
-  // Ответ устаревшего запроса не должен перезаписать свежий (notify + refresh подряд).
+  // A stale request must not replace a newer notification-driven or manual refresh.
   let loadSeq = 0;
 
   function safeHandle(): MoonrakerProxyHandle | null {
@@ -61,37 +142,8 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
       if (seq !== loadSeq) return;
 
       files = (res.jobs ?? [])
-        .filter((j) => typeof j.filename === 'string')
-        .map((j) => {
-          const meta =
-            typeof j.metadata === 'object' && j.metadata !== null
-              ? (j.metadata as Record<string, any>)
-              : {};
-          return {
-            filename: j.filename as string,
-            size: num(meta.size),
-            modified: num(meta.modified) || num(j.start_time),
-            slicer: meta.slicer,
-            slicer_version: meta.slicer_version,
-            layer_height: meta.layer_height,
-            first_layer_height: meta.first_layer_height,
-            layer_count: meta.layer_count,
-            object_height: meta.object_height,
-            nozzle_diameter: meta.nozzle_diameter,
-            filament_name: meta.filament_name,
-            filament_type: meta.filament_type,
-            filament_total: numOpt(j.filament_used) ?? numOpt(meta.filament_total),
-            filament_weight_total: meta.filament_weight_total,
-            estimated_time: numOpt(meta.estimated_time) ?? numOpt(j.estimate),
-            first_layer_extruder_temp: meta.first_layer_extruder_temp,
-            first_layer_bed_temp: meta.first_layer_bed_temp,
-            chamber_temp: meta.chamber_temp,
-            print_start_time: numOpt(j.start_time) ?? null,
-            job_id: typeof j.job_id === 'string' ? j.job_id : null,
-            thumbnails: Array.isArray(meta.thumbnails) ? meta.thumbnails : [],
-            raw: { ...meta, ...j },
-          };
-        });
+        .map(normalizeHistoryJob)
+        .filter((job): job is HistoryJobEntry => job !== null);
 
       const map: Record<string, string> = {};
       for (const job of res.jobs ?? []) {
@@ -109,11 +161,7 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
     }
   }
 
-  /**
-   * В истории строка = задание, и статус у каждого задания свой. Поиск по имени файла
-   * (как в таблице gcodes) показывал бы у всех прогонов одного файла статус самого
-   * свежего. Строка не передана (сортировка по имени) — фолбэк на статус по имени.
-   */
+  /** Resolves each job's own status while retaining a filename fallback for table sorting. */
   function statusOf(filename: string, row?: { raw?: Record<string, unknown> }): string | null {
     const own = row?.raw?.status;
     if (typeof own === 'string' && own) return own;
@@ -122,7 +170,7 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
   }
 
   function navigate(_p: string): void {
-    // история плоская: навигации нет
+    // History is flat and therefore has no directory navigation.
   }
 
   function init(): void {
@@ -182,6 +230,9 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
     get error() {
       return error;
     },
+    get printing() {
+      return currentPrint?.state === 'printing' || currentPrint?.state === 'paused';
+    },
     navigate,
     refresh: load,
     statusOf,
@@ -191,19 +242,15 @@ function createHistoryFilesCore(api: PluginApi, printerId: string) {
 
 export type HistoryFilesStore = ReturnType<typeof createHistoryFilesCore>;
 
-// ------------------------------------------------------------------
-// Keeper: ядра живут per-printer, переживают unmount (keep-alive).
-// ------------------------------------------------------------------
+// Per-printer cores survive view unmounts so statistics can reuse the retained full list.
 const keeper = createCoreKeeper<HistoryFilesStore>({
   create: (pid, api) => createHistoryFilesCore(api, pid),
   cap: 4,
 });
 
 /**
- * Хук списка истории печати.
- *
- * Без printerId — legacy: делегирующий store, следующий за активным принтером.
- * С printerId — fleet: прямое ядро с удержанием.
+ * Returns the print-history store for the active printer or a retained explicit printer id.
+ * Omitting `printerId` follows printer changes; providing it keeps a fleet-scoped core.
  */
 export function useHistoryFiles(
   api: PluginApi,

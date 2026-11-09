@@ -25,7 +25,7 @@
   } from './file-table-state.svelte';
   import { useDirFiles } from './use-dir-files.svelte';
   import { useGcodeFiles, type GcodeFileEntry } from './use-gcode-files.svelte';
-  import { useHistoryFiles } from './use-history-files.svelte';
+  import { useHistoryFiles, type HistoryJobEntry } from './use-history-files.svelte';
 
   import FileTableHeaderActions from './FileTableHeaderActions.svelte';
 
@@ -42,6 +42,8 @@ let {
   onAction,
   headerExtra = null,
   menuEnabled = true,
+  onRowActivate = null,
+  embedded = false,
   onThreeMF = null,  // НОВОЕ: колбэк для перехвата .3mf файлов
 }: {
   root: string;
@@ -54,6 +56,9 @@ let {
   onAction?: (id: string, ref: FileRef) => void | Promise<void>;
   headerExtra?: Snippet | null;
   menuEnabled?: boolean;
+  onRowActivate?: ((entry: HistoryJobEntry) => void) | null;
+  /** Removes duplicate card chrome when the table fills an existing tab card. */
+  embedded?: boolean;
   onThreeMF?: ((file: File) => void) | null;  // НОВОЕ
 } = $props();
 
@@ -354,14 +359,20 @@ let {
     }
   }
 
-  function onRowLeft(e: MouseEvent, name: string, isDir: boolean): void {
+  function onRowLeft(e: MouseEvent, name: string, isDir: boolean, row?: FileRow): void {
     e.stopPropagation();
-    if (!menuEnabled) return;
     // открытое меню: первый ЛКМ только закрывает его
     if (menu) {
         menu = null;
         return;
     }
+
+    if (!isDir && row && onRowActivate) {
+      onRowActivate(row as unknown as HistoryJobEntry);
+      return;
+    }
+
+    if (!menuEnabled) return;
 
     if (isDir) {
         source.navigate(dataPath ? `${dataPath}/${name}` : name);
@@ -381,6 +392,13 @@ let {
     }
 
     menu = { x: e.clientX, y: e.clientY, ref: refOf(name, false), isDir: false };
+  }
+
+  /** Keyboard activation mirrors a row click without making inert tables focusable. */
+  function onRowKeydown(e: KeyboardEvent, row: FileRow): void {
+    if (!onRowActivate || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    onRowActivate(row as unknown as HistoryJobEntry);
   }
 
   function onRowRight(e: MouseEvent, name: string, isDir: boolean): void {
@@ -573,7 +591,7 @@ let {
   }
 </script>
 
-<div class="ft-card" bind:this={cardEl}>
+<div class="ft-card" class:embedded bind:this={cardEl}>
   {#if showHeader}
     <div class="page-header">
       <span class="page-title">{title}</span>
@@ -664,7 +682,17 @@ let {
 
           {#each sortedFiles as f (mode === 'history' ? (f.raw?.job_id ?? f.name ?? f.filename) : (f.name ?? f.filename))}
             {@const fname = f.name ?? f.filename}
-            <tr class="row-file" class:inert={!menuEnabled} onclick={(e) => onRowLeft(e, fname, false)} oncontextmenu={(e) => onRowRight(e, fname, false)}>
+            <tr
+              class="row-file"
+              class:inert={!menuEnabled && !onRowActivate}
+              class:activatable={Boolean(onRowActivate)}
+              role={onRowActivate ? 'button' : undefined}
+              tabindex={onRowActivate ? 0 : undefined}
+              aria-label={onRowActivate ? `${i18n.t('ft.openDetails')}: ${fname}` : undefined}
+              onclick={(e) => onRowLeft(e, fname, false, f)}
+              onkeydown={(e) => onRowKeydown(e, f)}
+              oncontextmenu={(e) => onRowRight(e, fname, false)}
+            >
               {#if mode === 'simple'}
                 <td class="td-name"><span class="cell"><span class="file-ico"><Icon name="file" size={15} /></span><bdi>{fname}</bdi></span></td>
                 <td>{formatDate(f.modified)}</td>
@@ -789,6 +817,11 @@ let {
         box-shadow:var(--shadow-sm);
         overflow:hidden;
     }
+    .ft-card.embedded {
+        border:0;
+        border-radius:0;
+        box-shadow:none;
+    }
     .ft-card .page-header { 
         margin-bottom:0;
     }
@@ -879,6 +912,10 @@ let {
     }
     .row-dir:hover td,.row-file:hover td {
         background:var(--bg-surface-hover);
+    }
+    .row-file.activatable:focus-visible {
+        outline:2px solid var(--border-focus);
+        outline-offset:-2px;
     }
     /* menuEnabled=false (History): rows do nothing on click, so they must not look clickable —
        no pointer cursor and no hover highlight. */

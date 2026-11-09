@@ -59,6 +59,7 @@ describe('history / extension points', () => {
     for (const id of ['page', 'panel-stats', 'panel-history']) {
       expect(byId.get(id), id).toMatchObject({ kind: 'element', mode: 'replacement' });
     }
+    expect(byId.get('tabs')).toMatchObject({ kind: 'tab', mode: 'append' });
     expect(byId.get('panels-bottom')).toMatchObject({ kind: 'panel', mode: 'append' });
   });
 

@@ -5,23 +5,15 @@ interface GuardRequest {
   params: unknown;
 }
 
-/**
- * Методы Moonraker, необратимо стирающие историю печати или накопленную статистику.
- */
+/** Moonraker methods that irreversibly erase print history or accumulated totals. */
 const DESTRUCTIVE_HISTORY_METHODS = new Set([
   'server.history.delete_job',
-  'server.history.delete_all',
   'server.history.reset_totals',
 ]);
 
 /**
- * Guard `history-owner-only`: историей и статистикой принтера распоряжается только
- * плагин History (там — диалог подтверждения). Другим плагинам стереть историю или
- * сбросить итоги нельзя: действие необратимо и пользователь не ожидает его
- * от несвязанного виджета или макроса.
- *
- * Запросы самого History гард не видит (анти-рекурсия GuardAgent), их защищает
- * подтверждение в интерфейсе. Гард без состояния — решение по методу.
+ * Restricts destructive history methods to the History owner, which provides confirmation.
+ * Requests made by the owning plugin bypass its own guard and remain protected by the UI.
  */
 export const guardHistoryOwnerOnly = (request: GuardRequest): GuardDecision =>
   DESTRUCTIVE_HISTORY_METHODS.has(request.method)
