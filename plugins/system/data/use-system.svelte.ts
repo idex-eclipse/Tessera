@@ -6,6 +6,7 @@ import {
   createDelegateStore,
 } from '../../shared/core-keeper/core-keeper';
 import { acquireKlippyState } from '../../shared/klippy-state/use-klippy-state.svelte';
+import { reportSystemActionError } from '../notifications';
 
 // ------------------------------------------------------------------
 // Модели
@@ -209,17 +210,6 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
       /* тела нет */
     }
     throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`);
-  }
-
-  /** Ошибка действия → центр уведомлений (отказ гарда уже показал хост). */
-  function reportActionError(action: string, e: unknown): void {
-    if ((e as { rejection?: unknown } | null)?.rejection) return;
-    const detail = e instanceof Error ? e.message : String(e);
-    api.notifications.push({
-      printerId: printerId ?? api.printer.id,
-      severity: 'error',
-      text: api.i18n.t('system.errors.actionFailed', { action, detail }),
-    });
   }
 
   function applySystemInfo(info: any, serverInfo: any): void {
@@ -505,7 +495,7 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
       await fn();
     } catch (e) {
       console.error('[system] action failed:', action, e);
-      reportActionError(action, e);
+      reportSystemActionError(api, printerId ?? api.printer.id, action, e);
     } finally {
       busy = '';
     }
@@ -515,7 +505,7 @@ function createSystemCore(api: PluginApi, printerId: string | null) {
     const h = safeHandle();
     h?.request('printer.emergency_stop').catch((e) => {
       console.error('[system] estop', e);
-      reportActionError('estop', e);
+      reportSystemActionError(api, printerId ?? api.printer.id, 'estop', e);
     });
   }
 

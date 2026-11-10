@@ -214,6 +214,7 @@ export const en = {
       throttle: 'Host: {flag}',
       mcuLink: 'MCU {name}: {reason}',
       canbus: 'MCU {name}: CAN bus {state}',
+      openMonitoring: 'Open monitoring',
       src: {
         gcode: 'G-code response',
         macro: 'Klipper macro',

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
 
   import { usePluginApi } from '../../../../plugin-sdk/src/svelte/index';
-  import { startNotificationProducers } from '../../notification-producers.ts';
+  import { startNotificationProducers } from '../../notifications.ts';
   import { ensurePrintTracker } from '../../data/print-tracker.ts';
 
   const api = usePluginApi();

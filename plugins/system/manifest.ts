@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const systemManifest = definePlugin({
   id: '@core/system',
   name: 'System',
-  version: '5.1.0',
+  version: '5.2.0',
   entry: '/plugins/system/index.js',
 
   pages: [

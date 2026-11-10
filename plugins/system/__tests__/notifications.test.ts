@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { MoonrakerProxyHandle, NotificationInput, PluginApi } from '../../../plugin-sdk/src/types';
-import { parseGcodeResponse, startNotificationProducers } from '../notification-producers';
+import {
+  parseGcodeResponse,
+  reportSystemActionError,
+  startNotificationProducers,
+} from '../notifications';
 
 describe('parseGcodeResponse', () => {
   it('parses the M118 MPU_NOTIFY echo, case-insensitively', () => {
@@ -182,5 +186,94 @@ describe('startNotificationProducers', () => {
     expect(t.listeners('notify_gcode_response')).toBe(0);
     t.emit('notify_gcode_response', ['!! late']);
     expect(t.pushed).toEqual([]);
+  });
+
+  it('adds monitoring only to TMC, host, MCU and CAN health notifications', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    const subscriptions: Array<{
+      objects: Record<string, string[]>;
+      callback: (delta: unknown) => void;
+    }> = [];
+    const pushed: NotificationInput[] = [];
+    const handle = {
+      readyState: 'open',
+      request: vi.fn(async (method: string) => {
+        if (method === 'machine.proc_stats') return { throttled_state: { bits: 0 } };
+        if (method === 'printer.objects.list') {
+          return { objects: ['tmc2209 stepper_x', 'mcu', 'mcu EBB', 'canbus_stats EBB'] };
+        }
+        return {};
+      }),
+      subscribe(objects: Record<string, string[]>, callback: (delta: unknown) => void) {
+        subscriptions.push({ objects, callback });
+        return () => {};
+      },
+      onReady: () => () => {},
+      onConnectionStatusChange: () => () => {},
+      onNotify(event: string, callback: (payload: unknown) => void) {
+        handlers.set(event, callback);
+        return () => handlers.delete(event);
+      },
+    } as unknown as MoonrakerProxyHandle;
+    const api = {
+      printers: [{ id: 'printer /one', name: 'One', url: '' }],
+      moonrakerFor: () => handle,
+      onPrintersChange: () => () => {},
+      notifications: { push: (notification: NotificationInput) => pushed.push(notification) },
+      i18n: { t: (key: string) => key, locale: 'en' },
+    } as unknown as PluginApi;
+    startNotificationProducers(api);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    subscriptions.find((entry) => 'tmc2209 stepper_x' in entry.objects)?.callback({
+      'tmc2209 stepper_x': { drv_status: { ot: true } },
+    });
+    handlers.get('notify_cpu_throttled')?.([{ bits: 1 }]);
+    const health = subscriptions.find((entry) => 'canbus_stats EBB' in entry.objects);
+    const stats = (write: number, retransmit: number) => ({
+      last_stats: { mcu_awake: 0.01, bytes_write: write, bytes_retransmit: retransmit },
+    });
+    health?.callback({
+      mcu: stats(0, 0),
+      'mcu EBB': stats(0, 0),
+      'canbus_stats EBB': { bus_state: 'active' },
+    });
+    health?.callback({
+      mcu: stats(10_000, 900),
+      'mcu EBB': stats(10_000, 0),
+      'canbus_stats EBB': { bus_state: 'passive' },
+    });
+    handlers.get('notify_gcode_response')?.(['!! A future unknown error']);
+
+    const monitoring = {
+      element: 'mpu-system-notification-page-action',
+      params: {
+        printerId: 'printer /one',
+        pageId: 'machine',
+        section: 'monitoring',
+        labelKey: 'system.notifications.openMonitoring',
+      },
+    };
+    expect(pushed.filter((notification) => notification.label !== 'system.notifications.src.gcode'))
+      .not.toHaveLength(0);
+    for (const notification of pushed.filter((item) => item.label !== 'system.notifications.src.gcode')) {
+      expect(notification.actions).toEqual([monitoring]);
+    }
+    expect(pushed.find((item) => item.label === 'system.notifications.src.gcode')?.actions).toBeUndefined();
+  });
+
+  it('reports command failures without offering an action', () => {
+    const pushed: NotificationInput[] = [];
+    const api = {
+      notifications: { push: (notification: NotificationInput) => pushed.push(notification) },
+      i18n: { t: (key: string) => key, locale: 'en' },
+    } as unknown as PluginApi;
+    reportSystemActionError(api, 'p1', 'restart', new Error('offline'));
+    expect(pushed).toEqual([{
+      printerId: 'p1',
+      severity: 'error',
+      text: 'system.errors.actionFailed',
+    }]);
   });
 });

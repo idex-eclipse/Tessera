@@ -210,6 +210,7 @@ export const ru = {
       throttle: 'Хост: {flag}',
       mcuLink: 'MCU {name}: {reason}',
       canbus: 'MCU {name}: шина CAN — {state}',
+      openMonitoring: 'Открыть мониторинг',
       src: {
         gcode: 'Ответ G-code',
         macro: 'Макрос Klipper',

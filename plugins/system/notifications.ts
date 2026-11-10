@@ -26,12 +26,47 @@ import {
 
 const KLIPPER_CRITICAL_RE = /shutdown|mcu |thermistor|heater .* not heating|lost communication|tmc .* reports/i;
 const KLIPPER_HELP_ACTION_ELEMENT = 'mpu-system-klipper-error-help-action';
+const SYSTEM_PAGE_ACTION_ELEMENT = 'mpu-system-notification-page-action';
 
 /** Builds the opaque action descriptor; the host never sees Klipper-specific data. */
 function helpAction(hintId: KlipperErrorHintId | null): NotificationActionInput[] | undefined {
   return hintId
     ? [{ element: KLIPPER_HELP_ACTION_ELEMENT, params: { hintId } }]
     : undefined;
+}
+
+/** Opens the live health panels of the printer that originally raised the notification. */
+function monitoringAction(printerId: string): NotificationActionInput {
+  return {
+    element: SYSTEM_PAGE_ACTION_ELEMENT,
+    params: {
+      printerId,
+      pageId: 'machine',
+      section: 'monitoring',
+      labelKey: 'system.notifications.openMonitoring',
+    },
+  };
+}
+
+/** Publishes command failures from System UI stores without offering an unsafe retry. */
+export function reportSystemActionError(
+  api: PluginApi,
+  printerId: string,
+  action: string,
+  error: unknown,
+): void {
+  if ((error as { rejection?: unknown } | null)?.rejection) return;
+  const detail = error instanceof Error ? error.message : String(error);
+  api.notifications.push({
+    printerId,
+    severity: 'error',
+    text: api.i18n.t('system.errors.actionFailed', { action, detail }),
+  });
+}
+
+interface SystemNotificationOptions {
+  hintId?: KlipperErrorHintId | null;
+  openMonitoring?: boolean;
 }
 
 /**
@@ -112,15 +147,18 @@ export function startNotificationProducers(api: PluginApi): () => void {
     severity: NotificationSeverity,
     source: 'gcode' | 'macro' | 'klippy' | 'tmc' | 'host' | 'mcu',
     text: string,
-    hintId: KlipperErrorHintId | null = null,
+    options: SystemNotificationOptions = {},
   ): void {
-    const actions = helpAction(hintId);
+    const actions: NotificationActionInput[] = [];
+    const help = helpAction(options.hintId ?? null);
+    if (help) actions.push(...help);
+    if (options.openMonitoring) actions.push(monitoringAction(printerId));
     api.notifications.push({
       printerId,
       severity,
       label: api.i18n.t(`system.notifications.src.${source}`),
       text,
-      ...(actions ? { actions } : {}),
+      ...(actions.length > 0 ? { actions } : {}),
     });
   }
 
@@ -131,7 +169,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
     const n = parseGcodeResponse(params);
     if (n) {
       const hintId = n.source === 'gcode' ? matchKlipperError(n.text) : null;
-      push(printerId, n.severity, n.source, n.text, hintId);
+      push(printerId, n.severity, n.source, n.text, { hintId });
     }
   }
 
@@ -147,7 +185,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
     const text = reason
       ? api.i18n.t('system.notifications.klipperShutdownReason', { reason })
       : api.i18n.t('system.notifications.klipperShutdown');
-    push(printerId, 'critical', 'klippy', text, matchKlipperError(reason));
+    push(printerId, 'critical', 'klippy', text, { hintId: matchKlipperError(reason) });
   }
 
   function applyTmcDelta(printerId: string, delta: any): void {
@@ -168,7 +206,9 @@ export function startNotificationProducers(api: PluginApi): () => void {
       for (const f of cur) {
         if (!prev.has(f)) {
           const text = api.i18n.t('system.notifications.tmcFlag', { name, flag: f });
-          push(printerId, TMC_CRITICAL_FLAGS.has(f) ? 'critical' : 'error', 'tmc', text);
+          push(printerId, TMC_CRITICAL_FLAGS.has(f) ? 'critical' : 'error', 'tmc', text, {
+            openMonitoring: true,
+          });
         }
       }
 
@@ -242,7 +282,9 @@ export function startNotificationProducers(api: PluginApi): () => void {
 
   function pushAlerts(printerId: string, alerts: HealthAlert[]): void {
     for (const a of alerts) {
-      push(printerId, a.severity, a.kind === 'throttle' ? 'host' : 'mcu', alertText(a));
+      push(printerId, a.severity, a.kind === 'throttle' ? 'host' : 'mcu', alertText(a), {
+        openMonitoring: true,
+      });
     }
   }
 
