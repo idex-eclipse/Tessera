@@ -32,7 +32,7 @@
 
   /**
    * v1: буква direct-оси — ui-настройка плагина (tools.directAxis), а
-   * namespace api.settings привязан к активному принтеру. Поэтому в fleet
+   * namespace settingsFor(activePrinterId) привязан к активному принтеру. Поэтому в fleet
    * показываем конвенциональную 'U'; per-printer буква приедет вместе с
    * settingsFor(printerId).
    */
