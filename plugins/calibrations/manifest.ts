@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const calibrationsManifest = definePlugin({
   id: '@core/calibrations',
   name: 'Calibrations',
-  version: '4.0.0',
+  version: '4.1.0',
   entry: '/plugins/calibrations/index.js',
 
   pages: [
@@ -40,6 +40,7 @@ export const calibrationsManifest = definePlugin({
   overlays: [
     { id: 'test-z', element: 'mpu-test-z-overlay' },
     { id: 'screws-tilt', element: 'mpu-screws-tilt-overlay' },
+    { id: 'notifications', element: 'mpu-calibrations-notifications' },
   ],
 
   chips: [

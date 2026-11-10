@@ -190,6 +190,7 @@ export const en = {
       threshold: 'Deviation threshold (°C)',
       thresholdHint: 'Alert if temperature deviates from target by more than N°C for 20s (40s while printing)',
       deviationAlert: 'Heater {heater}: deviation {dev}°C from target {target}°C — consider PID autotune',
+      openHeaters: 'Open heaters',
       saveConfirmTitle: 'Save configuration?',
       saveConfirmText: 'Klipper will restart the firmware to persist the new Kp/Ki/Kd values. Heaters will cool down during restart.',
     },

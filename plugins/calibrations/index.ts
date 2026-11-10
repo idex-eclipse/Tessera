@@ -9,6 +9,8 @@ import ScrewsTiltOverlay from './components/overlays/ScrewsTiltOverlay.svelte';
 import slidersIcon from './icons/sliders.svg?raw';
 import LiveZChip from './components/chips/LiveZChip.svelte';
 import LiveZChipPicker from './components/chips/LiveZChipPicker.svelte';
+import NotificationProducers from './components/overlays/NotificationProducers.svelte';
+import NotificationPageAction from '../shared/notification-actions/NotificationPageAction.svelte';
 
 export { guardCalibScript, guardCalibPrintStart } from './guards.ts';
 export {
@@ -31,3 +33,5 @@ defineMpuElement('mpu-test-z-overlay', TestZOverlay);
 defineMpuElement('mpu-screws-tilt-overlay', ScrewsTiltOverlay);
 defineMpuElement('mpu-core-calibrations-chip-livez', LiveZChip);
 defineMpuElement('mpu-core-calibrations-chip-livez-picker', LiveZChipPicker);
+defineMpuElement('mpu-calibrations-notifications', NotificationProducers);
+defineMpuElement('mpu-calibrations-notification-page-action', NotificationPageAction);

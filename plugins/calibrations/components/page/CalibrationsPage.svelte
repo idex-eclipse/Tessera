@@ -181,7 +181,7 @@
         <ExtensionPoint point="panels-probe" />
       {:else if tab === 'heaters'}
         <ExtensionPoint point="panel-heaters">
-          {#snippet original()}<HeatersContent />{/snippet}
+          {#snippet original()}<HeatersContent requestedHeater={params.heater ?? ''} />{/snippet}
         </ExtensionPoint>
         <ExtensionPoint point="panels-heaters" />
       {:else if tab === 'mesh'}

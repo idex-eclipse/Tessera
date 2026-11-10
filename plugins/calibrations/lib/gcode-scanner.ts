@@ -60,6 +60,29 @@ interface PidScan {
   result: { kp: number; ki: number; kd: number } | null;
 }
 
+/** Active PID calibration reconstructed from Moonraker's chronological g-code store. */
+export interface PidActivity {
+  active: boolean;
+  heater: string;
+}
+
+/** Returns the last PID run state so background monitors can suppress expected temperature swings. */
+export function scanPidActivity(entries: readonly GcodeStoreEntry[]): PidActivity {
+  let active = false;
+  let heater = '';
+  for (const entry of entries) {
+    const message = entry.message.trim();
+    if (!message) continue;
+    if (isCommand(entry, message) && RE_PID_CMD.test(message)) {
+      active = true;
+      heater = RE_HEATER_PARAM.exec(message)?.[1] ?? '';
+      continue;
+    }
+    if (active && (RE_PID.test(message) || RE_ABORT.test(message))) active = false;
+  }
+  return { active, heater: active ? heater : '' };
+}
+
 interface ShaperScan {
   state: 'idle' | 'busy' | 'finished';
   axis: string;

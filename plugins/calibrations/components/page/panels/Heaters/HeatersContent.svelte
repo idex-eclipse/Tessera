@@ -16,6 +16,12 @@
   import HeaderHelp from '../../../../../shared/header-help/HeaderHelp.svelte';
   import ConfirmDialog from '../../../../../shared/confirm-dialog.svelte';
   import Icon from '../../../../../shared/icons/Icon.svelte';
+  import {
+    subscribeHeaterDeviationAlerts,
+    type HeaterDeviationAlert,
+  } from '../../../../notifications';
+
+  let { requestedHeater = '' }: { requestedHeater?: string } = $props();
 
   const api = usePluginApi();
   const i18n = api.i18n;
@@ -24,10 +30,6 @@
 
   // --- параметры из настроек ---
   const DEFAULT_THRESHOLD = 5;
-  const SETTLE_SEC = 45;
-  const HOLD_SEC = 20;
-  const HOLD_PRINT_MULT = 2;
-  const COOLDOWN_SEC = 300;
 
   // Reactive: re-read after DB pulls / printer switches (see plugins/shared/settings).
   const thresholdSetting = useSetting(api, 'deviationThreshold', DEFAULT_THRESHOLD, asNumber());
@@ -80,6 +82,14 @@
     store.heatersState.heater = v;
     store.heatersState.target = defaultTarget(v);
   }
+
+  let appliedRequestedHeater = '';
+  $effect(() => {
+    if (!requestedHeater || requestedHeater === appliedRequestedHeater) return;
+    if (!store.state.heaters.includes(requestedHeater)) return;
+    appliedRequestedHeater = requestedHeater;
+    selectHeater(requestedHeater);
+  });
 
   // --- derived ---
   let maxTemp = $derived(store.state.heaterMaxTemps[store.heatersState.heater] ?? 300);
@@ -142,92 +152,14 @@
     return buildChartData(monitor.buffers, defs);
   });
 
-  // --- автомат девиации ---
-  type DevPhase = 'idle' | 'settle' | 'watch' | 'alert' | 'cooldown';
-  let phase = $state<DevPhase>('idle');
-  let settleCount = $state(0);
-  let holdCount = $state(0);
-  let cooldownCount = $state(0);
-
-  $effect(() => {
-    void monitor.tick;
-    const s = monitor.sensors[0];
-    if (!s || s.temperature == null || s.target == null || s.target === 0) {
-      phase = 'idle';
-      settleCount = 0;
-      holdCount = 0;
-      return;
-    }
-    if (store.heatersState.tuning) {
-      phase = 'idle';
-      return;
-    }
-
-    const dev = Math.abs(s.temperature - s.target);
-    const holdNeeded = isPrinting ? HOLD_SEC * HOLD_PRINT_MULT : HOLD_SEC;
-
-    if (phase === 'idle' || phase === 'watch') {
-      if (dev <= threshold) {
-        if (settleCount < SETTLE_SEC) {
-          settleCount++;
-          phase = 'settle';
-        } else {
-          phase = 'watch';
-          holdCount = 0;
-        }
-      } else {
-        if (phase === 'watch') {
-          holdCount++;
-          if (holdCount >= holdNeeded) {
-            phase = 'alert';
-            api.notifications.push({
-              severity: 'error',
-              text: i18n.t('calibrations.heaters.deviationAlert', {
-                heater: s.displayName,
-                dev: dev.toFixed(1),
-                target: s.target.toFixed(0),
-              }),
-            });
-            cooldownCount = 0;
-          }
-        } else {
-          settleCount = 0;
-        }
-      }
-    } else if (phase === 'alert') {
-      cooldownCount++;
-      if (dev < threshold / 2) {
-        phase = 'cooldown';
-        cooldownCount = 0;
-      } else if (cooldownCount >= COOLDOWN_SEC) {
-        phase = 'watch';
-        holdCount = holdNeeded;
-      }
-    } else if (phase === 'cooldown') {
-      cooldownCount++;
-      if (dev >= threshold) {
-        phase = 'watch';
-        holdCount = 0;
-      } else if (cooldownCount >= COOLDOWN_SEC) {
-        phase = 'watch';
-        holdCount = 0;
-      }
-    } else if (phase === 'settle') {
-      if (dev > threshold) {
-        settleCount = 0;
-        phase = 'idle';
-      } else if (settleCount >= SETTLE_SEC) {
-        phase = 'watch';
-      }
-    }
-  });
-
-  let deviationActive = $derived(phase === 'alert');
-  let deviationDev = $derived.by(() => {
-    const s = monitor.sensors[0];
-    if (!s || s.temperature == null || s.target == null) return 0;
-    return Math.abs(s.temperature - s.target);
-  });
+  // The producer owns detection; this component only mirrors its read-only active-alert snapshot.
+  let deviationAlerts = $state<readonly HeaterDeviationAlert[]>([]);
+  $effect(() => subscribeHeaterDeviationAlerts((alerts) => (deviationAlerts = alerts)));
+  let deviationAlert = $derived(
+    deviationAlerts.find((alert) => (
+      alert.printerId === api.printer.id && alert.heaterId === store.heatersState.heater
+    )) ?? null,
+  );
 </script>
 
 <section class="panel">
@@ -323,14 +255,14 @@
           </button>
         </div>
 
-        {#if deviationActive}
+        {#if deviationAlert}
           <div class="deviation-alert" role="alert">
             <Icon name="warning" size={14} />
             <span>
               {i18n.t('calibrations.heaters.deviationAlert', {
-                heater: monitor.sensors[0]?.displayName ?? store.heatersState.heater,
-                dev: deviationDev.toFixed(1),
-                target: (monitor.sensors[0]?.target ?? 0).toFixed(0),
+                heater: deviationAlert.displayName,
+                dev: deviationAlert.deviation.toFixed(1),
+                target: deviationAlert.target.toFixed(0),
               })}
             </span>
           </div>
