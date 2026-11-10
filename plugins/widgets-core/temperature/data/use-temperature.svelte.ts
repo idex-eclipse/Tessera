@@ -68,9 +68,9 @@ export function useTemperaturePrefs(api: PluginApi) {
   function load(): void {
     columns = {
       ...DEFAULT_COLUMNS,
-      ...(api.settings.get<Partial<TempColumns>>(COLUMNS_KEY) ?? {}),
+      ...(api.settingsFor(api.printer.id).get<Partial<TempColumns>>(COLUMNS_KEY) ?? {}),
     };
-    viewMode = parseViewMode(api.settings.get(VIEW_MODE_KEY));
+    viewMode = parseViewMode(api.settingsFor(api.printer.id).get(VIEW_MODE_KEY));
   }
 
   load();
@@ -81,12 +81,12 @@ export function useTemperaturePrefs(api: PluginApi) {
 
   function setColumn(key: keyof TempColumns, value: boolean): void {
     columns = { ...columns, [key]: value };
-    api.settings.set(COLUMNS_KEY, columns);
+    api.settingsFor(api.printer.id).set(COLUMNS_KEY, columns);
   }
 
   function setViewMode(mode: TempViewMode): void {
     viewMode = mode;
-    api.settings.set(VIEW_MODE_KEY, mode);
+    api.settingsFor(api.printer.id).set(VIEW_MODE_KEY, mode);
   }
 
   return {
