@@ -96,7 +96,7 @@ export async function jobsCustomAction(
     if (is3mf(ref.path)) {
       throw new Error('3MF projects cannot be queued; extract the G-code first');
     }
-    await api.moonraker().request('server.job_queue.post_job', {
+    await api.moonrakerFor(api.printer.id).request('server.job_queue.post_job', {
       filenames: [ref.path],
       reset: false,
     });

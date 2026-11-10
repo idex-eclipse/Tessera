@@ -74,7 +74,7 @@ describe('jobs menu', () => {
 describe('jobsCustomAction', () => {
   function setup() {
     const request = vi.fn(async () => ({}));
-    const api = { printer: { id: 'p 1' }, moonraker: () => ({ request }) } as unknown as PluginApi;
+    const api = { printer: { id: 'p 1' }, moonrakerFor: () => ({ request }) } as unknown as PluginApi;
     const ops = { startPrint: vi.fn(async () => {}), refreshMetadata: vi.fn(async () => {}) };
     const location = { hash: '' };
     vi.stubGlobal('location', location);
@@ -165,7 +165,7 @@ describe('file-ops readBlob', () => {
   it('sends the Bearer token when downloading a project file', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, blob: async () => new Blob(['x']) }));
     vi.stubGlobal('fetch', fetchMock);
-    const api = { moonraker: () => ({ httpBaseUrl: 'http://pr:7125', authToken: 'tok' }) } as unknown as PluginApi;
+    const api = { printer: { id: 'p1' }, moonrakerFor: () => ({ httpBaseUrl: 'http://pr:7125', authToken: 'tok' }) } as unknown as PluginApi;
 
     await createFileOps(api).readBlob(file('a b.3mf'));
 

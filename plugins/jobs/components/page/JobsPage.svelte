@@ -41,8 +41,8 @@
 
   $effect(() => {
     if (!api.printer.id) return;
-    // api.moonraker() реактивен к смене принтера → эффект переподписывается сам
-    return api.moonraker().subscribe(
+    // api.moonrakerFor(api.printer.id) реактивен к смене принтера → эффект переподписывается сам
+    return api.moonrakerFor(api.printer.id).subscribe(
       { print_stats: ['state'] },
       (d: any) => {
         const st = d?.print_stats?.state;
