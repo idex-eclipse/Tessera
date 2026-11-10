@@ -254,11 +254,9 @@ function subscribeForPrinter(api: PluginApi, printerId: string): void {
 
   connectedByPrinter[printerId] = h.readyState === 'open';
 
-  // History and prefs live in the settings of EACH printer. `api.settings.onChange` would stay
-  // bound to the printer that was active at attach time, so settings pulled from the Moonraker DB
-  // for any other printer (the host pulls on every printer switch) would be missed. Subscribe
-  // through settingsFor(printerId) instead; it also covers the sync-mode switch, which notifies
-  // every namespace.
+  // History and prefs live in the settings of EACH printer. A settingsFor(printerId)
+  // subscription stays bound to its target, so it also catches Moonraker DB sync for that
+  // printer and sync-mode changes, which notify every namespace.
   unsubs.push(api.settingsFor(printerId).onChange(() => reloadPrinterSettings(api, printerId)));
 
   // Подсказки команд и макросов — общий модуль shared/gcode-hints (help, макросы, G-Codes.md).
