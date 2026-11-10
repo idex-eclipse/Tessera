@@ -32,7 +32,7 @@ describe('config backup', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const target = { request, httpBaseUrl: 'http://printer', authToken: null } as unknown as MoonrakerProxyHandle;
-    const api = { moonraker: () => target } as unknown as PluginApi;
+    const api = { printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi;
     const ops = createFileOps(api);
     const ref = { root: 'config', path: 'sub/a.cfg', isDir: false };
     await ops.saveConfigText(ref, 'one');
@@ -58,7 +58,7 @@ describe('config backup', () => {
       }),
       httpBaseUrl: 'http://printer', authToken: null,
     } as unknown as MoonrakerProxyHandle;
-    const ops = createFileOps({ moonraker: () => target } as unknown as PluginApi);
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
     await expect(ops.saveConfigText({ root: 'config', path: 'a.cfg', isDir: false }, 'edited')).rejects.toThrow('copy failed');
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -72,7 +72,7 @@ describe('config backup', () => {
       }
     });
     const target = { request, httpBaseUrl: 'http://printer', authToken: null } as unknown as MoonrakerProxyHandle;
-    const ops = createFileOps({ moonraker: () => target } as unknown as PluginApi);
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
     await expect(ops.saveConfigText({ root: 'config', path: 'sub/a.cfg', isDir: false }, 'edited'))
       .rejects.toThrow('config root is read-only');
     expect(request).not.toHaveBeenCalledWith('server.files.copy', expect.anything());
@@ -88,7 +88,7 @@ describe('config backup', () => {
         : { ok: true, text: async () => 'older copy' };
     }));
     const target = { httpBaseUrl: 'http://printer', authToken: null } as unknown as MoonrakerProxyHandle;
-    const ops = createFileOps({ moonraker: () => target } as unknown as PluginApi);
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
     const backup = await ops.readConfigBackup({ root: 'config', path: 'sub/a.cfg', isDir: false });
     expect(backup?.text).toBe('older copy');
     expect(backup?.ref.path).toBe('sub/a.cfg.bak');
@@ -99,7 +99,7 @@ describe('config backup', () => {
     const request = vi.fn(async () => {});
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 507 })));
     const target = { request, httpBaseUrl: 'http://printer', authToken: null } as unknown as MoonrakerProxyHandle;
-    const ops = createFileOps({ moonraker: () => target } as unknown as PluginApi);
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
     await expect(ops.saveConfigText({ root: 'config', path: 'a.cfg', isDir: false }, 'edited')).rejects.toThrow('HTTP 507');
     expect(request).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenCalledWith('server.files.copy', {

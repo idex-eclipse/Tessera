@@ -4,10 +4,9 @@ import { createSetting } from '../settings/create-setting.svelte';
 import { watchSettings, type SettingsHost } from '../settings/watch-settings';
 
 /**
- * A fake host that mimics the REAL contract of `api.settings` (plugin-api-factory.ts):
+ * A fake host that mimics the REAL contract of `api.settingsFor` (plugin-api-factory.ts):
  * - `onChange` calls back as `cb('', allSettings)` - the key is always empty;
- * - `onChange` stays bound to the printer that was active when it was subscribed;
- * - `get`/`set` follow the active printer.
+ * - `onChange`, `get` and `set` stay bound to the requested printer.
  */
 function fakeHost(initial: Record<string, Record<string, unknown>> = { p1: {}, p2: {} }) {
   const data: Record<string, Record<string, unknown>> = structuredClone(initial);
@@ -23,20 +22,21 @@ function fakeHost(initial: Record<string, Record<string, unknown>> = { p1: {}, p
   };
 
   const host = {
-    settings: {
-      get: <T>(key: string) => data[active]?.[key] as T | undefined,
+    get printer() { return { id: active }; },
+    settingsFor: (printerId: string) => ({
+      get: <T>(key: string) => data[printerId]?.[key] as T | undefined,
       set: (key: string, value: unknown) => {
-        bucket(active)[key] = value;
-        emit(active);
+        bucket(printerId)[key] = value;
+        emit(printerId);
       },
       onChange: (cb: (key: string, value: unknown) => void) => {
-        const bound = active;
+        const bound = printerId;
         const set = listeners.get(bound) ?? new Set();
         set.add(cb);
         listeners.set(bound, set);
         return () => set.delete(cb);
       },
-    },
+    }),
     onPrinterChange: (cb: (p: { id: string }) => void) => {
       printerListeners.add(cb);
       return () => printerListeners.delete(cb);
@@ -130,7 +130,7 @@ describe('createSetting', () => {
     const s = createSetting(host, 'k', 0);
     s.set(7);
     expect(s.value).toBe(7);
-    expect(host.settings.get('k')).toBe(7);
+    expect(host.settingsFor(host.printer.id).get('k')).toBe(7);
   });
 
   it('keeps the same object when an unrelated key changes', () => {

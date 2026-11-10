@@ -8,7 +8,7 @@ const DOC = '## Group\n\n### [mcu]\n\nPrimary micro-controller.\n\n### [printer]
 function fakeApi(id: string, token: string | null = null): PluginApi {
   return {
     printer: { id, name: id, url: `http://${id}` },
-    moonraker: () => ({ httpBaseUrl: `http://${id}:7125`, authToken: token }),
+    moonrakerFor: () => ({ httpBaseUrl: `http://${id}:7125`, authToken: token }),
   } as unknown as PluginApi;
 }
 
@@ -64,10 +64,10 @@ describe('loadReference', () => {
     expect(calls).toBe(2);
   });
 
-  it('нет активного принтера (moonraker() бросает) — это reject, а не исключение', async () => {
+  it('нет активного принтера (moonrakerFor() бросает) — это reject, а не исключение', async () => {
     const api = {
       printer: { id: 'p1' },
-      moonraker: () => {
+      moonrakerFor: () => {
         throw new Error('No active printer');
       },
     } as unknown as PluginApi;

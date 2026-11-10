@@ -532,7 +532,7 @@ let {
     const dir = fp.includes('/') ? fp.slice(0, fp.lastIndexOf('/')) : '';
     const rel = dir ? `${dir}/${best.relative_path}` : best.relative_path;
 
-    return `${api.moonraker().httpBaseUrl}/server/files/gcodes/${rel
+    return `${api.moonrakerFor(api.printer.id).httpBaseUrl}/server/files/gcodes/${rel
         .split('/')
         .map(encodeURIComponent)
         .join('/')}`;

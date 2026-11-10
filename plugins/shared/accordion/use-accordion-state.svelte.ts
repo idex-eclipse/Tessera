@@ -57,7 +57,12 @@ export function createAccordionState(
  * при смене принтера, и свежие настройки из DB не доходили до открытого виджета).
  */
 export function useAccordionState(api: PluginApi, key: string): AccordionState {
-  const accordion = createAccordionState(api.settings, key);
+  // The accordion follows the active surface, while each write has an explicit printer ID.
+  const settings = {
+    get: <T,>(settingKey: string) => api.settingsFor(api.printer.id).get<T>(settingKey),
+    set: (settingKey: string, value: unknown) => api.settingsFor(api.printer.id).set(settingKey, value),
+  };
+  const accordion = createAccordionState(settings, key);
   onDestroy(watchSettings(api, () => accordion.reload()));
   return accordion;
 }

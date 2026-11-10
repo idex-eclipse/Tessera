@@ -19,7 +19,7 @@ export function clearReferenceCache(): void {
 export function loadReference(api: PluginApi): Promise<ReferenceIndex> {
   return loadDoc({
     key: `${api.printer?.id ?? ''}|${REFERENCE_PATH}`,
-    handle: () => api.moonraker(),
+    handle: () => api.moonrakerFor(api.printer.id),
     path: REFERENCE_PATH,
     parse: parseReference,
   });

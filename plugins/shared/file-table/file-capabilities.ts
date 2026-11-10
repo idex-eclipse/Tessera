@@ -14,7 +14,7 @@ export function extOf(name: string): string {
 }
 
 export function getEditableExt(api: PluginApi): string[] {
-  const custom = api.settings.get<string[]>('editableExt');
+  const custom = api.settingsFor(api.printer.id).get<string[]>('editableExt');
   return Array.isArray(custom) && custom.length > 0 ? custom : DEFAULT_EDITABLE_EXT;
 }
 

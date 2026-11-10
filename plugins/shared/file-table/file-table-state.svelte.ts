@@ -63,7 +63,7 @@ export function setNotice(api: PluginApi, scope: string, m: string | null): void
   noticeMap[key(api, scope)] = m;
 }
 
-// ---------------- columns (без зеркала, читаем api.settings напрямую) ----------------
+// Read columns from the active printer's explicit settings namespace.
 
 export function ensureColumnsLoaded(api: PluginApi, scope: string): void {
   wire(api); // no-op по данным, только гарантирует подписку
@@ -78,7 +78,7 @@ export function getVisibleColumns(
   wire(api);
   void rev; // перечитывать при любом onChange (в т.ч. смена namespace)
 
-  const stored = api.settings.get<string[]>(`columns:${scope}`);
+  const stored = api.settingsFor(api.printer.id).get<string[]>(`columns:${scope}`);
   if (!Array.isArray(stored) || stored.length === 0) return defaults;
 
   const filtered = stored.filter((k) => allKeys.includes(k));
@@ -87,7 +87,7 @@ export function getVisibleColumns(
 }
 
 export function setVisibleColumns(api: PluginApi, scope: string, keys: string[]): void {
-  api.settings.set(`columns:${scope}`, keys);
+  api.settingsFor(api.printer.id).set(`columns:${scope}`, keys);
 }
 
 // ---------------- sort (тоже напрямую) ----------------
@@ -101,11 +101,11 @@ export function getSort(api: PluginApi, scope: string): SortState {
   wire(api);
   void rev;
 
-  const s = api.settings.get<SortState>(`sort:${scope}`);
+  const s = api.settingsFor(api.printer.id).get<SortState>(`sort:${scope}`);
   if (s && typeof s.key === 'string' && (s.dir === 1 || s.dir === -1)) return s;
   return { key: 'modified', dir: -1 };
 }
 
 export function setSort(api: PluginApi, scope: string, key: string, dir: 1 | -1): void {
-  api.settings.set(`sort:${scope}`, { key, dir });
+  api.settingsFor(api.printer.id).set(`sort:${scope}`, { key, dir });
 }

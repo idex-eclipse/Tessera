@@ -6,7 +6,7 @@ import { watchSettings, type SettingsHost } from './watch-settings';
 export interface ReactiveSetting<T> {
   /** Current value (the fallback while nothing is stored). Reactive. */
   readonly value: T;
-  /** Updates `value` immediately and persists it through `api.settings.set`. */
+  /** Updates `value` immediately and persists it for the active printer. */
   set(next: T): void;
   /** Stops listening to the settings. Idempotent. */
   destroy(): void;
@@ -37,7 +37,8 @@ export function createSetting<T>(
   fallback: T,
   parse: SettingParser<T> = defaultParse,
 ): ReactiveSetting<T> {
-  const read = (): unknown => api.settings.get<unknown>(key);
+  // Keep the active-printer behavior of this UI helper while using an explicit namespace.
+  const read = (): unknown => api.printer.id ? api.settingsFor(api.printer.id).get<unknown>(key) : undefined;
 
   // Objects are compared by their JSON form so an unrelated key's change (the host reports the
   // whole settings object) does not hand the component a fresh object and re-render it.
@@ -60,7 +61,7 @@ export function createSetting<T>(
       value = next;
       // Keep the signature in step so the echo of our own write is ignored by the watcher.
       signature = JSON.stringify(next);
-      api.settings.set(key, next);
+      if (api.printer.id) api.settingsFor(api.printer.id).set(key, next);
     },
     destroy: unwatch,
   };

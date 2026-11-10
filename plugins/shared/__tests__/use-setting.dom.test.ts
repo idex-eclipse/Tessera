@@ -14,20 +14,21 @@ function fakeHost() {
     for (const cb of Array.from(listeners.get(pid) ?? [])) cb('', { ...data[pid] });
   };
   const host = {
-    settings: {
-      get: (k: string) => data[active]?.[k],
+    get printer() { return { id: active }; },
+    settingsFor: (printerId: string) => ({
+      get: (k: string) => data[printerId]?.[k],
       set: (k: string, v: unknown) => {
-        (data[active] ??= {})[k] = v;
-        emit(active);
+        (data[printerId] ??= {})[k] = v;
+        emit(printerId);
       },
       onChange: (cb: (k: string, v: unknown) => void) => {
-        const bound = active;
+        const bound = printerId;
         const set = listeners.get(bound) ?? new Set();
         set.add(cb);
         listeners.set(bound, set);
         return () => set.delete(cb);
       },
-    },
+    }),
     onPrinterChange: (cb: (p: { id: string }) => void) => {
       printerCbs.add(cb);
       return () => printerCbs.delete(cb);
@@ -89,7 +90,7 @@ describe('useSetting in a mounted component (client compile)', () => {
     setting.set(true);
     flushSync();
     expect(text()).toBe('true');
-    expect(f.host.settings.get('flag')).toBe(true);
+    expect(f.host.settingsFor(f.host.printer.id).get('flag')).toBe(true);
     stop();
   });
 

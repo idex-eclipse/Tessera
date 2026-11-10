@@ -35,7 +35,8 @@ function encodeSegments(p: string): string {
 }
 
 export function createFileOps(api: PluginApi) {
-  const handle = () => api.moonraker();
+  // Resolve the active ID for each operation so a kept helper cannot write to a stale printer.
+  const handle = () => api.moonrakerFor(api.printer.id);
 
   /** Bearer-токен для fetch (если Moonraker требует авторизацию). */
   function authHeaders(): Record<string, string> {

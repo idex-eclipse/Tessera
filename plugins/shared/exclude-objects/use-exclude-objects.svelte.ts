@@ -31,7 +31,7 @@ function createExcludeObjectsCore(api: PluginApi, printerId: string | null) {
 
   function safeHandle(): MoonrakerProxyHandle | null {
     try {
-      return fleet ? api.moonrakerFor(printerId as string) : api.moonraker();
+      return fleet ? api.moonrakerFor(printerId as string) : api.moonrakerFor(api.printer.id);
     } catch {
       return null;
     }

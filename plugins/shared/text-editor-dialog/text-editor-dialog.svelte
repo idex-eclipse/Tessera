@@ -257,7 +257,7 @@
 
   $effect(() => {
     if (!open) return;
-    return api.moonraker().subscribe(
+    return api.moonrakerFor(api.printer.id).subscribe(
       { print_stats: ['state'] },
       (d: any) => {
         const st = d?.print_stats?.state;
@@ -497,7 +497,7 @@
     devState[kind] = { status: 'loading', cards: [], error: '' };
     try {
       // moonraker() бросает синхронно, если нет активного принтера — ловим вместе с запросом
-      const handle = api.moonraker();
+      const handle = api.moonrakerFor(api.printer.id);
       const cards = await loadDevices((m, p) => handle.request(m, p), kind, { canInterface });
       if (seq !== devSeq[kind]) return;
       devState[kind] = { status: 'ready', cards, error: '' };

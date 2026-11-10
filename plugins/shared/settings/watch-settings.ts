@@ -1,7 +1,7 @@
 import type { PluginApi } from '../../../plugin-sdk/src/types';
 
 /** The slice of `PluginApi` the settings helpers need (also keeps them trivial to fake in tests). */
-export type SettingsHost = Pick<PluginApi, 'settings' | 'onPrinterChange'>;
+export type SettingsHost = Pick<PluginApi, 'settingsFor' | 'printer' | 'onPrinterChange'>;
 
 /**
  * Calls `onChange` whenever the plugin's settings of the ACTIVE printer may have changed:
@@ -12,7 +12,7 @@ export type SettingsHost = Pick<PluginApi, 'settings' | 'onPrinterChange'>;
  * - the host always calls `cb('', allSettings)`, so the key can NOT be used to tell which
  *   setting changed. Handlers like `if (k === 'foo')` never fire; callers must re-read the
  *   keys they care about instead;
- * - `api.settings.onChange` stays bound to the printer that was active at subscribe time, so
+ * - `settingsFor(id).onChange` stays bound to that printer, so
  *   it is re-subscribed here on every printer switch;
  * - after a printer switch the callback runs once, because the new printer has its own values.
  *
@@ -22,12 +22,16 @@ export type SettingsHost = Pick<PluginApi, 'settings' | 'onPrinterChange'>;
  * @param onChange re-read callback; takes no arguments on purpose (the key is meaningless)
  */
 export function watchSettings(api: SettingsHost, onChange: () => void): () => void {
-  let offSettings = api.settings.onChange(() => onChange());
+  // A subscription is fixed to one ID; switch it when the active surface changes printer.
+  const subscribe = (printerId: string) => printerId
+    ? api.settingsFor(printerId).onChange(() => onChange())
+    : () => {};
+  let offSettings = subscribe(api.printer.id);
 
-  const offPrinter = api.onPrinterChange(() => {
+  const offPrinter = api.onPrinterChange((printer) => {
     // Re-bind to the new active printer before re-reading, otherwise its changes are missed.
     offSettings();
-    offSettings = api.settings.onChange(() => onChange());
+    offSettings = subscribe(printer.id);
     onChange();
   });
 
