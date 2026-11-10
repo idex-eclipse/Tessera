@@ -19,6 +19,7 @@
   import { createHostHotkeys } from './core/host-hotkeys.ts';
   import { guardAgent } from './core/guard-agent.ts';
   import { createNotificationCenter } from './core/notification-center.svelte.ts';
+  import { checkDeprecatedPluginApis } from './core/plugin-api-deprecation.ts';
   import { guardNotification } from './core/guard-notification.ts';
   import { getPluginApi } from './core/plugin-api-cache.ts';
   import { createExtensionsInstaller } from './core/extensions-installer.svelte.ts';
@@ -86,6 +87,25 @@
   });
 
   const notifications = createNotificationCenter(settings);
+
+  // Follow manifest changes so installs, removals and upgrades refresh the one-time host notice.
+  let compatibilityRun = 0;
+  $effect(() => {
+    const records = settings.plugins;
+    const loaded = loader.getLoadedPlugins();
+    const run = ++compatibilityRun;
+    void checkDeprecatedPluginApis({
+      records,
+      loaded,
+      readManifest: (url) => loader.readInstalledManifest(url),
+      rememberApi: (url, version, name) => settings.rememberPluginApi(url, version, name),
+      notifications,
+      i18n,
+      storage: window.localStorage,
+      isCurrent: () => run === compatibilityRun,
+    });
+    return () => { compatibilityRun++; };
+  });
 
   // Fail-closed события гардов (таймауты, отказ) — хостовые уведомления, без window-событий
   $effect(() => {

@@ -93,6 +93,11 @@ const en: I18nMessages = {
         plugins: 'Open Plugins',
       },
     },
+    deprecated: {
+      source: 'Plugin compatibility',
+      more: '{names} and {extra} more',
+      plugins: 'Plugins using old API: {list}. They work now, but support for API 0.7–0.14 ends in the next Tessera release. Update them to API 1.0.',
+    },
     guard: {
       source: 'Guard agent',
       decisionTimeout: 'Guard {guard} ({plugin}) did not decide in time — {method} denied',

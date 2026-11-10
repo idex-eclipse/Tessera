@@ -99,9 +99,7 @@ function createGuardedHandle(
  * Подписки, снятые до swap прокси, не переживают swap — та же семантика, что
  * у handle активного принтера: плагины переподписываются на onReady/'open'.
  *
- * GuardAgent на фазе 1 однопринтерный (target-scoped гарды — фаза 2):
- * preflight идёт в общей цепочке. Для read-only fleet-контента это не важно;
- * действия по не-активным принтерам получат атрибуцию принтера в фазе 2.
+ * GuardAgent receives the bound printer ID for every request, including fleet actions.
  */
 function createGuardedHandleFor(
   printerId: string,

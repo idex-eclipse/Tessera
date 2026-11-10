@@ -249,6 +249,17 @@ describe('settings-store / printers', () => {
 });
 
 describe('settings-store / remote plugins', () => {
+  it('remembers a verified API declaration for disabled plugins across store reloads', () => {
+    const { storage, store } = setup();
+    const manifestUrl = 'http://plugin.local/manifest.json';
+    store.addPlugin(manifestUrl);
+    store.rememberPluginApi(manifestUrl, '0.14', 'Example');
+    store.setPluginEnabled(manifestUrl, false);
+
+    const reopened = createSettingsStore({ storage });
+    expect(reopened.plugins[0]).toMatchObject({ enabled: false, pluginApi: '0.14', pluginName: 'Example' });
+  });
+
   it('adds, disables and removes remote plugins', () => {
     const { storage, store } = setup();
 

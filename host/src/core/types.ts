@@ -51,6 +51,10 @@ export interface RemotePluginRecord {
   source?: 'catalog' | 'url';
   /** Версия на момент установки — для бейджа «доступно обновление». */
   installedVersion?: string;
+  /** Last verified manifest API, kept for disabled plugins when their URL is offline. */
+  pluginApi?: string;
+  /** Last verified display name for an offline disabled plugin. */
+  pluginName?: string;
 }
 
 /**

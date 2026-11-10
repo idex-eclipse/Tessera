@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createGuardAgent, GuardError, type GuardAgentOptions, type GuardNotifyDetail } from '../guard-agent';
+import { createGuardAgent, GuardError, type GuardAgentOptions, type GuardNotifyDetail, type GuardRequest } from '../guard-agent';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -107,6 +107,27 @@ describe('guard-agent', () => {
     agent.resume(token, 'deny', 'user.cancel');
     const err = await p.then(() => null, (e) => e as GuardError);
     expect(err!.rejection).toMatchObject({ code: 'denied_by_guard', pluginId: 'a', reasonKey: 'user.cancel' });
+  });
+
+  it('parks identical requests independently for two target printers', async () => {
+    const agent = agentWith();
+    const tokens = new Map<string, string>();
+    agent.registerGuards('guard', [{ id: 'freeze', match: ['m'], handler: 'h' }], {
+      h: (request: GuardRequest, token: string, ctx: { targetPrinterId: string }) => {
+        expect(request.targetPrinterId).toBe(ctx.targetPrinterId);
+        tokens.set(ctx.targetPrinterId, token);
+        return { action: 'freeze' };
+      },
+    });
+    const a = agent.runPreflight('caller', 'pA', 'm', { value: 1 });
+    const b = agent.runPreflight('caller', 'pB', 'm', { value: 1 });
+    await flush();
+    expect(agent.getParkedChains()).toHaveLength(2);
+    agent.resume(tokens.get('pA')!, 'accept');
+    await expect(a).resolves.toBeUndefined();
+    expect(agent.getParkedChains()).toHaveLength(1);
+    agent.resume(tokens.get('pB')!, 'deny');
+    await expect(b).rejects.toMatchObject({ rejection: { code: 'denied_by_guard' } });
   });
 
     it('handler decision timeout → guard_timeout + notify sink', async () => {

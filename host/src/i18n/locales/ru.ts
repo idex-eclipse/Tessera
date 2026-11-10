@@ -90,6 +90,11 @@ const ru: I18nMessages = {
         plugins: 'Открыть плагины',
       },
     },
+    deprecated: {
+      source: 'Совместимость плагинов',
+      more: '{names} и ещё {extra}',
+      plugins: 'Плагины со старым API: {list}. Сейчас они работают, но в следующем релизе Tessera поддержка API 0.7–0.14 прекратится. Обновите их до API 1.0.',
+    },
     guard: {
       source: 'Агент гардов',
       decisionTimeout: 'Гард {guard} ({plugin}) не ответил вовремя — {method} отклонён',

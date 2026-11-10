@@ -454,6 +454,13 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     persistPlugins();
   }
 
+  /** Cache a verified declaration without changing the user's plugin configuration. */
+  function rememberPluginApi(manifestUrl: string, pluginApi: string, pluginName: string): void {
+    if (!plugins.some((plugin) => plugin.manifestUrl === manifestUrl && (plugin.pluginApi !== pluginApi || plugin.pluginName !== pluginName))) return;
+    plugins = plugins.map((plugin) => plugin.manifestUrl === manifestUrl ? { ...plugin, pluginApi, pluginName } : plugin);
+    persistPlugins();
+  }
+
   function setPluginPrinters(manifestUrl: string, printerIds: string[]): void {
     plugins = plugins.map((plugin) => {
       if (plugin.manifestUrl !== manifestUrl) {
@@ -1115,6 +1122,7 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
 
     addPlugin,
     setPluginEnabled,
+    rememberPluginApi,
     setPluginPrinters,
     removePlugin,
 
@@ -1299,6 +1307,8 @@ function normalizePluginList(value: unknown): RemotePluginRecord[] {
         : [],
       source: item.source === 'catalog' || item.source === 'url' ? item.source : 'url',
       installedVersion: typeof item.installedVersion === 'string' ? item.installedVersion : undefined,
+      pluginApi: typeof item.pluginApi === 'string' ? item.pluginApi : undefined,
+      pluginName: typeof item.pluginName === 'string' ? item.pluginName : undefined,
     });
   }
 
