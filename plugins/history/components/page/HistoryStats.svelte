@@ -49,7 +49,7 @@
     loading = true;
     try {
       const res = await api
-        .moonraker()
+        .moonrakerFor(api.printer.id)
         .request<{ job_totals?: Record<string, unknown> }>('server.history.totals');
       if (seq !== loadSeq) return;
       const t = res?.job_totals ?? {};
@@ -76,7 +76,7 @@
     actionError = '';
     let h;
     try {
-      h = api.moonraker();
+      h = api.moonrakerFor(api.printer.id);
     } catch {
       return;
     }
@@ -106,7 +106,7 @@
   async function doReset(): Promise<void> {
     actionError = '';
     try {
-      await api.moonraker().request('server.history.reset_totals');
+      await api.moonrakerFor(api.printer.id).request('server.history.reset_totals');
       await load();
     } catch (e) {
       // Guard rejections expose a translated reason; other errors use the generic message.

@@ -51,6 +51,7 @@ function fakeApi(): PluginApi {
     onPrinterChange: () => () => {},
     onPrintersChange: () => () => {},
     settings: { get: () => undefined, set: () => {}, onChange: () => () => {} },
+    settingsFor: () => ({ get: () => undefined, set: () => {}, onChange: () => () => {} }),
     i18n: { t: (key: string) => key },
     theme: { current: 'dark' },
     onThemeChange: () => () => {},
