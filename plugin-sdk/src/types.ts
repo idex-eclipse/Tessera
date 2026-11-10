@@ -753,9 +753,17 @@ export interface PluginApi {
 
   /** MOONRAKER */
 
-  /** legacy - for active printer only */
+  /**
+   * Returns the active printer's handle for legacy plugins.
+   * @returns A handle that follows the active printer at call time.
+   * @deprecated Use moonrakerFor(printerId) so requests keep their target printer.
+   */
   moonraker(): MoonrakerProxyHandle;
-  /** multiprinter */
+  /**
+   * Returns the handle bound to one configured printer.
+   * @param printerId The target printer ID.
+   * @returns A handle that keeps this printer as its request target.
+   */
   moonrakerFor(printerId: string): MoonrakerProxyHandle;
 
 
@@ -773,9 +781,16 @@ export interface PluginApi {
 
 
   /** SETTINGS */
-  /** legacy - for active printer only */
+  /**
+   * Exposes settings of the active printer for legacy plugins.
+   * @deprecated Use settingsFor(printerId) so settings stay bound to a printer.
+   */
   settings: PluginSettingsApi;
-  /** multiprinter   */
+  /**
+   * Returns one printer's plugin settings namespace.
+   * @param printerId The target printer ID.
+   * @returns The settings API bound to that printer.
+   */
   settingsFor(printerId: string): PluginSettingsApi;
 
   i18n: PluginI18nApi;

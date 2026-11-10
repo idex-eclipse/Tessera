@@ -20,7 +20,12 @@ describe('plugin API version', () => {
     expect(checkPluginApi(1, '0.8')).toBe('ok');
     expect(checkPluginApi('0.9', '0.8')).toBe('newer');
     expect(checkPluginApi('1.0', '0.8')).toBe('major');
-    expect(checkPluginApi('0.8', '1.0')).toBe('major');
+    expect(checkPluginApi('0.8', '1.0')).toBe('ok');
+    expect(checkPluginApi('0.14', '1.0')).toBe('ok');
+    expect(checkPluginApi('0.6', '1.0')).toBe('major');
+    expect(checkPluginApi('0.15', '1.0')).toBe('newer');
+    expect(checkPluginApi('0.14', '1.1')).toBe('major');
+    expect(checkPluginApi('1.1', '1.0')).toBe('newer');
     expect(checkPluginApi('x', '0.8')).toBe('invalid');
   });
 
