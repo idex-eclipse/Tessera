@@ -60,7 +60,7 @@
     // MANUAL_PROBE: скрипт висит до конца сессии зондирования — не await
     if (toolKey === 'manualProbe') {
       busy = toolKey;
-      runGcode(api.moonraker(), script)
+      runGcode(api.moonrakerFor(api.printer.id), script)
         .catch((e) => console.error('[bed-mesh] gcode failed:', script, e))
         .finally(() => {
           busy = '';
@@ -71,7 +71,7 @@
 
     busy = toolKey;
     try {
-      await runGcode(api.moonraker(), script);
+      await runGcode(api.moonrakerFor(api.printer.id), script);
       await store.refresh();
       // После SCREWS_TILT_CALCULATE открываем overlay с результатами
       if (toolKey === 'screws') store.toggleScrewsOverlay();

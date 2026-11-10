@@ -37,7 +37,7 @@
   function pushLog(line: string): void { log = [...log.slice(-49), line]; }
 
   $effect(() => {
-    return api.moonraker().onNotify('notify_gcode_response', (params) => {
+    return api.moonrakerFor(api.printer.id).onNotify('notify_gcode_response', (params) => {
       for (const raw of normalizeConsoleLines(params)) {
         const t = raw.trim();
         if (!t) continue;
@@ -123,7 +123,7 @@
     busy = selected;
     running = true;
     try {
-      await runGcode(api.moonraker(), script ?? '');
+      await runGcode(api.moonrakerFor(api.printer.id), script ?? '');
     } catch (e) {
       console.error('[calibrations] probe request failed:', script, e);
     } finally {

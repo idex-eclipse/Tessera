@@ -56,6 +56,8 @@
 
   async function run(): Promise<void> {
     if (store.shaperState.busy !== '' || isPrinting || notHomed || effective === 'none') return;
+    // Pin every sequential calibration request to the printer that started this run.
+    const handle = api.moonrakerFor(api.printer.id);
     const withGraph = selected === 'pipe';
     store.shaperState.busy = withGraph ? 'beltsPipe' : 'belts';
     store.shaperState.beltLog = [];
@@ -63,11 +65,11 @@
     if (withGraph) takeBaseline(store.shaperState);
     try {
       for (const ax of axes) {
-        await runGcode(api.moonraker(), gcode.testResonances(ax, { output: 'raw_data' }));
+        await runGcode(handle, gcode.testResonances(ax, { output: 'raw_data' }));
       }
       if (withGraph) {
-        await runGcode(api.moonraker(), gcode.runShellCommand(beltsCmd));
-        await refreshGallery(store.shaperState, api.moonraker());
+        await runGcode(handle, gcode.runShellCommand(beltsCmd));
+        await refreshGallery(store.shaperState, handle);
         store.shaperState.beltArtifacts = diffArtifacts(store.shaperState);
       }
     } catch (e) {

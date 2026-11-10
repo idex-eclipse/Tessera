@@ -28,7 +28,7 @@
           class="g-item"
           class:active={store.shaperState.selected === it.path}
           class:artifact={newSet.has(it.path)}
-          onclick={() => loadPreview(store.shaperState, api.moonraker(), it.path)}
+          onclick={() => loadPreview(store.shaperState, api.moonrakerFor(api.printer.id), it.path)}
           title={fmtTime(it.modified)}
         >
           <span class="g-name">{it.path.split('/').pop()}</span>

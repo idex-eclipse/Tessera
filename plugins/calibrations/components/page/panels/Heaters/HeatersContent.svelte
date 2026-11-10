@@ -107,7 +107,7 @@
     store.heatersState.result = null;
     store.heatersState.tuning = true;
     try {
-      await runGcode(api.moonraker(), pidScript);
+      await runGcode(api.moonrakerFor(api.printer.id), pidScript);
     } catch (e) {
       store.heatersState.tuning = false;
       console.error('[calib-debug] runPid: request rejected', e);
@@ -115,7 +115,7 @@
   }
   function confirmSave(): void {
     saveOpen = false;
-    runGcode(api.moonraker(), gcode.saveConfig())
+    runGcode(api.moonrakerFor(api.printer.id), gcode.saveConfig())
       .then(() => {
         store.heatersState.result = null;
       })

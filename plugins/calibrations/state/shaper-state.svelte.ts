@@ -15,7 +15,7 @@ export interface ShaperState {
   shaperTypes: string;
   external: boolean;
 
-  // Settings-поля (персист через api.settings, не сбрасываются)
+  // Settings fields persist per printer and must survive a run-state reset.
   cmd: Record<'X' | 'Y', string>;
   beltsEnabled: boolean;
   kinematics: 'auto' | 'corexy' | 'delta';
@@ -70,7 +70,7 @@ export function initialShaperState(): ShaperState {
 }
 
 /** Сброс run-состояния; settings-поля (cmd/beltsEnabled/kinematics/beltsCmd)
- *  НЕ сбрасываются — компоненты перечитают их из api.settings на onPrinterChange. */
+ *  НЕ сбрасываются — компоненты перечитают их из settingsFor(activePrinterId) на onPrinterChange. */
 export function resetShaperState(state: ShaperState): void {
   state.axis = 'X';
   state.freqStart = '';

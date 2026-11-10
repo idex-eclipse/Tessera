@@ -48,7 +48,7 @@ export const TESTZ_STEP_FINE = '0.01';
 async function whileProbing(api: PluginApi, script: string): Promise<void> {
   const printerId = api.printer.id;
   if (!printerId || !isManualProbeActive(printerId)) return;
-  await runGcode(api.moonraker(), script);
+  await runGcode(api.moonrakerFor(api.printer.id), script);
 }
 
 export const hotkeyTestzUp = (api: PluginApi) => whileProbing(api, gcode.testz(`+${TESTZ_STEP}`));

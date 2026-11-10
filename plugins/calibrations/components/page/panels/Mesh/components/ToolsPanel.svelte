@@ -24,7 +24,7 @@
   async function run(toolKey: string, script: string): Promise<void> {
     busy = toolKey;
     try {
-      await runGcode(api.moonraker(), script);
+      await runGcode(api.moonrakerFor(api.printer.id), script);
       await store.refresh();
       // После SCREWS_TILT_CALCULATE открываем overlay с результатами
       if (toolKey === 'screws') store.toggleScrewsOverlay();

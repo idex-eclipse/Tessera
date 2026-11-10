@@ -96,17 +96,17 @@
 
   $effect(() => {
     const read = () => {
-      open = api.settings.get<boolean>('probe:forceOpen') ?? false;
-      const s = api.settings.get<number>('probe:forceSeconds');
+      open = api.settingsFor(api.printer.id).get<boolean>('probe:forceOpen') ?? false;
+      const s = api.settingsFor(api.printer.id).get<number>('probe:forceSeconds');
       seconds = s !== undefined && WINDOWS.includes(s) ? s : DEFAULT_SECONDS;
-      filter = parseFilterKind(api.settings.get<string>('probe:forceFilter'));
-      filterMs = clampFilterMs(api.settings.get<number>('probe:forceFilterMs'));
-      showRaw = api.settings.get<boolean>('probe:forceRaw') ?? false;
+      filter = parseFilterKind(api.settingsFor(api.printer.id).get<string>('probe:forceFilter'));
+      filterMs = clampFilterMs(api.settingsFor(api.printer.id).get<number>('probe:forceFilterMs'));
+      showRaw = api.settingsFor(api.printer.id).get<boolean>('probe:forceRaw') ?? false;
       // untracked: applyMains reads the state it may write
       untrack(() =>
         applyMains(
-          api.settings.get<boolean>('probe:forceMains') ?? false,
-          parseMainsHz(api.settings.get<number>('probe:forceMainsHz')),
+          api.settingsFor(api.printer.id).get<boolean>('probe:forceMains') ?? false,
+          parseMainsHz(api.settingsFor(api.printer.id).get<number>('probe:forceMainsHz')),
         ),
       );
       schedule();
@@ -129,18 +129,18 @@
 
   function setOpen(v: boolean): void {
     open = v;
-    api.settings.set('probe:forceOpen', v);
+    api.settingsFor(api.printer.id).set('probe:forceOpen', v);
   }
 
   function setSeconds(v: number): void {
     seconds = v;
-    api.settings.set('probe:forceSeconds', v);
+    api.settingsFor(api.printer.id).set('probe:forceSeconds', v);
     schedule();
   }
 
   function setFilter(v: FilterKind): void {
     filter = v;
-    api.settings.set('probe:forceFilter', v);
+    api.settingsFor(api.printer.id).set('probe:forceFilter', v);
     schedule();
   }
 
@@ -148,13 +148,13 @@
     // an empty or invalid field is ignored until the user types a number
     if (!Number.isFinite(raw)) return;
     filterMs = clampFilterMs(raw);
-    api.settings.set('probe:forceFilterMs', filterMs);
+    api.settingsFor(api.printer.id).set('probe:forceFilterMs', filterMs);
     schedule();
   }
 
   function setShowRaw(v: boolean): void {
     showRaw = v;
-    api.settings.set('probe:forceRaw', v);
+    api.settingsFor(api.printer.id).set('probe:forceRaw', v);
     schedule();
   }
 
@@ -174,13 +174,13 @@
 
   function setMains(on: boolean): void {
     applyMains(on, mainsHz);
-    api.settings.set('probe:forceMains', on);
+    api.settingsFor(api.printer.id).set('probe:forceMains', on);
     schedule();
   }
 
   function setMainsHz(hz: MainsHz): void {
     applyMains(mains, hz);
-    api.settings.set('probe:forceMainsHz', hz);
+    api.settingsFor(api.printer.id).set('probe:forceMainsHz', hz);
     schedule();
   }
 
@@ -220,7 +220,7 @@
     // being started, and the sink reads and writes `source`/`unit`. Tracked, that would make
     // this effect depend on state it writes (effect_update_depth_exceeded).
     return untrack(() =>
-      startForceSource(api.moonraker(), probe, {
+      startForceSource(api.moonrakerFor(api.printer.id), probe, {
         onSamples(samples, u) {
           const key = `${source.kind}|${u}`;
           if (key !== bufferKey) {
@@ -254,7 +254,7 @@
     if (!probe) return;
     // Untracked for the same reason as the live source above.
     return untrack(() =>
-      startTapSource(api.moonraker(), probe, (tap) => {
+      startTapSource(api.moonrakerFor(api.printer.id), probe, (tap) => {
         lastTap = tap;
         schedule();
       }),

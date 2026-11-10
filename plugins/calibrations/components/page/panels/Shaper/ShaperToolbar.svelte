@@ -2,6 +2,7 @@
   import { usePluginApi } from '../../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../../data/use-calibrations.svelte.ts';
   import { refreshGallery } from '../../../../state/shaper-state.svelte.ts';
+  import { watchSettings } from '../../../../../shared/settings/watch-settings';
   import Icon from '../../../../../shared/icons/Icon.svelte';
 
   const api = usePluginApi();
@@ -14,30 +15,26 @@
   };
 
   function readSettings(): void {
-    store.shaperState.cmd.X = api.settings.get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
-    store.shaperState.cmd.Y = api.settings.get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
-    store.shaperState.beltsEnabled = api.settings.get<boolean>('beltsEnabled') ?? false;
+    store.shaperState.cmd.X = api.settingsFor(api.printer.id).get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
+    store.shaperState.cmd.Y = api.settingsFor(api.printer.id).get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
+    store.shaperState.beltsEnabled = api.settingsFor(api.printer.id).get<boolean>('beltsEnabled') ?? false;
   }
 
   $effect(() => {
     readSettings();
-    const off = api.settings.onChange(readSettings);
-    const offPrinter = api.onPrinterChange(readSettings);
-    return () => {
-      off();
-      offPrinter();
-    };
+    // The settings subscription must move with the active printer.
+    return watchSettings(api, readSettings);
   });
 
   function setCmd(v: string): void {
     store.shaperState.cmd[store.shaperState.axis] = v;
-    api.settings.set(store.shaperState.axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
+    api.settingsFor(api.printer.id).set(store.shaperState.axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
   }
 
   function toggleBelts(e: Event): void {
     const on = (e.currentTarget as HTMLInputElement).checked;
     store.shaperState.beltsEnabled = on;
-    api.settings.set('beltsEnabled', on);
+    api.settingsFor(api.printer.id).set('beltsEnabled', on);
   }
 </script>
 
@@ -54,7 +51,7 @@
     </select>
   </label>
 
-  <button class="icon-btn" onclick={() => void refreshGallery(store.shaperState, api.moonraker())} title={i18n.t('calibrations.shaper.refreshGallery')}>
+  <button class="icon-btn" onclick={() => void refreshGallery(store.shaperState, api.moonrakerFor(api.printer.id))} title={i18n.t('calibrations.shaper.refreshGallery')}>
     <Icon name="refresh" size={14} />
   </button>
 

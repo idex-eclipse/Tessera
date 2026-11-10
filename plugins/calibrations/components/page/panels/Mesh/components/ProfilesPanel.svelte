@@ -20,7 +20,7 @@
     if (busy) return false;
     busy = action;
     try {
-      await runGcode(api.moonraker(), script);
+      await runGcode(api.moonrakerFor(api.printer.id), script);
       return true;
     } catch (e) {
       console.error('[bed-mesh] gcode failed:', script, e);

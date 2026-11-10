@@ -26,7 +26,7 @@
     if (busy) return;
     busy = true;
     try {
-      await runGcode(api.moonraker(), gcode.screwsTiltCalculate);
+      await runGcode(api.moonrakerFor(api.printer.id), gcode.screwsTiltCalculate);
       await store.refresh();
     } catch (e) {
       console.error('[bed-mesh] screws recalc failed', e);

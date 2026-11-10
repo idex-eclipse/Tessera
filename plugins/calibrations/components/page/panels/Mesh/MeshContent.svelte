@@ -20,7 +20,7 @@
   // KlipperNotReady гейт уже на уровне CalibrationsPage.svelte
 
   // ------------------------------------------------------------------
-  // настройки отображения (api.settings, sync-aware)
+  // настройки отображения (api.settingsFor(api.printer.id), sync-aware)
   // ------------------------------------------------------------------
 
   // Reactive settings: unlike a one-off read plus onChange, these also follow printer switches
@@ -73,7 +73,7 @@
     if (busy) return false;
     busy = action;
     try {
-      await runGcode(api.moonraker(), script);
+      await runGcode(api.moonrakerFor(api.printer.id), script);
       return true;
     } catch (e) {
       console.error('[bed-mesh] gcode failed:', script, e);

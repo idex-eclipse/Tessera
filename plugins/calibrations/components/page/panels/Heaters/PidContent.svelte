@@ -44,7 +44,7 @@
     store.heatersState.tuning = true;
     busy = 'pid';
     try {
-      await runGcode(api.moonraker(), gcode.pidCalibrate(store.heatersState.heater, store.heatersState.target));
+      await runGcode(api.moonrakerFor(api.printer.id), gcode.pidCalibrate(store.heatersState.heater, store.heatersState.target));
     } catch (e) {
       store.heatersState.tuning = false;
       console.error('[calibrations] pid failed:', e);
@@ -56,7 +56,7 @@
   function confirmSave(): void {
     saveOpen = false;
     busy = 'save';
-    runGcode(api.moonraker(), gcode.saveConfig())
+    runGcode(api.moonrakerFor(api.printer.id), gcode.saveConfig())
       .then(() => { store.heatersState.result = null; })
       .catch((e) => console.error('[calibrations] save failed:', e))
       .finally(() => { busy = ''; });

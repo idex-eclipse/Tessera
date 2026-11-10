@@ -41,7 +41,7 @@
     if (busy !== '') return false;
     busy = key;
     try {
-      await runGcode(api.moonraker(), script);
+      await runGcode(api.moonrakerFor(api.printer.id), script);
       return true;
     } catch (e) {
       console.error('[calibrations] livez failed:', script, e);
@@ -53,7 +53,7 @@
 
   function adjust(dir: 1 | -1): void {
     store.resetLivezApply();
-    void runGcode(api.moonraker(), gcode.setZAdjust(dir * step, zHomed));
+    void runGcode(api.moonrakerFor(api.printer.id), gcode.setZAdjust(dir * step, zHomed));
   }
   
   async function saveOffset(): Promise<void> {

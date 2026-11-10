@@ -44,13 +44,12 @@
 
   // settings-поля обеих панелей читаются здесь (меню шапок пишут туда же)
   $effect(() => {
-    const handle = api.moonraker();
     const readSettings = () => {
-      store.shaperState.cmd.X = api.settings.get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
-      store.shaperState.cmd.Y = api.settings.get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
-      store.shaperState.kinematics = api.settings.get<'auto' | 'corexy' | 'delta'>('beltsKinematics') ?? 'auto';
-      store.shaperState.beltsCmd = api.settings.get<string>('beltsCmd') ?? DEFAULT_BELTS_CMD;
-      store.shaperState.beltsForceShow = api.settings.get<boolean>('beltsForceShow') ?? false;
+      store.shaperState.cmd.X = api.settingsFor(api.printer.id).get<string>('shaperCmdX') ?? DEFAULT_CMD.X;
+      store.shaperState.cmd.Y = api.settingsFor(api.printer.id).get<string>('shaperCmdY') ?? DEFAULT_CMD.Y;
+      store.shaperState.kinematics = api.settingsFor(api.printer.id).get<'auto' | 'corexy' | 'delta'>('beltsKinematics') ?? 'auto';
+      store.shaperState.beltsCmd = api.settingsFor(api.printer.id).get<string>('beltsCmd') ?? DEFAULT_BELTS_CMD;
+      store.shaperState.beltsForceShow = api.settingsFor(api.printer.id).get<boolean>('beltsForceShow') ?? false;
     };
     readSettings();
     // watchSettings re-binds to the new printer and re-reads on every switch, so the printer
@@ -58,9 +57,10 @@
     const offSettings = watchSettings(api, readSettings);
     const offPrinter = api.onPrinterChange(() => {
       resetShaperState(store.shaperState);
-      void refreshGallery(store.shaperState, handle);
+      // Resolve after the switch so the refresh cannot target the previous printer.
+      void refreshGallery(store.shaperState, api.moonrakerFor(api.printer.id));
     });
-    void refreshGallery(store.shaperState, handle);
+    void refreshGallery(store.shaperState, api.moonrakerFor(api.printer.id));
     return () => {
       offSettings();
       offPrinter();
@@ -112,19 +112,19 @@
   // --- writers для меню шапок ---
   function setCmd(axis: 'X' | 'Y', v: string): void {
     store.shaperState.cmd[axis] = v;
-    api.settings.set(axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
+    api.settingsFor(api.printer.id).set(axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
   }
   function setBeltsForceShow(on: boolean): void {
     store.shaperState.beltsForceShow = on;
-    api.settings.set('beltsForceShow', on);
+    api.settingsFor(api.printer.id).set('beltsForceShow', on);
   }
   function setKinematics(v: 'auto' | 'corexy' | 'delta'): void {
     store.shaperState.kinematics = v;
-    api.settings.set('beltsKinematics', v);
+    api.settingsFor(api.printer.id).set('beltsKinematics', v);
   }
   function setBeltsCmd(v: string): void {
     store.shaperState.beltsCmd = v;
-    api.settings.set('beltsCmd', v);
+    api.settingsFor(api.printer.id).set('beltsCmd', v);
   }
 
   // --- композеры строк ---
@@ -166,12 +166,14 @@
     if (store.shaperState.busy !== '' || isPrinting || notHomed) return;
 
     if (selected === 'pipe') {
+      // Keep all steps on the printer that started this pipeline, even after a tab switch.
+      const handle = api.moonrakerFor(api.printer.id);
       beginRun('pipe');
       takeBaseline(store.shaperState);
       try {
-        await runGcode(api.moonraker(), testScript());
-        await runGcode(api.moonraker(), gcode.runShellCommand(currentCmd));
-        await refreshGallery(store.shaperState, api.moonraker());
+        await runGcode(handle, testScript());
+        await runGcode(handle, gcode.runShellCommand(currentCmd));
+        await refreshGallery(store.shaperState, handle);
         store.shaperState.lastArtifacts = diffArtifacts(store.shaperState);
       } catch (e) {
         console.error('[calibrations] pipeline failed:', e);
@@ -184,7 +186,7 @@
 
     beginRun(selected);
     try {
-      await runGcode(api.moonraker(), lines[0] ?? '');
+      await runGcode(api.moonrakerFor(api.printer.id), lines[0] ?? '');
     } catch (e) {
       console.error('[calibrations] run failed:', lines[0], e);
     } finally {
@@ -199,7 +201,7 @@
     store.shaperState.busy = 'apply';
     try {
       await runGcode(
-        api.moonraker(),
+        api.moonrakerFor(api.printer.id),
         gcode.setInputShaper({
           [`SHAPER_TYPE_${store.shaperState.axis}`]: rec.name,
           [`FREQ_${store.shaperState.axis}`]: rec.freq,
@@ -215,7 +217,7 @@
   function confirmSave(): void {
     saveOpen = false;
     store.shaperState.busy = 'save';
-    runGcode(api.moonraker(), gcode.saveConfig())
+    runGcode(api.moonrakerFor(api.printer.id), gcode.saveConfig())
       .catch((e) => console.error('[calibrations] SAVE_CONFIG failed:', e))
       .finally(() => {
         store.shaperState.busy = '';
@@ -505,7 +507,7 @@
       <div class="header-actions">
         <button
           class="icon-btn"
-          onclick={() => void refreshGallery(store.shaperState, api.moonraker())}
+          onclick={() => void refreshGallery(store.shaperState, api.moonrakerFor(api.printer.id))}
           title={i18n.t('calibrations.shaper.refreshGallery')}
         >
           <Icon name="refresh" size={14} />

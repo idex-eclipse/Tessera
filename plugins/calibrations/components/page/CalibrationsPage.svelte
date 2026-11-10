@@ -56,14 +56,14 @@
   $effect(() => {
     void store.refreshShaperGallery();
 
-    const offList = api.moonraker().onNotify('notify_filelist_changed', () => {
+    const offList = api.moonrakerFor(api.printer.id).onNotify('notify_filelist_changed', () => {
       void store.refreshShaperGallery();
     });
 
     // Live session-log для shaper/belts прогонов (наших собственных).
     // Scanner в ядре делает то же через gcode_store поллинг, но с задержкой 5с;
     // для UI-отзывчивости держим live-поток здесь.
-    const offConsole = api.moonraker().onNotify('notify_gcode_response', (params) => {
+    const offConsole = api.moonrakerFor(api.printer.id).onNotify('notify_gcode_response', (params) => {
       const state = store.shaperState;
       if (state.busy === '') return;
 

@@ -28,7 +28,7 @@
     if (busy) return;
     busy = action;
     try {
-      await runGcode(api.moonraker(), script);
+      await runGcode(api.moonrakerFor(api.printer.id), script);
       await store.refresh();
     } catch (e) {
       console.error('[bed-mesh] manual probe command failed:', script, e);
