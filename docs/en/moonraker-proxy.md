@@ -4,6 +4,7 @@ Plugins do not open WebSockets themselves. The host keeps a **proxy pool** — o
 connection per Moonraker (the printer's normalized origin) — and gives a plugin a
 **handle**: `api.moonraker()` for the active printer or
 `api.moonrakerFor(printerId)` for any printer.
+`api.moonraker()` is deprecated in plugin API 1.0; new plugins should pass the printer ID explicitly.
 
 What the proxy provides:
 

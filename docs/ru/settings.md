@@ -11,7 +11,8 @@
 |---|---|
 | `mpu:v2:printers` | `[{ id, name, url }]` — реестр принтеров |
 | `mpu:v2:activePrinter` | `id` активного принтера |
-| `mpu:v2:plugins` | remote-плагины: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
+| `mpu:v2:plugins` | remote-плагины: `[{ manifestUrl, enabled, printerIds, source, installedVersion, pluginApi?, pluginName? }]` |
+| `mpu:v2:host-notices` | отметки хостовых уведомлений о совместимости в этом браузере; в Moonraker не зеркалируются |
 | `mpu:v2:ui` | UI устройства: тема, язык, `dir`, размеры панелей, фон, акцент, fleet, переопределения hotkeys |
 | `mpu:v2:custom-font` | один загруженный шрифт WOFF2, WOFF, TTF или OTF (до 1 МиБ), имя и data URL; синхронизируется отдельно |
 | `mpu:v2:editor-colors` | цвета подсветки в редакторе конфигов: `{ v: 1, light: { <токен>: '#rrggbb' }, dark: { … } }` — только изменённые пользователем токены; применяются как CSS-переменные `--tok-<токен>` (шапка редактора → кнопка настроек) |
@@ -33,6 +34,7 @@ Core-плагины в `mpu:v2:plugins` **не записываются**: он�
 | `printerIds` | пусто — на всех принтерах; иначе только на перечисленных (применяется к чипам и hotkeys) |
 | `source` | `'catalog'` или `'url'` — откуда установлен |
 | `installedVersion` | версия на момент установки (для бейджа «доступно обновление») |
+| `pluginApi`, `pluginName` | последняя проверенная версия API и имя; используются, если манифест установленного плагина временно недоступен |
 
 ### `mpu:v2:ui`
 
@@ -87,7 +89,7 @@ interface PrinterSettingsState {
 
 ---
 
-## Настройки плагина (`api.settings`)
+## Настройки плагина (`api.settingsFor`)
 
 Для плагина это просто хранилище «ключ → JSON-значение» (см.
 [plugin-api.md](plugin-api.md#настройки)). Что полезно знать о хранении:

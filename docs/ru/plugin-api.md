@@ -20,11 +20,11 @@ interface PluginApi {
   onPrintersChange(cb: (printers: PrinterInfo[]) => void): () => void;
 
   // Moonraker
-  moonraker(): MoonrakerProxyHandle;                   // активный принтер
+  moonraker(): MoonrakerProxyHandle;                   // deprecated: активный принтер
   moonrakerFor(printerId: string): MoonrakerProxyHandle;
 
   // настройки
-  settings: PluginSettingsApi;                         // активный принтер
+  settings: PluginSettingsApi;                         // deprecated: активный принтер
   settingsFor(printerId: string): PluginSettingsApi;
 
   // окружение
@@ -114,6 +114,10 @@ interface PrinterInfo { id: string; name: string; url: string }
 
 ### `moonraker()`
 
+Устарел в plugin API `1.0`. Для нового кода используйте `moonrakerFor(printerId)`.
+Старый метод остаётся доступен в этом релизе, поэтому плагины с API `0.7`–`0.14` продолжают работать.
+В следующем релизе Tessera поддержка этого старого контракта прекратится.
+
 Handle активного принтера. **Бросает синхронное исключение**, если активного
 принтера нет. Сам handle — стабильный объект, но он каждый вызов резолвит
 текущий активный принтер заново: после смены вкладки ваши подписки надо
@@ -166,6 +170,8 @@ interface PluginSettingsApi {
 
 ### `settings` и `settingsFor(printerId)`
 
+- `settings` устарел в plugin API `1.0`; для нового кода используйте
+  `settingsFor(printerId)`.
 - `settings` — настройки **активного** принтера. Без активного принтера
   `get` возвращает `undefined`, `set` ничего не делает, `onChange` возвращает
   пустую функцию. `get` и `set` следуют за активным принтером, а `onChange` остаётся

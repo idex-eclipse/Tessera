@@ -451,13 +451,15 @@ manifest; the host itself ignores them, and they are not in the SDK type.
 
 `pluginApi` is the version of the plugin contract the plugin needs: `PluginApi`, the
 manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-level.ts`
-(`PLUGIN_API`, now `0.14`; Settings → About shows it).
+(`PLUGIN_API`, now `1.0`; Settings → About shows it).
 
 - **MINOR** grows with every backward-compatible addition: a new `PluginApi` method, a
   manifest field or surface. **MAJOR** is reserved for incompatible changes.
 - Extension points are not part of the plugin API: the set of points belongs to the
   owner's version, built-in plugins included (see [Dependencies](#dependencies)).
 - A plugin fits when its MAJOR equals the host's and its MINOR is not above it.
+  The 1.0 host also accepts `0.7`–`0.14` for this release; `0.15+` is unsupported.
+  In the next Tessera release, support for the old 0.x contract ends.
 - Put the version where everything you use first appeared. A plugin without the field
   is `0.7` (the contract before extension points); one that extends points or states
   `dependencies` needs at least `0.8`.
@@ -466,6 +468,8 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
   Settings → Plugins with "update Tessera"). The catalog behaves like the registry
   block: no Update button for an incompatible version, and a failed update leaves the
   running version untouched.
+- While API 1.0 accepts old plugins, the host shows a one-time compatibility notice for
+  installed `0.7`–`0.14` plugins, including disabled ones. It repeats if that set changes.
 
 | Version | What appeared |
 |---|---|
@@ -477,6 +481,7 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 | `0.12` | `klippyStream`: denylist instead of allowlist (the bridge is open for reads), `onAck`; `klippyRequest`: one-shot requests with an answer over `/klippysocket` |
 | `0.13` | `manifest.services` and `api.services`: the host proxy to the plugin's external HTTP services, the secret kept on the printer ([plugin-api.md](plugin-api.md#services)) |
 | `0.14` | optional plugin-owned Custom Element actions in `api.notifications.push` ([plugin-api.md](plugin-api.md#notifications)) |
+| `1.0` | `api.moonraker()` and `api.settings` deprecated; use explicit printer IDs through `moonrakerFor` and `settingsFor` |
 
 ### Dependencies
 

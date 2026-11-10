@@ -11,7 +11,8 @@ The schema is versioned with the `mpu:v2:` prefix.
 |---|---|
 | `mpu:v2:printers` | `[{ id, name, url }]` — the printer registry |
 | `mpu:v2:activePrinter` | the active printer's `id` |
-| `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
+| `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion, pluginApi?, pluginName? }]` |
+| `mpu:v2:host-notices` | per-browser fingerprints of host compatibility notices; not mirrored to Moonraker |
 | `mpu:v2:ui` | device UI: theme, language, `dir`, panel sizes, background, accent, fleet, hotkey overrides |
 | `mpu:v2:custom-font` | one uploaded WOFF2, WOFF, TTF or OTF font (up to 1 MiB), as a data URL and file name; mirrored separately |
 | `mpu:v2:editor-colors` | config editor syntax colors: `{ v: 1, light: { <token>: '#rrggbb' }, dark: { … } }` — only the tokens the user changed; applied as CSS variables `--tok-<token>` (editor header → settings button) |
@@ -34,6 +35,7 @@ bundle.
 | `printerIds` | empty — on all printers; otherwise only on those listed (applies to chips and hotkeys) |
 | `source` | `'catalog'` or `'url'` — where it was installed from |
 | `installedVersion` | the version at install time (for the "update available" badge) |
+| `pluginApi`, `pluginName` | last verified API declaration and name, used when an installed plugin's manifest is offline |
 
 ### `mpu:v2:ui`
 
@@ -87,7 +89,7 @@ printer, and participates in the editor's undo, redo and discard history.
 
 ---
 
-## Plugin settings (`api.settings`)
+## Plugin settings (`api.settingsFor`)
 
 For a plugin this is simply a "key → JSON value" store (see
 [plugin-api.md](plugin-api.md#settings)). Useful to know about storage:
