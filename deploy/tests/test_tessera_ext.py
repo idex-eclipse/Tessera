@@ -241,6 +241,14 @@ class InstallTests(Base):
         self.publish(plugin_files(), pluginApi=f'{major}.{minor + 1}')
         self.assert_refused('Update Tessera first')
 
+    def test_refuses_unimplemented_legacy_minor(self):
+        self.publish(plugin_files(), pluginApi='0.15')
+        self.assert_refused('Update Tessera first')
+
+    def test_refuses_older_than_legacy_contract(self):
+        self.publish(plugin_files(), pluginApi='0.6')
+        self.assert_refused('not compatible')
+
     def test_refuses_other_major_plugin_api(self):
         major, _ = ext.parse_plugin_api(ext.HOST_PLUGIN_API)
         self.publish(plugin_files(), pluginApi=f'{major + 1}.0')
@@ -253,7 +261,7 @@ class InstallTests(Base):
                 self.assert_refused('Invalid pluginApi')
 
     def test_installs_legacy_and_current_plugin_api(self):
-        for value in (1, None, ext.LEGACY_PLUGIN_API, ext.HOST_PLUGIN_API):
+        for value in (1, None, ext.LEGACY_PLUGIN_API, '0.14', ext.HOST_PLUGIN_API):
             with self.subTest(pluginApi=value):
                 entry = self.publish(plugin_files(), pluginApi=value)
                 if value is None:
