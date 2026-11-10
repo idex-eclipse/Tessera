@@ -43,7 +43,7 @@
     if (sensor?.kind !== 'hall') return;
     let alive = true;
     api
-      .moonraker()
+      .moonrakerFor(api.printer.id)
       .request<any>('printer.gcode.help')
       .then((help) => {
         if (!alive) return;
