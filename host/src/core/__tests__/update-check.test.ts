@@ -91,6 +91,7 @@ describe('update-check / notifications', () => {
     });
     expect(push.mock.calls[0]![0].text).toContain('notifications.update.ui');
     expect(push.mock.calls[0]![0].text).toContain('v1.1.0 (bbbbbbb)');
+    expect(push.mock.calls[0]![0].actions).toEqual([{ kind: 'host-settings', section: 'about' }]);
     expect(settings.ui.updateCheck.lastCheckedAt).toBe(NOW);
     expect(settings.ui.updateCheck.notified.ui).toBe('bbbbbbb');
   });
@@ -123,6 +124,7 @@ describe('update-check / notifications', () => {
     expect(push).toHaveBeenCalledTimes(1);
     expect(push.mock.calls[0]![0].text).toContain('notifications.update.plugins');
     expect(push.mock.calls[0]![0].text).toContain('Hello 2.0.0, Two 3.0.0');
+    expect(push.mock.calls[0]![0].actions).toEqual([{ kind: 'host-settings', section: 'plugins' }]);
   });
 
   it('reports an update that needs a newer Tessera separately', async () => {
@@ -135,6 +137,13 @@ describe('update-check / notifications', () => {
     expect(texts).toHaveLength(2);
     expect(texts.some((t) => t.includes('notifications.update.pluginsNeedUi') && t.includes('Hello'))).toBe(true);
     expect(texts.some((t) => t.includes('notifications.update.plugins ') && t.includes('Ok'))).toBe(true);
+    const actionsByText = new Map(push.mock.calls.map((c) => [c[0].text, c[0].actions]));
+    expect(actionsByText.get(texts.find((text) => text.includes('pluginsNeedUi'))!)).toEqual([
+      { kind: 'host-settings', section: 'about' },
+    ]);
+    expect(actionsByText.get(texts.find((text) => text.includes('notifications.update.plugins '))!)).toEqual([
+      { kind: 'host-settings', section: 'plugins' },
+    ]);
   });
 
   it('ignores plugins the service does not manage and plugins without an update', async () => {

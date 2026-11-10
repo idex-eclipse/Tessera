@@ -4,9 +4,15 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PluginApi } from '../../../../plugin-sdk/src/types';
 
 const fakeApi = { pluginId: '@core/system' } as PluginApi;
+const navigateToSettings = vi.fn();
 
 // NotificationActions needs the app context only because PluginSurface resolves the author's API.
-vi.mock('../../app-context', () => ({ getAppContext: () => ({}) }));
+vi.mock('../../app-context', () => ({
+  getAppContext: () => ({
+    router: { navigateToSettings },
+    i18n: { t: (key: string) => key },
+  }),
+}));
 vi.mock('../../core/plugin-api-cache', () => ({ getPluginApi: () => fakeApi }));
 
 import NotificationActions from './NotificationActions.svelte';
@@ -56,6 +62,27 @@ describe('NotificationActions (jsdom)', () => {
     try {
       expect(target.textContent).toBe('');
       expect(target.querySelector('.plugin-error')).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders a trusted host Settings action without resolving a plugin surface', () => {
+    navigateToSettings.mockClear();
+    const target = document.createElement('div');
+    const component = mount(NotificationActions, {
+      target,
+      props: {
+        pluginId: '@host',
+        actions: [{ kind: 'host-settings', section: 'plugins' }],
+      },
+    });
+    flushSync();
+    try {
+      const button = target.querySelector<HTMLButtonElement>('button.host-action');
+      expect(button?.textContent).toBe('notifications.update.open.plugins');
+      button?.click();
+      expect(navigateToSettings).toHaveBeenCalledWith('plugins');
     } finally {
       unmount(component);
     }

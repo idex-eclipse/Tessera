@@ -167,12 +167,25 @@ describe('notification center / history', () => {
     ]);
   });
 
+  it('accepts private Settings actions only from the host author', () => {
+    const { center } = setup();
+    const forged = { kind: 'host-settings', section: 'about' } as const;
+    center.push(n('plugin', { actions: [forged as never] }));
+    center.push(n('host', {
+      pluginId: '@host',
+      actions: [forged, { kind: 'host-settings', section: 'invalid' } as never],
+    }));
+
+    expect(center.items.find((item) => item.text === 'plugin')?.actions).toBeUndefined();
+    expect(center.items.find((item) => item.text === 'host')?.actions).toEqual([forged]);
+  });
+
   it('deduplicates by text even when action descriptors differ', () => {
     const { center } = setup();
     center.push(n('same', { actions: [{ element: 'acme-one' }] }));
     center.push(n('same', { actions: [{ element: 'acme-two' }] }));
     expect(center.items).toHaveLength(1);
-    expect(center.items[0]!.actions?.[0]?.element).toBe('acme-one');
+    expect(center.items[0]!.actions?.[0]).toMatchObject({ element: 'acme-one' });
   });
 
   it('deduplicates the same text from the same author within the window only', () => {

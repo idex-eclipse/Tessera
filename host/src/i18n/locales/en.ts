@@ -88,6 +88,10 @@ const en: I18nMessages = {
       ui: 'Tessera update available: {to}. Settings → About',
       plugins: 'Plugin updates available: {list}. Settings → Plugins',
       pluginsNeedUi: 'Plugin updates need a newer Tessera: {list}. Update Tessera first (Settings → About)',
+      open: {
+        about: 'Open About',
+        plugins: 'Open Plugins',
+      },
     },
     guard: {
       source: 'Guard agent',

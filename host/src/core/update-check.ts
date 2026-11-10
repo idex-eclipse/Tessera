@@ -47,12 +47,18 @@ interface Finding {
   key: string;
   version: string;
   text: string;
+  section: 'about' | 'plugins';
 }
 
 function findUiUpdate(status: UiUpdateStatus, i18n: UpdateCheckDeps['i18n']): Finding | null {
   if (!status.updateAvailable || !status.remote?.commit) return null;
   const to = status.remote.version ? `v${status.remote.version} (${status.remote.commit})` : status.remote.commit;
-  return { key: UI_KEY, version: status.remote.commit, text: i18n.t('notifications.update.ui', { to }) };
+  return {
+    key: UI_KEY,
+    version: status.remote.commit,
+    text: i18n.t('notifications.update.ui', { to }),
+    section: 'about',
+  };
 }
 
 function findPluginUpdates(plugins: readonly RegistryPlugin[], i18n: UpdateCheckDeps['i18n']): Finding[] {
@@ -66,7 +72,12 @@ function findPluginUpdates(plugins: readonly RegistryPlugin[], i18n: UpdateCheck
 
   const out: Finding[] = [];
   // Одно сообщение на группу: десять плагинов не должны давать десять тостов.
-  const group = (list: RegistryPlugin[], suffix: string, text: (names: string) => string): void => {
+  const group = (
+    list: RegistryPlugin[],
+    suffix: string,
+    section: 'about' | 'plugins',
+    text: (names: string) => string,
+  ): void => {
     if (list.length === 0) return;
     const names = list.map((p) => `${p.name} ${p.version}`).join(', ');
     out.push({
@@ -74,11 +85,12 @@ function findPluginUpdates(plugins: readonly RegistryPlugin[], i18n: UpdateCheck
       // Версия группы — её состав: новая версия любого плагина — новая новость.
       version: list.map((p) => `${p.id}@${p.version}`).sort().join(','),
       text: text(names),
+      section,
     });
   };
-  group(ready, '', (list) => i18n.t('notifications.update.plugins', { list }));
+  group(ready, '', 'plugins', (list) => i18n.t('notifications.update.plugins', { list }));
   // Эти обновления службой не поставить (нужен более новый plugin API): сначала обновить Tessera.
-  group(blocked, ':needs-ui', (list) => i18n.t('notifications.update.pluginsNeedUi', { list }));
+  group(blocked, ':needs-ui', 'about', (list) => i18n.t('notifications.update.pluginsNeedUi', { list }));
   return out;
 }
 
@@ -127,6 +139,7 @@ export async function runUpdateCheck(deps: UpdateCheckDeps): Promise<boolean> {
       severity: 'info',
       label: i18n.t('notifications.update.source'),
       text: f.text,
+      actions: [{ kind: 'host-settings', section: f.section }],
     });
   }
 

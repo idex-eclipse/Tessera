@@ -27,8 +27,8 @@ export interface NotificationItem {
   /** Локализованная подпись источника от автора; без неё UI показывает имя плагина. */
   label?: string;
   text: string;
-  /** Opaque plugin-owned actions; the host only validates and mounts their Custom Elements. */
-  actions?: NotificationActionInput[];
+  /** Opaque plugin actions or the host's private, declarative Settings navigation. */
+  actions?: NotificationAction[];
   /** unix ms */
   time: number;
   seen: boolean;
@@ -41,8 +41,17 @@ export interface NotificationPush {
   severity: NotificationSeverity;
   text: string;
   label?: string;
-  actions?: NotificationActionInput[];
+  actions?: NotificationAction[];
 }
+
+/** A host-only action kept outside the public PluginApi notification contract. */
+export interface HostSettingsNotificationAction {
+  kind: 'host-settings';
+  section: 'about' | 'plugins';
+}
+
+/** Stored actions are either plugin-owned Custom Elements or trusted host navigation. */
+export type NotificationAction = NotificationActionInput | HostSettingsNotificationAction;
 
 /** pluginId для уведомлений, которые создаёт сам хост (fail-closed таймауты гардов). */
 export const HOST_NOTIFICATION_SOURCE = '@host';
@@ -65,7 +74,7 @@ const SEVERITIES: readonly NotificationSeverity[] = ['critical', 'error', 'info'
 export type NotificationCenter = ReturnType<typeof createNotificationCenter>;
 
 /** Copies the narrow CE contract so a plugin cannot mutate notification history after push(). */
-function sanitizeActions(raw: unknown): NotificationActionInput[] {
+function sanitizePluginActions(raw: unknown): NotificationActionInput[] {
   if (!Array.isArray(raw)) return [];
   const actions: NotificationActionInput[] = [];
   for (const candidate of raw) {
@@ -83,6 +92,21 @@ function sanitizeActions(raw: unknown): NotificationActionInput[] {
       element: record.element,
       ...(Object.keys(params).length > 0 ? { params } : {}),
     });
+    if (actions.length >= NOTIFICATION_ACTION_CAP) break;
+  }
+  return actions;
+}
+
+/** Accepts host navigation only from the trusted host author and copies its narrow payload. */
+function sanitizeHostActions(raw: unknown): HostSettingsNotificationAction[] {
+  if (!Array.isArray(raw)) return [];
+  const actions: HostSettingsNotificationAction[] = [];
+  for (const candidate of raw) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const record = candidate as { kind?: unknown; section?: unknown };
+    if (record.kind !== 'host-settings') continue;
+    if (record.section !== 'about' && record.section !== 'plugins') continue;
+    actions.push({ kind: 'host-settings', section: record.section });
     if (actions.length >= NOTIFICATION_ACTION_CAP) break;
   }
   return actions;
@@ -152,7 +176,10 @@ export function createNotificationCenter(
       typeof n.label === 'string' && n.label.trim()
         ? n.label.trim().slice(0, LABEL_MAX)
         : undefined;
-    const actions = sanitizeActions(n.actions);
+    // Plugin input can never acquire host navigation by casting at runtime.
+    const actions = n.pluginId === HOST_NOTIFICATION_SOURCE
+      ? sanitizeHostActions(n.actions)
+      : sanitizePluginActions(n.actions);
 
     const now = Date.now();
     const key = dedupKey({ ...n, text });
