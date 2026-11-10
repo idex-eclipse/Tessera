@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-
   import { usePluginApi } from '../../../../../plugin-sdk/src/svelte/index';
 
   const api = usePluginApi();
@@ -13,7 +11,7 @@
 
   async function load(): Promise<void> {
     try {
-      dir = await api.moonraker().request('server.files.get_directory', {
+      dir = await api.moonrakerFor(api.printer.id).request('server.files.get_directory', {
         path: root,
       });
     } catch {
@@ -26,8 +24,12 @@
     void load();
   });
 
-  const offFiles = api.moonraker().onNotify('notify_filelist_changed', () => void load());
-  onDestroy(offFiles);
+  $effect(() => {
+    const printerId = api.printer.id;
+    if (!printerId) return;
+    // Re-register file notifications when the surface moves to another printer.
+    return api.moonrakerFor(printerId).onNotify('notify_filelist_changed', () => void load());
+  });
 
   function fmtBytes(n: number): string {
     if (!Number.isFinite(n)) return '—';

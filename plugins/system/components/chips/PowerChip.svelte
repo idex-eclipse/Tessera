@@ -19,7 +19,7 @@
   let missing = $derived(device === null);
 
   // Moonraker-level: не зависит от Klipper ready; offline → muted
-  let online = $derived(api.moonraker().readyState === 'open');
+  let online = $derived(api.moonrakerFor(api.printer.id).readyState === 'open');
   let disabled = $derived(editMode || missing || !online);
 
   function toggle(): void {

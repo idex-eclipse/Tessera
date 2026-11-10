@@ -49,7 +49,7 @@
   let collapsed = $derived(collapsedAttr || params.collapsed === 'true');
 
   // ------------------------------------------------------------------
-  // аккордеоны Host / Services (персист в api.settings → sync)
+  // аккордеоны Host / Services (персист в api.settingsFor(api.printer.id) → sync)
   // ------------------------------------------------------------------
 
   // Reactive settings: re-read after DB pulls / printer switches instead of once at mount.
@@ -79,7 +79,7 @@
 
   $effect(() => {
     if (!api.printer.url) return;   // нет принтера — нет подписки
-    return api.moonraker().subscribe(
+    return api.moonrakerFor(api.printer.id).subscribe(
       { print_stats: ['state'] },
       (d: any) => {
         const st = d?.print_stats?.state;
@@ -93,7 +93,7 @@
     accountsSetting.set(!accountsOpen);
   }
 
-  let currentUser = $derived(decodeJwtUser((api.moonraker() as { authToken?: string }).authToken ?? null));
+  let currentUser = $derived(decodeJwtUser((api.moonrakerFor(api.printer.id) as { authToken?: string }).authToken ?? null));
 
   let newUserName = $state('');
   let newUserPass = $state('');
@@ -222,7 +222,7 @@
       fd.append('print', 'false');
       fd.append('file', blob, filename);
 
-      const h = api.moonraker();
+      const h = api.moonrakerFor(api.printer.id);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${h.httpBaseUrl}/server/files/upload`);
       const tok = (h as { authToken?: string }).authToken;
@@ -262,7 +262,7 @@
       fd.append('print', 'true');
       fd.append('file', blob, filename);
 
-      const h = api.moonraker();
+      const h = api.moonrakerFor(api.printer.id);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${h.httpBaseUrl}/server/files/upload`);
       const tok = (h as { authToken?: string }).authToken;
@@ -304,7 +304,7 @@
     const willPrint = printAfter && klippy.ready;
     if (printAfter && !klippy.ready) flagPrintSkipped();
 
-    const h = api.moonraker();
+    const h = api.moonrakerFor(api.printer.id);
     const fd = new FormData();
     fd.append('root', 'gcodes');
     fd.append('print', willPrint ? 'true' : 'false');

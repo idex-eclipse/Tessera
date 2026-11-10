@@ -17,7 +17,7 @@
     dbBusy = action;
     dbNotice = null;
     try {
-      await api.moonraker().request(`server.database.${action}`);
+      await api.moonrakerFor(api.printer.id).request(`server.database.${action}`);
       dbNotice = { kind: 'ok', text: i18n.t('system.database.ok') };
     } catch (e) {
       console.error('[system] database action failed:', action, e);

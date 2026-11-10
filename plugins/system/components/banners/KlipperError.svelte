@@ -67,7 +67,7 @@
   // ------------------------------------------------------------------
 
   async function downloadLog(kind: 'klippy' | 'moonraker'): Promise<void> {
-    const h = api.moonraker();
+    const h = api.moonrakerFor(api.printer.id);
     const headers: Record<string, string> = {};
     const tok = (h as { authToken?: string }).authToken;
     if (tok) headers.Authorization = `Bearer ${tok}`;

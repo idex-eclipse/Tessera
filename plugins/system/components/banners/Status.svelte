@@ -58,7 +58,7 @@
     if (busy) return;
     busy = method;
     try {
-      await api.moonraker().request(method);
+      await api.moonrakerFor(api.printer.id).request(method);
     } catch (e) {
       console.error('[status] print action failed:', method, e);
     } finally {
