@@ -123,13 +123,12 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     if (next) setActive(next.name);
   }
 
-  // CRUD — используется только legacy-UI (CameraPage). Fleet-панели не
-  // открывают диалоги, поэтому безопасный handle берётся через api.moonraker()
-  // активного принтера (не moonrakerFor(printerId) ядра).
+  // CRUD belongs to the active-printer CameraPage. Fleet panels do not open these dialogs,
+  // so writes use the active ID rather than the fleet core's printerId.
   async function saveCamera(item: WebcamItem, isNew: boolean): Promise<void> {
     let h: MoonrakerProxyHandle;
     try {
-      h = api.moonraker();
+      h = api.moonrakerFor(api.printer.id);
     } catch {
       return;
     }
@@ -165,7 +164,7 @@ function createCamerasCore(api: PluginApi, printerId: string) {
   async function deleteCamera(item: WebcamItem): Promise<void> {
     let h: MoonrakerProxyHandle;
     try {
-      h = api.moonraker();
+      h = api.moonrakerFor(api.printer.id);
     } catch {
       return;
     }
@@ -268,7 +267,7 @@ const keeper = createCoreKeeper<CamerasStore>({
  *
  * Диалоги CRUD (module-level) сбрасываются при смене активного принтера
  * (legacy-ветка), потому что они привязаны к активному принтеру через
- * api.moonraker().
+ * moonrakerFor(activePrinterId).
  */
 export function useCameras(api: PluginApi, printerId?: string): CamerasStore {
   if (printerId !== undefined) {

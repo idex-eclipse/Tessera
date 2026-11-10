@@ -27,7 +27,7 @@
   function resolveUrl(u: string): string {
     if (/^https?:\/\//i.test(u)) return u;
     try {
-      const base = new URL(api.moonraker().httpBaseUrl);
+      const base = new URL(api.moonrakerFor(api.printer.id).httpBaseUrl);
       base.port = '';
       return base.origin + (u.startsWith('/') ? u : `/${u}`);
     } catch {
