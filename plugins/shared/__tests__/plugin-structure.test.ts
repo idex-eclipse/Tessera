@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
  * Layout of the BUILT-IN plugins (`plugins/*`, docs: plugin-development.md → "Layout of built-in
  * plugins"). Extensions in `extensions/` are free-form and not covered.
  *
- *   <plugin>/ index.ts manifest.ts [types.ts guards.ts hotkeys.ts]
+ *   <plugin>/ index.ts manifest.ts [types.ts guards.ts hotkeys.ts notifications.ts]
  *             lib/        pure logic: no Svelte, no runes modules, no upward imports
  *             data/       subscriptions to Moonraker / the plugin API (the "cores", use-*.svelte.ts)
  *             state/      $state holders without network: UI state and settings-backed prefs
@@ -26,13 +26,13 @@ const PLUGINS_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const NOT_PLUGINS = new Set(['shared', 'dummy']);
 
 const PLUGIN_ROOT = {
-  files: new Set(['index.ts', 'manifest.ts', 'types.ts', 'guards.ts', 'hotkeys.ts']),
+  files: new Set(['index.ts', 'manifest.ts', 'types.ts', 'guards.ts', 'hotkeys.ts', 'notifications.ts']),
   dirs: new Set(['__tests__', 'components', 'data', 'state', 'lib', 'i18n', 'icons']),
 };
 
 /** Extra root entries that are part of a specific plugin's contract (see docs). */
 const PLUGIN_EXTRA_FILES: Record<string, string[]> = {
-  system: ['notification-producers.ts', 'fleet-index.ts'],
+  system: ['fleet-index.ts'],
 };
 
 /** widgets-core is a bundle of tiles: each tile is laid out like a plugin, minus index/i18n/icons. */
@@ -41,7 +41,10 @@ const TILE_ROOT = {
   dirs: new Set(['__tests__', 'components', 'data', 'state', 'lib']),
 };
 const BUNDLES = new Set(['widgets-core']);
-const BUNDLE_ROOT = { files: new Set(['index.ts', 'manifest.ts']), dirs: new Set(['__tests__', 'i18n']) };
+const BUNDLE_ROOT = {
+  files: new Set(['index.ts', 'manifest.ts', 'notifications.ts']),
+  dirs: new Set(['__tests__', 'i18n']),
+};
 
 const SURFACE_DIRS = new Set([
   'chips', 'overlays', 'banners', 'widgets', 'page', 'fleet', 'right-panel', 'shared',
@@ -151,6 +154,19 @@ describe('built-in plugin layout', () => {
       .filter((f) => /\.(test|spec)\.ts$/.test(f))
       .filter((f) => !posix(relative(PLUGINS_DIR, f)).split('/').includes('__tests__'))
       .map((f) => posix(relative(PLUGINS_DIR, f)));
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps production notification publishing in the owning root notifications.ts', () => {
+    const offenders = walk(PLUGINS_DIR)
+      .filter((file) => /\.(ts|svelte)$/.test(file))
+      .filter((file) => !posix(relative(PLUGINS_DIR, file)).split('/').includes('__tests__'))
+      .filter((file) => /\b\w+\.notifications\.push\s*\(/.test(readFileSync(file, 'utf8')))
+      .filter((file) => {
+        const parts = posix(relative(PLUGINS_DIR, file)).split('/');
+        return parts.length !== 2 || parts[1] !== 'notifications.ts';
+      })
+      .map((file) => posix(relative(PLUGINS_DIR, file)));
     expect(offenders).toEqual([]);
   });
 
