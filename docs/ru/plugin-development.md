@@ -316,8 +316,10 @@ const stop = watchSettings(api, () => { cfg = readCfg(); }); // перечита
 plugins/<id>/
   index.ts  manifest.ts            регистрация custom elements; манифест
   types.ts                         типы, общие для нескольких слоёв (локальные остаются рядом с модулем)
-  guards.ts  hotkeys.ts            контракты, которые реэкспортирует index.ts (у system здесь же
-                                   notification-producers.ts и fleet-index.ts)
+  guards.ts  hotkeys.ts            контракты, которые реэкспортирует index.ts
+  notifications.ts                 необязательный автономный producer уведомлений: подписки,
+                                   парсинг, состояние детекторов и публикация
+  fleet-index.ts                   индекс статусов флита только для System
   lib/                             чистая логика: без Svelte, без рун, без runtime PluginApi
   data/                            подписки на Moonraker / plugin API («ядра», use-*.svelte.ts)
   state/                           $state-хранилища без сети: UI-состояние, префы из настроек
@@ -339,8 +341,13 @@ Svelte, собранным для браузера. Остальные тест�
 `__tests__/helpers/`.
 
 `widgets-core` — набор плиток: в его корне остаются `index.ts`, `manifest.ts`, общий `i18n/` и
-`__tests__/`, а каждая папка внутри (`temperature`, `tools`, `camera`, …) устроена как отдельный
-плагин и имеет свой `manifest.ts` со списком вкладов.
+`__tests__/` (а также необязательный `notifications.ts`), а каждая папка внутри (`temperature`,
+`tools`, `camera`, …) устроена как отдельный плагин и имеет свой `manifest.ts` со списком вкладов.
+
+Если встроенный плагин или bundle публикует уведомления, production-вызовы
+`api.notifications.push` находятся в его корневом `notifications.ts`. Этот модуль владеет
+связанными подписками Moonraker, парсингом, состоянием детекторов и teardown; UI-компоненты могут
+подписаться на read-only представление для отображения, но не дублируют детектор уведомлений.
 
 Ядро данных не должно вызывать lifecycle-функции Svelte (`onDestroy`): keeper может создать его
 вне компонента; что оно удерживает, оно отпускает в собственном `destroy()`. По той же причине

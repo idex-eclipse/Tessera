@@ -318,8 +318,10 @@ are free-form. It is enforced by `plugins/shared/__tests__/plugin-structure.test
 plugins/<id>/
   index.ts  manifest.ts            registration of the custom elements; the manifest
   types.ts                         types shared by several layers (local types stay next to their module)
-  guards.ts  hotkeys.ts            contracts re-exported by index.ts (system also keeps
-                                   notification-producers.ts and fleet-index.ts here)
+  guards.ts  hotkeys.ts            contracts re-exported by index.ts
+  notifications.ts                 optional autonomous notification producer: subscriptions,
+                                   parsing, detector state and publishing
+  fleet-index.ts                   System-only fleet status index
   lib/                             pure logic: no Svelte, no runes, no PluginApi runtime
   data/                            subscriptions to Moonraker / the plugin API (the "cores", use-*.svelte.ts)
   state/                           $state holders without network: UI state, settings-backed prefs
@@ -340,8 +342,14 @@ for the browser. All other tests run in `node`, where Svelte is compiled in serv
 are inert. Fixtures for a DOM test (small `.svelte` probes) live in `__tests__/helpers/`.
 
 `widgets-core` is a bundle: its root keeps `index.ts`, `manifest.ts`, one shared `i18n/` and
-`__tests__/`, and every folder inside (`temperature`, `tools`, `camera`, …) is laid out like a
-plugin of its own, with its own `manifest.ts` listing its contributions.
+`__tests__/` (and may keep an optional `notifications.ts`), and every folder inside
+(`temperature`, `tools`, `camera`, …) is laid out like a plugin of its own, with its own
+`manifest.ts` listing its contributions.
+
+When a built-in plugin or bundle publishes notifications, production calls to
+`api.notifications.push` belong in its root `notifications.ts`. That module owns the related
+Moonraker subscriptions, parsing, detector state and teardown; UI components may subscribe to a
+read-only projection for display, but must not duplicate the notification detector.
 
 A data core must not call Svelte lifecycle functions (`onDestroy`) because the keeper may create
 it outside a component; it releases what it holds in its own `destroy()`. For the same reason

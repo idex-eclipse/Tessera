@@ -122,7 +122,7 @@ One page, four tabs, one consistent panel language — every action shows a read
 - **Input shaper** — `TEST_RESONANCES` / `SHAPER_CALIBRATE` with live fitted/recommended readouts, a runs table with apply-to-config, and an optional shell-command pipeline that renders resonance PNG graphs straight into your config folder
 - **Belt tension** — auto-detected from kinematics (CoreXY / Delta / generic cartesian), comparative graph in a single run
 - **Probe & Z offset** — auto-detected probe type (eddy current / probe / bltouch / endstop), calibration wizard, accuracy runs table, manual-probe overlay, multi-chip eddy selection
-- **Heaters (PID)** — autotune with live temperature/power chart, Kp/Ki/Kd cards, and a deviation monitor that alerts when a tuned heater drifts from target
+- **Heaters (PID)** — autotune with live temperature/power chart and Kp/Ki/Kd cards; the deviation monitor runs in the background for every heater on every configured printer, even while the page is closed, and links each alert back to the exact heater
 - **Bed mesh** — sector-based 2D widget with average deviation per cell, uniform X/Y scale, axis rulers, click-to-zoom and right-click-to-zoom-out; full mesh tooling includes 3D surface visualization with vertical exaggeration, profile management, Z-tilt / QGL / screws-tilt tools, and TEST_Z refinement overlay
 
 Long-running calibrations survive tab switches and printer switching — activity is tracked from Moonraker's g-code store, so a tune started in another client is visible here too.
