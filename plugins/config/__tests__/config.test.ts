@@ -155,7 +155,8 @@ describe('manifest', () => {
 describe('file-ops authorization', () => {
   function opsWith(token: string | null) {
     const api = {
-      moonraker: () => ({ httpBaseUrl: 'http://pr:7125', authToken: token }),
+      printer: { id: 'p1' },
+      moonrakerFor: () => ({ httpBaseUrl: 'http://pr:7125', authToken: token }),
     } as unknown as PluginApi;
     return createFileOps(api);
   }
@@ -195,9 +196,9 @@ describe('file-ops authorization', () => {
 });
 
 describe('file-table-state settings subscription', () => {
-  it('re-subscribes api.settings.onChange when the active printer changes', () => {
+  it('re-subscribes settingsFor(id).onChange when the active printer changes', () => {
     const unsubs: Array<ReturnType<typeof vi.fn>> = [];
-    let printerCb: (() => void) | null = null;
+    let printerCb: ((printer: { id: string }) => void) | null = null;
     const onChange = vi.fn(() => {
       const off = vi.fn();
       unsubs.push(off);
@@ -205,8 +206,8 @@ describe('file-table-state settings subscription', () => {
     });
     const api = {
       printer: { id: 'wire-test' },
-      settings: { get: () => undefined, onChange },
-      onPrinterChange: (cb: () => void) => {
+      settingsFor: () => ({ get: () => undefined, onChange }),
+      onPrinterChange: (cb: (printer: { id: string }) => void) => {
         printerCb = cb;
         return () => {};
       },
@@ -215,7 +216,7 @@ describe('file-table-state settings subscription', () => {
     getVisibleColumns(api, 'page:x', ['name'], ['name']); // wire() при первом обращении
     expect(onChange).toHaveBeenCalledTimes(1);
 
-    printerCb!();
+    printerCb!({ id: 'wire-test-next' });
     expect(unsubs[0]).toHaveBeenCalledTimes(1); // старая подписка снята
     expect(onChange).toHaveBeenCalledTimes(2); // новая — на нового принтера
   });
