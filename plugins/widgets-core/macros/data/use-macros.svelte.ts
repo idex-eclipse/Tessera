@@ -112,7 +112,7 @@ function createMacrosCore(api: PluginApi, printerId: string) {
     }
 
     // Fallback: старый device-global namespace (миграция)
-    const oldAll = api.settings.get<{ byPrinter?: Record<string, MacrosCfg> }>('macros');
+    const oldAll = api.settingsFor(api.printer.id).get<{ byPrinter?: Record<string, MacrosCfg> }>('macros');
     const oldSlice = oldAll?.byPrinter?.[printerId];
     if (oldSlice && typeof oldSlice === 'object') {
       const sanitized = sanitizeCfg(oldSlice);

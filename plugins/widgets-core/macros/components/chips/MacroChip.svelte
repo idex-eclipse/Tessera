@@ -36,7 +36,7 @@
   $effect(() => {
     printState = 'idle'; // новый принтер — состояние неизвестно, пока не придёт начальное
     // immediate: иначе после F5 посреди печати чип считался бы доступным до смены состояния
-    return api.moonraker().subscribe(
+    return api.moonrakerFor(api.printer.id).subscribe(
       { print_stats: ['state'] },
       (delta: any) => {
         const s = delta?.print_stats?.state;
@@ -94,7 +94,7 @@
     const v = values ?? pendingValues ?? {};
     const script = hasParams ? buildMacroScript(macroName, macroParams, v) : macroName;
     api
-      .moonraker()
+      .moonrakerFor(api.printer.id)
       .request('printer.gcode.script', { script })
       .catch((e) => console.error('[macro-chip] run failed:', script, e));
     pendingValues = null;
