@@ -19,7 +19,7 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
 
-    "types": ["node"],
+    "types": ["node", "vite/client"],
 
     "baseUrl": ".",
     "paths": {
@@ -33,6 +33,7 @@
     "host/src",
     "plugin-sdk/src",
     "vitest.config.ts",
-    "plugins/"
+    "plugins/",
+    "tools/mock-moonraker/"
   ]
 }

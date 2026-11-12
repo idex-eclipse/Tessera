@@ -255,16 +255,49 @@ notification comes from or what Klipper is.
 
 ```bash
 npm run dev            # Vite dev server (host + serving extensions/)
+npm run dev:mock       # Vite + two independent virtual Moonraker printers
+npm run test:mock-browser # Chromium UI scenarios against the virtual printers
 npm run build          # production build of the host into host/dist
 npm run typecheck      # tsc --noEmit
 npm run svelte-check   # checking .svelte files
-npm test               # vitest (node environment)
+npm test               # vitest (node and jsdom projects)
 ```
 
-Tests live next to the code (`__tests__/`, `*.test.ts`) and run in a node
-environment. Svelte effects (`$effect`) do not run in it, so code that must be
-testable without a DOM is moved into pure functions (example: `hotkeys.ts` + an
-explicit `checkConflicts()` in the manager).
+Tests live next to the code (`__tests__/`, `*.test.ts`). Most run in Node;
+`*.dom.test.ts` use jsdom. Svelte effects (`$effect`) do not run in the Node
+project, so code that must be testable there is moved into pure functions
+(example: `hotkeys.ts` + an explicit `checkConflicts()` in the manager).
+
+### Mock Moonraker for development
+
+Run `npm run dev:mock` and open `http://127.0.0.1:5174`. The launcher starts a
+separate Moonraker-like HTTP/WebSocket server for each virtual printer on ports
+17125 and 17126. This dedicated UI origin seeds exactly two local printer records:
+**Mock Ready** and **Mock Klipper Error**. It does not read printer URLs stored for
+the ordinary dev origin. The command stops both mock servers with Vite.
+
+The ready printer has three original G-code examples with metadata and SVG thumbnails,
+config and log files, mixed print history, temperature and host monitoring samples,
+a snapshot camera, bed mesh profiles and a 40-second simulated print. Printing,
+heating, movement, file and webcam management, bed mesh calibration and manual Z
+probing change in-memory state and send Moonraker-shaped deltas. Restart Klipper on
+the error printer to recover it. Restart Moonraker to exercise a socket reconnect.
+Camera image addresses are absolute so the UI can reach the separate printer port.
+Unsupported RPC and G-code methods return errors; real camera streams, external
+services, update actions and hardware-specific calibrations are not simulated.
+Mock files and server state reset when the command restarts. Browser layout settings
+on port 5174 may persist until that origin's site data is cleared.
+
+`npm run test:mock-browser` starts the same UI and server, then uses Playwright with
+Chromium to exercise built-in actions and verify their results. It checks page overflow
+at 390, 768 and 1440 px and key screens in RTL. Install the browser once with
+`npx playwright install chromium` if it is not already present. CI runs the command.
+
+`tools/mock-moonraker/` separates printer state, request handlers and the Node
+server from the Vite launcher. `createMockSessionStore()` creates isolated pairs and
+expires idle pairs, so a future project site can route each visitor to its own
+session without changing the scenario engine. Public site routing and hosting are
+not part of the local command.
 
 ## Repository layout
 

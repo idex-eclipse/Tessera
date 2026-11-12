@@ -325,11 +325,18 @@ git clone https://github.com/idex-eclipse/tessera.git
 cd tessera
 npm install
 npm run dev        # vite dev server + /extensions/ middleware
+npm run dev:mock   # UI + two virtual Moonraker printers at http://127.0.0.1:5174
+npm run test:mock-browser # Playwright Chromium scenarios with the mock printers
 npm run build      # production bundle → host/dist
 npm run typecheck  # tsc --noEmit
 npm run svelte-check
 npm run test       # vitest
 ```
+
+`dev:mock` needs no printer. It starts one ready printer with sample files, history,
+camera and calibration data, and one with a Klipper error. `test:mock-browser` exercises
+the built-in UI against these printers (run `npx playwright install chromium` once);
+see [the development guide](docs/en/architecture.md#mock-moonraker-for-development).
 
 Serve `host/dist` with any static server and reverse-proxy Moonraker's API and
 WebSocket to the same origin (see `deploy/install.sh` for the reference nginx

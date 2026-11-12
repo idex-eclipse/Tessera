@@ -31,6 +31,7 @@ export default defineConfig({
             'host/src/**/*.{test,spec}.ts',
             'plugin-sdk/src/**/*.{test,spec}.ts',
             'plugins/**/*.{test,spec}.ts',
+            'tools/**/*.{test,spec}.ts',
           ],
           exclude: ['**/node_modules/**', '**/*.dom.test.ts'],
         },

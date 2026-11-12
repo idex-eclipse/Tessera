@@ -60,6 +60,19 @@ import './styles/global.css';
 // first. It is wrapped in a function (instead of a top-level `await`) because the production
 // build targets ES2020 browsers, which do not support top-level await.
 async function boot(): Promise<void> {
+  // A dedicated dev origin keeps mock printer records away from ordinary development.
+  // Seed before settings sync so neither proxy nor mirror ever contacts a real printer.
+  if (import.meta.env.DEV && import.meta.env.MODE === 'mock') {
+    const mockPrinters = [
+      { id: 'mock-ready', name: 'Mock Ready', url: 'http://127.0.0.1:17125' },
+      { id: 'mock-error', name: 'Mock Klipper Error', url: 'http://127.0.0.1:17126' },
+    ];
+    window.localStorage.setItem('mpu:v2:printers', JSON.stringify(mockPrinters));
+    const active = window.localStorage.getItem('mpu:v2:activePrinter');
+    if (!mockPrinters.some((printer) => printer.id === active)) {
+      window.localStorage.setItem('mpu:v2:activePrinter', 'mock-ready');
+    }
+  }
   // Settings are mirrored in the Moonraker DB (see settings-remote.ts). The pull has to
   // finish before the store is created because the store reads localStorage only once.
   const mirror = createSettingsMirror({ storage: window.localStorage });

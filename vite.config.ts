@@ -33,7 +33,8 @@ function serveExtensions(): Plugin {
     name: 'serve-extensions',
     configureServer(server) {
       server.middlewares.use('/extensions', (req, res, next) => {
-        const rel = decodeURIComponent((req.url ?? '').split('?')[0]);
+        // An empty request path is valid during early dev-server probes.
+        const rel = decodeURIComponent((req.url ?? '').split('?')[0] ?? '');
         const file = path.join(root, rel);
         if (!file.startsWith(root + path.sep)) {
           res.statusCode = 403;
