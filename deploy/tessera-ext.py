@@ -231,6 +231,73 @@ class HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+# RFC 6052 defines the decodable /96 prefix; RFC 8215 reserves local-use space
+# whose translation layout cannot be inferred from the address alone.
+NAT64_WELL_KNOWN = ipaddress.ip_network('64:ff9b::/96')
+NAT64_LOCAL_USE = ipaddress.ip_network('64:ff9b:1::/48')
+
+
+def public_registry_ip(address):
+    """Accept a public endpoint only when any known embedded IPv4 is public too."""
+    # Some Python versions classify multicast and deprecated site-local as global.
+    if address.is_multicast:
+        return False
+    if isinstance(address, ipaddress.IPv6Address) and address.is_site_local:
+        return False
+    if not address.is_global:
+        return False
+    if isinstance(address, ipaddress.IPv4Address):
+        return True
+    # The local-use NAT64 range can translate private IPv4 using a site-specific layout.
+    if address in NAT64_LOCAL_USE:
+        return False
+    if address in NAT64_WELL_KNOWN:
+        return ipaddress.IPv4Address(int(address) & 0xffffffff).is_global
+    # Python's IPv6 is_global classification varies across supported versions.
+    for embedded in (address.ipv4_mapped, address.sixtofour):
+        if embedded is not None and not embedded.is_global:
+            return False
+    return address.teredo is None or all(part.is_global for part in address.teredo)
+
+
+def connect_public_address(address, timeout, source_address=None):
+    """Resolve once and connect to that address, refusing non-public DNS answers."""
+    host, port = address
+    answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    # Refuse mixed answers too: reconnecting after an error must never choose a LAN IP.
+    if not answers or any(not public_registry_ip(ipaddress.ip_address(item[4][0])) for item in answers):
+        raise OSError('Registry host resolves to a non-public address')
+    last_error = None
+    for family, kind, proto, _, sockaddr in answers:
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as e:
+            last_error = e
+            sock.close()
+    raise last_error
+
+
+class PublicHTTPSConnection(http.client.HTTPSConnection):
+    """Use the checked DNS answer while HTTPS keeps the original hostname for TLS."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = connect_public_address
+
+
+class PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    """Apply the address check to each request, including redirect targets."""
+
+    def https_open(self, req):
+        # HTTPSHandler stores hostname verification in its SSL context on newer Python.
+        return self.do_open(PublicHTTPSConnection, req, context=self._context)
+
+
 def to_url(ref):
     if URL_SCHEME_RE.match(ref):
         return ref
@@ -253,7 +320,12 @@ def fetch_bytes(url):
     if scheme != 'https':
         raise ExtError(f'Refusing non-https URL: {url}')
 
-    opener = urllib.request.build_opener(HttpsOnlyRedirect)
+    # The UI may add a registry by URL. Pin the checked IP at connection time so
+    # DNS rebinding and HTTPS redirects cannot reach services on the printer LAN.
+    handlers = [urllib.request.ProxyHandler({}), HttpsOnlyRedirect]
+    if not local_sources_allowed:
+        handlers.append(PublicHTTPSHandler())
+    opener = urllib.request.build_opener(*handlers)
     request = urllib.request.Request(url, headers={'User-Agent': 'tessera-ext'})
     try:
         with opener.open(request, timeout=NETWORK_TIMEOUT) as res:
@@ -1439,26 +1511,33 @@ def remove_service(pid, name):
 
 def check_proxy_path(raw_path, decl):
     """
-    The path is forwarded as sent (still percent-encoded); the check runs on its decoded
-    form, so `%2e%2e` cannot climb out of an allowed prefix.
+    Validate one decoded path and return the canonical encoded path sent upstream.
+    Canonicalization keeps the checked and forwarded paths identical after one decode.
     """
-    decoded = urllib.parse.unquote(raw_path)
+    try:
+        decoded = urllib.parse.unquote(raw_path, errors='strict')
+    except UnicodeDecodeError as e:
+        raise ExtError('Invalid service path', 400) from e
     if (not decoded or decoded.startswith('/') or '\\' in decoded or CONTROL_RE.search(decoded)
-            or any(seg in ('.', '..') for seg in decoded.split('/'))):
+            or any(seg in ('.', '..') for seg in decoded.split('/'))
+            or re.search(r'%[0-9A-Fa-f]{2}', decoded)):
         raise ExtError('Invalid service path', 400)
-    if not any(decoded.startswith(prefix) for prefix in decl['allowPaths']):
+    if not any(decoded.startswith(prefix) if prefix.endswith('/')
+               else decoded == prefix or decoded.startswith(prefix + '/')
+               for prefix in decl['allowPaths']):
         raise ExtError(f'Path not allowed by the plugin manifest: {clean(decoded)}', 403)
+    return urllib.parse.quote(decoded, safe='/')
 
 
 def proxy_request(pid, name, method, raw_path, query, headers, body):
     """Forwards one request to the service. → (status, content type, body bytes)."""
     decl = service_declaration(pid, name)
-    check_proxy_path(raw_path, decl)
+    safe_path = check_proxy_path(raw_path, decl)
     entry = read_services().get(pid, {}).get(name)
     if not entry:
         raise ExtError(f'The service "{clean(name)}" of {clean(pid)} is not set up', 409)
 
-    url = f'{entry["url"]}/{raw_path}' + (f'?{query}' if query else '')
+    url = f'{entry["url"]}/{safe_path}' + (f'?{query}' if query else '')
     request = urllib.request.Request(url, data=body if body else None, method=method)
     request.add_header('User-Agent', 'Tessera')
     for header in PROXY_REQUEST_HEADERS:

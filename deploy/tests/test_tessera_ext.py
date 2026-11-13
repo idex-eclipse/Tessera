@@ -9,6 +9,7 @@ import hashlib
 import http.client
 import http.server
 import importlib.util
+import ipaddress
 import io
 import json
 import os
@@ -22,6 +23,8 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.response
+from unittest import mock
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -584,6 +587,116 @@ class SourceTests(Base):
     def test_redirect_to_http_is_refused(self):
         with self.assertRaises(ext.ExtError):
             ext.HttpsOnlyRedirect().redirect_request(None, None, 302, '', {}, 'http://example.com/a')
+
+    def test_registry_dns_answers_are_checked_before_connecting(self):
+        # A public name may resolve to a LAN address, including after a redirect.
+        original = ext.socket.getaddrinfo
+        self.addCleanup(setattr, ext.socket, 'getaddrinfo', original)
+        ext.socket.getaddrinfo = lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 443))]
+        with self.assertRaisesRegex(OSError, 'non-public'):
+            ext.connect_public_address(('registry.example', 443), 1)
+
+    def test_registry_dns_refuses_mixed_public_and_private_answers(self):
+        # A fallback address must not bypass the connection-time check.
+        original = ext.socket.getaddrinfo
+        self.addCleanup(setattr, ext.socket, 'getaddrinfo', original)
+        ext.socket.getaddrinfo = lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('10.0.0.1', 443))]
+        with self.assertRaisesRegex(OSError, 'non-public'):
+            ext.connect_public_address(('registry.example', 443), 1)
+
+    def test_registry_blocks_private_ipv4_inside_ipv6(self):
+        # An IPv6 address can pass is_global while a translator reaches private IPv4.
+        blocked = ('64:ff9b::a00:1', '64:ff9b::7f00:1',
+                   '64:ff9b:1::a00:1', '::ffff:10.0.0.1',
+                   '2002:0a00:0001::1', '2001:0:0a00:0001:0:0:f5ff:fffe')
+        for value in blocked:
+            with self.subTest(address=value):
+                sockaddr = (value, 443, 0, 0)
+                answer = (socket.AF_INET6, socket.SOCK_STREAM, 6, '', sockaddr)
+                with mock.patch.object(ext.socket, 'getaddrinfo', return_value=[answer]), \
+                     mock.patch.object(ext.socket, 'socket', side_effect=AssertionError('connected')):
+                    with self.assertRaisesRegex(OSError, 'non-public'):
+                        ext.connect_public_address(('registry.example', 443), 1)
+
+    def test_registry_rejects_mixed_public_and_nat64_private_answers(self):
+        # The public fallback must not hide a translated private destination.
+        answers = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443)),
+                   (socket.AF_INET6, socket.SOCK_STREAM, 6, '', ('64:ff9b::a00:1', 443, 0, 0))]
+        with mock.patch.object(ext.socket, 'getaddrinfo', return_value=answers), \
+             mock.patch.object(ext.socket, 'socket', side_effect=AssertionError('connected')):
+            with self.assertRaisesRegex(OSError, 'non-public'):
+                ext.connect_public_address(('registry.example', 443), 1)
+
+    def test_registry_rejects_site_local_and_multicast_addresses(self):
+        # Address scope must win even when a Python version reports is_global.
+        for value in ('fec0::1', 'fec0::1234', '224.0.0.1', '239.255.255.250',
+                      'ff02::1', 'ff05::1'):
+            with self.subTest(address=value):
+                self.assertFalse(ext.public_registry_ip(ipaddress.ip_address(value)))
+
+    def test_https_redirect_to_private_nat64_is_refused(self):
+        # A redirect is another HTTPS open and must pass the same connector check.
+        ext.local_sources_allowed = False
+        seen = []
+        original_url = 'https://registry.example/registry.json'
+        redirected_url = 'https://cdn.example/archive.tar.gz'
+
+        def fake_open(handler, connection_class, request, **_kwargs):
+            seen.append((connection_class, request.full_url, _kwargs['context'].check_hostname))
+            if request.full_url == original_url:
+                response = urllib.response.addinfourl(io.BytesIO(), {'location': redirected_url},
+                                                      original_url, 302)
+                response.msg = 'Found'
+                return response
+            connection_class('cdn.example')._create_connection(('cdn.example', 443), 1)
+            raise AssertionError('connected to a private address')
+
+        answer = (socket.AF_INET6, socket.SOCK_STREAM, 6, '', ('64:ff9b::a00:1', 443, 0, 0))
+        with mock.patch.object(ext.PublicHTTPSHandler, 'do_open', fake_open), \
+             mock.patch.object(ext.socket, 'getaddrinfo', return_value=[answer]), \
+             mock.patch.object(ext.socket, 'socket', side_effect=AssertionError('connected')):
+            with self.assertRaisesRegex(ext.ExtError, 'non-public'):
+                ext.fetch_bytes(original_url)
+        self.assertEqual([url for _, url, _ in seen], [original_url, redirected_url])
+        self.assertTrue(all(cls is ext.PublicHTTPSConnection and check_hostname
+                            for cls, _, check_hostname in seen))
+
+    def test_registry_allows_public_ipv4_embedded_and_native_addresses(self):
+        # Public NAT64 destinations remain usable, alongside ordinary IPv4 and IPv6.
+        for value in ('8.8.8.8', '1.1.1.1', '64:ff9b::808:808',
+                      '2001:4860:4860::8888', '2606:4700:4700::1111'):
+            with self.subTest(address=value):
+                self.assertTrue(ext.public_registry_ip(ipaddress.ip_address(value)))
+
+    def test_registry_connects_to_the_checked_ip(self):
+        # The connector must not resolve the hostname a second time after validation.
+        seen = []
+        class FakeSocket:
+            def __init__(self, *_args):
+                pass
+            def settimeout(self, value):
+                seen.append(('timeout', value))
+            def connect(self, address):
+                seen.append(('connect', address))
+            def close(self):
+                seen.append(('close', None))
+        original_dns, original_socket = ext.socket.getaddrinfo, ext.socket.socket
+        self.addCleanup(setattr, ext.socket, 'getaddrinfo', original_dns)
+        self.addCleanup(setattr, ext.socket, 'socket', original_socket)
+        ext.socket.socket = FakeSocket
+        for value, family in (('8.8.8.8', socket.AF_INET),
+                              ('64:ff9b::808:808', socket.AF_INET6),
+                              ('2001:4860:4860::8888', socket.AF_INET6)):
+            with self.subTest(address=value):
+                sockaddr = (value, 443) if family == socket.AF_INET else (value, 443, 0, 0)
+                ext.socket.getaddrinfo = lambda *_args, **_kwargs: [
+                    (family, socket.SOCK_STREAM, 6, '', sockaddr)]
+                seen.clear()
+                self.assertIsInstance(ext.connect_public_address(('registry.example', 443), 1), FakeSocket)
+                self.assertEqual(seen, [('timeout', 1), ('connect', sockaddr)])
 
     def test_service_takes_https_only(self):
         ext.local_sources_allowed = False
@@ -1457,15 +1570,26 @@ class ServiceTests(Base):
 
     def test_proxy_paths(self):
         decl = ext.manifest_services({'services': [SERVICE_DECL]})['obico']
-        ext.check_proxy_path('api/v1/printers/', decl)
-        ext.check_proxy_path('media/tsd-pics/a%20b.jpg', decl)
+        self.assertEqual(ext.check_proxy_path('api/v1/printers/', decl), 'api/v1/printers/')
+        self.assertEqual(ext.check_proxy_path('media/tsd-pics/a%20b.jpg', decl),
+                         'media/tsd-pics/a%20b.jpg')
         for path, status in (('admin/', 403), ('api/v2/x', 403), ('', 400), ('/api/v1/', 400),
                              ('api/v1/../../admin/', 400), ('api/v1/%2e%2e/%2e%2e/admin/', 400),
-                             ('api/v1/a%5c..%5cb', 400), ('api/v1/%0d%0a', 400)):
+                              ('api/v1/a%5c..%5cb', 400), ('api/v1/%0d%0a', 400),
+                              ('api/v1/%252e%252e/admin/', 400), ('api/v1/%ff', 400)):
             with self.subTest(path=path):
                 with self.assertRaises(ext.ExtError) as e:
                     ext.check_proxy_path(path, decl)
                 self.assertEqual(e.exception.status, status)
+
+        # A manifest prefix without a slash may name only that segment.
+        broad = {'allowPaths': ['api']}
+        self.assertEqual(ext.check_proxy_path('api/ok', broad), 'api/ok')
+        self.assertEqual(ext.check_proxy_path('api', broad), 'api')
+        for path in ('api-private', 'apis/x'):
+            with self.subTest(path=path), self.assertRaises(ext.ExtError) as e:
+                ext.check_proxy_path(path, broad)
+            self.assertEqual(e.exception.status, 403)
 
     def test_services_paths(self):
         self.assertEqual(ext.parse_services_path('services/acme%2Fsvc/obico'), ('acme/svc', 'obico', None))

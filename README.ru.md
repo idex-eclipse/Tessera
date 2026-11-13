@@ -217,8 +217,9 @@ regex-фильтры сообщений и настройки reverse/autoscroll
 ### Одной строкой (Armbian / Debian)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
-  -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
+(tmp="$(mktemp)" && trap 'rm -f "$tmp"' EXIT && \
+  curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+    -o "$tmp" && bash "$tmp")
 ```
 
 Установщик открывает меню в стиле kiauh. Выберите **1) Install** и ответьте на
@@ -236,8 +237,8 @@ Klipper. Ветка и «плагины по URL» берутся из **S) Sett
 <a id="installer-menu"></a>
 ### Меню установщика: `tessera`
 
-После установки то же меню открывает команда `tessera`. `/tmp/tessera-install.sh`
-больше не нужен. Навигация как в kiauh: буква или цифра, затем Enter.
+После установки то же меню открывает команда `tessera`. Временный файл установщика
+удаляется автоматически. Навигация как в kiauh: буква или цифра, затем Enter.
 
 ```
 ╔═══════════════════════════════════════════════════════╗

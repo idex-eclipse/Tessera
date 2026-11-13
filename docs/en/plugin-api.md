@@ -328,7 +328,7 @@ host, like installing plugins.
 | `name` | unique within the plugin, `[a-z0-9][a-z0-9-]{0,31}` |
 | `authHeader` | header that carries the secret (`X-Api-Key`, `Authorization`, …); none — the service takes no secret. Headers the proxy owns (`Host`, `Cookie`, `Content-Type`, `Accept`, …) are refused |
 | `authPrefix` | text before the secret, e.g. `"Bearer "`; default none |
-| `allowPaths` | 1–20 path prefixes the proxy forwards, relative to the service address, no leading `/`, no `..` |
+| `allowPaths` | 1–20 path prefixes the proxy forwards, relative to the service address, no leading `/`, no `..`; a prefix without a trailing `/` matches a whole path segment |
 
 An invalid declaration is ignored as a whole: the service then does not exist for the proxy.
 
@@ -368,7 +368,8 @@ await api.services.fetch('obico', `api/v1/printers/${id}/`, {
 ```
 
 - `path` is relative to the service address: no leading slash, already percent-encoded, may
-  carry `?query`. It must start with one of `allowPaths`.
+  carry `?query`. Its decoded path must match an `allowPaths` prefix at a whole segment
+  boundary. The proxy sends a canonical encoded path and refuses double-encoded escapes.
 - The answer of the service comes back as a `Response` **whatever its status** (a 404 of the
   service is a 404 `Response`). Redirects are not followed: the proxy refuses them, so check
   trailing slashes in your paths.

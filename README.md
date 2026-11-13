@@ -219,8 +219,9 @@ Optional companions:
 ### One-liner (Armbian / Debian)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
-  -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
+(tmp="$(mktemp)" && trap 'rm -f "$tmp"' EXIT && \
+  curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+    -o "$tmp" && bash "$tmp")
 ```
 
 The installer opens a kiauh-style menu. Choose **1) Install** and answer four
@@ -238,8 +239,8 @@ directory. The branch and "plugins by URL" come from **S) Settings**: defaults a
 <a id="installer-menu"></a>
 ### Installer menu: `tessera`
 
-After installation the same menu is the `tessera` command. `/tmp/tessera-install.sh`
-is no longer needed. Navigation works like kiauh: type a letter or number, then press
+After installation the same menu is the `tessera` command. The temporary installer
+file is removed automatically. Navigation works like kiauh: type a letter or number, then press
 Enter.
 
 ```

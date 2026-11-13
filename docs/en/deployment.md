@@ -322,8 +322,13 @@ write to `extensions/`.
   `{"url": "https://…", "name": "optional"}` and `repo-remove` takes `{"name": "…"}`. This is
   the only place where an address comes from a request, so it is narrow: `https://` only, no
   login or password in the address, no `localhost` or private IP address, at most 300
-  characters, and the registry must parse as a valid `registry.json` before it is saved. The
-  same Moonraker check, `Origin` check and `application/json` rule apply as for installs.
+  characters, and the registry must parse as a valid `registry.json` before it is saved.
+  The service also refuses DNS answers that contain a non-public IP, multicast IP or IPv6
+  site-local IP at connection time, including after an HTTPS redirect. For known IPv4-in-IPv6
+  formats (the well-known NAT64 prefix, IPv4-mapped, 6to4 and Teredo), the embedded IPv4
+  must be public too. An unknown
+  network-specific NAT64 prefix cannot be identified from the address alone. The same
+  Moonraker check, `Origin` check and `application/json` rule apply as for installs.
 - **Moonraker checks permissions.** For each request the service forwards `Authorization`,
   `X-Api-Key`, `X-Real-IP` and `X-Forwarded-For` to `GET /access/user`. Anything but 200 is
   a refusal. JWT, API keys, `trusted_clients` and `force_logins` work as they do in
@@ -356,6 +361,8 @@ must not live in the browser. The plugin side is described in
   that carries the secret and the allowed path prefixes. A request sets only the address and
   the secret, so it cannot point the secret at another header or path. A plugin that is not in
   `extensions/` (added by URL) has no services.
+  Prefixes without a trailing slash match a whole path segment; the proxy sends the
+  validated path in canonical percent-encoded form and refuses double-encoded escapes.
 - **The secret stays on the printer.** Addresses and secrets are kept in
   `~/.config/tessera/services/services.json` (folder `0700`, file `0600`), outside
   `extensions/`, which nginx serves. The API answers whether a secret is set, never its value.
@@ -453,8 +460,9 @@ Klipper configs. Nothing is built on the printer: it needs neither Vite nor Node
 as a kiauh-style menu:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
-  -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
+(tmp="$(mktemp)" && trap 'rm -f "$tmp"' EXIT && \
+  curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+    -o "$tmp" && bash "$tmp")
 ```
 
 After installation the `tessera` command opens the same menu.
@@ -521,7 +529,8 @@ Environment variables override `install.conf`:
 | `TESSERA_UI_UPDATE` | previous choice (`1` on first install) | `1` = update Tessera from the UI (the `tessera-update-manager` service); `0` = `tessera` command only |
 | `TESSERA_ARCHIVE` | none | install from this file instead of the published build |
 
-The script does not run as root. Every install and update regenerates
+The script does not run as root. Generated nginx, systemd and Klipper configs are held in
+a private temporary directory until installed. Every install and update regenerates
 `extensions/index.json`. Details are in `deploy/install.sh` itself.
 
 ---

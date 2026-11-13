@@ -2,8 +2,9 @@
 # Tessera installer — Armbian/Debian-first, best-effort universal.
 #
 # First install (interactive menu):
-#   curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
-#     -o /tmp/tessera-install.sh && bash /tmp/tessera-install.sh
+#   (tmp="$(mktemp)" && trap 'rm -f "$tmp"' EXIT && \
+#     curl -fsSL https://raw.githubusercontent.com/idex-eclipse/tessera/main/deploy/install.sh \
+#       -o "$tmp" && bash "$tmp")
 # Afterwards the menu is the `tessera` command (Install / Update / Remove / Settings / Extensions).
 #
 # Without the menu:
@@ -29,12 +30,23 @@ if [ -z "${TESSERA_INSTALLER_COPY:-}" ] && [ "$(basename "$(dirname "$SELF")")" 
 fi
 
 STAGING=""
+PRIVATE_TMP=""
 cleanup() {
   [ -z "$STAGING" ] || rm -rf "$STAGING"
+  [ -z "$PRIVATE_TMP" ] || rm -rf "$PRIVATE_TMP"
   # run_action subshells end here too, and the menu still runs from the copy.
   [ "$BASH_SUBSHELL" != 0 ] || [ -z "${TESSERA_INSTALLER_COPY:-}" ] || rm -f "$TESSERA_INSTALLER_COPY"
 }
 trap cleanup EXIT
+
+# Keep generated service and nginx files out of shared /tmp while sudo reads them.
+prepare_private_tmp() {
+  if [ -z "$PRIVATE_TMP" ]; then
+    PRIVATE_TMP="$(mktemp -d /tmp/tessera-config.XXXXXX)"
+    # Bash action subshells do not inherit the parent's EXIT trap.
+    trap cleanup EXIT
+  fi
+}
 
 # ---------------------------------------------------------------- environment
 NO_PROMPT="${TESSERA_NO_PROMPT:-0}"
@@ -487,18 +499,19 @@ step_fetch() {
 # Writes /usr/local/bin/<name> that runs a script of this installation.
 install_command() { # install_command PATH SCRIPT
   dry "create $1 → $2" && return 0
+  prepare_private_tmp
   {
     printf '#!/usr/bin/env bash\n'
     printf '# Installed by Tessera deploy/install.sh for %s\n' "$INSTALL_DIR"
     printf 'export TESSERA_DIR="${TESSERA_DIR:-%s}"\n' "$INSTALL_DIR"
     printf 'exec bash %q "$@"\n' "$2"
-  } > /tmp/tessera-cmd
-  if $SUDO install -m 755 /tmp/tessera-cmd "$1"; then
+  } > "$PRIVATE_TMP/tessera-cmd"
+  if $SUDO install -m 755 "$PRIVATE_TMP/tessera-cmd" "$1"; then
     log "command: $(basename "$1")"
   else
     warn "could not create $1 — use: bash $2"
   fi
-  rm -f /tmp/tessera-cmd
+  rm -f "$PRIVATE_TMP/tessera-cmd"
 }
 
 step_extensions() {
@@ -554,8 +567,9 @@ step_service() {
   mkdir -p "$cfg_dir" "$INSTALL_DIR/extensions" "$cfg_dir/services"
   # Addresses and secrets of plugin services (api.services): owner only.
   chmod 700 "$cfg_dir/services"
+  prepare_private_tmp
 
-  cat > /tmp/tessera-ext.socket <<SOCKET
+  cat > "$PRIVATE_TMP/tessera-ext.socket" <<SOCKET
 [Unit]
 Description=Tessera extensions API socket
 
@@ -568,7 +582,7 @@ SocketMode=0660
 WantedBy=sockets.target
 SOCKET
 
-  cat > /tmp/tessera-ext.service <<SERVICE
+  cat > "$PRIVATE_TMP/tessera-ext.service" <<SERVICE
 [Unit]
 Description=Tessera extensions API (install plugins from the UI)
 Requires=tessera-ext.socket
@@ -592,9 +606,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=128M
 SERVICE
 
-  $SUDO install -m 644 /tmp/tessera-ext.socket "$UNIT_SOCKET"
-  $SUDO install -m 644 /tmp/tessera-ext.service "$UNIT_SERVICE"
-  rm -f /tmp/tessera-ext.socket /tmp/tessera-ext.service
+  $SUDO install -m 644 "$PRIVATE_TMP/tessera-ext.socket" "$UNIT_SOCKET"
+  $SUDO install -m 644 "$PRIVATE_TMP/tessera-ext.service" "$UNIT_SERVICE"
+  rm -f "$PRIVATE_TMP/tessera-ext.socket" "$PRIVATE_TMP/tessera-ext.service"
   if $SUDO systemctl daemon-reload &&
      $SUDO systemctl enable tessera-ext.socket >/dev/null 2>&1 &&
      $SUDO systemctl restart tessera-ext.socket; then
@@ -640,8 +654,9 @@ step_update_service() {
   group="$(nginx_group)" || { warn "cannot find the nginx user: Tessera cannot be updated from the UI"; return 0; }
   cfg_dir="$(dirname "$CONF_FILE")"
   mkdir -p "$cfg_dir"
+  prepare_private_tmp
 
-  cat > /tmp/tessera-update-manager.socket <<SOCKET
+  cat > "$PRIVATE_TMP/tessera-update-manager.socket" <<SOCKET
 [Unit]
 Description=Tessera update manager API socket
 
@@ -654,7 +669,7 @@ SocketMode=0660
 WantedBy=sockets.target
 SOCKET
 
-  cat > /tmp/tessera-update-manager.service <<SERVICE
+  cat > "$PRIVATE_TMP/tessera-update-manager.service" <<SERVICE
 [Unit]
 Description=Tessera update manager (update the UI from its settings)
 Requires=tessera-update-manager.socket
@@ -678,9 +693,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=128M
 SERVICE
 
-  $SUDO install -m 644 /tmp/tessera-update-manager.socket "$UNIT_UPD_SOCKET"
-  $SUDO install -m 644 /tmp/tessera-update-manager.service "$UNIT_UPD_SERVICE"
-  rm -f /tmp/tessera-update-manager.socket /tmp/tessera-update-manager.service
+  $SUDO install -m 644 "$PRIVATE_TMP/tessera-update-manager.socket" "$UNIT_UPD_SOCKET"
+  $SUDO install -m 644 "$PRIVATE_TMP/tessera-update-manager.service" "$UNIT_UPD_SERVICE"
+  rm -f "$PRIVATE_TMP/tessera-update-manager.socket" "$PRIVATE_TMP/tessera-update-manager.service"
   if $SUDO systemctl daemon-reload &&
      $SUDO systemctl enable tessera-update-manager.socket >/dev/null 2>&1 &&
      $SUDO systemctl restart tessera-update-manager.socket; then
@@ -699,6 +714,7 @@ step_nginx() {
   fi
   nginx_paths
   dry "nginx site $NGINX_AV/tessera (port $PORT → $BUILD_DIR, Moonraker $MOONRAKER, CSP: $(remote_summary)), nginx -t, reload" && return 0
+  prepare_private_tmp
 
   # A port held by our own site (update) is not a conflict.
   if ! grep -qsE "listen +$PORT;" "$NGINX_AV/tessera" &&
@@ -712,16 +728,16 @@ step_nginx() {
 
   # map for websocket upgrade: create only if not already in nginx config
   if ! $SUDO grep -rq 'map \$http_upgrade' /etc/nginx 2>/dev/null; then
-    cat > /tmp/tessera-upgrade-map.conf <<'MAP'
+    cat > "$PRIVATE_TMP/tessera-upgrade-map.conf" <<'MAP'
 map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
 }
 MAP
-    $SUDO install -m 644 /tmp/tessera-upgrade-map.conf /etc/nginx/conf.d/tessera-upgrade-map.conf
+    $SUDO install -m 644 "$PRIVATE_TMP/tessera-upgrade-map.conf" /etc/nginx/conf.d/tessera-upgrade-map.conf
   fi
 
-  cat > /tmp/tessera-nginx.conf <<'NGINX'
+  cat > "$PRIVATE_TMP/tessera-nginx.conf" <<'NGINX'
 server {
     listen @PORT@;
     listen [::]:@PORT@;
@@ -830,9 +846,9 @@ server {
 NGINX
   local csp_line="$CSP_ON"; [ "$ALLOW_REMOTE" = 1 ] && csp_line="$CSP_OFF"
   sed -i "s|@PORT@|$PORT|g; s|@MOONRAKER@|$MOONRAKER|g; s|@BUILD_DIR@|$BUILD_DIR|g; s|@INSTALL_DIR@|$INSTALL_DIR|g; s|@CSP@|$csp_line|g" \
-    /tmp/tessera-nginx.conf
+    "$PRIVATE_TMP/tessera-nginx.conf"
 
-  $SUDO install -m 644 /tmp/tessera-nginx.conf "$NGINX_AV/tessera"
+  $SUDO install -m 644 "$PRIVATE_TMP/tessera-nginx.conf" "$NGINX_AV/tessera"
   [ -n "$NGINX_EN" ] && $SUDO ln -sf "$NGINX_AV/tessera" "$NGINX_EN/tessera"
   $SUDO nginx -t || die "nginx -t failed — edit $NGINX_AV/tessera manually"
   # nginx may be installed but stopped: then a plain reload fails.
@@ -849,9 +865,10 @@ step_klipper() {
     return 0
   fi
   dry "write $KLIPPER_CFG_DIR/tessera-shell.cfg, include it in printer.cfg if gcode_shell_command exists" && return 0
+  prepare_private_tmp
   mkdir -p "$KLIPPER_CFG_DIR/shapers"
 
-  cat > /tmp/tessera-shell.cfg <<'CFG'
+  cat > "$PRIVATE_TMP/tessera-shell.cfg" <<'CFG'
 # Tessera — shaper/belt graphs via gcode_shell_command.
 # REQUIRES Klipper extension "gcode_shell_command" (install manually via kiauh!).
 # UI sends RUN_SHELL_COMMAND CMD=tessera_graph_x|tessera_graph_y|tessera_graph_belts
@@ -875,10 +892,10 @@ command: bash -c "mkdir -p @CFG_DIR@/shapers && python3 @KLIPPER_DIR@/scripts/gr
 timeout: 180
 verbose: True
 CFG
-  sed -i "s|@CFG_DIR@|$KLIPPER_CFG_DIR|g; s|@KLIPPER_DIR@|$KLIPPER_DIR|g" /tmp/tessera-shell.cfg
+  sed -i "s|@CFG_DIR@|$KLIPPER_CFG_DIR|g; s|@KLIPPER_DIR@|$KLIPPER_DIR|g" "$PRIVATE_TMP/tessera-shell.cfg"
 
   # Script is running as target user, no need to chown manually (which could fail without root)
-  install -m 644 /tmp/tessera-shell.cfg "$KLIPPER_CFG_DIR/tessera-shell.cfg"
+  install -m 644 "$PRIVATE_TMP/tessera-shell.cfg" "$KLIPPER_CFG_DIR/tessera-shell.cfg"
 
   local pcfg="$KLIPPER_CFG_DIR/printer.cfg"
   if [ -f "$KLIPPER_DIR/klippy/extras/gcode_shell_command.py" ]; then
