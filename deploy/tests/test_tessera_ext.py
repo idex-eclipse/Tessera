@@ -645,7 +645,10 @@ class SourceTests(Base):
         redirected_url = 'https://cdn.example/archive.tar.gz'
 
         def fake_open(handler, connection_class, request, **_kwargs):
-            seen.append((connection_class, request.full_url, _kwargs['context'].check_hostname))
+            # Python 3.8 passes None to select the default verifying TLS context.
+            context = _kwargs['context']
+            seen.append((connection_class, request.full_url,
+                         context is None or context.check_hostname))
             if request.full_url == original_url:
                 response = urllib.response.addinfourl(io.BytesIO(), {'location': redirected_url},
                                                       original_url, 302)
