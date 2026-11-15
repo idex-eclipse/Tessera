@@ -1527,7 +1527,19 @@ function readPrinterSettings(
     {},
   );
 
-  return normalizePrinterSettings(value);
+  const normalized = normalizePrinterSettings(value);
+  // The former Obico detection card is now a Camera tab. Persist the removal so
+  // imported and remotely synchronized layouts cannot leave a missing-widget card.
+  if (isRecord(value) && Array.isArray(value.dashboardLayout) &&
+      value.dashboardLayout.some(isLegacyObicoDetectionWidget)) {
+    writeJson(storage, printerSettingsStorageKey(printerId), normalized);
+  }
+  return normalized;
+}
+
+/** Identifies only the retired Obico widget, leaving other providers untouched. */
+function isLegacyObicoDetectionWidget(value: unknown): boolean {
+  return isRecord(value) && value.type === 'obico-detection' && value.provider === 'tessera/obico';
 }
 
 function normalizePrinterSettings(value: unknown): PrinterSettingsState {
@@ -1611,6 +1623,8 @@ function normalizeDashboardLayout(value: unknown): DashboardWidgetLayoutItem[] {
   const result: DashboardWidgetLayoutItem[] = [];
 
   for (const item of value) {
+    // Layouts may arrive from older browsers through import or Moonraker sync.
+    if (isLegacyObicoDetectionWidget(item)) continue;
     if (!isRecord(item)) {
       continue;
     }
