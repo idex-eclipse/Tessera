@@ -27,6 +27,14 @@
     if (!store.active) viewerOpen = false;
   });
 
+  // Switching away from the live view releases its stream and closes the enlarged viewer.
+  $effect(() => {
+    if (store.activeTab !== 'live') {
+      viewerOpen = false;
+      fps = null;
+    }
+  });
+
   function closeViewer(): void {
     viewerOpen = false;
     picEl?.focus();
@@ -87,6 +95,7 @@
 <!-- widget-camera (replacement): the whole widget body; the viewer and the dialogs below belong to the original and stay outside. The header (CameraHeader) is a separate element, replace it with header-camera too -->
 <ExtensionPoint point="widget-camera">
   {#snippet original()}
+    {#if store.activeTab === 'live'}
     <div class="cam-widget">
       {#if !store.active}
         <div class="no-cam">
@@ -159,6 +168,11 @@
         </div>
       {/if}
     </div>
+    {:else}
+      <div class="extension-tab">
+        <ExtensionPoint point="camera-tabs" only={store.activeTab} />
+      </div>
+    {/if}
   {/snippet}
 </ExtensionPoint>
 
@@ -196,6 +210,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
+  }
+
+  /* The extension fills the same card body even when no Moonraker webcam is configured. */
+  .extension-tab {
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
   }
 
   .stage {

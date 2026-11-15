@@ -14,7 +14,7 @@ import { sliderPoints } from '../shared/slider-field/extension-points';
 export const widgetsCoreManifest: PluginManifest = {
   id: '@core/widgets',
   name: 'Core Widgets',
-  version: '3.0.0',
+  version: '3.1.0',
   entry: '/plugins/widgets-core/index.js',
   pages: [],
   widgets: [...temperatureWidgets, ...macrosWidgets, 
@@ -24,7 +24,7 @@ export const widgetsCoreManifest: PluginManifest = {
     ...filamentChips], 
   printerPanels: [...cameraFleet, ...toolsFleet, ...temperatureFleet],
   // Extensions replace whole widgets and their headers, large parts of Temperature / Tools / Camera, and
-  // add panels to Temperature and Tools. All points are version 1; ids are unique across the plugin, so
+  // add panels to Temperature and Tools and tabs to Camera. All points are version 1; ids are unique across the plugin, so
   // they are prefixed by widget. The slider point belongs to the shared SliderField used by Tools, Outputs,
   // Limits, LEDs and the Outputs / Tuning chips.
   // Not extensible on purpose: chips as a whole, fleet panels (they get the printer id from the host and the

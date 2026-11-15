@@ -22,6 +22,8 @@ export const cameraFleet: PrinterPanelContribution[] = [
 
 /** Extension points of this feature (all version 1), collected in the plugin manifest. */
 export const cameraPoints: ExtensionPointDecl[] = [
+  // Additional views share the Camera card and its built-in live stream tab.
+  { id: 'camera-tabs', kind: 'tab', mode: 'append', version: 1, titleKey: 'widgets.ext.cameraTabs' },
   // the whole widget body; its header is a separate element (header-camera)
   { id: 'widget-camera', kind: 'element', mode: 'replacement', version: 1, titleKey: 'widgets.ext.widgetCamera' },
   // the header bar; replace it together with the body
