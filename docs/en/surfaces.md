@@ -867,6 +867,7 @@ The file to show comes in `?file=` (page) and `?preview=` (widget), as for the o
 | `tools-extrude`, `tools-speed-flow`, `tools-pa`, `tools-retraction` | element | replacement | the body of the respective accordion section (the section header and its open state stay) |
 | `tools-sections` | panel | append | extra accordion sections after the built-in ones |
 | `camera-stream` | element | alternative | the camera stream; the original player stays one choice away (right-click or long press) |
+| `camera-tabs` (since `@core/widgets` 3.1.0) | tab | append | extra views of the Camera widget; buttons appear in its header beside the built-in live camera tab |
 | `slider` | element | replacement | every slider of the plugin, in widgets and chips (see below) |
 
 **Replace the header together with the body.** The buttons and menus of a header (the edit
@@ -881,6 +882,11 @@ through the guards itself, they are not inherited. `camera-stream` gets the came
 `flipVertical`, `targetFps`. The URLs are passed as stored, so a relative one is resolved
 against `api.printer.url`. The two `panel` points use the host panel shell, whose look matches the
 accordion sections of the widget.
+
+`camera-tabs` mounts the selected contribution with its own plugin API and no params. Its
+button is shown while the extension is enabled, even when no camera or external service is
+configured. The live camera is selected by default; the choice lasts for the current session
+per printer. A removed extension returns the widget to the live camera.
 
 Not extensible on purpose: chips as a whole, fleet panels (the host gives them the printer id
 and the plugin settings are still bound to the active printer), the Macros groups and the
