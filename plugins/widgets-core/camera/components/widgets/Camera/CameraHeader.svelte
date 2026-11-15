@@ -4,10 +4,24 @@
   import { isRtl } from '../../../../../shared/popover-align';
 
   import { useCameras } from '../../../data/use-cameras.svelte.ts';
+  import type { ExtensionRef } from '../../../../../../plugin-sdk/src/types';
 
   const api = useWidget();
   const i18n = useI18n();
   const store = useCameras(api);
+
+  // Extension changes can add or remove tabs while this header remains mounted.
+  let extensionVersion = $state(0);
+  $effect(() => api.extensions.onChange(() => extensionVersion++));
+  let extensionTabs = $derived.by<ExtensionRef[]>(() => {
+    void extensionVersion;
+    return api.extensions.list('camera-tabs');
+  });
+  $effect(() => {
+    if (store.activeTab !== 'live' && !extensionTabs.some((tab) => tab.ref === store.activeTab)) {
+      store.setActiveTab('live');
+    }
+  });
 
   let menuOpen = $state(false);
   let btnEl = $state<HTMLButtonElement | null>(null);
@@ -39,6 +53,20 @@
 <ExtensionPoint point="header-camera">
   {#snippet original()}
     <div class="hdr">
+      {#if extensionTabs.length > 0}
+        <div class="tabs" role="tablist" aria-label={i18n.t('widgets.camera.views')}>
+          <button class="tab" class:active={store.activeTab === 'live'} role="tab"
+            aria-selected={store.activeTab === 'live'} onclick={() => store.setActiveTab('live')}>
+            {i18n.t('widgets.camera.live')}
+          </button>
+          {#each extensionTabs as tab (tab.ref)}
+            <button class="tab" class:active={store.activeTab === tab.ref} role="tab"
+              aria-selected={store.activeTab === tab.ref} onclick={() => store.setActiveTab(tab.ref)}>
+              {tab.title}
+            </button>
+          {/each}
+        </div>
+      {/if}
       <button
         class="hdr-btn"
         class:active={menuOpen}
@@ -81,7 +109,34 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
+    min-width: 0;
+    max-width: 100%;
   }
+
+  /* Long translations scroll inside the card header, preserving the settings button at narrow widths. */
+  .tabs {
+    display: flex;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .tab {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding-inline: var(--space-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .tab:hover { background: var(--bg-surface-hover); }
+  .tab.active { background: var(--bg-surface-active); color: var(--accent); font-weight: 600; }
+  .tab:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 
   .hdr-btn {
     display: flex;

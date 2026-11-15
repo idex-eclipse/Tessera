@@ -75,6 +75,8 @@ function createCamerasCore(api: PluginApi, printerId: string) {
 
   let cameras = $state<WebcamItem[]>([]);
   let activeName = $state<string | null>(null);
+  // The selected view is kept with this printer's camera core for the current session.
+  let activeTab = $state<string>('live');
 
   let generation = 0;
   const unsubs: Array<() => void> = [];
@@ -113,6 +115,14 @@ function createCamerasCore(api: PluginApi, printerId: string) {
   function setActive(name: string): void {
     activeName = name;
     settingsApi.set('camera.active', name);
+  }
+
+  /** Selects the built-in live view or an extension tab for this printer.
+   * @param tab The `live` view or an extension reference.
+   * @returns Nothing; the selection is kept until this session ends.
+   */
+  function setActiveTab(tab: string): void {
+    activeTab = tab;
   }
 
   // Листание по кругу среди включённых камер
@@ -233,9 +243,11 @@ function createCamerasCore(api: PluginApi, printerId: string) {
     get cameras() { return cameras; },
     get enabled() { return enabled; },
     get active() { return active; },
+    get activeTab() { return activeTab; },
     get dialog() { return dialog; },
     get toDelete() { return toDelete; },
     setActive,
+    setActiveTab,
     step,
     saveCamera,
     deleteCamera,

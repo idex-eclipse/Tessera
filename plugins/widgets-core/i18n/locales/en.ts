@@ -23,6 +23,7 @@ export const en = {
       widgetCamera: 'Camera widget: body',
       headerCamera: 'Camera widget: header',
       cameraStream: 'Camera widget: stream',
+      cameraTabs: 'Camera widget: extra views',
       widgetMacros: 'Macros widget: body',
       headerMacros: 'Macros widget: header',
       widgetLeds: 'LEDs widget: body',
@@ -259,6 +260,8 @@ export const en = {
     },
     camera: {
       title: 'Camera',
+      views: 'Camera views',
+      live: 'Live camera',
       settings: 'Camera settings',
       noCameras: 'No cameras configured',
       offline: 'Camera is offline',

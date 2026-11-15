@@ -72,9 +72,10 @@ describe('widgets-core / extension points', () => {
 
   it('has the documented kinds and modes', () => {
     const byId = new Map<string, (typeof points)[number]>(points.map((p) => [p.id, p]));
-    const replaced = points.filter((p) => !['temperature-extra', 'tools-sections', 'camera-stream'].includes(p.id));
+    const replaced = points.filter((p) => !['temperature-extra', 'tools-sections', 'camera-stream', 'camera-tabs'].includes(p.id));
     for (const p of replaced) expect(p, p.id).toMatchObject({ kind: 'element', mode: 'replacement' });
     expect(byId.get('camera-stream')).toMatchObject({ kind: 'element', mode: 'alternative' });
+    expect(byId.get('camera-tabs')).toMatchObject({ kind: 'tab', mode: 'append', version: 1 });
     expect(byId.get('temperature-extra')).toMatchObject({ kind: 'panel', mode: 'append' });
     expect(byId.get('tools-sections')).toMatchObject({ kind: 'panel', mode: 'append' });
   });
