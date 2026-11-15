@@ -261,7 +261,7 @@ export const en = {
     camera: {
       title: 'Camera',
       views: 'Camera views',
-      live: 'Live camera',
+      live: 'Live',
       settings: 'Camera settings',
       noCameras: 'No cameras configured',
       offline: 'Camera is offline',

@@ -220,6 +220,12 @@
     overflow: auto;
   }
 
+  /* The mount wrapper needs a definite height for a tab's empty state to fill the card. */
+  .extension-tab :global(.mpu-ext-item) {
+    height: 100%;
+    min-height: 0;
+  }
+
   .stage {
     flex: 1;
     min-height: 0;
