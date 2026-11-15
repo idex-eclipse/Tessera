@@ -494,6 +494,27 @@ describe('settings-store / per-printer settings', () => {
 
     expect(store.getDashboardLayout(printer.id)).toEqual([]);
   });
+
+  it('removes only the retired Obico detection card from saved and reloaded layouts', () => {
+    const storage = new MemoryStorage();
+    const printer = { id: 'printer-1', name: 'A', url: 'http://a.local' };
+    storage.setItem(SETTINGS_STORAGE_KEYS.printers, JSON.stringify([printer]));
+    const legacy = { instanceId: 'old-obico', type: 'obico-detection', provider: 'tessera/obico', x: 2, y: 3, w: 4, h: 4 };
+    const retained = { instanceId: 'other', type: 'obico-detection', provider: 'another/plugin', x: 6, y: 3, w: 3, h: 3 };
+    const camera = { instanceId: 'camera', type: 'camera', provider: '@core/widgets', x: 0, y: 0, w: 4, h: 4 };
+    const key = printerSettingsStorageKey(printer.id);
+    storage.setItem(key, JSON.stringify({ dashboardLayout: [legacy, retained, camera], dashboardLayoutCustomized: true }));
+
+    const store = createSettingsStore({ storage });
+    expect(store.getDashboardLayout(printer.id)).toEqual([retained, camera]);
+    expect(parseStored<{ dashboardLayout: unknown[] }>(storage, key)?.dashboardLayout).toEqual([retained, camera]);
+
+    // Remote sync and settings import both replace storage before this reload path runs.
+    storage.setItem(key, JSON.stringify({ dashboardLayout: [camera, legacy], dashboardLayoutCustomized: true }));
+    store.reloadFromStorage();
+    expect(store.getDashboardLayout(printer.id)).toEqual([camera]);
+    expect(parseStored<{ dashboardLayout: unknown[] }>(storage, key)?.dashboardLayout).toEqual([camera]);
+  });
 });
 
 describe('settings-store / plugin settings', () => {
