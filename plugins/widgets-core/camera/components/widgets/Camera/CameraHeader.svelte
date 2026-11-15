@@ -123,7 +123,6 @@
 
   .tab {
     flex: 0 0 auto;
-    min-height: 36px;
     padding-inline: var(--space-sm);
     border: none;
     border-radius: var(--radius-sm);
