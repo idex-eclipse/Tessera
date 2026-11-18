@@ -33,12 +33,13 @@ export function publishHostNoticeOnce(
   try { storage.setItem(HOST_NOTICE_STORAGE_KEY, JSON.stringify(ledger)); } catch { /* Private browsing may deny persistence. */ }
 }
 
-/** The previous contract is accepted only during the 1.0 migration window. */
+/** Keep legacy-plugin notices active through the additive 1.1 contract. */
 export function isDeprecatedPluginApi(value: unknown): boolean {
   const parsed = parsePluginApi(value);
   const first = parsePluginApi(LEGACY_PLUGIN_API)!;
   const last = parsePluginApi(LAST_LEGACY_PLUGIN_API)!;
-  return PLUGIN_API === '1.0' && parsed?.[0] === 0 && parsed[1] >= first[1] && parsed[1] <= last[1];
+  const host = parsePluginApi(PLUGIN_API)!;
+  return host[0] === 1 && host[1] <= 1 && parsed?.[0] === 0 && parsed[1] >= first[1] && parsed[1] <= last[1];
 }
 
 /** Host dependencies are injected so checks work with disabled plugins and offline cache in tests. */
