@@ -269,8 +269,9 @@ your own page, you do not need an overlay.
 A side effect: since an overlay is always mounted, it is also a good place to start
 background plugin logic that must live independently of pages (for example,
 tracking the state of all printers for guards — see [guards.md](guards.md)).
-Declare hotkeys for an overlay's actions with `scope: 'global'`
-(see [hotkeys.md](hotkeys.md)).
+Declare hotkeys for overlay actions that work on any page with `scope: 'global'`.
+For keys active only inside a marked modal editor, use contextual `plugin` bindings
+(see [hotkeys.md](hotkeys.md#modal-editor-bindings)).
 
 How it works:
 
@@ -749,13 +750,92 @@ action between panes, or beside the changed line on narrow screens. These action
 do not write either file until Save; the next Save replaces `.bak` with the file's
 state immediately before that save. A backup from an older Tessera build beside the
 source file can still be compared.
-The file menu also opens Compare. Save & Restart dispatches a restart after saving
-without waiting for the restart response or checking whether the service starts.
-For a Klipper startup `error`, it restarts the Klipper service through Moonraker;
-for a Klipper `shutdown` or normal state, it sends a firmware restart. A saved
-`moonraker.conf` restarts Moonraker. Explicit command errors are shown in the
-file table; a missing response does not keep the editor busy.
-The backup file remains available in `.backup` for manual recovery.
+The file menu also opens Compare. For changed Klipper `.cfg` and `.conf` tabs, Save all & Restart checks Klipper's
+state before writing any dirty tab; an unavailable state cancels the save. If Klipper
+is `ready`, Config creates a separate attempt copy for every dirty file before any
+upload. A failed copy cancels the save. Each upload still gets its rolling `.bak`.
+A failed upload stops the sequence without sending a restart; already saved tabs
+keep their saved baseline and the remaining tabs stay dirty. New edits made during
+the uploads also remain in the buffer and prevent the restart. After all saves, Config
+sends one restart and shows a 100-second check, even after the editor
+closes. Success requires an observed Klipper startup followed by `ready` before the
+deadline. With no observed restart it reports an unconfirmed command; if startup
+was observed but Klipper did not become ready, it offers comparison with the
+primary attempt copy and an explicit restore of every file from that restart.
+Config also posts an error notification with actions to open Config and restore
+the complete pre-attempt versions. Restore first checks every deployed file for
+later changes and saves each through the usual backup-first path, then
+restarts Klipper and checks it again. The check is kept per printer in
+`sessionStorage` and resumes after navigation or F5. An event missed during F5
+cannot be inferred as a successful restart. For a Klipper startup `error`, Config
+restarts the Klipper service through Moonraker; for `shutdown` or a normal state,
+it sends a firmware restart. `moonraker.conf` keeps its separate Moonraker restart
+path without Klipper monitoring. A missing command response does not hold the
+editor open; an explicit command rejection appears in the Config table.
+
+The built-in Config editor uses CodeMirror for `.cfg` files. Ctrl+click on a literal
+macro call in a `gcode:` body opens an editable peek below the call; Ctrl+right-click
+opens its file at the definition. Toolbar actions provide the same navigation without
+a mouse. Calls are recognized in any section with a `gcode:` body, including
+`[homing_override]`. The peek uses the same syntax colors as the main editor, and
+holding Ctrl or Command hides completion suggestions.
+For `SET_GCODE_VARIABLE`, completion lists only macros with `variable_*` options,
+then the variables of the selected macro. For `SAVE_VARIABLE`, it lists names
+currently loaded from `printer.save_variables.variables`; a new lowercase name
+can still be typed. At `VALUE=`, a suggested Python literal shows the type of
+the macro's initial value or the stored value. Missing or ambiguous values do
+not get a guessed type. These suggestions also reach the optional builder.
+Completion lists show every matching candidate and scroll when they exceed the popup height.
+The editor commands are configurable in Settings → Hotkeys: Ctrl+P peeks a macro
+at the caret, Ctrl+O opens its file, Ctrl+F searches, Ctrl+H replaces, Ctrl+S saves,
+F1 opens section help, and Escape closes the innermost popup or editor. Ctrl is
+Command on Apple platforms for the new editor commands. Their bindings work only
+while the editor is active, except search, which also serves the Config file table.
+When suggestions are open, Up and Down select an item and Enter or Tab inserts it.
+Otherwise Tab inserts four spaces at the cursor, or prefixes each selected line
+with four spaces; Shift+Tab removes up to four leading spaces. The caret follows
+the light or dark theme. Macro toolbar actions use icons and compact to icons on
+narrow screens. Definitions are searched in
+all `.cfg` files under `config`; files outside
+the `[include]` chain from `printer.cfg` are marked, and duplicate names prompt for a
+choice. Edits in a peek stay in that file's buffer until Save, which uses the same
+backup-first path. Since Config 4.2.0, the built-in editor is a plugin overlay,
+with one in-memory session per printer. Minimize retains open files and unsaved
+buffers across page and printer-tab switches. A banner shows the open tabs and
+Save all & Restart and Close actions; selecting a tab reopens the overlay. The
+host's collapsed banner row summarizes file and unsaved counts and expands the
+full banner when selected. Both banner forms render nothing with no open files.
+Config files, other editable text, read-only logs and images share the same tab
+strip; opening a file already present selects its existing buffer. Browser
+reload does not retain editor sessions. Each tab has a close button; a dirty tab
+asks whether to save that file, discard it, or cancel. Closing the session from
+either surface offers save all with the relevant restart, discard, or cancel;
+a clean session closes immediately. Save writes only the active file. Save all
+writes every dirty editable text file, leaving images and logs read-only.
+Changed Klipper configs trigger one monitored Klipper restart; `moonraker.conf`
+alone triggers a Moonraker restart. If both changed, only Klipper restarts and a
+notification says Moonraker still needs a separate restart. Without changed
+configs, Save all writes ordinary text and closes without restarting. A failed
+write or newer edit prevents restart and keeps the session open.
+The Config overlay has one top row for tabs across `.cfg`, `.conf`, other text,
+logs and images. The entire row uses the stable surface hover background, and
+vertical mouse-wheel movement scrolls the file tabs horizontally in the current
+text direction when they overflow. Save all, Minimize, Close and Settings sit in
+that row and wrap on narrow screens. These actions keep the editor's icon buttons
+and become icon-only touch targets on narrow screens. The selected file's name
+and tools occupy the next row;
+Save stays at that row's inline end (right in LTR, left in RTL). Plain text
+inputs receive the loaded buffer as their actual textarea value, including after
+switching tabs. The filename width follows its text up to a cap.
+When the session actions would occupy more than half the top row, they form a
+two-column grid: Minimize and Close above Settings and Save all. Settings is
+available for config text files and opens the former Colors controls. Buttons
+fill columns sized to their longest labels while keeping the compact height of
+the file actions; labels and icons stay intact.
+In a single row the order is Settings, Minimize, Save all, Close; keyboard focus
+follows the visible order in either layout.
+Wrapped actions stay at the
+row's inline end, and the color and device popovers fit within the viewport.
 An extension replacing the built-in editor owns its file writes and does not inherit
 this workflow.
 
@@ -767,6 +847,33 @@ this workflow.
 | `file-actions` | action | append | extra items in the context menu of a file or folder (shared file table, see below) |
 | `file-editor` | element | replacement | the text editor dialog (shared file table) |
 | `file-viewer` | element | replacement | the image viewer dialog (shared file table) |
+| `macro-builder` | action | append, max 1 | a visual builder button inside a writable `.cfg` editor (Config 4.1.0) |
+
+The `macro-builder` v1 action receives a single-use session. Its context contains
+`printerId`, `path`, `revision`, `cursor` (UTF-16 buffer offset), `section` (the
+current `[gcode_macro ...]` as `{ name, from, to, firstLine, lastLine, text }`, or
+`null`), `createAt` (EOF offset for a new macro), `macroNames`, `commands`
+(`{ name, params[] }`), `objects`, `suggest(value, cursor, variables, macroName)`, and
+`applyEdit(replacement)`. `suggest` returns Config's existing command, parameter,
+object, and Jinja suggestions with a replacement offset relative to the field;
+the builder passes its current `{ name, value }` macro variables so Config can
+also show the default value type. The plugin does not parse
+or copy Config's completion rules.
+The action may edit only the offered section or insert at `createAt`.
+`applyEdit` returns `applied`, `stale`, or `closed`. Config checks the active file,
+printer, buffer revision, and original text before one CodeMirror transaction.
+Switching file tabs or closing the editor invalidates the session. The action must
+not write the file through Moonraker; Config retains Save, backup, restart, and undo.
+The optional `tessera/macro-builder` package declares `@core/config >= 4.1.0` and
+loads Blockly only when the button is used. Its editor fills the viewport and
+uses the host's light, dark, and high-contrast theme tokens, including live changes.
+Since Macro Builder 0.1.3, comment blocks start with `#`, the toolbox keeps variable
+command previews short, and placed blocks receive editable command templates.
+Opening a command field leaves a caret instead of selecting all text; placing the
+caret after `=` opens Config's suggestions without requiring a keystroke.
+With focus outside text fields, Macro Builder 0.1.4 uses `C`, `M`, `Alt+C`, and
+`L` to add a command, macro call, condition, or loop after the selected or last
+edited block. The next insertion enters a newly added condition or loop body.
 
 Not extensible on purpose: the tabs of the right table (they map to fixed Moonraker roots:
 `logs`, `docs`, `config_examples`) and the rename/delete dialogs. Guards are not inherited: an

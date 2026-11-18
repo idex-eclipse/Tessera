@@ -447,14 +447,14 @@ interface PluginManifest {
 
 `pluginApi` — версия контракта плагинов, которая нужна плагину: `PluginApi`, манифест и
 CE-контракт. Своя версия у хоста — в `plugin-sdk/src/api-level.ts` (`PLUGIN_API`,
-сейчас `1.0`; её показывает Settings → About).
+сейчас `1.1`; её показывает Settings → About).
 
 - **MINOR** растёт при каждом обратно совместимом добавлении: новый метод `PluginApi`,
   поле или поверхность манифеста. **MAJOR** зарезервирован для несовместимых изменений.
 - Точки расширения в plugin API не входят: их набор — часть версии плагина-владельца,
   в том числе встроенного (см. [Зависимости](#зависимости)).
 - Плагин подходит, если его MAJOR равен хостовому, а MINOR не больше.
-  Stable host 1.0 отклоняет любой контракт 0.x как другой MAJOR.
+  Стабильные хосты 1.x отклоняют любой контракт 0.x как другой MAJOR.
 - Указывайте версию, в которой появилось всё, чем пользуется плагин. Отсутствующее
   поле и историческое целое `1` распознаются как `0.7`, несовместимый с хостом 1.x.
 - Несовместимый плагин не ставится (`tessera-ext` и блок реестра отказывают) и не
@@ -474,6 +474,7 @@ CE-контракт. Своя версия у хоста — в `plugin-sdk/src/
 | `0.13` | `manifest.services` и `api.services`: прокси хоста к внешним HTTP-сервисам плагина, секрет хранится на принтере ([plugin-api.md](plugin-api.md#services)) |
 | `0.14` | необязательные действия — Custom Elements плагина — в `api.notifications.push` ([plugin-api.md](plugin-api.md#notifications)) |
 | `1.0` | удалены `api.moonraker()`, `api.settings` и `useMoonraker`; `moonrakerFor` и `settingsFor` требуют явный ID принтера |
+| `1.1` | необязательное поле `hotkeys[].when` для контекстных сочетаний редактора ([hotkeys.md](hotkeys.md#клавиши-модального-редактора)) |
 
 ### Зависимости
 
@@ -511,7 +512,7 @@ CE-контракт. Своя версия у хоста — в `plugin-sdk/src/
 | `overlays[]`, `banners[]`, `printerPanels[]` | `id`, `element` |
 | `collapsedBanners[]` | `id`, `banner` (id баннера того же плагина), `element` |
 | `chips[]` | `type`, `provider`, `titleKey`, `element`, `pickerElement` |
-| `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` должен разбираться; `allowInInputs`, если задан, — boolean |
+| `hotkeys[]` | `id`, `keys`, `handler`; `scope` ∈ `global`/`dashboard`/`plugin`; `keys` должен разбираться; `allowInInputs`, если задан, — boolean; `when`, если задан, — `editor` или `page-or-editor` и требует `scope: plugin` |
 | `guards[]` | `id`, `handler` и `match` в виде массива |
 | `pages[]`, `widgets[]` | не валидируются структурно (но без `element` ничего не отрисуется) |
 | `extensionPoints[]` | `id` (без `#`/`/`), `kind`, целая `version`; `mode`/`max`/`default` согласованы — см. [surfaces.md](surfaces.md#10-точки-расширения) |
