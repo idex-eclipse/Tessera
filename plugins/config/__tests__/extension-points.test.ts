@@ -25,7 +25,8 @@ function svelteFiles(dir: string): string[] {
 /** Point ids the page markup uses itself: <ExtensionPoint point="…"> and api.extensions.list('…'). */
 function ownUsedPointIds(): Set<string> {
   const used = new Set<string>();
-  for (const file of svelteFiles(COMPONENTS_DIR)) {
+  // Config owns the shared editor when it is mounted from its file table.
+  for (const file of [...svelteFiles(COMPONENTS_DIR), join(__dirname, '..', '..', 'shared', 'text-editor-dialog', 'text-editor-dialog.svelte')]) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/<ExtensionPoint\s+point="([^"]+)"/g)) used.add(m[1] ?? '');
     for (const m of src.matchAll(/extensions\.list\('([^']+)'/g)) used.add(m[1] ?? '');
@@ -67,6 +68,7 @@ describe('config / extension points', () => {
     }
     expect(byId.get('panels-bottom')).toMatchObject({ kind: 'panel', mode: 'append' });
     expect(byId.get('file-actions')).toMatchObject({ kind: 'action', mode: 'append' });
+    expect(byId.get('macro-builder')).toMatchObject({ kind: 'action', mode: 'append', max: 1, version: 1 });
   });
 
   it('does not make the right table tabs extensible (they map to fixed Moonraker roots)', () => {

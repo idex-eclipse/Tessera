@@ -274,11 +274,11 @@ export function handleRpc(
     case 'printer.print.resume': state.setPaused(false); return 'ok';
     case 'printer.print.cancel': state.finishPrint('cancelled'); return 'ok';
     case 'printer.restart':
-    case 'printer.firmware_restart': state.setKlippyState('ready'); return 'ok';
+    case 'printer.firmware_restart': state.restartKlipper(); return 'ok';
     case 'printer.emergency_stop': state.setKlippyState('shutdown'); return 'ok';
     case 'machine.services.restart': {
       const service = requiredString(params.service, 'service');
-      if (service === 'klipper') state.setKlippyState('ready');
+      if (service === 'klipper') state.restartKlipper();
       else if (service === 'moonraker') connection?.close?.();
       else throw new MockRpcError(`Unknown service: ${service}`);
       return 'ok';

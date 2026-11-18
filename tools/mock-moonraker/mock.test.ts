@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { createMoonrakerProxy, type WebSocketLike } from '../../host/src/core/moonraker-proxy.js';
 import { handleRpc, MockRpcError } from './handlers.js';
@@ -10,6 +10,7 @@ const servers: RunningMockServer[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
+  vi.useRealTimers();
 });
 
 /** Waits for a real socket message so wire-format tests cover the network adapter. */
@@ -67,10 +68,13 @@ describe('mock Moonraker state and sessions', () => {
     state.dispose();
   });
 
-  it('recovers the error profile and rejects unsupported commands explicitly', () => {
+  it('recovers the error profile through an observable startup and rejects unsupported commands explicitly', async () => {
+    vi.useFakeTimers();
     const state = new MockPrinterState('error');
     expect(() => handleRpc(state, 'printer.print.start', { filename: 'mock-cube.gcode' })).toThrow('Klippy is not ready');
     handleRpc(state, 'printer.restart', {});
+    expect(state.klippyState).toBe('startup');
+    await vi.advanceTimersByTimeAsync(2500);
     expect(state.klippyState).toBe('ready');
     expect(() => handleRpc(state, 'printer.gcode.script', { script: 'UNKNOWN_COMMAND' })).toThrow(MockRpcError);
     expect(() => handleRpc(state, 'server.unimplemented', {})).toThrow('Method not found');

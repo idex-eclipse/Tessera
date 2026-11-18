@@ -64,8 +64,9 @@ async function boot(): Promise<void> {
   // Seed before settings sync so neither proxy nor mirror ever contacts a real printer.
   if (import.meta.env.DEV && import.meta.env.MODE === 'mock') {
     const mockPrinters = [
-      { id: 'mock-ready', name: 'Mock Ready', url: 'http://127.0.0.1:17125' },
-      { id: 'mock-error', name: 'Mock Klipper Error', url: 'http://127.0.0.1:17126' },
+      // The browser runner uses its own ports so it cannot take over a developer's mock session.
+      { id: 'mock-ready', name: 'Mock Ready', url: import.meta.env.VITE_MOCK_READY_URL ?? 'http://127.0.0.1:17125' },
+      { id: 'mock-error', name: 'Mock Klipper Error', url: import.meta.env.VITE_MOCK_ERROR_URL ?? 'http://127.0.0.1:17126' },
     ];
     window.localStorage.setItem('mpu:v2:printers', JSON.stringify(mockPrinters));
     const active = window.localStorage.getItem('mpu:v2:activePrinter');

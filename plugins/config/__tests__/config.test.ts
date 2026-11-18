@@ -128,6 +128,12 @@ describe('manifest', () => {
     const byId = Object.fromEntries((configManifest.hotkeys ?? []).map((h) => [h.id, h.keys]));
     expect(byId).toMatchObject({
       'find-file': 'Ctrl+F',
+      'editor-replace': 'Mod+H',
+      'editor-save': 'Mod+S',
+      'editor-help': 'F1',
+      'editor-close': 'Escape',
+      'editor-peek': 'Mod+P',
+      'editor-open-macro': 'Mod+O',
       'tab-logs': 'Alt+L',
       'tab-docs': 'Alt+D',
       'tab-examples': 'Alt+C',

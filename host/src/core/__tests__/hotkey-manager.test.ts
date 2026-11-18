@@ -33,7 +33,8 @@ const settingsRoute: Route = { kind: 'settings', section: null };
 const pageOf = (pageId: string): Route => ({ kind: 'plugin-page', printerId: 'p1', pageId, query: {} });
 
 function setup(manifests: PluginManifest[], modules: Record<string, Record<string, unknown>>) {
-  const registry = createPluginRegistry(createSettingsStore({ storage: new MemoryStorage() }));
+  const settings = createSettingsStore({ storage: new MemoryStorage() });
+  const registry = createPluginRegistry(settings);
   for (const m of manifests) registry.registerPlugin(m);
 
   const state = { route: dashboard as Route, fleet: false, applies: true };
@@ -43,11 +44,12 @@ function setup(manifests: PluginManifest[], modules: Record<string, Record<strin
     getRoute: () => state.route,
     getModule: (id) => modules[id],
     getApi: (id) => ({ pluginId: id }) as unknown as PluginApi,
+    getOverrides: () => settings.ui.hotkeyOverrides,
     appliesToActivePrinter: () => state.applies,
     isFleetOpen: () => state.fleet,
     warn,
   });
-  return { registry, manager, state, warn };
+  return { registry, manager, settings, state, warn };
 }
 
 const hk = (id: string, scope: 'global' | 'dashboard' | 'plugin', keys: string) => ({
@@ -111,6 +113,52 @@ describe('hotkey-manager', () => {
     expect(fnA).toHaveBeenCalledTimes(1);
     expect(fnB).toHaveBeenCalledTimes(1);
     expect(manager.conflicts).toEqual([]);
+  });
+
+  it('runs editor bindings only in the owning dialog before its keymap', () => {
+    const peek = vi.fn();
+    const find = vi.fn();
+    const page = vi.fn();
+    const { manager, settings, state } = setup(
+      [manifest('a', { pages: [{ id: 'pa', titleKey: 't', element: 'e' }], hotkeys: [
+        { ...hk('peek', 'plugin', 'Mod+P'), when: 'editor' },
+        { ...hk('find', 'plugin', 'Ctrl+F'), when: 'page-or-editor' },
+        hk('page', 'plugin', 'Alt+L'),
+      ] })],
+      { a: { peek, find, page } },
+    );
+    state.route = pageOf('pa');
+    const inside = { dataset: { hotkeyEditorOwner: 'a' } } as unknown as EventTarget;
+    const editorKey = (code: string, key: string, modifiers: Partial<KeyboardEvent>) =>
+      keydown({ code, key, composedPath: () => [inside], ...modifiers });
+
+    const outside = keydown({ code: 'KeyP', key: 'p', ctrlKey: true });
+    expect(manager.handleKeydown(outside)).toBe(false);
+    expect(outside.defaultPrevented).toBe(false);
+    expect(manager.handleKeydown(editorKey('KeyP', 'p', { ctrlKey: true }), true)).toBe(true);
+    expect(peek).toHaveBeenCalledTimes(1);
+    settings.setHotkeyOverride('a:peek', 'Alt+P');
+    expect(manager.handleKeydown(editorKey('KeyP', 'p', { ctrlKey: true }), true)).toBe(false);
+    expect(manager.handleKeydown(editorKey('KeyP', 'p', { altKey: true }), true)).toBe(true);
+    expect(peek).toHaveBeenCalledTimes(2);
+    settings.setHotkeyOverride('a:peek', null);
+    const disabled = editorKey('KeyP', 'p', { altKey: true });
+    expect(manager.handleKeydown(disabled, true)).toBe(false);
+    expect(disabled.defaultPrevented).toBe(false);
+    expect(manager.handleKeydown(editorKey('KeyF', 'f', { ctrlKey: true }), true)).toBe(true);
+    expect(manager.handleKeydown(keydown({ code: 'KeyF', key: 'f', ctrlKey: true }))).toBe(true);
+    expect(find).toHaveBeenCalledTimes(2);
+    // The editor remains mounted while navigation changes the page underneath it.
+    settings.clearHotkeyOverride('a:peek');
+    state.route = dashboard;
+    expect(manager.handleKeydown(editorKey('KeyF', 'f', { ctrlKey: true }), true)).toBe(true);
+    expect(find).toHaveBeenCalledTimes(3);
+    expect(manager.handleKeydown(editorKey('KeyP', 'p', { ctrlKey: true }), true)).toBe(true);
+    expect(peek).toHaveBeenCalledTimes(3);
+    const blockedPage = editorKey('KeyL', 'l', { altKey: true });
+    expect(manager.handleKeydown(blockedPage)).toBe(false);
+    expect(blockedPage.defaultPrevented).toBe(false);
+    expect(page).not.toHaveBeenCalled();
   });
 
   it('dashboard + plugin may share a key', () => {

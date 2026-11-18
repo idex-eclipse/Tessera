@@ -183,6 +183,27 @@ describe('getSuggestions: gcode-блок', () => {
     const { ctx, text, cursor } = at(body('B§'));
     expect(getSuggestions(ctx!, sourcesFor(text, cursor), 1)).toHaveLength(1);
   });
+
+  it('returns every matching macro and Jinja variable by default', () => {
+    const names = Array.from({ length: 125 }, (_, index) => `MACRO_${String(index).padStart(3, '0')}`);
+    const objects = buildObjectIndex({
+      sections: names.map((name) => `gcode_macro ${name}`),
+      macros: names.map((name) => ({ name, description: '', params: [], variables: ['count'] })),
+    });
+    const macroText = body('SET_GCODE_VARIABLE MACRO=');
+    const macroContext = getCompletionContext(macroText, macroText.length);
+    expect(getSuggestions(macroContext!, { ...sourcesFor(macroText, macroText.length), objects }))
+      .toHaveLength(names.length);
+
+    // The same default applies to other completion branches, not only macro names.
+    const jinjaText = body('M118 {params.var');
+    const jinjaContext = getCompletionContext(jinjaText, jinjaText.length);
+    expect(getSuggestions(jinjaContext!, {
+      ...sourcesFor(jinjaText, jinjaText.length),
+      jinjaVars: Array.from({ length: 125 }, (_, index) => `params.var_${index}`),
+      macroParams: null,
+    })).toHaveLength(125);
+  });
 });
 
 describe('getSuggestions: jinja и params.', () => {
@@ -265,6 +286,12 @@ describe('имена объектов', () => {
   it('VARIABLE= берёт переменные макроса из MACRO= на строке', () => {
     const r = atObj(FILE.replace('SET_FAN_SPEED FAN=', 'SET_GCODE_VARIABLE MACRO=CLEAN VARIABLE=§'));
     expect(r.items.map((i) => i.label)).toEqual(['count', 'state']);
+  });
+
+  it('VALUE= reports the selected macro variable default type in the editor', () => {
+    const r = atObj(FILE.replace('SET_FAN_SPEED FAN=',
+      'SET_GCODE_VARIABLE MACRO=CLEAN VARIABLE=count VALUE=§'));
+    expect(r.items[0]).toMatchObject({ label: '0', insert: '0', detail: 'int' });
   });
 
   it('printer[" — имена объектов, закрывающие кавычка и ] дописываются', () => {
