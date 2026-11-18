@@ -28,6 +28,7 @@ the user can reassign or disable any of them in **Settings → Hotkeys**.
 | `handler` | yes | the name of an entry-module export |
 | `titleKey` | no | i18n key of the description for Settings and About |
 | `allowInInputs` | no | whether to fire inside input fields (see below) |
+| `when` | no | since Plugin API 1.1, `editor` or `page-or-editor` for a `plugin`-scoped binding |
 
 An invalid entry (unknown `scope`, unparsable `keys`, empty fields) is dropped on
 load with a console warning.
@@ -65,6 +66,24 @@ Additionally:
   (the plugin record's `printerIds`).
 - "A plugin's page" is determined by the host finding the page owner by the `id` in
   the current route.
+
+### Modal editor bindings
+
+For an editor on your plugin page, mark the dialog root with
+`data-hotkey-editor-owner="<pluginId>"` and use `when: "editor"`. The host checks the
+composed keyboard event path before calling `preventDefault()`. The binding is active
+only inside that editor, so browser shortcuts keep working after it closes. Use
+`when: "page-or-editor"` for a command that should work both on the page and inside
+its editor, such as search. Both values require `scope: "plugin"`; other values are
+rejected. Bare keys such as `F1` or `Escape` need `allowInInputs: true` to work in
+the editor input. Editor bindings run before the editor's own keymap, so a user
+reassignment remains effective. Other page, host and plugin hotkeys do not run from
+inside a marked editor.
+
+The optional Macro Builder uses a local Blockly editor keymap: `C` inserts a
+command, `M` a macro call, `Alt+C` a condition, and `L` a loop. These canvas keys
+do not run in text fields and are not Settings hotkey bindings. The editor owner
+marker keeps `L` from toggling the host sidebar while the builder is open.
 
 ## Writing combinations
 
