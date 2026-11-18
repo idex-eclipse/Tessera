@@ -22,7 +22,7 @@ interface HeatersStateRef {
 interface ShaperStateRef {
   busy: string;
   external: boolean;
-  axis: 'X' | 'Y';
+  axis: 'X' | 'Y' | 'XY';
   fitted: Array<{ name: string; freq: number; vib: number; smooth: number }>;
   recommended: { name: string; freq: number } | null;
 }
@@ -168,7 +168,8 @@ export function scanEntries(entries: GcodeStoreEntry[], ctx: ScanContext): void 
       shaper.recommended = shp.recommended;
     }
     const ax = shp.axis.toUpperCase();
-    if (ax === 'X' || ax === 'Y') shaper.axis = ax as 'X' | 'Y';
+    // Keep an active X + Y selection intact while its two tests report separate axes.
+    if (!uiRun && (ax === 'X' || ax === 'Y')) shaper.axis = ax as 'X' | 'Y';
   } else if (shp.state === 'finished') {
     if (shaper.external) {
       shaper.busy = '';

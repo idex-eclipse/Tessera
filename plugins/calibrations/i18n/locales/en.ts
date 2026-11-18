@@ -45,13 +45,13 @@ export const en = {
       axis: 'Axis',
       test: 'Test resonances',
       calibrate: 'Calibrate',
-      testAndGraph: 'Test + Graph',
+      testAndGraph: 'Calibrate + Graph',
+      park: 'Home all (G28)',
       shellCmd: 'Graph cmd',
       refreshGallery: 'Refresh gallery',
       freqStart: 'FREQ_START',
       freqEnd: 'FREQ_END',
       hzPerSec: 'HZ_PER_SEC',
-      shaperTypes: 'SHAPER_TYPES (opt)',
       recommended: 'Recommended',
       apply: 'Apply',
       verboseHint: 'verbose: True is not set on the graph command — nothing to parse',
@@ -220,7 +220,7 @@ export const en = {
 
     help: {
       shaper:
-        'Vanilla Klipper input shaper. Graph generation is defined in your config — example:\n' +
+        'Vanilla Klipper input shaper. Calibrate + Graph runs SHAPER_CALIBRATE for X, then Y when both are selected, and waits five seconds before each graph command. Graph generation is defined in your config — example:\n' +
         '[gcode_shell_command generate_x_shaper_graph]\n' +
         'command: bash -c "~/klipper/scripts/calibrate_shaper.py /tmp/*_data_x*.csv -o ~/printer_data/config/shapers/x.png"\n' +
         'timeout: 60.0\n' +

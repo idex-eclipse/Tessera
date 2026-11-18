@@ -41,16 +41,16 @@ export const ru = {
     },
 
     shaper: {
+      park: 'Парковка (G28)',
       axis: 'Ось',
       test: 'Тест резонансов',
       calibrate: 'Калибровать',
-      testAndGraph: 'Тест + график',
+      testAndGraph: 'Калибровка + график',
       shellCmd: 'Команда графика',
       refreshGallery: 'Обновить галерею',
       freqStart: 'FREQ_START',
       freqEnd: 'FREQ_END',
       hzPerSec: 'HZ_PER_SEC',
-      shaperTypes: 'SHAPER_TYPES (опц.)',
       recommended: 'Рекомендован',
       apply: 'Применить',
       verboseHint: 'verbose: True не задан в команде графика — парсить нечего',
@@ -231,7 +231,7 @@ export const ru = {
 
     help: {
       shaper:
-        'Ванильная калибровка input shaper Klipper. Генерация графика задаётся в вашем конфиге — пример:\n' +
+        'Штатная калибровка input shaper Klipper. «Калибровка + график» выполняет SHAPER_CALIBRATE для X, затем Y при выборе обеих осей, и ждёт пять секунд перед каждой командой построения графика. Генерация графика задаётся в вашем конфиге — пример:\n' +
         '[gcode_shell_command generate_x_shaper_graph]\n' +
         'command: bash -c "~/klipper/scripts/calibrate_shaper.py /tmp/*_data_x*.csv -o ~/printer_data/config/shapers/x.png"\n' +
         'timeout: 60.0\n' +
