@@ -10,6 +10,7 @@ import {
   getObjects,
   hasDocs,
   parseMacroSections,
+  parseSavedVariables,
   parseSectionNames,
 } from '../gcode-hints-store.svelte.ts';
 
@@ -42,12 +43,15 @@ function makeHandle(): FakeHandle {
   const h: FakeHandle = {
     httpBaseUrl: 'http://pr:7125',
     authToken: null,
-    request: vi.fn(async (method: string) => {
+    request: vi.fn(async (method: string, params?: { objects?: Record<string, unknown> }) => {
       if (method === 'printer.objects.list') {
         return { objects: ['toolhead', 'fan_generic cooling', 'gcode_macro MY_MACRO'] };
       }
       if (method === 'printer.gcode.help') return { SET_PIN: 'Set the value of an output pin', MY_MACRO: 'Hello' };
       if (method === 'printer.objects.query') {
+        if (params?.objects?.save_variables) {
+          return { status: { save_variables: { variables: { is_print: true, count: 2 } } } };
+        }
         return {
           status: {
             configfile: {
@@ -118,7 +122,7 @@ describe('parseMacroSections', () => {
   it('мусор на входе не роняет разбор', () => {
     expect(parseMacroSections(null)).toEqual([]);
     expect(parseMacroSections({ config: { 'gcode_macro x': null } })).toEqual([
-      { name: 'x', description: '', params: [], variables: [] },
+      { name: 'x', description: '', params: [], variables: [], variableDefaults: {} },
     ]);
   });
 
@@ -127,6 +131,12 @@ describe('parseMacroSections', () => {
       config: { 'gcode_macro A': { gcode: 'M117', variable_x: '1', variable_long_name: '2', other: '3', variable_: '4' } },
     });
     expect(m!.variables).toEqual(['x', 'long_name']);
+    expect(m!.variableDefaults).toEqual({ x: '1', long_name: '2' });
+  });
+
+  it('accepts only a saved-variable dictionary with lowercase names', () => {
+    expect(parseSavedVariables({ save_variables: { variables: { count: 2, Bad: 3 } } })).toEqual({ count: 2 });
+    expect(parseSavedVariables({ save_variables: { variables: [] } })).toEqual({});
   });
 });
 
@@ -153,6 +163,7 @@ describe('attachHints', () => {
     const idx = getObjects(pid);
     expect(resolveNames(idx, 'SET_FAN_SPEED', 'FAN')?.names.map((n) => n.value)).toEqual(['Cooling']);
     expect(resolveNames(idx, 'SET_GCODE_VARIABLE', 'VARIABLE', { MACRO: 'my_macro' })?.names.map((n) => n.value)).toEqual(['count', 'state']);
+    expect(resolveNames(idx, 'SAVE_VARIABLE', 'VARIABLE')?.names.map((n) => n.value)).toEqual(['count', 'is_print']);
     expect(idx.objects).toEqual(['toolhead', 'fan_generic cooling', 'gcode_macro MY_MACRO']);
     expect(getObjects(pid)).toBe(idx); // мемоизирован
 
@@ -175,6 +186,24 @@ describe('attachHints', () => {
     expect(getObjects(pid).objects).toContain('fan_generic Cooling');
     expect(getObjects(pid).objects).not.toContain('toolhead');
 
+    detach();
+    dropHints(pid);
+  });
+
+  it('missing save_variables does not hide macro names or their initial types', async () => {
+    const pid = nextId();
+    const h = makeHandle();
+    const base = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method: string, params?: { objects?: Record<string, unknown> }) => {
+      if (method === 'printer.objects.query' && params?.objects?.save_variables) throw new Error('not configured');
+      return base(method, params);
+    });
+    vi.stubGlobal('fetch', vi.fn(() => http(404)));
+    const detach = attachHints(fakeApi(h), pid);
+    await vi.waitFor(() => expect(getObjects(pid).entries.length).toBeGreaterThan(0));
+    expect(resolveNames(getObjects(pid), 'SET_GCODE_VARIABLE', 'VARIABLE', { MACRO: 'MY_MACRO' })?.names)
+      .toHaveLength(2);
+    expect(resolveNames(getObjects(pid), 'SAVE_VARIABLE', 'VARIABLE')?.names).toEqual([]);
     detach();
     dropHints(pid);
   });

@@ -1481,7 +1481,7 @@ describe('plugin-loader / pluginApi', () => {
     expect(loader.isLoaded('@third/legacy')).toBe(true);
     expect(loader.isLoaded('@third/current')).toBe(true);
     expect(loader.isLoaded('@third/last-legacy')).toBe(true);
-    expect(settings.plugins.map((plugin) => plugin.pluginApi)).toEqual(['0.7', '1.0', '0.14']);
+    expect(settings.plugins.map((plugin) => plugin.pluginApi)).toEqual(['0.7', PLUGIN_API, '0.14']);
     expect(loader.getLoadFailures()).toEqual([]);
   });
 

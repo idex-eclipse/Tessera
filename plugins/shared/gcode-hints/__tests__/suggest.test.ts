@@ -262,6 +262,22 @@ describe('имена объектов принтера', () => {
     expect(labelsN('SET_GCODE_VARIABLE MACRO=')).toEqual(['START_PRINT']);
   });
 
+  it('offers saved names and typed VALUE templates even without command documentation', () => {
+    const stored = buildObjectIndex({
+      sections: ['gcode_macro START_PRINT'],
+      macros: [{ name: 'START_PRINT', description: '', params: [], variables: ['count'],
+        variableDefaults: { count: '1' } }],
+      savedVariables: { is_print: true },
+    });
+    const fallback = { names: makeNameResolver(stored) };
+    expect(suggestForLine(ncatalog, 'SAVE_VARIABLE VARIABLE=', fallback).items.map((item) => item.label))
+      .toEqual(['is_print']);
+    expect(suggestForLine(ncatalog, 'SAVE_VARIABLE VARIABLE=is_print VALUE=', fallback).items[0])
+      .toMatchObject({ label: 'False', insert: 'False', description: 'bool' });
+    expect(suggestForLine(ncatalog, 'SET_GCODE_VARIABLE MACRO=START_PRINT VARIABLE=count VALUE=', fallback).items[0])
+      .toMatchObject({ label: '0', insert: '0', description: 'int' });
+  });
+
   it('параметры без правила (NAME=) значений не получают, без resolver — тоже', () => {
     expect(labelsN('TEST_RESONANCES AXIS=X NAME=')).toEqual([]);
     expect(labelsN('SET_FAN_SPEED FAN=', {} as typeof opts)).toEqual([]);

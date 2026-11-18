@@ -39,6 +39,7 @@ export class MockPrinterState {
   readonly gcodeStore: Array<{ message: string; time: number; type: 'command' | 'response' }> = [];
   readonly queuedJobs: Array<{ job_id: string; filename: string; time_added: number; time_in_queue: number }> = [];
   queueState: 'ready' | 'paused' = 'ready';
+  nextRestartOutcome: 'ready' | 'error' = 'ready';
   readonly webcams: Array<Record<string, unknown>> = [{
     uid: 'mock-bed', name: 'Bed camera', enabled: true, source: 'database', location: 'printer',
     service: 'mjpegstreamer-adaptive', target_fps: 2, target_fps_idle: 1,
@@ -49,6 +50,7 @@ export class MockPrinterState {
 
   private readonly listeners = new Set<(event: MockEvent) => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private nextJobId = 1;
   private nextQueueId = 1;
   private elapsed = 0;
@@ -133,7 +135,8 @@ export class MockPrinterState {
     this.putFile('gcodes/.thumbs/calibration-strip.svg', createThumbnail('STRIP', '#98cc91'));
     this.putFile('config/printer.cfg', Buffer.from(SAMPLE_CONFIG));
     this.putFile('config/moonraker.conf', Buffer.from('[server]\nhost: 0.0.0.0\nport: 7125\n'));
-    this.putFile('config/macros.cfg', Buffer.from('[gcode_macro TEST_MOCK]\ngcode:\n  RESPOND MSG="Mock macro complete"\n'));
+    // The underscore macro exercises navigation from homing_override gcode.
+    this.putFile('config/macros.cfg', Buffer.from('[gcode_macro TEST_MOCK]\ngcode:\n  RESPOND MSG="Mock macro complete"\n\n[gcode_macro _HOME_X]\ngcode:\n  G28 X\n'));
     this.putFile('logs/klippy.log', Buffer.from(SAMPLE_LOGS.klippy));
     this.putFile('logs/moonraker.log', Buffer.from(SAMPLE_LOGS.moonraker));
     this.putFile('docs/Config_Reference.md', Buffer.from('# Mock Klipper Config Reference\n'));
@@ -187,7 +190,9 @@ export class MockPrinterState {
   /** Stops the clock and drops listeners when a session expires. */
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.restartTimer) clearTimeout(this.restartTimer);
     this.timer = null;
+    this.restartTimer = null;
     this.listeners.clear();
   }
 
@@ -273,11 +278,24 @@ export class MockPrinterState {
   }
 
   /** Changes Klippy lifecycle state and emits the notification expected by the proxy. */
-  setKlippyState(state: 'ready' | 'error' | 'shutdown'): void {
+  setKlippyState(state: 'ready' | 'startup' | 'error' | 'shutdown'): void {
     const message = state === 'ready' ? 'Printer is ready' : state === 'error'
-      ? 'Mock Klipper configuration error' : 'Mock emergency stop';
+      ? 'Mock Klipper configuration error' : state === 'startup' ? 'Mock Klipper starting' : 'Mock emergency stop';
     this.patch('webhooks', { state, state_message: message });
-    this.notify(state === 'ready' ? 'notify_klippy_ready' : 'notify_klippy_shutdown');
+    this.notify(state === 'ready' ? 'notify_klippy_ready'
+      : state === 'startup' ? 'notify_klippy_started' : 'notify_klippy_shutdown');
+  }
+
+  /** Simulate the observable startup period that real Klipper reports after a restart. */
+  restartKlipper(): void {
+    const outcome = this.nextRestartOutcome;
+    this.nextRestartOutcome = 'ready';
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    this.setKlippyState('startup');
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      this.setKlippyState(outcome);
+    }, 2500);
   }
 
   /** Updates one object and emits only the changed fields, as Moonraker does. */

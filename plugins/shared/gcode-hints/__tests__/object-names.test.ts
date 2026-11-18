@@ -8,6 +8,7 @@ import {
   printerRef,
   quoteValue,
   resolveNames,
+  literalType,
   scanSectionNames,
 } from '../object-names';
 
@@ -62,9 +63,11 @@ const SECTIONS = [
 const index = buildObjectIndex({
   sections: SECTIONS,
   macros: [
-    { name: 'START_PRINT', description: '', params: [], variables: ['bed_temp', 'primed'] },
+    { name: 'START_PRINT', description: '', params: [], variables: ['bed_temp', 'primed'],
+      variableDefaults: { bed_temp: '60.0', primed: 'False' } },
     { name: 'clean', description: '', params: [], variables: [] },
   ],
+  savedVariables: { is_print: true, count: 3, rate: 0.5, name: 'ready' },
 });
 
 const names = (command: string, param: string, values: Record<string, string> = {}) =>
@@ -146,13 +149,25 @@ describe('resolveNames: правила команда + параметр', () =>
   });
 
   it('SET_GCODE_VARIABLE: MACRO — имена макросов, VARIABLE — переменные выбранного макроса', () => {
-    expect(names('SET_GCODE_VARIABLE', 'MACRO')).toEqual(['clean', 'START_PRINT']);
+    expect(names('SET_GCODE_VARIABLE', 'MACRO')).toEqual(['START_PRINT']);
     expect(names('SET_GCODE_VARIABLE', 'VARIABLE', { MACRO: 'start_print' })).toEqual([
       'bed_temp',
       'primed',
     ]);
     expect(names('SET_GCODE_VARIABLE', 'VARIABLE', { MACRO: 'clean' })).toEqual([]);
     expect(names('SET_GCODE_VARIABLE', 'VARIABLE')).toEqual([]);
+  });
+
+  it('shows saved names and value templates with the current or default Python type', () => {
+    expect(names('SAVE_VARIABLE', 'VARIABLE')).toEqual(['count', 'is_print', 'name', 'rate']);
+    expect(resolveNames(index, 'SAVE_VARIABLE', 'VALUE', { VARIABLE: 'is_print' })?.names)
+      .toEqual([{ value: 'False', insert: 'False', detail: 'bool' }]);
+    expect(resolveNames(index, 'SET_GCODE_VARIABLE', 'VALUE',
+      { MACRO: 'START_PRINT', VARIABLE: 'bed_temp' })?.names)
+      .toEqual([{ value: '0.0', insert: '0.0', detail: 'float' }]);
+    expect(resolveNames(index, 'SAVE_VARIABLE', 'VALUE', { VARIABLE: 'new_name' })?.names).toEqual([]);
+    expect(literalType('1.2', true)).toBe('float');
+    expect(literalType('foo()', true)).toBeNull();
   });
 
   it('регистр команды и параметра не важен; неизвестные пары → null', () => {

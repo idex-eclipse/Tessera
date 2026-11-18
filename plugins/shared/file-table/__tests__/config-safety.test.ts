@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MoonrakerProxyHandle, PluginApi } from '../../../../plugin-sdk/src/types';
-import { configBackupRef, createFileOps } from '../file-ops';
+import { configBackupRef, createFileOps, restartAttemptBackupRef } from '../file-ops';
 import { configBackupHunkEdit, configComparisonRows, configCurrentLineMarks, configDiffHunks, diffConfigLines } from '../config-diff';
 import { dispatchConfigRestart, sendConfigRestart } from '../config-restart-command';
 
@@ -10,6 +10,74 @@ afterEach(() => {
 });
 
 describe('config backup', () => {
+  it.each([
+    ['ready', 2], ['error', 1], ['shutdown', 1], ['startup', 1],
+  ])('checks %s before saving and creates the required copies', async (state, copies) => {
+    const requests: string[] = [];
+    const target = {
+      request: vi.fn(async (method: string, params: unknown) => {
+        requests.push(`${method}:${JSON.stringify(params)}`);
+        if (method === 'printer.info') return { state };
+      }),
+      httpBaseUrl: 'http://printer', authToken: null,
+    } as unknown as MoonrakerProxyHandle;
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
+    const result = await ops.saveConfigForRestart({ root: 'config', path: 'printer.cfg', isDir: false }, 'edited', 'one');
+    expect(requests[0]).toBe('printer.info:undefined');
+    expect(requests.filter((item) => item.startsWith('server.files.copy'))).toHaveLength(copies);
+    expect(result.state).toBe(state);
+    expect(result.backup?.path ?? null).toBe(state === 'ready' ? '.backup/printer.cfg.one.restart.bak' : null);
+  });
+
+  it('does not copy or upload if Klipper state cannot be verified', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'printer.info') throw new Error('Moonraker offline');
+    });
+    const upload = vi.fn();
+    vi.stubGlobal('fetch', upload);
+    const target = { request, httpBaseUrl: 'http://printer', authToken: null } as unknown as MoonrakerProxyHandle;
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
+    await expect(ops.saveConfigForRestart({ root: 'config', path: 'printer.cfg', isDir: false }, 'edited', 'one'))
+      .rejects.toThrow('Moonraker offline');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('keeps each ready-state restart copy apart from the rolling backup', async () => {
+    const ref = { root: 'config', path: 'macros/a.cfg', isDir: false };
+    expect(restartAttemptBackupRef(ref, 'attempt-1')?.path).toBe('.backup/macros/a.cfg.attempt-1.restart.bak');
+    expect(restartAttemptBackupRef(ref, '../bad')).toBeNull();
+    const order: string[] = [];
+    const target = {
+      request: vi.fn(async (method: string, params: unknown) => {
+        order.push(`${method}:${JSON.stringify(params)}`);
+      }),
+      httpBaseUrl: 'http://printer', authToken: null,
+    } as unknown as MoonrakerProxyHandle;
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
+    await ops.createRestartAttemptBackup(ref, 'attempt-1');
+    await ops.createRestartAttemptBackup(ref, 'attempt-2');
+    expect(order.filter((item) => item.startsWith('server.files.copy'))).toEqual([
+      'server.files.copy:{"source":"config/macros/a.cfg","dest":"config/.backup/macros/a.cfg.attempt-1.restart.bak"}',
+      'server.files.copy:{"source":"config/macros/a.cfg","dest":"config/.backup/macros/a.cfg.attempt-2.restart.bak"}',
+    ]);
+  });
+
+  it('aborts a restart attempt before upload when its separate copy fails', async () => {
+    const upload = vi.fn();
+    vi.stubGlobal('fetch', upload);
+    const target = {
+      request: vi.fn(async (method: string) => {
+        if (method === 'server.files.copy') throw new Error('attempt copy failed');
+      }),
+      httpBaseUrl: 'http://printer', authToken: null,
+    } as unknown as MoonrakerProxyHandle;
+    const ops = createFileOps({ printer: { id: 'p1' }, moonrakerFor: () => target } as unknown as PluginApi);
+    await expect(ops.createRestartAttemptBackup({ root: 'config', path: 'printer.cfg', isDir: false }, 'one'))
+      .rejects.toThrow('attempt copy failed');
+    expect(upload).not.toHaveBeenCalled();
+  });
   it('protects cfg and conf in nested config paths only', () => {
     expect(configBackupRef({ root: 'config', path: 'macros/a.cfg', isDir: false })?.path).toBe('.backup/macros/a.cfg.bak');
     expect(configBackupRef({ root: 'config', path: 'moonraker.conf', isDir: false })?.path).toBe('.backup/moonraker.conf.bak');
