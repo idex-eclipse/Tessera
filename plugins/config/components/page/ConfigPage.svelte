@@ -5,9 +5,22 @@
   import type { FileRef } from '../../../shared/file-table/file-ops';
   import { fileCap } from '../../../shared/file-table/file-capabilities';
   import { CONFIG_TABS, pageUi, setActivePane, setTab, type ConfigTab } from '../../state/page-ui-state.svelte.ts';
+  import {
+    clearConfigSession, editorSession, openConfigSessionFile, requestConfigSessionTabClose, sessionTabId,
+  } from '../../state/editor-session.svelte';
 
   const api = usePluginApi();
   const i18n = api.i18n;
+
+  /** A late replacement can take over only the unchanged file the user is still viewing. */
+  function replaceCleanBuiltInFile(ref: FileRef): boolean {
+    const session = editorSession(api.printer.id);
+    const id = sessionTabId(ref);
+    const tab = session.tabs.find((item) => item.id === id);
+    if (!tab || tab.content !== tab.saved || !session.expanded || session.activeId !== id || session.tabs.length !== 1) return false;
+    requestConfigSessionTabClose(api.printer.id, id);
+    return true;
+  }
 
   // Вкладка правой таблицы и «активная панель» живут в module-state: ими управляют hotkeys.
   let tab = $derived(pageUi.tab);
@@ -68,7 +81,11 @@
             <!-- активная панель нужна hotkey Ctrl+F: он фокусирует поиск той таблицы, где работает пользователь -->
             <div class="pane" onpointerdown={() => setActivePane('left')} onfocusin={() => setActivePane('left')}>
               <FileTable root="config" scope="page:config" mode="simple" showAdd
-                title={i18n.t('config.title')} menuItems={configMenu} />
+                title={i18n.t('config.title')} menuItems={configMenu}
+                onOpenFile={(ref, options) => openConfigSessionFile(api, ref, options)}
+                onHasUnsavedEditor={() => editorSession(api.printer.id).tabs.some((item) => item.content !== item.saved)}
+                onClearEditorSession={(printerId) => clearConfigSession(printerId)}
+                onReplaceOpenFile={replaceCleanBuiltInFile} />
             </div>
           {/snippet}
         </ExtensionPoint>
@@ -78,7 +95,9 @@
             <div class="pane" onpointerdown={() => setActivePane('right')} onfocusin={() => setActivePane('right')}>
               {#key tab}
                 <FileTable root={tab} scope="page:{tab}" mode="simple"
-                  title={i18n.t('config.otherTitle')} menuItems={plainMenu}>
+                  title={i18n.t('config.otherTitle')} menuItems={plainMenu}
+                  onOpenFile={(ref, options) => openConfigSessionFile(api, ref, options)}
+                  onReplaceOpenFile={replaceCleanBuiltInFile}>
                   {#snippet headerExtra()}
                     <div class="tabs" role="tablist">
                       {#each CONFIG_TABS as t (t)}

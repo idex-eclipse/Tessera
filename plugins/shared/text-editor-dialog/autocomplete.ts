@@ -13,7 +13,7 @@
  *  - подсказки появляются при непустом префиксе; единственное исключение — gcode-строка
  *    после пробела или «=» (список параметров / значений команды), см. CompletionContext;
  *  - специализированные источники имеют приоритет над «всеми словами»;
- *  - список ограничен limit (по умолчанию MAX_SUGGESTIONS = 100); dropdown прокручивается.
+ *  - matching candidates remain available in the scrollable dropdown; callers may set a limit explicitly.
  */
 
 import { paramTypeLabel } from '../gcode-hints/catalog';
@@ -28,7 +28,6 @@ import { completionTokenStart, suggestForLine, type HintSuggestion } from '../gc
 import type { Catalog } from '../gcode-hints/types';
 
 /** Максимум пунктов в списке подсказок редактора. */
-export const MAX_SUGGESTIONS = 100;
 
 // printer["gcode_macro NAME"].<переменная> и printer["<объект>  — внутри jinja
 const MACRO_VAR_RE = /printer\s*\[\s*(["'])gcode_macro\s+([^"'\n]*?)\s*\1\s*\]\s*\.\s*(\w*)$/;
@@ -280,7 +279,7 @@ function fromHint(h: HintSuggestion): Suggestion {
 export function getSuggestions(
   ctx: CompletionContext,
   sources: CompletionSources,
-  limit = MAX_SUGGESTIONS,
+  limit = Infinity,
 ): Suggestion[] {
   const q = ctx.prefix.toLowerCase();
   const out: Suggestion[] = [];

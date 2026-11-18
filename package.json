@@ -33,6 +33,10 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
     "three": "^0.185.1",
     "uplot": "^1.6.32",
     "ws": "^8.22.2"

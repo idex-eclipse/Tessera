@@ -10,10 +10,17 @@
   import Loader from '../loader/Loader.svelte';
   import PromptDialog from '../prompt-dialog.svelte';
   import TextEditorDialog from '../text-editor-dialog/text-editor-dialog.svelte';
+  import type { EditorSnapshot } from '../text-editor-dialog/ConfigCodeMirror.svelte';
+  import { loadMacroIndex, macroSectionEdit, type MacroDefinition } from '../text-editor-dialog/macro-index';
+  import { EditorState } from '@codemirror/state';
+  import { history as editorHistory, historyField } from '@codemirror/commands';
   import ImageViewerDialog from '../image-viewer-dialog/image-viewer-dialog.svelte';
 
   import { configBackupRef, createFileOps, type FileRef } from './file-ops';
+  import { closeConfigEditorTab, saveConfigTabsForRestart, type ConfigEditorTab } from './config-editor-tabs';
   import { dispatchConfigRestart } from './config-restart-command';
+  import { configRestartMonitor, newRestartAttemptId, type RestartAttempt } from './config-restart-monitor';
+  import { restoreConfigAttempt } from './config-restart-recovery';
   import type { KlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
   import { FILE_TABLE_POINT_IDS } from './extension-points';
   import { formatDate, formatSize } from '../format';
@@ -45,6 +52,10 @@ let {
   onRowActivate = null,
   embedded = false,
   onThreeMF = null,  // НОВОЕ: колбэк для перехвата .3mf файлов
+  onOpenFile,
+  onHasUnsavedEditor,
+  onClearEditorSession,
+  onReplaceOpenFile,
 }: {
   root: string;
   scope: string;
@@ -60,17 +71,42 @@ let {
   /** Removes duplicate card chrome when the table fills an existing tab card. */
   embedded?: boolean;
   onThreeMF?: ((file: File) => void) | null;  // НОВОЕ
+  /** Config delegates its built-in file surfaces to a persistent plugin overlay. */
+  onOpenFile?: (ref: FileRef, options?: { compare?: boolean; attemptBackup?: FileRef | null }) => void | Promise<void>;
+  onHasUnsavedEditor?: () => boolean;
+  onClearEditorSession?: (printerId: string) => void;
+  /** A late replacement may take over only an unchanged, still-active built-in file. */
+  onReplaceOpenFile?: (ref: FileRef) => boolean;
 } = $props();
 
   const api = usePluginApi();
   const i18n = api.i18n;
   const ops = createFileOps(api);
+  let restartView = $state<RestartAttempt | null>(null);
+  let restartSeconds = $state(0);
+  let restoreBusy = $state(false);
+  let restoreConflict = $state(false);
+
+  // The monitor is module-owned; this subscription only controls the visible Config panel.
+  $effect(() => {
+    if (root !== 'config') return;
+    const monitor = configRestartMonitor(api.printer.id, api.moonrakerFor(api.printer.id));
+    const unsub = monitor.subscribe((attempt) => {
+      restartView = attempt;
+      restartSeconds = attempt?.phase === 'checking' ? Math.max(0, Math.ceil((attempt.deadline - Date.now()) / 1000)) : 0;
+      restoreConflict = false;
+    });
+    const timer = setInterval(() => {
+      if (restartView?.phase === 'checking') restartSeconds = Math.max(0, Math.ceil((restartView.deadline - Date.now()) / 1000));
+    }, 1000);
+    return () => { unsub(); clearInterval(timer); };
+  });
 
   /** Текст ошибки для пользователя: отказ гарда → перевод reasonKey, иначе message. */
   function errText(e: unknown): string {
     const reasonKey = (e as { rejection?: { reasonKey?: string } } | null)?.rejection?.reasonKey;
     if (reasonKey) return i18n.t(reasonKey);
-    if (e instanceof Error && e.message === 'config.backupInvalid') {
+    if (e instanceof Error && (e.message === 'config.backupInvalid' || e.message === 'config.restartStateError')) {
       return i18n.t(e.message);
     }
     return e instanceof Error ? e.message : String(e);
@@ -306,13 +342,168 @@ let {
   let editorContent = $state('');
   let saveBusy = $state(false);
   let editorCompareInitially = $state(false);
+  let comparisonAttemptRef = $state<FileRef | null>(null);
+  interface EditorTab extends ConfigEditorTab { snapshot?: EditorSnapshot; }
+  let editorTabs = $state<EditorTab[]>([]);
+  let editorJumpLine = $state(0);
+  let macroNames = $state<string[]>([]);
+  let macroDefinitions = $state<MacroDefinition[]>([]);
+  let macroFiles = new Map<string, string>();
+
+  /** Keep unsaved files in this editor session, including files opened only in a peek. */
+  function bufferedFiles(): Map<string, string> {
+    return new Map(editorTabs.filter((tab) => tab.ref.root === 'config')
+      .map((tab) => [tab.ref.path, tab.content]));
+  }
+
+  /** Rebuild on lookup so edits and Moonraker file changes cannot leave stale locations. */
+  async function refreshMacroIndex(): Promise<void> {
+    const printerId = api.printer.id;
+    const result = await loadMacroIndex(api.moonrakerFor(printerId), ops.readText, bufferedFiles());
+    if (api.printer.id !== printerId) return;
+    macroFiles = result.files;
+    macroDefinitions = result.definitions;
+    macroNames = [...new Set(result.definitions.map((definition) => definition.name.toUpperCase()))];
+  }
+
+  async function lookupMacro(name: string): Promise<MacroDefinition[]> {
+    await refreshMacroIndex();
+    return macroDefinitions.filter((definition) => definition.name.toUpperCase() === name.toUpperCase());
+  }
+
+  function macroSource(path: string): string | null {
+    return editorTabs.find((item) => item.ref.root === 'config' && item.ref.path === path)?.content
+      ?? macroFiles.get(path) ?? null;
+  }
+
+  /** Preserve each tab's CodeMirror history when the keyed dialog switches files. */
+  function storeEditorSnapshot(path: string, snapshot: EditorSnapshot): void {
+    const tab = editorTabs.find((item) => item.ref.root === 'config' && item.ref.path === path);
+    if (tab) tab.snapshot = snapshot;
+  }
+
+  /** A peek edits only the owning file's section and does not write until Save. */
+  function editPeek(definition: MacroDefinition, section: string): void {
+    const tab = editorTabs.find((item) => item.ref.path === definition.path && item.ref.root === 'config');
+    const original = tab?.content ?? macroFiles.get(definition.path);
+    if (original === undefined) return;
+    const edit = macroSectionEdit(original, definition, section);
+    if (!edit) return;
+    const next = original.slice(0, edit.from) + edit.insert + original.slice(edit.to);
+    // Record peek edits in the target tab's history so Undo works after navigation.
+    const previous = tab?.snapshot
+      ? EditorState.fromJSON(tab.snapshot, { extensions: [editorHistory()] }, { history: historyField })
+      : EditorState.create({ doc: original, extensions: [editorHistory()] });
+    const updated = previous.update({ changes: edit }).state;
+    const snapshot = updated.toJSON({ history: historyField });
+    if (tab) { tab.content = next; tab.snapshot = snapshot; }
+    else editorTabs = [...editorTabs, { ref: { root: 'config', path: definition.path, isDir: false }, content: next, saved: original, snapshot }];
+    macroFiles.set(definition.path, next);
+  }
+
+  async function savePeek(definition: MacroDefinition): Promise<boolean> {
+    const tab = editorTabs.find((item) => item.ref.path === definition.path && item.ref.root === 'config');
+    if (!tab || tab.content === tab.saved) return true;
+    const printerId = api.printer.id;
+    const submitted = tab.content;
+    try {
+      await ops.saveConfigText(tab.ref, submitted, api.moonrakerFor(printerId));
+      tab.saved = submitted;
+      void source.refresh();
+      return true;
+    } catch (error) {
+      setNotice(api, scope, errText(error));
+      return false;
+    }
+  }
+
+  /** Save all dirty cfg tabs before closing, preserving every file's existing backup workflow. */
+  async function saveAllEditorTabs(): Promise<boolean> {
+    if (saveBusy) return false;
+    const printerId = api.printer.id;
+    saveBusy = true;
+    try {
+      for (const tab of editorTabs) {
+        if (tab.content === tab.saved) continue;
+        const submitted = tab.content;
+        await ops.saveConfigText(tab.ref, submitted, api.moonrakerFor(printerId));
+        tab.saved = submitted;
+      }
+      void source.refresh();
+      // Saving every submitted version does not authorize closing over newer edits.
+      if (editorTabs.some((tab) => tab.content !== tab.saved)) return false;
+      return true;
+    } catch (error) {
+      setNotice(api, scope, errText(error));
+      return false;
+    } finally {
+      saveBusy = false;
+    }
+  }
+
+  function onEditorBufferChange(content: string): void {
+    const tab = editorTabs.find((item) => item.ref.path === editorRef?.path && item.ref.root === editorRef.root);
+    if (tab) tab.content = content;
+  }
+
+  function selectEditorTab(path: string, line = 0): void {
+    const tab = editorTabs.find((item) => item.ref.root === 'config' && item.ref.path === path);
+    if (!tab) return;
+    editorRef = tab.ref;
+    editorContent = tab.content;
+    editorReadonly = false;
+    editorLang = 'klipper';
+    editorJumpLine = line;
+    editorSeq++;
+  }
+
+  /** A tab close affects only that file and retains the adjacent tab's independent history. */
+  async function closeEditorTab(path: string, saveChanges: boolean): Promise<boolean> {
+    if (saveBusy) return false;
+    const tab = editorTabs.find((item) => item.ref.root === 'config' && item.ref.path === path);
+    if (!tab) return false;
+    const wasActive = editorRef?.root === 'config' && editorRef.path === path;
+    const printerId = api.printer.id;
+    saveBusy = true;
+    try {
+      const result = await closeConfigEditorTab(editorTabs, path, saveChanges,
+        api.moonrakerFor(printerId), ops);
+      if (!result.closed) return false;
+      editorTabs = result.remaining;
+      macroFiles.delete(path);
+      if (!editorTabs.length) editorOpen = false;
+      else if (wasActive && result.nextPath) selectEditorTab(result.nextPath);
+      setNotice(api, scope, null);
+      void source.refresh();
+      void refreshMacroIndex().catch(() => {});
+      return true;
+    } catch (error) {
+      setNotice(api, scope, errText(error));
+      return false;
+    } finally {
+      saveBusy = false;
+    }
+  }
+
+  async function navigateToMacro(definition: MacroDefinition): Promise<void> {
+    if (!editorTabs.some((tab) => tab.ref.root === 'config' && tab.ref.path === definition.path)) {
+      const content = macroFiles.get(definition.path) ?? await ops.readText({ root: 'config', path: definition.path, isDir: false });
+      editorTabs = [...editorTabs, {
+        ref: { root: 'config', path: definition.path, isDir: false }, content, saved: content,
+      }];
+    }
+    selectEditorTab(definition.path, definition.firstLine);
+  }
 
   /** Hidden backup files are read directly because Moonraker does not notify their changes. */
   async function loadEditorBackup(): Promise<{ text: string; path: string } | null> {
     const ref = editorRef;
     if (!ref) return null;
     const printerId = api.printer.id;
-    const backup = await ops.readConfigBackup(ref, api.moonrakerFor(printerId));
+    // Recovery comparison must use this attempt's immutable snapshot, not the rolling .bak.
+    const backup = comparisonAttemptRef
+      ? { text: await ops.readText(comparisonAttemptRef, api.moonrakerFor(printerId)), ref: comparisonAttemptRef }
+      : await ops.readConfigBackup(ref, api.moonrakerFor(printerId));
     if (api.printer.id !== printerId) return null;
     return backup ? { text: backup.text.replace(/\r\n?/g, '\n'), path: backup.ref.path } : null;
   }
@@ -333,22 +524,49 @@ let {
     setNotice(api, scope, errText(e));
   }
 
-  /** Both save buttons share the same backup-first path for protected config files. */
+  /** Save all dirty cfg tabs before one restart; the active cfg remains the recovery anchor. */
   async function saveAndRestart(text: string, klippyState: KlippyState): Promise<boolean> {
     if (!editorRef || saveBusy) return false;
     const ref = editorRef;
     const printerId = api.printer.id;
+    const target = api.moonrakerFor(printerId);
+    const monitorKlipper = ref.root === 'config' && !/^moonraker\.conf$/i.test(ref.path) && Boolean(configBackupRef(ref));
+    const attemptId = newRestartAttemptId();
     saveBusy = true;
     try {
-      if (configBackupRef(ref)) await ops.saveConfigText(ref, text, api.moonrakerFor(printerId));
-      else await ops.saveText(ref, text);
+      if (editorTabs.length && ref.root === 'config' && /\.cfg$/i.test(ref.path)) {
+        const saved = await saveConfigTabsForRestart(editorTabs, ref.path, attemptId, target, ops);
+        if (!saved) return false;
+        if (saved.changedDuringSave) {
+          setNotice(api, scope, i18n.t('config.restartEditedDuringSave'));
+          return false;
+        }
+        const primary = saved.files[0]!;
+        editorOpen = editorTabs.some((tab) => tab.content !== tab.saved);
+        setNotice(api, scope, null);
+        void source.refresh();
+        configRestartMonitor(printerId, target).start(attemptId, primary.file, primary.backup,
+          primary.text, saved.files);
+        dispatchConfigRestart(target, primary.file, saved.state, (error) =>
+          configRestartMonitor(printerId, target).commandFailed(attemptId, error));
+        return true;
+      }
+      // The state request and any ready-state copy precede both the rolling backup and upload.
+      const prepared = monitorKlipper ? await ops.saveConfigForRestart(ref, text, attemptId, target) : null;
+      if (!monitorKlipper && configBackupRef(ref)) await ops.saveConfigText(ref, text, target);
+      else if (!monitorKlipper) await ops.saveText(ref, text);
       editorContent = text;
-      editorOpen = false;
+      const tab = editorTabs.find((item) => item.ref.path === ref.path && item.ref.root === ref.root);
+      if (tab) { tab.content = text; tab.saved = text; }
+      // Other tabs may still contain edits when the current file restarts Klipper.
+      editorOpen = editorTabs.some((tab) => tab.ref.path !== ref.path && tab.content !== tab.saved);
       setNotice(api, scope, null);
       void source.refresh();
       // Klippy can take a long time to answer during a startup fault; saving is already complete.
-      dispatchConfigRestart(api.moonrakerFor(printerId), ref, klippyState, (error) => {
-        if (api.printer.id === printerId) reportRestartError(error);
+      if (monitorKlipper) configRestartMonitor(printerId, target).start(attemptId, ref, prepared?.backup ?? null, text);
+      dispatchConfigRestart(target, ref, prepared?.state ?? klippyState, (error) => {
+        if (monitorKlipper) configRestartMonitor(printerId, target).commandFailed(attemptId, error);
+        else if (api.printer.id === printerId) reportRestartError(error);
       });
       return true;
     } catch (e) {
@@ -356,6 +574,46 @@ let {
       return false;
     } finally {
       saveBusy = false;
+    }
+  }
+
+  /** Open the exact attempt snapshot for comparison without discarding dirty editor tabs. */
+  function compareRestartAttempt(): void {
+    const attempt = restartView;
+    if (!attempt?.backup) return;
+    if ((onHasUnsavedEditor?.() ?? editorTabs.some((tab) => tab.content !== tab.saved))) {
+      setNotice(api, scope, i18n.t('config.restartUnsaved'));
+      return;
+    }
+    void openEditor(attempt.file, true, attempt.backup);
+  }
+
+  /** Restore only after an explicit click, retaining the currently deployed version in .bak. */
+  async function restoreRestartAttempt(confirmed = false): Promise<void> {
+    const attempt = restartView;
+    if (!attempt?.backup || restoreBusy || saveBusy) return;
+    if ((onHasUnsavedEditor?.() ?? editorTabs.some((tab) => tab.content !== tab.saved))) {
+      setNotice(api, scope, i18n.t('config.restartUnsaved'));
+      return;
+    }
+    const printerId = api.printer.id;
+    restoreBusy = true;
+    try {
+      const outcome = await restoreConfigAttempt(api, printerId, attempt.id, confirmed);
+      if (outcome === 'conflict') {
+        restoreConflict = true;
+        return;
+      }
+      if (outcome !== 'restored') return;
+      editorOpen = false;
+      editorTabs = [];
+      onClearEditorSession?.(printerId);
+      void source.refresh();
+      restoreConflict = false;
+    } catch (error) {
+      setNotice(api, scope, errText(error));
+    } finally {
+      restoreBusy = false;
     }
   }
 
@@ -409,19 +667,50 @@ let {
   }
 
   let editorSeq = $state(0);
+  let delegatedRef = $state<FileRef | null>(null);
+  let delegatedKind = $state<'editor' | 'viewer'>('editor');
+  let delegatedPrinterId = $state('');
+  $effect(() => {
+    void extTick;
+    const ref = delegatedRef;
+    if (!ref || delegatedPrinterId !== api.printer.id || !onReplaceOpenFile) return;
+    const point = delegatedKind === 'viewer' ? FILE_TABLE_POINT_IDS.viewer : FILE_TABLE_POINT_IDS.editor;
+    const params = delegatedKind === 'viewer' ? fileParams(ref) : {
+      ...fileParams(ref), readonly: String(fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
+        (ref.root === 'config' && /\.(cfg|conf)\.bak$/i.test(ref.path))),
+    };
+    if (api.extensions.resolve(point, params).original || !onReplaceOpenFile(ref)) return;
+    // Keep an edited buffer in the built-in session; an unchanged active file can hand off.
+    delegatedRef = null;
+    if (delegatedKind === 'viewer') openViewer(ref);
+    else void openEditor(ref);
+  });
   let editorRestartKind = $derived<'klipper' | 'moonraker'>(
     editorRef?.root === 'config' && /^moonraker\.conf$/i.test(editorRef.path) ? 'moonraker' : 'klipper',
   );
-  async function openEditor(ref: FileRef, compareInitially = false): Promise<void> {
-    // A backup remains readable but cannot be edited through the ordinary file menu.
-    editorReadonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
+  async function openEditor(ref: FileRef, compareInitially = false, attemptBackup: FileRef | null = null): Promise<void> {
+    // Replacement extensions retain their original FileTable-owned modal contract.
+    const readonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
       (ref.root === 'config' && /\.(cfg|conf)\.bak$/i.test(ref.path));
+    if (onOpenFile && api.extensions.resolve(FILE_TABLE_POINT_IDS.editor,
+      { ...fileParams(ref), readonly: String(readonly) }).original) {
+      delegatedRef = ref;
+      delegatedKind = 'editor';
+      delegatedPrinterId = api.printer.id;
+      await onOpenFile(ref, { compare: compareInitially, attemptBackup });
+      return;
+    }
+    // A backup remains readable but cannot be edited through the ordinary file menu.
+    editorReadonly = readonly;
     const name = ref.path.split('/').pop() ?? '';
     editorLang = /\.(conf|cfg)$/i.test(name)
         ? 'klipper'
         : 'plain';
     editorRef = ref;
+    editorTabs = [];
+    editorJumpLine = 0;
     editorCompareInitially = compareInitially;
+    comparisonAttemptRef = attemptBackup;
     editorSeq++;
     editorByExt = false;
     editorOpen = true;
@@ -430,6 +719,10 @@ let {
     try {
         const raw = await ops.readText(ref);
         editorContent = raw.replace(/\r\n?/g, '\n'); // CRLF/CR → LF до попадания в редактор
+        if (ref.root === 'config' && /\.cfg$/i.test(ref.path)) {
+          editorTabs = [{ ref, content: editorContent, saved: editorContent }];
+          void refreshMacroIndex().catch(() => { /* Navigation remains available after a later retry. */ });
+        }
     } catch (e) {
         editorOpen = false;
         setNotice(api, scope, errText(e));
@@ -439,6 +732,13 @@ let {
   }
 
   function openViewer(ref: FileRef): void {
+    if (onOpenFile && api.extensions.resolve(FILE_TABLE_POINT_IDS.viewer, fileParams(ref)).original) {
+      delegatedRef = ref;
+      delegatedKind = 'viewer';
+      delegatedPrinterId = api.printer.id;
+      void onOpenFile(ref);
+      return;
+    }
     // Moonraker отдаёт бинарщину прямым HTTP: GET /server/files/<root>/<path>
     // (сегменты кодируются, токен авторизации — в query: <img> заголовки не шлёт)
     viewerSrc = ops.viewUrl(ref);
@@ -498,7 +798,10 @@ let {
     if (!menu) return;
     const ref = menu.ref;
     try {
-      if (id === 'edit') await openEditor(ref);
+      if (id === 'edit') {
+        if (fileCap(api, ref.path.split('/').pop() ?? '', ref.root).mode === 'view') openViewer(ref);
+        else await openEditor(ref);
+      }
       else if (id === 'zip') await ops.createZip(ref);
       else if (id === 'download') ops.download(ref);
       else if (id === 'rename') { renameRef = ref; renameOpen = true; }
@@ -579,6 +882,8 @@ let {
       if (configBackupRef(ref)) await ops.saveConfigText(ref, t, api.moonrakerFor(printerId));
       else await ops.saveText(ref, t);
       editorContent = t; // Confirm the editor buffer only after both backup and upload succeed.
+      const tab = editorTabs.find((item) => item.ref.path === ref.path && item.ref.root === ref.root);
+      if (tab) { tab.content = t; tab.saved = t; }
       setNotice(api, scope, null);
       void source.refresh();
       return true;
@@ -620,6 +925,45 @@ let {
 
   {#if notice}
     <p class="notice">{notice}</p>
+  {/if}
+  {#if root === 'config' && restartView && restartView.printerId === api.printer.id}
+    <section class="restart-panel" aria-live="polite" aria-label={i18n.t('config.restartTitle')}>
+      <div class="restart-panel-head">
+        <strong>{i18n.t('config.restartTitle')}</strong>
+        <code dir="ltr">{restartView.file.path}</code>
+        {#if (restartView.files?.length ?? 1) > 1}
+          <span>{i18n.t('config.restartMoreFiles', { count: restartView.files!.length - 1 })}</span>
+        {/if}
+      </div>
+      {#if restartView.phase === 'checking'}
+        <p>{i18n.t(restartView.observedStartup ? 'config.restartStarting' : 'config.restartWaiting', { seconds: restartSeconds })}</p>
+      {:else if restartView.phase === 'ready'}
+        <p>{i18n.t('config.restartReady')}</p>
+      {:else if restartView.phase === 'unconfirmed'}
+        <p>{i18n.t('config.restartUnconfirmed')}</p>
+      {:else if restartView.phase === 'failed'}
+        <p>{i18n.t('config.restartFailed')}</p>
+        {#if !restartView.backup}<p>{i18n.t('config.restartNoCopy')}</p>{/if}
+      {:else}
+        <p>{i18n.t('config.restartCommandError', { error: restartView.commandError ?? '' })}</p>
+      {/if}
+      {#if restartView.phase === 'failed' && restartView.backup}
+        <div class="restart-actions">
+          <button class="btn" onclick={compareRestartAttempt} disabled={restoreBusy}>{i18n.t('config.restartCompare')}</button>
+          <button class="btn" onclick={() => void restoreRestartAttempt()} disabled={restoreBusy}>{i18n.t((restartView.files?.length ?? 1) > 1 ? 'config.restartRestoreMany' : 'config.restartRestore')}</button>
+        </div>
+        {#if restoreConflict}
+          <p>{i18n.t((restartView.files?.length ?? 1) > 1 ? 'config.restartConflictMany' : 'config.restartConflict')}</p>
+          <div class="restart-actions">
+            <button class="btn" onclick={() => void restoreRestartAttempt(true)} disabled={restoreBusy}>{i18n.t('config.restartOverwrite')}</button>
+            <button class="btn" onclick={() => (restoreConflict = false)}>{i18n.t('config.restartCancel')}</button>
+          </div>
+        {/if}
+      {/if}
+      {#if restartView.phase !== 'checking'}
+        <button class="restart-dismiss" onclick={() => configRestartMonitor(api.printer.id, api.moonrakerFor(api.printer.id)).dismiss()}>{i18n.t('config.restartDismiss')}</button>
+      {/if}
+    </section>
   {/if}
   {#if sourceError}
     <div class="ft-state">
@@ -778,6 +1122,21 @@ let {
           loading={editorLoading}
           saving={saveBusy}
           content={editorContent}
+          filePath={editorRef?.root === 'config' && /\.cfg$/i.test(editorRef.path) ? editorRef.path : undefined}
+          tabs={editorTabs.map((tab) => ({ path: tab.ref.path, dirty: tab.content !== tab.saved }))}
+          jumpLine={editorJumpLine}
+          {macroNames}
+          onBufferChange={onEditorBufferChange}
+          editorSnapshot={editorTabs.find((tab) => tab.ref.root === editorRef?.root && tab.ref.path === editorRef?.path)?.snapshot}
+          onEditorSnapshot={storeEditorSnapshot}
+          onSelectTab={selectEditorTab}
+          onCloseTab={closeEditorTab}
+          onLookupMacro={lookupMacro}
+          onMacroSource={macroSource}
+          onPeekEdit={editPeek}
+          onPeekSave={savePeek}
+          onMacroNavigate={navigateToMacro}
+          onSaveAll={saveAllEditorTabs}
           readonly={editorReadonly}
           canRestart={editorCanRestart}
           restartKind={editorRestartKind}
@@ -858,6 +1217,23 @@ let {
         padding:0 var(--space-md);
         overflow-wrap:anywhere;
     }
+    /* The status lives in the table card, outside the modal; wrapping keeps paths usable in RTL and narrow panes. */
+    .restart-panel {
+        flex: none;
+        padding: var(--space-sm) var(--space-md);
+        border-block-end: 1px solid var(--border-color);
+        background: var(--bg-surface-hover);
+        color: var(--text-primary);
+        font-size: var(--font-size-sm);
+        overflow-wrap: anywhere;
+    }
+    .restart-panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-xs) var(--space-sm); }
+    .restart-panel-head code { font-family: monospace; unicode-bidi: isolate; overflow-wrap: anywhere; }
+    .restart-panel p { margin-block: var(--space-xs); }
+    .restart-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-block-start: var(--space-xs); }
+    .restart-actions .btn { min-height: 36px; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
+    .restart-actions .btn:disabled { opacity: 0.6; cursor: default; }
+    .restart-dismiss { border: none; background: transparent; color: var(--accent); cursor: pointer; padding: var(--space-xs); min-height: 36px; }
     .ft-scroll { 
         flex:1;
         min-height:0;
