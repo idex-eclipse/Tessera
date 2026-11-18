@@ -169,9 +169,6 @@
         <ExtensionPoint point="shaper">
           {#snippet original()}
             <ShaperContent />
-            {#if store.shaperState.previewUrl}
-              <img class="preview" src={store.shaperState.previewUrl} alt={store.shaperState.selected ?? ''} />
-            {/if}
           {/snippet}
         </ExtensionPoint>
       {:else if tab === 'probe'}
@@ -232,14 +229,6 @@
     flex-direction: column;
     gap: var(--space-md);
     min-height: 0;
-  }
-  .preview {
-    max-width: 100%;
-    max-height: min(420px, 70dvh);
-    object-fit: contain;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface-hover);
   }
   .empty { color: var(--text-muted); text-align: center; padding: var(--space-lg); margin: 0; }
   /* container: панели внутри адаптируются по ширине страницы, а не окна (сайдбар и правая

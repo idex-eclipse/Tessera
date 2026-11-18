@@ -4,7 +4,7 @@
   import { watchSettings } from '../../../../../shared/settings/watch-settings';
   import '../../../../../shared/responsive/card-table.css';
   import { useCalibrations } from '../../../../data/use-calibrations.svelte.ts';
-  import { gcode, runGcode } from '../../../../lib/commands.ts';
+  import { gcode, runGcode, runGcodeLines, shaperRunLines } from '../../../../lib/commands.ts';
   import {
     resetShaperState,
     refreshGallery,
@@ -101,7 +101,7 @@
   );
   let notHomed = $derived(store.state.homedAxes !== 'xyz');
   let items = $derived(gallerySorted(store.shaperState));
-  let currentCmd = $derived(store.shaperState.cmd[store.shaperState.axis] || DEFAULT_CMD[store.shaperState.axis]);
+  let axes = $derived.by<('X' | 'Y')[]>(() => store.shaperState.axis === 'XY' ? ['X', 'Y'] : [store.shaperState.axis]);
 
   let detectedKinematics = $derived(store.state.kinematics);
   let beltsVisible = $derived.by(() => {
@@ -128,7 +128,8 @@
   }
 
   // --- композеры строк ---
-  function testScript(): string {
+  /** Share documented frequency bounds between resonance tests and calibration. */
+  function frequencyOptions(): { freqStart?: number; freqEnd?: number; hzPerSec?: number } {
     const opts: { freqStart?: number; freqEnd?: number; hzPerSec?: number } = {};
     const fs = Number(store.shaperState.freqStart);
     const fe = Number(store.shaperState.freqEnd);
@@ -136,21 +137,23 @@
     if (store.shaperState.freqStart.trim() !== '' && Number.isFinite(fs)) opts.freqStart = fs;
     if (store.shaperState.freqEnd.trim() !== '' && Number.isFinite(fe)) opts.freqEnd = fe;
     if (store.shaperState.hzPerSec.trim() !== '' && Number.isFinite(hz)) opts.hzPerSec = hz;
-    return gcode.testResonances(store.shaperState.axis, opts);
+    return opts;
   }
 
-  function calibrateScript(): string {
-    let s = gcode.shaperCalibrate(store.shaperState.axis);
-    const types = store.shaperState.shaperTypes.trim();
-    if (types) s += ` SHAPER_TYPES=${types}`;
-    return s;
+  function testScript(axis: 'X' | 'Y'): string {
+    return gcode.testResonances(axis, frequencyOptions());
   }
 
-  /** Единый источник: превью и отправка читают один derived. */
+  function calibrateScript(axis: 'X' | 'Y'): string {
+    return gcode.shaperCalibrate(axis, frequencyOptions());
+  }
+
+  /** The preview and Run must read the same sequence, including every pause. */
   let lines = $derived.by<string[]>(() => {
-    if (selected === 'test') return [testScript()];
-    if (selected === 'calib') return [calibrateScript()];
-    return [testScript(), gcode.waitComplete, gcode.pauseForData, gcode.runShellCommand(currentCmd)];
+    return shaperRunLines(selected, axes, testScript, calibrateScript, {
+      X: store.shaperState.cmd.X || DEFAULT_CMD.X,
+      Y: store.shaperState.cmd.Y || DEFAULT_CMD.Y,
+    });
   });
 
   function beginRun(key: string): void {
@@ -165,30 +168,19 @@
   async function run(): Promise<void> {
     if (store.shaperState.busy !== '' || isPrinting || notHomed) return;
 
-    if (selected === 'pipe') {
-      // Keep all steps on the printer that started this pipeline, even after a tab switch.
-      const handle = api.moonrakerFor(api.printer.id);
-      beginRun('pipe');
-      takeBaseline(store.shaperState);
-      try {
-        await runGcode(handle, testScript());
-        await runGcode(handle, gcode.runShellCommand(currentCmd));
+    // Capture commands and printer before awaiting so the run stays on its starting printer.
+    const commands = [...lines];
+    const handle = api.moonrakerFor(api.printer.id);
+    beginRun(selected);
+    if (selected === 'pipe') takeBaseline(store.shaperState);
+    try {
+      await runGcodeLines(handle, commands);
+      if (selected === 'pipe') {
         await refreshGallery(store.shaperState, handle);
         store.shaperState.lastArtifacts = diffArtifacts(store.shaperState);
-      } catch (e) {
-        console.error('[calibrations] pipeline failed:', e);
-      } finally {
-        store.shaperState.busy = '';
-        store.shaperState.runDone = true;
       }
-      return;
-    }
-
-    beginRun(selected);
-    try {
-      await runGcode(api.moonrakerFor(api.printer.id), lines[0] ?? '');
     } catch (e) {
-      console.error('[calibrations] run failed:', lines[0], e);
+      console.error('[calibrations] run failed:', e);
     } finally {
       store.shaperState.busy = '';
       store.shaperState.runDone = true;
@@ -197,18 +189,33 @@
 
   async function applyRecommended(): Promise<void> {
     const rec = store.shaperState.recommended;
-    if (!rec || store.shaperState.busy !== '') return;
+    // A combined run has two recommendations; the shared summary cannot identify both.
+    if (!rec || store.shaperState.busy !== '' || store.shaperState.axis === 'XY') return;
     store.shaperState.busy = 'apply';
     try {
       await runGcode(
         api.moonrakerFor(api.printer.id),
         gcode.setInputShaper({
           [`SHAPER_TYPE_${store.shaperState.axis}`]: rec.name,
-          [`FREQ_${store.shaperState.axis}`]: rec.freq,
+          [`SHAPER_FREQ_${store.shaperState.axis}`]: rec.freq,
         }),
       );
     } catch (e) {
       console.error('[calibrations] SET_INPUT_SHAPER failed:', e);
+    } finally {
+      store.shaperState.busy = '';
+    }
+  }
+
+  /** Home all axes before resonance measurements, as in the Shake&Tune panel. */
+  async function park(): Promise<void> {
+    if (store.shaperState.busy !== '' || isPrinting) return;
+    const handle = api.moonrakerFor(api.printer.id);
+    store.shaperState.busy = 'park';
+    try {
+      await runGcode(handle, 'G28');
+    } catch (e) {
+      console.error('[calibrations] G28 failed:', e);
     } finally {
       store.shaperState.busy = '';
     }
@@ -270,9 +277,6 @@
                   {#if !store.state.shellCommands.includes(store.shaperState.cmd.Y)}
                     <option value={store.shaperState.cmd.Y}>{store.shaperState.cmd.Y}</option>
                   {/if}
-                  {#each store.state.shellCommands.includes(store.shaperState.cmd.Y) ? [] : [store.shaperState.cmd.Y]}
-                    <option value={store.shaperState.cmd.Y}>{store.shaperState.cmd.Y}</option>
-                  {/each}
                   {#each store.state.shellCommands as c (c)}
                     <option value={c}>{c}</option>
                   {/each}
@@ -307,6 +311,7 @@
           <select class="select" bind:value={store.shaperState.axis} disabled={store.shaperState.busy !== ''}>
             <option value="X">X</option>
             <option value="Y">Y</option>
+            <option value="XY">X + Y</option>
           </select>
         </label>
         <label class="field">
@@ -320,10 +325,6 @@
         <label class="field">
           <span class="label">{i18n.t('calibrations.shaper.hzPerSec')}</span>
           <input class="input" type="number" step="0.1" placeholder="1" bind:value={store.shaperState.hzPerSec} disabled={store.shaperState.busy !== ''} />
-        </label>
-        <label class="field">
-          <span class="label">{i18n.t('calibrations.shaper.shaperTypes')}</span>
-          <input class="input" type="text" placeholder="mzv, ei" bind:value={store.shaperState.shaperTypes} disabled={store.shaperState.busy !== ''} />
         </label>
       </div>
 
@@ -354,6 +355,9 @@
           {/if}
         </code>
         <div class="btn-row">
+          <button class="btn" disabled={store.shaperState.busy !== '' || isPrinting} onclick={park}>
+            {i18n.t('calibrations.shaper.park')}
+          </button>
           <button class="btn primary" disabled={store.shaperState.busy !== '' || isPrinting || notHomed} onclick={run}>
             {#if store.shaperState.busy !== ''}
               <Loader size="sm" inline text="" /> {i18n.t('calibrations.running')}
@@ -404,7 +408,7 @@
         {/if}
 
         <div class="row btn-row">
-          <button class="btn" disabled={!store.shaperState.recommended || store.shaperState.busy !== ''} onclick={applyRecommended}>
+          <button class="btn" disabled={!store.shaperState.recommended || store.shaperState.busy !== '' || store.shaperState.axis === 'XY'} onclick={applyRecommended}>
             {i18n.t('calibrations.shaper.apply')}
           </button>
           <button class="btn primary" disabled={store.shaperState.busy !== '' || isPrinting} onclick={() => (saveOpen = true)}>

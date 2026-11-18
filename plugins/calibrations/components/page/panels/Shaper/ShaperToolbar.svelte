@@ -9,6 +9,9 @@
   const i18n = api.i18n;
   const store = useCalibrations(api);
 
+  // The legacy single-axis toolbar cannot edit both graph commands at once.
+  let activeAxis = $derived(store.shaperState.axis === 'XY' ? 'X' : store.shaperState.axis);
+
   const DEFAULT_CMD: Record<'X' | 'Y', string> = {
     X: 'generate_x_shaper_graph',
     Y: 'generate_y_shaper_graph',
@@ -27,6 +30,7 @@
   });
 
   function setCmd(v: string): void {
+    if (store.shaperState.axis === 'XY') return;
     store.shaperState.cmd[store.shaperState.axis] = v;
     api.settingsFor(api.printer.id).set(store.shaperState.axis === 'X' ? 'shaperCmdX' : 'shaperCmdY', v);
   }
@@ -41,9 +45,9 @@
 <div class="toolbar">
   <label class="cmd-select">
     <span class="lbl">{i18n.t('calibrations.shaper.shellCmd')} {store.shaperState.axis}</span>
-    <select class="select" value={store.shaperState.cmd[store.shaperState.axis]} onchange={(e) => setCmd(e.currentTarget.value)}>
-      {#if !store.state.shellCommands.includes(store.shaperState.cmd[store.shaperState.axis])}
-        <option value={store.shaperState.cmd[store.shaperState.axis]}>{store.shaperState.cmd[store.shaperState.axis]}</option>
+    <select class="select" value={store.shaperState.cmd[activeAxis]} onchange={(e) => setCmd(e.currentTarget.value)} disabled={store.shaperState.axis === 'XY'}>
+      {#if !store.state.shellCommands.includes(store.shaperState.cmd[activeAxis])}
+        <option value={store.shaperState.cmd[activeAxis]}>{store.shaperState.cmd[activeAxis]}</option>
       {/if}
       {#each store.state.shellCommands as c (c)}
         <option value={c}>{c}</option>

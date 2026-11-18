@@ -8,11 +8,10 @@ export interface FittedRow {
 }
 
 export interface ShaperState {
-  axis: 'X' | 'Y';
+  axis: 'X' | 'Y' | 'XY';
   freqStart: string;
   freqEnd: string;
   hzPerSec: string;
-  shaperTypes: string;
   external: boolean;
 
   // Settings fields persist per printer and must survive a run-state reset.
@@ -46,7 +45,6 @@ export function initialShaperState(): ShaperState {
     freqStart: '',
     freqEnd: '',
     hzPerSec: '',
-    shaperTypes: '',
     external: false,
     cmd: { X: '', Y: '' },
     beltsEnabled: false,
@@ -76,7 +74,6 @@ export function resetShaperState(state: ShaperState): void {
   state.freqStart = '';
   state.freqEnd = '';
   state.hzPerSec = '';
-  state.shaperTypes = '';
   state.busy = '';
   state.runDone = false;
   state.sessionLog = [];
@@ -104,26 +101,27 @@ interface ListFile {
   modified: number;
 }
 
-/** Union png: корень config + подпапка shapers/.
- *  Чистая функция, принимает handle. */
+/** List PNG files in the config root and shapers directory through Moonraker. */
 export async function listPngs(handle: MoonrakerProxyHandle): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  const targets: Array<{ path?: string; prefix: string }> = [
-    { prefix: '' },
-    { path: 'shapers', prefix: 'shapers/' },
+  const targets: Array<{ path: string; prefix: string }> = [
+    { path: 'config', prefix: '' },
+    { path: 'config/shapers', prefix: 'shapers/' },
   ];
   for (const t of targets) {
     try {
-      const params: Record<string, unknown> = { root: 'config' };
-      if (t.path) params.path = t.path;
-      const res = await handle.request<{ files?: ListFile[] }>('server.files.list', params);
+      // server.files.list recursively lists a root and ignores path; this RPC lists one directory.
+      const res = await handle.request<{ files?: ListFile[] }>('server.files.get_directory', {
+        path: t.path,
+        extended: false,
+      });
       for (const f of res?.files ?? []) {
         const name = String(f.filename ?? '');
         if (!name.toLowerCase().endsWith('.png')) continue;
         out[t.prefix + name] = Number(f.modified ?? 0);
       }
     } catch (e) {
-      console.error('[calibrations] server.files.list failed:', t.path ?? '', e);
+      console.error('[calibrations] server.files.get_directory failed:', t.path, e);
     }
   }
   return out;

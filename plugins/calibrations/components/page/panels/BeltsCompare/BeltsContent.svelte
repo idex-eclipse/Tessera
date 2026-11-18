@@ -2,7 +2,7 @@
   import Loader from '../../../../../shared/loader/Loader.svelte';
   import { usePluginApi } from '../../../../../../plugin-sdk/src/svelte/index';
   import { useCalibrations } from '../../../../data/use-calibrations.svelte.ts';
-  import { gcode, runGcode } from '../../../../lib/commands.ts';
+  import { beltRunLines, runGcodeLines } from '../../../../lib/commands.ts';
   import {
     refreshGallery, takeBaseline, diffArtifacts,
   } from '../../../../state/shaper-state.svelte.ts';
@@ -42,10 +42,8 @@
   let notHomed = $derived(store.state.homedAxes !== 'xyz');
 
   /** Единый источник: превью и отправка читают один derived. */
-  let lines = $derived.by<string[]>(() => {
-    const tests = axes.map((ax) => gcode.testResonances(ax, { output: 'raw_data' }));
-    return selected === 'pipe' ? [...tests, gcode.waitComplete, gcode.pauseForData, gcode.runShellCommand(beltsCmd)] : tests;
-  });
+  // The preview and Run share the same guarded pauses between captures.
+  let lines = $derived(beltRunLines(axes, selected === 'pipe' ? beltsCmd : null));
 
   $effect(() => {
     void store.shaperState.beltLog.length;
@@ -58,17 +56,15 @@
     if (store.shaperState.busy !== '' || isPrinting || notHomed || effective === 'none') return;
     // Pin every sequential calibration request to the printer that started this run.
     const handle = api.moonrakerFor(api.printer.id);
+    const commands = [...lines];
     const withGraph = selected === 'pipe';
     store.shaperState.busy = withGraph ? 'beltsPipe' : 'belts';
     store.shaperState.beltLog = [];
     store.shaperState.beltArtifacts = [];
     if (withGraph) takeBaseline(store.shaperState);
     try {
-      for (const ax of axes) {
-        await runGcode(handle, gcode.testResonances(ax, { output: 'raw_data' }));
-      }
+      await runGcodeLines(handle, commands);
       if (withGraph) {
-        await runGcode(handle, gcode.runShellCommand(beltsCmd));
         await refreshGallery(store.shaperState, handle);
         store.shaperState.beltArtifacts = diffArtifacts(store.shaperState);
       }
