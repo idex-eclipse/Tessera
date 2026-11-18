@@ -235,6 +235,8 @@ export interface HotkeyContribution {
    * комбинаций, которые в полях ввода имеют своё значение (Ctrl+стрелки и т.п.).
    */
   allowInInputs?: boolean;
+  /** Optionally route a plugin-page hotkey only to its editor, or to both page and editor. */
+  when?: 'editor' | 'page-or-editor';
 }
 
 /**

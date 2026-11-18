@@ -27,8 +27,9 @@
  *          (tessera-ext serve, секрет хранится на принтере)
  *   0.14 — api.notifications.push actions: plugin-owned Custom Element actions in notifications
  *   1.0 — active-printer moonraker() and settings removed; explicit printer IDs are required
+ *   1.1 — editor-aware plugin hotkeys
  */
-export const PLUGIN_API = '1.0';
+export const PLUGIN_API = '1.1';
 
 export const LEGACY_PLUGIN_API = '0.7';
 
