@@ -26,7 +26,8 @@
 
   let open = $state(false);
   let btnEl = $state<HTMLButtonElement | null>(null);
-  let pos = $state({ top: 0, right: 0 });
+  let pos = $state({ top: 0, start: 0 });
+  let menuEl = $state<HTMLDivElement | null>(null);
 
   let hsv = $state<HSV>({ h: 220, s: 70, v: 90 });
   let hexInput = $state('');
@@ -50,10 +51,24 @@
   function toggle(): void {
     if (!open && btnEl) {
       const r = btnEl.getBoundingClientRect();
-      pos = { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) };
+      // The picker can be opened from either edge of a fixed editor popover.
+      const width = Math.min(240, Math.max(0, window.innerWidth - 16));
+      const rtl = getComputedStyle(btnEl).direction === 'rtl';
+      const desiredLeft = rtl ? r.right - width : r.left;
+      const left = Math.max(8, Math.min(desiredLeft, window.innerWidth - width - 8));
+      pos = { top: r.bottom + 4,
+        start: rtl ? window.innerWidth - left - width : left };
     }
     open = !open;
   }
+
+  $effect(() => {
+    if (!open || !menuEl) return;
+    // Fit the measured picker above the viewport edge instead of clipping its controls.
+    const height = menuEl.getBoundingClientRect().height;
+    const top = Math.max(8, Math.min(pos.top, window.innerHeight - height - 8));
+    if (top !== pos.top) pos.top = top;
+  });
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') open = false;
@@ -189,7 +204,8 @@
 {#if open}
   <div class="cp-backdrop" style:z-index={layer} onclick={() => (open = false)} role="presentation"></div>
 
-  <div class="cp-menu" style:z-index={layer + 1} style:top="{pos.top}px" style:right="{pos.right}px">
+  <div class="cp-menu" bind:this={menuEl} style:z-index={layer + 1}
+    style:inset-block-start="{pos.top}px" style:inset-inline-start="{pos.start}px">
     <!-- пресеты + сброс -->
     <div class="cp-grid">
       <button
@@ -311,7 +327,9 @@
   .cp-menu {
     position: fixed;
     z-index: 461;
-    width: 240px;
+    width: min(240px, calc(100vw - 16px));
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
     padding: var(--space-sm);
     background: var(--bg-surface);
     border: 1px solid var(--border-color);

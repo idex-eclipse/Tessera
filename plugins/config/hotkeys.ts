@@ -2,24 +2,37 @@ import type { PluginApi } from '../../plugin-sdk/src/types';
 
 import { openPluginPage } from '../shared/page-nav';
 import { requestSearchFocus } from '../shared/file-table/file-table-state.svelte';
-import { isEditorOpen } from '../shared/text-editor-dialog/editor-state.svelte';
+import { isEditorOpen, runEditorHotkey, type EditorHotkeyAction } from '../shared/text-editor-dialog/editor-state.svelte';
 
 import { activeSearchScope, setTab } from './state/page-ui-state.svelte.ts';
 
-/**
- * Hotkey-обработчики плагина (manifest.hotkeys[].handler), scope 'plugin':
- * срабатывают только на странице конфигов.
- *
- * Пока открыт текстовый редактор (модальный), обработчики молчат — иначе
- * клавиши «просачивались» бы на страницу под ним. Ctrl+F внутри редактора
- * обрабатывает сам редактор (его обработчик на capture гасит событие раньше хоста).
- */
+/** Manifest handlers share the Config page scope; contextual entries run only inside its editor. */
 
-/** Ctrl+F: фокус на поиск файлов активной таблицы вместо поиска браузера. */
-export function hotkeyFindFile(api: PluginApi): void {
-  if (isEditorOpen()) return;
+const CONFIG_OWNER = '@core/config';
+
+/** Search the active file table, or the editor buffer while its modal is open. */
+export function hotkeyFindFile(api: PluginApi, event?: KeyboardEvent): void {
+  if (isEditorOpen()) { runEditorHotkey(CONFIG_OWNER, 'find', event); return; }
   requestSearchFocus(api, activeSearchScope());
 }
+
+/** Route a Config editor command through its mounted dialog. */
+function editorAction(action: EditorHotkeyAction, event?: KeyboardEvent): void {
+  runEditorHotkey(CONFIG_OWNER, action, event);
+}
+
+/** Open replacement in the active editor buffer. */
+export function hotkeyEditorReplace(_api: PluginApi, event: KeyboardEvent): void { editorAction('replace', event); }
+/** Save the active editor buffer through its existing backup path. */
+export function hotkeyEditorSave(_api: PluginApi, event: KeyboardEvent): void { editorAction('save', event); }
+/** Show section help at the editor caret. */
+export function hotkeyEditorHelp(_api: PluginApi, event: KeyboardEvent): void { editorAction('help', event); }
+/** Close the innermost editor popup or the editor itself. */
+export function hotkeyEditorClose(_api: PluginApi, event: KeyboardEvent): void { editorAction('close', event); }
+/** Reveal a called macro below its call. */
+export function hotkeyEditorPeek(_api: PluginApi, event: KeyboardEvent): void { editorAction('peek', event); }
+/** Open a called macro in its source file. */
+export function hotkeyEditorOpenMacro(_api: PluginApi, event: KeyboardEvent): void { editorAction('open', event); }
 
 /** Alt+L / Alt+D / Alt+C: вкладки правой таблицы. */
 export function hotkeyTabLogs(): void {

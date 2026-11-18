@@ -10,6 +10,12 @@
     src = '',
     loading = false,
     onDownload = null,
+    onMinimize,
+    embedded = false,
+    tabs = [],
+    activeTabId,
+    onSelectTab,
+    onCloseTab,
     onClose,
   }: {
     open: boolean;
@@ -17,6 +23,12 @@
     src?: string;
     loading?: boolean;
     onDownload?: (() => void) | null;
+    onMinimize?: () => void;
+    embedded?: boolean;
+    tabs?: Array<{ id: string; path: string; dirty: boolean }>;
+    activeTabId?: string;
+    onSelectTab?: (id: string) => void;
+    onCloseTab?: (id: string) => void;
     onClose: () => void;
   } = $props();
 
@@ -105,9 +117,9 @@
 <svelte:window onkeydown={onKey} />
 
 {#if open}
-  <div class="iv-backdrop" onclick={onClose} role="presentation"></div>
+  {#if !embedded}<div class="iv-backdrop" onclick={onClose} role="presentation"></div>{/if}
 
-  <div class="iv" role="dialog" aria-modal="true">
+  <div class="iv" class:embedded role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'}>
     <div class="iv-head">
       <span class="iv-title" title={title}>{title}</span>
 
@@ -132,11 +144,32 @@
           </button>
         {/if}
 
-        <button class="iv-btn" title={i18n.t('ft.imgClose')} onclick={onClose}>
+        {#if !embedded && onMinimize}
+          <button class="iv-btn" title={i18n.t('config.minimizeEditor')}
+            aria-label={i18n.t('config.minimizeEditor')} onclick={onMinimize}>
+            <Icon name="chevron-down" size={15} />
+          </button>
+        {/if}
+
+        {#if !embedded}<button class="iv-btn" title={i18n.t('ft.imgClose')} onclick={onClose}>
           <Icon name="x" size={15} />
-        </button>
+        </button>{/if}
       </div>
     </div>
+
+    {#if !embedded && tabs.length}
+      <!-- File tabs remain reachable while an image is active, including on touch screens. -->
+      <div class="iv-tabs" role="tablist">
+        {#each tabs as tab (tab.id)}
+          <div class="iv-tab" class:active={tab.id === activeTabId} role="presentation">
+            <button role="tab" aria-selected={tab.id === activeTabId} title={tab.path}
+              onclick={() => onSelectTab?.(tab.id)}><span dir="ltr">{tab.path}</span>{#if tab.dirty} •{/if}</button>
+            <button aria-label={i18n.t('config.closeTab', { file: tab.path })}
+              onclick={() => onCloseTab?.(tab.id)}><Icon name="x" size={13} /></button>
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     <div
       class="iv-stage"
@@ -179,6 +212,12 @@
 {/if}
 
 <style>
+  /* Keep mixed file tabs scrollable without widening the image viewer on narrow screens. */
+  .iv-tabs { display: flex; flex: none; gap: var(--space-xs); max-inline-size: 100%; overflow-x: auto; padding-inline: var(--space-md); background: var(--bg-surface-hover); border-block-end: 1px solid var(--border-color); }
+  .iv-tab { display: flex; flex: none; align-items: stretch; max-inline-size: 220px; border-block-end: 2px solid transparent; }
+  .iv-tab.active { border-block-end-color: var(--accent); }
+  .iv-tab button { min-block-size: 44px; min-inline-size: 44px; border: 0; background: transparent; color: var(--text-primary); cursor: pointer; }
+  .iv-tab button:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .iv-backdrop {
     position: fixed;
     inset: 0;
@@ -194,6 +233,8 @@
     flex-direction: column;
     background: var(--bg-surface);
   }
+  /* Keep the image viewer inside Config's persistent modal frame. */
+  .iv.embedded { position: relative; inset: auto; z-index: auto; flex: 1; min-block-size: 0; min-inline-size: 0; }
 
   .iv-head {
     display: flex;
@@ -227,8 +268,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -267,6 +308,13 @@
     justify-content: center;
     background: var(--bg-app);
     touch-action: none;
+  }
+
+  /* Wrapped touch controls keep image actions reachable without horizontal page scroll. */
+  @media (max-width: 768px) {
+    .iv-head { flex-wrap: wrap; }
+    .iv-actions { flex-wrap: wrap; max-inline-size: 100%; }
+    .iv-btn { width: 44px; height: 44px; }
   }
 
   .iv-stage.pannable {

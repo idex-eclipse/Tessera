@@ -8,6 +8,16 @@ import { namedParams } from './catalog';
 import { quoteValue, type NameResolver } from './object-names';
 import type { Catalog, CommandInfo, ParamInfo } from './types';
 
+/** Explicit parameter shapes remain useful when Moonraker cannot serve G-Codes.md. */
+const VARIABLE_COMMANDS: Record<string, CommandInfo> = Object.fromEntries(([
+  ['SET_GCODE_VARIABLE', ['MACRO', 'VARIABLE', 'VALUE']],
+  ['SAVE_VARIABLE', ['VARIABLE', 'VALUE']],
+] satisfies Array<[string, string[]]>).map(([name, params]) => [name, {
+  name, kind: 'extended' as const,
+  params: params.map((param) => ({ name: param, style: 'named' as const,
+    optional: false, required: true, valueKind: 'text' as const })),
+}]));
+
 export interface HintSuggestion {
   kind: 'command' | 'param' | 'value';
   /** что показано в списке */
@@ -144,7 +154,9 @@ export function suggestForLine(
   }
 
   // ---------- параметры и значения ----------
-  const info = catalog.get(s.slice(0, ws).toUpperCase());
+  const command = s.slice(0, ws).toUpperCase();
+  const found = catalog.get(command);
+  const info = found && namedParams(found).length > 0 ? found : VARIABLE_COMMANDS[command] ?? found;
   if (!info) return EMPTY;
 
   const rest = s.slice(ws + 1);
@@ -201,7 +213,7 @@ export function suggestForLine(
       .map((n) => ({
         kind: 'value' as const,
         label: n.value,
-        insert: resolved.separator ? n.value : quoteValue(n.value),
+        insert: n.insert ?? (resolved.separator ? n.value : quoteValue(n.value)),
         description: n.detail,
         param,
         command: info,

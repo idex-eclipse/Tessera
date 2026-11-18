@@ -1,4 +1,5 @@
 import type { MoonrakerProxyHandle, PluginApi } from '../../../plugin-sdk/src/types';
+import type { KlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
 
 export interface FileRef {
   root: string;   // 'gcodes' | 'config' | 'logs' | 'docs' | 'config_examples'
@@ -14,6 +15,33 @@ export function fullPath(ref: FileRef): string {
 export function configBackupRef(ref: FileRef): FileRef | null {
   return ref.root === 'config' && !ref.isDir && !ref.path.startsWith('.backup/') && /\.(cfg|conf)$/i.test(ref.path)
     ? { ...ref, path: `.backup/${ref.path}.bak`, isDir: false }
+    : null;
+}
+
+/**
+ * Verify Klipper's live state before a restart save writes any config file.
+ * @param target Printer-bound Moonraker connection.
+ * @returns The verified Klipper state, or throws when it cannot be trusted.
+ */
+export async function readConfigRestartState(target: MoonrakerProxyHandle): Promise<KlippyState> {
+  const info = await target.request<{ state?: unknown }>('printer.info');
+  const state = info?.state;
+  if (typeof state !== 'string' || !['ready', 'startup', 'shutdown', 'error', 'disconnected', 'unknown'].includes(state)) {
+    throw new Error('config.restartStateError');
+  }
+  return state as KlippyState;
+}
+
+/**
+ * Keep a ready-state restart snapshot separate from the rolling .bak file.
+ * @param ref Config file being saved.
+ * @param attemptId Path-safe identifier for this restart attempt.
+ * @returns The unique backup reference, or null for an ineligible file or ID.
+ */
+export function restartAttemptBackupRef(ref: FileRef, attemptId: string): FileRef | null {
+  const backup = configBackupRef(ref);
+  return backup && /^[a-zA-Z0-9-]+$/.test(attemptId)
+    ? { ...backup, path: `.backup/${ref.path}.${attemptId}.restart.bak` }
     : null;
 }
 
@@ -150,10 +178,8 @@ export function createFileOps(api: PluginApi) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
-  /** Copy the exact on-disk bytes before uploading edited text; a failed copy prevents the save. */
-  async function saveConfigText(ref: FileRef, content: string, target: MoonrakerProxyHandle = handle()): Promise<void> {
-    const backup = configBackupRef(ref);
-    if (!backup) throw new Error('config.backupInvalid');
+  /** Moonraker does not create parent directories when copying a config file. */
+  async function ensureBackupDirectory(backup: FileRef, target: MoonrakerProxyHandle): Promise<void> {
     // Moonraker requires every parent to exist before creating a directory.
     const segments = dirOf(backup.path).split('/');
     let directory = 'config';
@@ -170,8 +196,33 @@ export function createFileOps(api: PluginApi) {
         }
       }
     }
+  }
+
+  /** Copy the on-disk version for one restart attempt before any upload. */
+  async function createRestartAttemptBackup(ref: FileRef, attemptId: string, target: MoonrakerProxyHandle = handle()): Promise<FileRef> {
+    const backup = restartAttemptBackupRef(ref, attemptId);
+    if (!backup) throw new Error('config.backupInvalid');
+    await ensureBackupDirectory(backup, target);
+    await target.request('server.files.copy', { source: fullPath(ref), dest: fullPath(backup) });
+    return backup;
+  }
+
+  /** Copy the exact on-disk bytes before uploading edited text; a failed copy prevents the save. */
+  async function saveConfigText(ref: FileRef, content: string, target: MoonrakerProxyHandle = handle()): Promise<void> {
+    const backup = configBackupRef(ref);
+    if (!backup) throw new Error('config.backupInvalid');
+    await ensureBackupDirectory(backup, target);
     await target.request('server.files.copy', { source: fullPath(ref), dest: fullPath(backup) });
     await saveText(ref, content, target);
+  }
+
+  /** Recheck Klipper before writing so a stale editor state cannot skip a required attempt copy. */
+  async function saveConfigForRestart(ref: FileRef, content: string, attemptId: string, target: MoonrakerProxyHandle = handle()): Promise<{ state: KlippyState; backup: FileRef | null }> {
+    if (!configBackupRef(ref)) throw new Error('config.backupInvalid');
+    const state = await readConfigRestartState(target);
+    const backup = state === 'ready' ? await createRestartAttemptBackup(ref, attemptId, target) : null;
+    await saveConfigText(ref, content, target);
+    return { state: state as KlippyState, backup };
   }
 
   /** Read the current backup, falling back to the old sibling location during migration. */
@@ -229,7 +280,7 @@ export function createFileOps(api: PluginApi) {
 
   return {
     fileUrl, viewUrl, startPrint, refreshMetadata, createZip, download,
-    rename, copy, remove, readText, readBlob, saveText, saveConfigText, readConfigBackup,
+    rename, copy, remove, readText, readBlob, saveText, saveConfigText, saveConfigForRestart, createRestartAttemptBackup, readConfigBackup,
     upload, createDirectory, createFile
   };
 }

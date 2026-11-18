@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import type { EditorView } from '@codemirror/view';
+  import type { ExtensionRef } from '../../../plugin-sdk/src/types';
   import { usePluginApi } from '../../../plugin-sdk/src/svelte/index';
 
   import { useKlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
   import type { KlippyState } from '../klippy-state/use-klippy-state.svelte.ts';
-  import { editorUi } from './editor-state.svelte.ts';
+  import { editorUi, registerEditorHotkeys, type EditorHotkeyAction } from './editor-state.svelte.ts';
 
   import Icon from '../icons/Icon.svelte';
   import Loader from '../loader/Loader.svelte';
@@ -38,6 +40,9 @@
   import { useNarrow } from '../responsive/use-narrow.svelte.ts';
   import ConfigHelpPopover from './ConfigHelpPopover.svelte';
   import ConfigCompareView from './ConfigCompareView.svelte';
+  import ConfigCodeMirror, { type EditorSnapshot, type PeekSpec } from './ConfigCodeMirror.svelte';
+  import { macroCallAt, macroSectionEdit, scanMacroDefinitions, type MacroDefinition } from './macro-index';
+  import { createMacroBuilderSession } from './macro-builder-session';
   import { configBackupHunkEdit, configCurrentLineMarks, configDiffHunks, type ConfigDiffHunk } from '../file-table/config-diff';
   import {
     pointToCell,
@@ -57,13 +62,12 @@
     collectJinjaVars,
     getCompletionContext,
     getSuggestions,
-    isPassive,
     type Suggestion,
   } from './autocomplete';
   import { mergeLocalMacros } from '../gcode-hints/catalog';
   import { attachHints, getCatalog, getObjects } from '../gcode-hints/gcode-hints-store.svelte.ts';
   import { macroParamNamesAt, scanLocalMacros } from '../gcode-hints/local-macros';
-  import { mergeObjectIndex, scanSectionNames } from '../gcode-hints/object-names';
+  import { literalType, mergeObjectIndex, scanSectionNames } from '../gcode-hints/object-names';
 
   let {
     open,
@@ -71,14 +75,39 @@
     loading = false,
     saving = false,
     content,
+    filePath,
+    activeTabId,
+    tabs = [],
+    jumpLine = 0,
+    macroNames = [],
+    onBufferChange,
+    editorSnapshot,
+    onEditorSnapshot,
+    onSelectTab,
+    onCloseTab,
+    onLookupMacro,
+    onMacroSource,
+    onPeekEdit,
+    onPeekSave,
+    onMacroNavigate,
+    onSaveAll,
     readonly = false,
     canRestart = false,
+    restartRequired = true,
+    restartLabel,
+    hasPendingSave = false,
     restartKind = 'klipper',
     lang = 'plain',
     compareInitially = false,
     loadBackup,
     onSave,
     onSaveRestart,
+    onRequestClose,
+    onMinimize,
+    embedded = false,
+    onRegisterBeforeLeave,
+    onRegisterSettings,
+    onSettingsOpenChange,
     onClose,
   }: {
     open: boolean;
@@ -86,22 +115,165 @@
     loading?: boolean;
     saving?: boolean;
     content: string;
+    filePath?: string;
+    activeTabId?: string;
+    tabs?: Array<{ id?: string; path: string; dirty: boolean }>;
+    jumpLine?: number;
+    macroNames?: string[];
+    onBufferChange?: (text: string) => void;
+    editorSnapshot?: EditorSnapshot;
+    onEditorSnapshot?: (path: string, state: EditorSnapshot) => void;
+    onSelectTab?: (path: string, line?: number) => void;
+    onCloseTab?: (path: string, saveChanges: boolean) => Promise<boolean>;
+    onLookupMacro?: (name: string) => Promise<MacroDefinition[]>;
+    onMacroSource?: (path: string) => string | null;
+    onPeekEdit?: (definition: MacroDefinition, section: string) => void;
+    onPeekSave?: (definition: MacroDefinition) => Promise<boolean>;
+    onMacroNavigate?: (definition: MacroDefinition) => Promise<void>;
+    onSaveAll?: () => Promise<boolean>;
     readonly?: boolean;
     canRestart?: boolean;
+    restartRequired?: boolean;
+    restartLabel?: string;
+    hasPendingSave?: boolean;
     restartKind?: 'klipper' | 'moonraker';
     lang?: 'klipper' | 'plain';
     compareInitially?: boolean;
     loadBackup?: () => Promise<{ text: string; path: string } | null>;
     onSave: (text: string) => Promise<boolean>;
     onSaveRestart?: (text: string, klippyState: KlippyState) => Promise<boolean>;
+    onRequestClose?: () => void;
+    onMinimize?: () => void;
+    embedded?: boolean;
+    onRegisterBeforeLeave?: (callback: (() => void) | null) => void;
+    onRegisterSettings?: (callback: ((anchor: HTMLElement) => void) | null) => void;
+    onSettingsOpenChange?: (open: boolean) => void;
     onClose: () => void;
   } = $props();
 
   const api = usePluginApi();
   const i18n = api.i18n;
+  const hostManagedHotkeys = api.pluginId === '@core/config';
 
-  let text = $state('');
+  // The keyed dialog starts with its tab buffer so CodeMirror history is not polluted on mount.
+  const initialText = () => content.replace(/\r\n?/g, '\n');
+  let text = $state(initialText());
+  let cmView = $state<EditorView | null>(null);
+  let peek = $state.raw<PeekSpec | null>(null);
+  // The Config shell commits an open macro peek before it switches or hides this child.
+  $effect(() => {
+    if (!embedded || !onRegisterBeforeLeave) return;
+    onRegisterBeforeLeave(() => { peek?.onCommit?.(); });
+    return () => onRegisterBeforeLeave(null);
+  });
+  let pendingPeekText: string | null = null;
+  let syncPeekSection = $state<((section: string) => void) | null>(null);
+  let candidateChoice = $state<{ kind: 'peek' | 'open'; candidates: MacroDefinition[]; lineEnd: number } | null>(null);
+  let macroLookupError = $state('');
+  let macroGestureSeq = 0;
+  let useCodeMirror = $derived(!!filePath && lang === 'klipper');
+  let builderActions = $state<ExtensionRef[]>([]);
+  let builderRevision = 0;
+  let sessionAlive = true;
+  $effect(() => {
+    if (api.pluginId !== '@core/config') return;
+    const refresh = () => { builderActions = api.extensions.list('macro-builder'); };
+    refresh();
+    return api.extensions.onChange(refresh);
+  });
+  $effect(() => () => { sessionAlive = false; });
+
+  /** The action receives a bounded edit closure, never the Moonraker file writer. */
+  function openMacroBuilder(): void {
+    const view = cmView;
+    const path = filePath;
+    const action = builderActions[0];
+    if (!view || !path || !action || readonly || !open || loading) return;
+    const printerId = api.printer.id;
+    const session = createMacroBuilderSession({
+      read: () => view.state.doc.toString(),
+      revision: () => builderRevision,
+      active: () => sessionAlive && open && filePath === path && api.printer.id === printerId && cmView === view && !readonly,
+      dispatch: (from, to, insert) => view.dispatch({ changes: { from, to, insert } }),
+    }, {
+      printerId, path, cursor: view.state.selection.main.head,
+      macroNames: [...new Set([...macroNames, ...scanMacroDefinitions(view.state.doc.toString(), path).map((item) => item.name)])],
+      commands: [...catalog.values()].map((command) => ({ name: command.name, params: command.params.map((param) => param.name) })),
+      objects: [...objects.objects],
+      suggest: (value, cursor, variables, macroName = '') => {
+        // Reuse Config's full command/Jinja resolver against a synthetic macro body.
+        const prefix = '[gcode_macro BUILDER]\ngcode:\n    ';
+        const context = getCompletionContext(prefix + value, prefix.length + cursor);
+        if (!context) return [];
+        const suggestedObjects = { ...objects, variables: new Map(objects.variables),
+          variableTypes: new Map(objects.variableTypes) };
+        const saved = suggestedObjects.variables.get(macroName.toUpperCase()) ?? [];
+        suggestedObjects.variables.set(macroName.toUpperCase(),
+          [...new Set([...saved, ...variables.map((item) => item.name)])]);
+        const types = new Map(suggestedObjects.variableTypes.get(macroName.toUpperCase()) ?? []);
+        for (const item of variables) {
+          const type = literalType(item.value, true);
+          if (type) types.set(item.name.toLowerCase(), type);
+          else types.delete(item.name.toLowerCase());
+        }
+        suggestedObjects.variableTypes.set(macroName.toUpperCase(), types);
+        return getSuggestions(context, {
+          jinjaVars: [...new Set([...jinjaVars, ...variables.map((item) => item.name)])], allWords, catalog, objects: suggestedObjects,
+          macroParams: macroParamNamesAt(view.state.doc.toString(), view.state.selection.main.head),
+        }).map((item) => ({ ...item, from: Math.max(0, context.start - prefix.length) }));
+      },
+    });
+    void api.extensions.invoke(action.ref, session);
+  }
+  let closePrompt = $state(false);
+  // A save can outlive the prompt; lock its controls until the write settles.
+  let closeBusy = $state(false);
+  let tabClosePrompt = $state<string | null>(null);
+  let tabCloseBusy = $state(false);
+
+  /** Ask before dropping only the chosen tab's buffer; other tabs stay open. */
+  async function requestTabClose(path: string): Promise<void> {
+    if (tabCloseBusy || savePending || saving || !onCloseTab) return;
+    peek?.onCommit?.();
+    await tick();
+    if (tabs.find((tab) => (tab.id ?? tab.path) === path)?.dirty) tabClosePrompt = path;
+    else void confirmTabClose(path, false);
+  }
+
+  async function confirmTabClose(path: string, saveChanges: boolean): Promise<void> {
+    if (!onCloseTab || tabCloseBusy) return;
+    tabCloseBusy = true;
+    try {
+      if (await onCloseTab(path, saveChanges)) tabClosePrompt = null;
+    } finally {
+      tabCloseBusy = false;
+    }
+  }
+
+  /** Multi-file sessions need an explicit choice before any unsaved tab is discarded. */
+  async function requestClose(): Promise<void> {
+    if (closeBusy || tabCloseBusy) return;
+    peek?.onCommit?.();
+    await tick();
+    if (onRequestClose) { onRequestClose(); return; }
+    if (useCodeMirror && tabs.some((tab) => tab.dirty)) closePrompt = true;
+    else onClose();
+  }
+
+  /** Close only after every submitted tab is saved and no newer edits remain. */
+  async function saveAllAndClose(): Promise<void> {
+    if (closeBusy) return;
+    closeBusy = true;
+    try {
+      if (await onSaveAll?.()) { closePrompt = false; onClose(); }
+    } finally {
+      closeBusy = false;
+    }
+  }
   let dirty = $state(false);
+  let currentDirty = $derived(tabs.length
+    ? (tabs.find((tab) => (tab.id ?? tab.path) === (activeTabId ?? filePath))?.dirty ?? dirty)
+    : dirty);
   let savePending = $state(false);
   let compareMode = $state(false);
   let compareLoading = $state(false);
@@ -147,10 +319,9 @@
   let restartHidden = $derived(printing && klippy.ready);
 
   let suggestions = $state<Suggestion[]>([]);
+  let suggestionPopup: HTMLDivElement | null = $state(null);
+  let navigationModifierHeld = $state(false);
   let selectedIdx = $state(0);
-  /** Список показан без набранных букв: Enter его не принимает, пока не выбирали стрелками. */
-  let acPassive = false;
-  let acNavigated = false;
   let acPos = $state<{ top: number; left: number } | null>(null);
 
   const BRACKET_PAIRS: Record<string, string> = {
@@ -199,6 +370,12 @@
     if (!open) return;
     return attachHints(api, api.printer.id);
   });
+
+  $effect(() => {
+    if (!open || !hostManagedHotkeys) return;
+    // The host owns effective combinations; the mounted dialog only exposes actions.
+    return registerEditorHotkeys(api.pluginId, performEditorHotkey);
+  });
   let localMacros = $derived(scanLocalMacros(snapshot));
   let catalog = $derived(mergeLocalMacros(getCatalog(api.printer.id), localMacros));
   // имена объектов (FAN=, HEATER=…, printer[...]): секции принтера + секции и макросы файла
@@ -216,6 +393,7 @@
   $effect(() => {
     // Switching layouts must not reset the current editor's scroll position.
     if (comparePaneEl && inputEl) comparePaneEl.scrollTop = inputEl.scrollTop;
+    else if (comparePaneEl && cmView) comparePaneEl.scrollTop = cmView.scrollDOM.scrollTop;
   });
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let replaceInputEl = $state<HTMLInputElement | null>(null);
@@ -290,7 +468,14 @@
 
     function onWindowKey(e: KeyboardEvent): void {
       const mod = e.ctrlKey || e.metaKey;
+      if (mod || e.key === 'Control' || e.key === 'Meta') {
+        // Navigation chords should never compete with the completion popup.
+        navigationModifierHeld = true;
+        closeSuggestions();
+        if (suggestTimer) { clearTimeout(suggestTimer); suggestTimer = null; }
+      }
       if (!mod) return;
+      if (hostManagedHotkeys) return;
 
       // Ctrl+F — поиск (работает в readonly тоже)
       if (e.code === 'KeyF' || e.key.toLowerCase() === 'f') {
@@ -308,13 +493,33 @@
       if (!readonly && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) {
         // Всегда гасим диалог «сохранить страницу» браузера; пишем только при изменениях
         e.preventDefault();
-        if (dirty && !savePending) save();
+        if (peek && (document.activeElement as HTMLElement | null)?.closest('.cm-peek')) {
+          peek.onSave();
+          return;
+        }
+        if (currentDirty && !savePending) save();
         return;
       }
     }
 
+    function onWindowKeyUp(e: KeyboardEvent): void {
+      if (!navigationModifierHeld || e.ctrlKey || e.metaKey) return;
+      navigationModifierHeld = false;
+      // Completion resumes with the next edit or cursor move, after navigation finishes.
+    }
+
+    function onWindowBlur(): void {
+      navigationModifierHeld = false;
+    }
+
     window.addEventListener('keydown', onWindowKey, true); // capture: раньше браузера
-    return () => window.removeEventListener('keydown', onWindowKey, true);
+    window.addEventListener('keyup', onWindowKeyUp, true);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onWindowKey, true);
+      window.removeEventListener('keyup', onWindowKeyUp, true);
+      window.removeEventListener('blur', onWindowBlur);
+    };
   });
 
   // ------------------------------------------------------------------
@@ -433,8 +638,21 @@
   $effect(() => api.onThemeChange((t) => { hostTheme = t; }));
 
   let colorsOpen = $state(false);
+  let colorsPosition = $state({ top: 0, start: 0 });
+  let devicesPosition = $state({ top: 0, start: 0 });
   let overrides = $derived(getOverrides(hostTheme));
   let colorStyle = $derived(toStyle(hostTheme, overrides));
+
+  // The shell owns the Settings button, while this editor keeps the color controls and theme state.
+  $effect(() => {
+    if (!embedded || lang !== 'klipper' || !onRegisterSettings) return;
+    onRegisterSettings((anchor) => toggleColors(anchor));
+    return () => onRegisterSettings(null);
+  });
+  $effect(() => {
+    onSettingsOpenChange?.(colorsOpen);
+    return () => onSettingsOpenChange?.(false);
+  });
 
   // ColorPickerMenu ждёт ключи cp.*, которых в ft-пространстве имён нет
   const pickerI18n = {
@@ -486,7 +704,7 @@
   const devSeq: Record<DeviceKind, number> = { serial: 0, canbus: 0, usb: 0, video: 0 };
 
   // вставка возможна, только пока в DOM есть textarea (нет readonly и загрузки)
-  let canInsert = $derived(!readonly && !loading && inputEl !== null);
+  let canInsert = $derived(!readonly && !loading && (inputEl !== null || cmView !== null));
 
   $effect(() => () => {
     if (copiedTimer) clearTimeout(copiedTimer);
@@ -514,12 +732,25 @@
     devState = freshDevState();
   }
 
-  function toggleDevices(): void {
+  /** Clamp a fixed popover to the viewport on both sides of an LTR or RTL trigger. */
+  function popoverPosition(anchor: HTMLElement, preferredWidth: number): { top: number; start: number } {
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.min(preferredWidth, Math.max(0, window.innerWidth - 16));
+    const desiredLeft = uiDir === 'rtl' ? rect.right - width : rect.left;
+    const left = Math.max(8, Math.min(desiredLeft, window.innerWidth - width - 8));
+    return {
+      top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 80)),
+      start: uiDir === 'rtl' ? window.innerWidth - left - width : left,
+    };
+  }
+
+  function toggleDevices(anchor?: HTMLElement): void {
     if (devicesOpen) {
       closeDevices();
       return;
     }
     colorsOpen = false;
+    if (anchor) devicesPosition = popoverPosition(anchor, 460);
     tocSheetOpen = false;
     closeHelp();
     devicesOpen = true;
@@ -527,7 +758,8 @@
     if (devTab !== 'canbus') void loadTab(devTab);
   }
 
-  function toggleColors(): void {
+  function toggleColors(anchor?: HTMLElement): void {
+    if (!colorsOpen && anchor) colorsPosition = popoverPosition(anchor, 300);
     colorsOpen = !colorsOpen;
     if (colorsOpen) {
       closeDevices();
@@ -552,6 +784,12 @@
   }
 
   function insertDeviceValue(value: string): void {
+    if (cmView) {
+      const selection = cmView.state.selection.main;
+      closeDevices();
+      replaceRange(selection.from, selection.to, value);
+      return;
+    }
     const ta = inputEl;
     if (!ta) return;
     // позицию читаем до закрытия панели; у textarea она сохраняется и без фокуса
@@ -639,15 +877,19 @@
     searchOpen = false;
     replaceMode = false;
     matchIdx = -1;
+    // The search input is removed; keep the next editor shortcut inside the modal context.
+    void tick().then(() => { if (cmView) cmView.focus(); else inputEl?.focus(); });
   }
 
   function setScrollTop(top: number): void {
+    if (cmView) { cmView.scrollDOM.scrollTop = top; return; }
     if (preEl) preEl.scrollTop = top;
     if (inputEl) inputEl.scrollTop = top;
     if (gutterPreEl) gutterPreEl.scrollTop = top;
   }
 
   function scrollToShow(idx: number): void {
+    if (cmView) { cmView.dispatch({ selection: { anchor: idx }, scrollIntoView: true }); return; }
     const line = text.slice(0, idx).split('\n').length - 1;
     const lh = lineHeightPx();
     const viewH = inputEl?.clientHeight ?? preEl?.clientHeight ?? 0;
@@ -666,6 +908,9 @@
     if (inputEl) {
       inputEl.focus();
       inputEl.setSelectionRange(m.start, m.end);
+    } else if (cmView) {
+      cmView.dispatch({ selection: { anchor: m.start, head: m.end }, scrollIntoView: true });
+      cmView.focus();
     }
     scrollToShow(m.start);
   }
@@ -701,7 +946,14 @@
    * execCommand('insertText') проходит как пользовательский ввод,
    * oninput сам обновит text/dirty.
    */
-  function replaceRange(start: number, end: number, insert: string): void {
+  function replaceRange(start: number, end: number, insert: string, focus = true): void {
+    if (cmView) {
+      cmView.dispatch(focus
+        ? { changes: { from: start, to: end, insert }, selection: { anchor: start + insert.length } }
+        : { changes: { from: start, to: end, insert } });
+      if (focus) cmView.focus();
+      return;
+    }
     const ta = inputEl;
     if (!ta) return;
     const result = replaceEditorRange(ta, start, end, insert);
@@ -729,6 +981,8 @@
   function onInput(e: Event): void {
     text = (e.currentTarget as HTMLTextAreaElement).value;
     dirty = true;
+    // A persistent owner needs plain-text changes before this keyed dialog unmounts.
+    onBufferChange?.(text);
     scheduleSuggestions();
   }
 
@@ -754,6 +1008,7 @@
   function scheduleSuggestions(): void {
     if (suggestions.length > 0) closeSuggestions();
     if (suggestTimer) clearTimeout(suggestTimer);
+    if (navigationModifierHeld) { suggestTimer = null; return; }
     suggestTimer = setTimeout(() => {
       suggestTimer = null;
       updateSuggestions();
@@ -800,62 +1055,76 @@
 
   const INDENT = '    '; // 4 пробела
 
-  function onKeydown(e: KeyboardEvent): void {
-    // поиск/замена перехватываются раньше Escape-логики редактора
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-      e.preventDefault();
-      openSearch(false);
+  /** Execute an editor command after the host has resolved the user's effective binding. */
+  function performEditorHotkey(action: EditorHotkeyAction, event?: KeyboardEvent): void {
+    if (action === 'find') { openSearch(false); return; }
+    if (action === 'replace') { if (!readonly) openSearch(true); return; }
+    if (action === 'save') {
+      if (readonly || savePending) return;
+      const insidePeek = event?.composedPath().some((node) => node instanceof HTMLElement && node.classList.contains('cm-peek'))
+        ?? Boolean((document.activeElement as HTMLElement | null)?.closest('.cm-peek'));
+      if (peek && insidePeek) { peek.onSave(); return; }
+      if (currentDirty) void save();
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+    if (action === 'help') {
+      if (!helpEnabled) return;
+      const idx = cmView?.state.selection.main.head ?? inputEl?.selectionStart ?? 0;
+      const hit = sectionAbove(text, idx);
+      if (hit && cmView) {
+        const box = cmView.coordsAtPos(idx);
+        if (box) void openHelp(hit.name, { left: box.left, top: box.top, bottom: box.bottom });
+      } else if (hit && inputEl) void openHelp(hit.name, caretAnchor(inputEl, idx));
+      return;
+    }
+    if (action === 'peek' || action === 'open') {
+      if (cmView && useCodeMirror) onCodeMirrorGesture(cmView.state.selection.main.head, action);
+      return;
+    }
+    // Escape closes the innermost layer before asking to discard unsaved buffers.
+    if (suggestions.length) { closeSuggestions(); return; }
+    if (tabClosePrompt) { if (!tabCloseBusy) tabClosePrompt = null; return; }
+    if (closePrompt) { if (!closeBusy) closePrompt = false; return; }
+    if (candidateChoice) { candidateChoice = null; return; }
+    if (peek) { peek.onClose(); return; }
+    if (helpTarget) { closeHelp(); return; }
+    if (colorsOpen) { colorsOpen = false; return; }
+    if (devicesOpen) { closeDevices(); return; }
+    if (tocSheetOpen) { tocSheetOpen = false; return; }
+    if (searchOpen) { closeSearch(); return; }
+    requestClose();
+  }
+
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.defaultPrevented) return;
+    // поиск/замена перехватываются раньше Escape-логики редактора
+    if (!hostManagedHotkeys && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault();
-      openSearch(true);
+      performEditorHotkey('find');
+      return;
+    }
+    if (!hostManagedHotkeys && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+      e.preventDefault();
+      performEditorHotkey('replace');
       return;
     }
 
     // F1 — справка по секции, в которой стоит каретка (из любого места её тела)
-    if (e.key === 'F1' && helpEnabled) {
+    if (!hostManagedHotkeys && e.key === 'F1' && helpEnabled) {
       e.preventDefault();
-      if (inputEl) {
-        const idx = inputEl.selectionStart ?? 0;
-        const hit = sectionAbove(text, idx);
-        if (hit) void openHelp(hit.name, caretAnchor(inputEl, idx));
-      }
+      performEditorHotkey('help');
       return;
     }
 
-    if (e.key === 'Escape') {
+    if (!hostManagedHotkeys && e.key === 'Escape') {
       e.stopPropagation();
-      // порядок закрытия: справка, цвета, устройства, оглавление, поиск, затем редактор
-      if (helpTarget) {
-        closeHelp();
-        return;
-      }
-      if (colorsOpen) {
-        colorsOpen = false;
-        return;
-      }
-      if (devicesOpen) {
-        closeDevices();
-        return;
-      }
-      if (tocSheetOpen) {
-        tocSheetOpen = false;
-        return;
-      }
-      if (searchOpen) {
-        closeSearch();
-        return;
-      }
-      onClose();
+      performEditorHotkey('close');
       return;
     }
 
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    if (!hostManagedHotkeys && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
-      // не вызываем save, если ничего не меняли — иначе триггерится
-      // родительский onSave и может включиться браузерное сохранение
-      if (!readonly && dirty) save();
+      performEditorHotkey('save');
       return;
     }
 
@@ -960,12 +1229,12 @@
 
   /** Пересчитать подсказки по текущему положению курсора. */
   function updateSuggestions(): void {
-    if (!inputEl) {
+    if (navigationModifierHeld || (!inputEl && !cmView)) {
       suggestions = [];
       acPos = null;
       return;
     }
-    const cursor = inputEl.selectionStart ?? 0;
+    const cursor = cmView?.state.selection.main.head ?? inputEl?.selectionStart ?? 0;
     const ctx = getCompletionContext(text, cursor);
     if (!ctx) {
       suggestions = [];
@@ -985,10 +1254,11 @@
       return;
     }
     suggestions = items;
-    acPassive = isPassive(ctx);
-    acNavigated = false;
     selectedIdx = Math.min(selectedIdx, items.length - 1);
-    acPos = computePopupPos(inputEl, cursor, items.length);
+    if (cmView) {
+      const coords = cmView.coordsAtPos(cursor);
+      if (coords) acPos = { top: Math.min(coords.bottom, window.innerHeight - 284), left: Math.max(4, Math.min(coords.left, window.innerWidth - 524)) };
+    } else if (inputEl) acPos = computePopupPos(inputEl, cursor, items.length);
   }
 
   // ---------------- позиция подсказок ----------------
@@ -1077,8 +1347,8 @@
   }
 
   function acceptSuggestion(s: Suggestion): void {
-    if (!inputEl) return;
-    const cursor = inputEl.selectionStart ?? 0;
+    if (!inputEl && !cmView) return;
+    const cursor = cmView?.state.selection.main.head ?? inputEl?.selectionStart ?? 0;
     const ctx = getCompletionContext(text, cursor);
     if (!ctx) return;
 
@@ -1087,6 +1357,7 @@
     acPos = null;
 
     requestAnimationFrame(() => {
+      if (cmView) { cmView.focus(); return; }
       if (!inputEl) return;
       inputEl.selectionStart = inputEl.selectionEnd = ctx.start + s.insert.length;
       inputEl.focus();
@@ -1107,38 +1378,33 @@
     acPos = null;
   }
 
-  function onSuggestionKey(e: KeyboardEvent): boolean {
+  /** Let the popup own navigation and acceptance whenever it is visible. */
+  function onSuggestionKey(key: string): boolean {
     if (suggestions.length === 0) return false;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      acNavigated = true;
+    if (key === 'ArrowDown') {
       selectedIdx = (selectedIdx + 1) % suggestions.length;
       return true;
     }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      acNavigated = true;
+    if (key === 'ArrowUp') {
       selectedIdx = (selectedIdx - 1 + suggestions.length) % suggestions.length;
       return true;
     }
-    // «Пассивный» список (сразу после пробела или «=») не перехватывает Enter — иначе
-    // после `G28 ` не перейти на новую строку; Tab (и стрелки + Enter) принимают.
-    if (e.key === 'Enter' && acPassive && !acNavigated) {
-      closeSuggestions();
-      return false;
-    }
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
+    if (key === 'Enter' || key === 'Tab') {
       acceptSuggestion(suggestions[selectedIdx]!);
       return true;
     }
-    if (e.key === 'Escape') {
-      e.preventDefault();
+    if (key === 'Escape') {
       closeSuggestions();
       return true;
     }
     return false;
   }
+
+  $effect(() => {
+    // Keep keyboard selection visible when a long completion list scrolls.
+    void selectedIdx;
+    suggestionPopup?.querySelector('.ac-item.selected')?.scrollIntoView({ block: 'nearest' });
+  });
 
   // ---------------- Ctrl+click jump ----------------
 
@@ -1163,6 +1429,11 @@
   }
 
   function jumpToIndex(idx: number, focus = true): void {
+    if (cmView) {
+      cmView.dispatch({ selection: { anchor: idx }, scrollIntoView: true });
+      if (focus) cmView.focus();
+      return;
+    }
     const line = text.slice(0, idx).split('\n').length - 1;
     const top = Math.max(0, line * lineHeightPx() - lineHeightPx() * 3);
     setScrollTop(top);
@@ -1225,38 +1496,143 @@
     const idx = findDeclaration(v);
     if (idx != null) jumpToIndex(idx);
   }
+
+  /** Resolve literal macro calls before applying the older section and variable Ctrl+click actions. */
+  function onCodeMirrorGesture(position: number, kind: 'peek' | 'open'): boolean {
+    const call = macroCallAt(text, position, new Set(macroNames));
+    if (call && onLookupMacro) {
+      macroLookupError = '';
+      const seq = ++macroGestureSeq;
+      void onLookupMacro(call.name).then((candidates) => {
+        if (seq !== macroGestureSeq) return;
+        if (candidates.length === 1) void chooseMacro(candidates[0]!, kind, call.lineEnd);
+        else if (candidates.length > 1) candidateChoice = { candidates, kind, lineEnd: call.lineEnd };
+      }).catch(() => {
+        if (seq === macroGestureSeq) macroLookupError = i18n.t('config.macroLookupError');
+      });
+      return true;
+    }
+    if (kind === 'open') return false;
+    const section = sectionInsideAt(text, position);
+    if (section && helpEnabled && cmView) {
+      const box = cmView.coordsAtPos(position);
+      if (box) void openHelp(section.name, { left: box.left, top: box.top, bottom: box.bottom });
+      return true;
+    }
+    const word = wordAt(position);
+    const declaration = word ? findDeclaration(word) : null;
+    if (declaration !== null) { jumpToIndex(declaration); return true; }
+    return false;
+  }
+
+  /** A peek is a block decoration; its edits remain in the target file's session buffer. */
+  async function chooseMacro(definition: MacroDefinition, kind: 'peek' | 'open', lineEnd: number): Promise<void> {
+    candidateChoice = null;
+    peek?.onCommit?.();
+    peek = null;
+    if (kind === 'open') {
+      try { await onMacroNavigate?.(definition); }
+      catch { macroLookupError = i18n.t('config.macroFileError'); }
+      return;
+    }
+    const source = definition.path === filePath ? text : onMacroSource?.(definition.path);
+    if (source == null) { macroLookupError = i18n.t('config.macroFileError'); return; }
+    const section = source.slice(definition.from, definition.to);
+    pendingPeekText = null;
+    const commitPeek = (): void => {
+      if (pendingPeekText === null) return;
+      if (definition.path === filePath) {
+        const edit = macroSectionEdit(text, definition, pendingPeekText);
+        if (edit) replaceRange(edit.from, edit.to, edit.insert, false);
+      } else onPeekEdit?.(definition, pendingPeekText);
+      pendingPeekText = null;
+    };
+    peek = {
+      lineEnd, firstLine: definition.firstLine, title: definition.name,
+      detail: `${definition.path}:${definition.firstLine}-${definition.lastLine}${definition.active ? '' : ` · ${i18n.t('config.macroInactive')}`}`,
+      section,
+      saveLabel: i18n.t('ft.save'), openLabel: i18n.t('config.macroOpenFile'), closeLabel: i18n.t('ft.close'),
+      onChange: (updated) => {
+        if (peek) peek.section = updated;
+        // One commit on blur keeps the nested editor mounted and creates one undo step.
+        pendingPeekText = updated;
+      },
+      onSave: () => {
+        commitPeek();
+        if (definition.path === filePath) void save();
+        else void onPeekSave?.(definition).then((saved) => {
+          if (!saved) macroLookupError = i18n.t('config.macroFileError');
+        }).catch(() => { macroLookupError = i18n.t('config.macroFileError'); });
+      },
+      onOpen: () => {
+        commitPeek();
+        void onMacroNavigate?.(definition).catch(() => { macroLookupError = i18n.t('config.macroFileError'); });
+      },
+      onClose: () => { commitPeek(); peek = null; requestAnimationFrame(() => cmView?.focus()); },
+      onCommit: commitPeek,
+      onAttach: (sync) => { syncPeekSection = sync; },
+    };
+    // Wait until the choice button is removed before restoring a keyboard target inside the dialog.
+    await tick();
+    cmView?.focus();
+  }
+
+  $effect(() => {
+    if (!peek || !syncPeekSection || !filePath) return;
+    const definition = scanMacroDefinitions(text, filePath).find((item) =>
+      item.name === peek!.title && item.firstLine === peek!.firstLine);
+    if (definition) syncPeekSection(text.slice(definition.from, definition.to));
+  });
+
+  $effect(() => {
+    if (!cmView || !jumpLine) return;
+    requestAnimationFrame(() => {
+      if (!cmView) return;
+      const line = cmView.state.doc.line(Math.min(jumpLine, cmView.state.doc.lines));
+      cmView.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+    });
+  });
 </script>
 
 {#if open}
   <div
     class="editor-overlay"
     class:narrow
+    class:embedded
+    data-hotkey-editor-owner={api.pluginId}
     style={lang === 'klipper' ? colorStyle : undefined}
     onkeydown={onKeydown}
-    role="dialog"
-    aria-modal="true"
+    role={embedded ? undefined : 'dialog'}
+    aria-modal={embedded ? undefined : 'true'}
   >
-    <div class="editor-header">
-      <span class="editor-title">{title}</span>
-      {#if readonly}<span class="ro-badge">{i18n.t('ft.readonly')}</span>{/if}
-      <span class="spacer"></span>
+    <div class="editor-header" dir={uiDir}>
+      <!-- The filename has its own column so tool wrapping cannot push it around. -->
+      <div class="editor-file-column">
+        <span class="editor-title" dir="ltr" title={title}>{title}</span>
+        {#if readonly}<span class="ro-badge">{i18n.t('ft.readonly')}</span>{/if}
+      </div>
+      <div class="editor-main-actions">
 
       {#if lang === 'klipper'}
-        <div class="hl-wrap">
+        <div class="hl-wrap" class:embedded>
+          {#if !embedded}
           <button
             class="btn icon"
             class:active={colorsOpen}
             title={i18n.t('ft.hl.title')}
             aria-label={i18n.t('ft.hl.title')}
-            onclick={toggleColors}
+            onclick={(event) => toggleColors(event.currentTarget)}
           >
             <Icon name="settings" size={15} />
             {#if !narrow}<span class="btn-label">{i18n.t('ft.lbl.colors')}</span>{/if}
           </button>
+          {/if}
 
           {#if colorsOpen}
             <div class="hl-backdrop" onclick={() => (colorsOpen = false)} role="presentation"></div>
-            <div class="hl-popover" dir={uiDir}>
+            <div class="hl-popover" dir={uiDir} style:inset-block-start={`${colorsPosition.top}px`}
+              style:inset-inline-start={`${colorsPosition.start}px`}
+              style:max-block-size={`calc(100dvh - ${colorsPosition.top + 8}px)`}>
               <div class="hl-head">
                 <span class="hl-title">
                   {i18n.t('ft.hl.title')} · {i18n.t(hostTheme === 'dark' ? 'ft.hl.themeDark' : 'ft.hl.themeLight')}
@@ -1290,7 +1666,7 @@
             class:active={devicesOpen}
             title={i18n.t('ft.dev.title')}
             aria-label={i18n.t('ft.dev.title')}
-            onclick={toggleDevices}
+            onclick={(event) => toggleDevices(event.currentTarget)}
           >
             <Icon name="plug" size={15} />
             {#if !narrow}<span class="btn-label">{i18n.t('ft.lbl.devices')}</span>{/if}
@@ -1298,7 +1674,9 @@
 
           {#if devicesOpen}
             <div class="hl-backdrop" onclick={closeDevices} role="presentation"></div>
-            <div class="hl-popover dev-popover" dir={uiDir}>
+            <div class="hl-popover dev-popover" dir={uiDir} style:inset-block-start={`${devicesPosition.top}px`}
+              style:inset-inline-start={`${devicesPosition.start}px`}
+              style:max-block-size={`calc(100dvh - ${devicesPosition.top + 8}px)`}>
               <div class="hl-head">
                 <span class="hl-title">{i18n.t('ft.dev.title')}</span>
                 <button
@@ -1426,6 +1804,26 @@
           <Icon name="rows" size={15} />
           {#if !narrow}<span class="btn-label">{i18n.t('ft.toc')}</span>{/if}
         </button>
+        {#if useCodeMirror && !readonly && builderActions.length > 0}
+          <!-- The icon stays accessible when labels collapse on narrow viewports. -->
+          <button class="btn icon" title={i18n.t('config.macroBuilder')} aria-label={i18n.t('config.macroBuilder')}
+            disabled={loading || !cmView} onclick={openMacroBuilder}>
+            <Icon name="kind-macro" size={15} />
+            {#if !narrow}<span class="btn-label">{i18n.t('config.macroBuilder')}</span>{/if}
+          </button>
+        {/if}
+        {#if useCodeMirror}
+          <button class="btn icon" title={i18n.t('config.macroPeek')} aria-label={i18n.t('config.macroPeek')}
+            onclick={() => cmView && onCodeMirrorGesture(cmView.state.selection.main.head, 'peek')}>
+            <Icon name="kind-macro" size={15} />
+            {#if !narrow}<span class="btn-label">{i18n.t('config.macroPeek')}</span>{/if}
+          </button>
+          <button class="btn icon" title={i18n.t('config.macroOpenFile')} aria-label={i18n.t('config.macroOpenFile')}
+            onclick={() => cmView && onCodeMirrorGesture(cmView.state.selection.main.head, 'open')}>
+            <Icon name="file" size={15} />
+            {#if !narrow}<span class="btn-label">{i18n.t('config.macroOpenFile')}</span>{/if}
+          </button>
+        {/if}
       {/if}
 
       <button
@@ -1465,42 +1863,75 @@
         {/if}
       {/if}
 
+      </div>
+      <!-- The save group occupies the inline end independently of the wrapping tools. -->
+      <div class="editor-save-actions"
+        class:with-restart={!embedded && !readonly && canRestart && (!restartRequired || !restartHidden)}
+        class:with-minimize={!embedded && Boolean(onMinimize)}>
       {#if !readonly}
         <button
-          class="btn primary"
+          class="btn primary save-action"
           title={i18n.t('ft.save')}
           aria-label={i18n.t('ft.save')}
-          disabled={loading || saving || savePending || !dirty}
+          disabled={loading || saving || savePending || !currentDirty}
           onclick={() => void save()}
         >
           <Icon name="save" size={15} />
           {#if !narrow}<span class="btn-label">{i18n.t('ft.save')}</span>{/if}
         </button>
-        {#if canRestart && !readonly && !restartHidden}
-          {@const restartLabel =
-            restartKind === 'moonraker' ? i18n.t('ft.saveRestartMk') : i18n.t('ft.saveRestart')}
+        {#if !embedded && canRestart && !readonly && (!restartRequired || !restartHidden)}
+          {@const actionLabel = restartLabel ??
+            (restartKind === 'moonraker' ? i18n.t('ft.saveRestartMk') : i18n.t('ft.saveAllRestart'))}
           <button
-            class="btn primary"
-            title={restartLabel}
-            aria-label={restartLabel}
-            disabled={loading || saving || savePending || !dirty}
+            class="btn primary restart-action"
+            title={actionLabel}
+            aria-label={actionLabel}
+            disabled={loading || saving || savePending || !(hasPendingSave || (tabs.length ? tabs.some((tab) => tab.dirty) : currentDirty))}
             onclick={() => void saveRestart()}
           >
             <Icon name="refresh" size={15} />
-            {#if !narrow}<span class="btn-label">{restartLabel}</span>{/if}
+            {#if !narrow}<span class="btn-label">{actionLabel}</span>{/if}
           </button>
         {/if}
       {/if}
-      <button
-        class="btn"
+      {#if !embedded && onMinimize}
+        <button class="btn minimize-action" title={i18n.t('config.minimizeEditor')}
+          aria-label={i18n.t('config.minimizeEditor')}
+          onclick={() => { peek?.onCommit?.(); onMinimize?.(); }}>
+          <Icon name="chevron-down" size={15} />
+          {#if !narrow}<span class="btn-label">{i18n.t('config.minimizeEditor')}</span>{/if}
+        </button>
+      {/if}
+      {#if !embedded}<button
+        class="btn close-action"
         title={i18n.t('ft.close')}
         aria-label={i18n.t('ft.close')}
-        onclick={onClose}
+        onclick={requestClose}
       >
         <Icon name="x" size={15} />
         {#if !narrow}<span class="btn-label">{i18n.t('ft.close')}</span>{/if}
-      </button>
+      </button>{/if}
+      </div>
     </div>
+
+    {#if !embedded && useCodeMirror && tabs.length > 0}
+      <!-- File tabs retain independent unsaved buffers when following a macro. -->
+      <div class="editor-tabs" role="tablist" dir={uiDir}>
+        {#each tabs as tab (tab.id ?? tab.path)}
+          <!-- The tab label and close action are siblings so both remain valid buttons. -->
+          <div class="editor-tab" class:active={(tab.id ?? tab.path) === (activeTabId ?? filePath)} role="presentation">
+            <button class="editor-tab-label" role="tab" aria-selected={(tab.id ?? tab.path) === (activeTabId ?? filePath)}
+              title={tab.path} onclick={() => { peek?.onCommit?.(); onSelectTab?.(tab.id ?? tab.path); }}>
+              <span dir="ltr">{tab.path}</span>{#if tab.dirty}<span aria-hidden="true"> •</span>{/if}
+            </button>
+            <button class="editor-tab-close" title={i18n.t('config.closeTab', { file: tab.path })}
+              aria-label={i18n.t('config.closeTab', { file: tab.path })}
+              disabled={saving || savePending || tabCloseBusy}
+              onclick={() => void requestTabClose(tab.id ?? tab.path)}><Icon name="x" size={13} /></button>
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     <div class="editor-body">
       {#if loading}
@@ -1536,12 +1967,32 @@
               {/each}
             </div>
           {/if}
-          <!-- нумерация строк -->
-          <div class="gutter" style:width="{gutterWidthCh}ch">
-            <pre class="gutter-pre" bind:this={gutterPreEl} aria-hidden="true">{gutterText}</pre>
-          </div>
+          {#if !useCodeMirror}
+            <!-- The legacy editor owns its gutter; CodeMirror provides a native one for cfg files. -->
+            <div class="gutter" style:width="{gutterWidthCh}ch">
+              <pre class="gutter-pre" bind:this={gutterPreEl} aria-hidden="true">{gutterText}</pre>
+            </div>
+          {/if}
 
           <div class="code-area">
+            {#if useCodeMirror}
+              <ConfigCodeMirror bind:view={cmView} value={text} {readonly} {peek}
+                allowManagedHotkeys={hostManagedHotkeys}
+                snapshot={editorSnapshot} onSnapshot={(state) => { if (filePath) onEditorSnapshot?.(filePath, state); }}
+                compareMarks={currentLineMarks}
+                onChange={(next) => { builderRevision++; text = next; dirty = true; onBufferChange?.(next); scheduleSuggestions(); }}
+                onCursor={() => scheduleSuggestions()}
+                onGesture={onCodeMirrorGesture}
+                onEditorKey={(event) => {
+                  if (hostManagedHotkeys) return false;
+                  // Other owners keep the modal event inside their editor.
+                  event.stopPropagation();
+                  onKeydown(event);
+                  return event.defaultPrevented;
+                }}
+                onCompletionKey={onSuggestionKey}
+                onScroll={(top) => { editorScrollTop = top; if (comparePaneEl) comparePaneEl.scrollTop = top; }} />
+            {:else}
             <!-- цветной слой ПОД textarea -->
             <pre
               class="code-view"
@@ -1554,8 +2005,10 @@
             >{@html html}</pre>
 
             {#if !readonly}
+              <!-- The input must receive the buffer itself; the syntax layer only paints behind it. -->
               <textarea
                 class="code-input"
+                value={text}
                 spellcheck="false"
                 bind:this={inputEl}
                 oninput={onInput}
@@ -1563,13 +2016,14 @@
                 onclick={(e) => { onEditorClick(e); onCursorMove(); }}
                 onkeyup={onKeyUp}
                 onkeydown={(e) => {
-                  // не пускаем событие наверх: overlay-обработчик иначе
-                  // выполнит onKeydown второй раз (двойные скобки/табы/save)
+                  if (onSuggestionKey(e.key)) { e.preventDefault(); return; }
+                  // The Config host contract receives keys at the dialog root; other owners stay local.
+                  if (hostManagedHotkeys) return;
                   e.stopPropagation();
-                  if (onSuggestionKey(e)) return;
                   onKeydown(e);
                 }}
               ></textarea>
+            {/if}
             {/if}
 
             <!-- поиск / замена -->
@@ -1693,8 +2147,8 @@
         </div>
       {/if}
 
-      {#if acPos && suggestions.length > 0}
-        <div class="ac-popup" style="top: {acPos.top}px; left: {acPos.left}px">
+      {#if !navigationModifierHeld && acPos && suggestions.length > 0}
+        <div class="ac-popup" style="top: {acPos.top}px; left: {acPos.left}px" bind:this={suggestionPopup}>
           {#each suggestions as s, i (s.kind + s.label)}
             <button
               class="ac-item"
@@ -1707,6 +2161,42 @@
               {#if s.detail}<span class="ac-detail">{s.detail}</span>{/if}
             </button>
           {/each}
+        </div>
+      {/if}
+      {#if candidateChoice}
+        <div class="macro-choices" role="dialog" aria-label={i18n.t('config.macroChoose')} dir={uiDir}>
+          <strong>{i18n.t('config.macroChoose')}</strong>
+          {#each candidateChoice.candidates as candidate (`${candidate.path}:${candidate.firstLine}`)}
+            <button onclick={() => void chooseMacro(candidate, candidateChoice!.kind, candidateChoice!.lineEnd)}>
+              <span dir="ltr">{candidate.path}:{candidate.firstLine}</span>
+              {#if !candidate.active}<span>{i18n.t('config.macroInactive')}</span>{/if}
+            </button>
+          {/each}
+          <button onclick={() => (candidateChoice = null)}>{i18n.t('ft.close')}</button>
+        </div>
+      {/if}
+      {#if macroLookupError}<div class="macro-error" role="alert">{macroLookupError}</div>{/if}
+      {#if closePrompt}
+        <div class="close-prompt-backdrop" role="presentation"></div>
+        <div class="close-prompt" role="alertdialog" aria-modal="true" aria-label={i18n.t('config.macroUnsaved')} dir={uiDir}>
+          <strong>{i18n.t('config.macroUnsaved')}</strong>
+          <div class="close-prompt-actions">
+            <button disabled={closeBusy} onclick={() => void saveAllAndClose()}>{i18n.t('config.macroSaveAll')}</button>
+            <button disabled={closeBusy} onclick={() => { closePrompt = false; onClose(); }}>{i18n.t('config.macroDiscard')}</button>
+            <button disabled={closeBusy} onclick={() => (closePrompt = false)}>{i18n.t('common.cancel')}</button>
+          </div>
+        </div>
+      {/if}
+      {#if tabClosePrompt}
+        <div class="close-prompt-backdrop" role="presentation"></div>
+        <div class="close-prompt" role="alertdialog" aria-modal="true"
+          aria-label={i18n.t('config.tabUnsaved', { file: tabClosePrompt })} dir={uiDir}>
+          <strong>{i18n.t('config.tabUnsaved', { file: tabClosePrompt })}</strong>
+          <div class="close-prompt-actions">
+            <button disabled={tabCloseBusy} onclick={() => tabClosePrompt && void confirmTabClose(tabClosePrompt, true)}>{i18n.t('ft.save')}</button>
+            <button disabled={tabCloseBusy} onclick={() => tabClosePrompt && void confirmTabClose(tabClosePrompt, false)}>{i18n.t('config.macroDiscard')}</button>
+            <button disabled={tabCloseBusy} onclick={() => (tabClosePrompt = null)}>{i18n.t('common.cancel')}</button>
+          </div>
         </div>
       {/if}
     </div>
@@ -1727,6 +2217,25 @@
 {/if}
 
 <style>
+  /* Match Config's file-table tabs while keeping a separate touch target for closing. */
+  .editor-tabs { display: flex; flex-wrap: wrap; gap: var(--space-md); padding-inline: var(--space-md); background: var(--bg-surface-hover); border-block-end: 1px solid var(--border-color); }
+  .editor-tab { display: flex; align-items: stretch; max-inline-size: 100%; min-inline-size: 0; border-block-end: 2px solid transparent; color: var(--text-muted); }
+  .editor-tab.active { border-block-end-color: var(--accent); color: var(--accent); }
+  .editor-tab-label, .editor-tab-close { min-height: 40px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+  .editor-tab-label { display: flex; align-items: center; min-inline-size: 0; padding-inline: var(--space-xs); font-size: var(--font-size-sm); letter-spacing: 0.04em; }
+  .editor-tab-label span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .editor-tab-close { display: grid; place-items: center; min-inline-size: 40px; border-radius: var(--radius-sm); }
+  .editor-tab:hover { color: var(--text-primary); }
+  .editor-tab-close:hover { background: var(--bg-surface-active); }
+  .editor-tab-close:disabled { opacity: 0.5; cursor: default; }
+  .macro-choices { position: fixed; inset-inline: 0; top: 22%; margin-inline: auto; width: min(90vw, 500px); z-index: 90; display: flex; flex-direction: column; gap: var(--space-xs); max-height: 60vh; overflow: auto; padding: var(--space-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-surface); box-shadow: var(--shadow-md); }
+  .macro-choices button { min-height: 40px; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); text-align: start; overflow-wrap: anywhere; border: 1px solid var(--border-color); background: var(--bg-surface-hover); color: var(--text-primary); cursor: pointer; }
+  .macro-choices button:hover { background: var(--bg-surface-active); }
+  .macro-error { position: fixed; inset-inline: 0; bottom: var(--space-lg); margin-inline: auto; width: min(90vw, 500px); z-index: 100; padding: var(--space-sm); background: var(--bg-surface); color: var(--danger); border: 1px solid var(--danger); }
+  .close-prompt-backdrop { position: fixed; inset: 0; z-index: 110; background: var(--bg-overlay); }
+  .close-prompt { position: fixed; inset-inline: 0; top: 35%; margin-inline: auto; width: min(90vw, 480px); z-index: 111; display: grid; gap: var(--space-md); padding: var(--space-lg); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-surface); box-shadow: var(--shadow-md); }
+  .close-prompt-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+  .close-prompt-actions button { min-height: 40px; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface-hover); color: var(--text-primary); cursor: pointer; }
   .editor-overlay {
     position: fixed;
     inset: 0;
@@ -1735,10 +2244,15 @@
     flex-direction: column;
     background: var(--bg-surface);
   }
+  /* The Config session owns the modal frame and shared file tabs. */
+  .editor-overlay.embedded { position: relative; inset: auto; z-index: auto; flex: 1; min-block-size: 0; min-inline-size: 0; }
 
   .editor-header {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
+    align-items: start;
+    /* A fixed-width query avoids wrap feedback when either action group changes height. */
+    container: editor-header / inline-size;
     gap: var(--space-sm);
     padding: var(--space-sm) var(--space-md);
     border-bottom: 1px solid var(--border-color);
@@ -1746,8 +2260,37 @@
     position: relative;
   }
 
+  /* Size the filename to its text, cap long names, and center it in a taller action row. */
+  .editor-file-column { display: flex; align-self: stretch; align-items: center; gap: var(--space-xs); inline-size: max-content; max-inline-size: min(280px, 35vw); min-inline-size: 0; overflow: hidden; }
+  .editor-main-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); min-width: 0; }
+  /* Grid keeps save actions at inline-end while the other tools wrap independently. */
+  .editor-save-actions { display: grid; grid-auto-flow: column; grid-auto-columns: max-content; gap: var(--space-sm); justify-self: end; }
+  .editor-save-actions .btn { justify-content: center; white-space: nowrap; }
+  @container editor-header (max-width: 1500px) {
+    .editor-save-actions.with-restart {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(2, minmax(max-content, 1fr));
+      width: max-content;
+    }
+    .editor-save-actions.with-restart .save-action { grid-column: 1; grid-row: 1; }
+    .editor-save-actions.with-restart .close-action { grid-column: 2; grid-row: 1; }
+    .editor-save-actions.with-restart .restart-action { grid-column: 1 / -1; grid-row: 2; }
+    /* Config adds a minimize action without changing other shared editors' two-column toolbar. */
+    .editor-save-actions.with-restart.with-minimize { grid-template-columns: repeat(3, minmax(max-content, 1fr)); }
+    .editor-save-actions.with-restart.with-minimize .minimize-action { grid-column: 2; grid-row: 1; }
+    .editor-save-actions.with-restart.with-minimize .close-action { grid-column: 3; grid-row: 1; }
+  }
+  /* Keep full-width translated tool labels away from the save group near tablet widths. */
+  @media (max-width: 1100px) {
+    /* The middle track is a spacer, so a short filename does not fill the row. */
+    .editor-header { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+    .editor-file-column { grid-column: 1; grid-row: 1; }
+    .editor-main-actions { grid-column: 1 / -1; grid-row: 2; }
+    .editor-save-actions { grid-column: 3; grid-row: 1; }
+  }
+
   .editor-title {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
     font-family: monospace;
     font-size: var(--font-size-md);
@@ -1766,7 +2309,6 @@
     font-size: var(--font-size-sm);
   }
 
-  .spacer { flex: 1; }
 
   .btn {
     display: flex; align-items: center; gap: var(--space-xs);
@@ -2073,7 +2615,7 @@
     position: fixed;
     z-index: 600;
     min-width: 200px;
-    max-width: 520px;
+    max-width: min(520px, calc(100vw - 8px));
     max-height: 280px;
     overflow-y: auto;
     background: var(--bg-surface);
@@ -2143,6 +2685,8 @@
 
   /* -------- настройка цветов подсветки -------- */
   .hl-wrap { position: relative; display: flex; }
+  /* Settings lives in the session shell, so its fixed menu must not leave a tool gap. */
+  .hl-wrap.embedded { display: contents; }
 
   .hl-backdrop {
     position: fixed;
@@ -2152,12 +2696,9 @@
   }
 
   .hl-popover {
-    position: absolute;
-    top: calc(100% + 4px);
-    inset-inline-end: 0;
+    position: fixed;
     z-index: 30;
-    width: 300px;
-    max-height: calc(100vh - 80px);
+    width: min(300px, calc(100vw - 16px));
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
@@ -2211,7 +2752,7 @@
   }
 
   /* -------- подключённые устройства -------- */
-  .dev-popover { width: 460px; max-width: calc(100vw - 16px); }
+  .dev-popover { width: min(460px, calc(100vw - 16px)); }
 
   .dev-tabs {
     display: flex;
@@ -2321,21 +2862,19 @@
 
   /* -------- узкий экран: кнопки только с иконками, поповеры на всю ширину -------- */
   .editor-overlay.narrow .editor-header {
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
     gap: var(--space-xs);
     padding: var(--space-xs) var(--space-sm);
-    /* Wrapping keeps icon actions reachable when translations or viewport width grow. */
-    flex-wrap: wrap;
   }
-  .editor-overlay.narrow .spacer { flex-basis: 100%; height: 0; }
+  .editor-overlay.narrow .editor-file-column { grid-column: 1; grid-row: 1; }
+  .editor-overlay.narrow .editor-main-actions { grid-column: 1 / -1; grid-row: 2; gap: var(--space-xs); }
+  /* Keep the three icon actions on the first row at inline-end, including in RTL. */
+  .editor-overlay.narrow .editor-save-actions { grid-column: 3; grid-row: 1; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 44px; gap: var(--space-xs); width: auto; }
+  .editor-overlay.narrow .editor-save-actions > .btn { grid-column: auto; grid-row: auto; }
   .editor-overlay.narrow .btn { min-width: 44px; min-height: 44px; justify-content: center; padding: var(--space-xs); }
+  .editor-overlay.narrow .editor-tab-label, .editor-overlay.narrow .editor-tab-close { min-height: 44px; }
 
-  .editor-overlay.narrow .hl-wrap { position: static; }
-  .editor-overlay.narrow .hl-popover {
-    inset-inline: var(--space-sm);
-    width: auto;
-    max-width: none;
-    max-height: calc(100dvh - 100px);
-  }
+  /* Fixed popovers use the same viewport clamp on narrow screens. */
   .editor-overlay.narrow .dev-key { flex-basis: 84px; }
 
   .editor-overlay.narrow .search-bar {

@@ -21,6 +21,8 @@ export interface ObjectEntry {
 export interface ObjectIndexInput {
   sections: string[];
   macros: MacroSource[];
+  /** Loaded values from printer.save_variables.variables, when configured. */
+  savedVariables?: Record<string, unknown>;
   /** результат `printer.objects.list` (нужен для jinja) */
   objects?: string[];
 }
@@ -29,6 +31,9 @@ export interface ObjectIndex {
   entries: ObjectEntry[];
   /** UPPER-имя макроса → его `variable_*` без префикса */
   variables: Map<string, string[]>;
+  /** Conservative Python literal types for macro defaults and stored values. */
+  variableTypes: Map<string, Map<string, LiteralType>>;
+  savedVariables: Record<string, unknown>;
   /** имена объектов для `printer[...]`: `printer.objects.list`, иначе секции */
   objects: string[];
   /** исходные данные — для слияния с секциями редактируемого файла */
@@ -39,6 +44,40 @@ export interface NameCandidate {
   value: string;
   /** тип секции для показа в списке */
   detail: string;
+  /** A type template may display a type while inserting its Python literal. */
+  insert?: string;
+}
+
+/** Only types identifiable without evaluating a Python expression are offered. */
+export type LiteralType = 'str' | 'int' | 'float' | 'bool' | 'list' | 'dict' | 'tuple' | 'None';
+
+/** Infer a Python literal's type without executing printer config text. */
+export function literalType(value: unknown, sourceLiteral = false): LiteralType | null {
+  if (!sourceLiteral) {
+    if (value === null) return 'None';
+    if (typeof value === 'boolean') return 'bool';
+    if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
+    if (typeof value === 'string') return 'str';
+    if (Array.isArray(value)) return 'list';
+    if (value && typeof value === 'object') return 'dict';
+    return null;
+  }
+  if (typeof value !== 'string') return literalType(value);
+  const raw = value.trim();
+  if (/^'(?:\\.|[^'\\])*'$/s.test(raw) || /^"(?:\\.|[^"\\])*"$/s.test(raw)) return 'str';
+  if (/^[+-]?\d+$/.test(raw)) return 'int';
+  if (/^[+-]?(?:\d+\.\d*|\.\d+|\d+(?:\.\d*)?e[+-]?\d+)$/i.test(raw)) return 'float';
+  if (/^(?:True|False)$/.test(raw)) return 'bool';
+  if (raw === 'None') return 'None';
+  if (raw.startsWith('[') && raw.endsWith(']')) return 'list';
+  if (raw === '{}' || (raw.startsWith('{') && raw.endsWith('}') && raw.includes(':'))) return 'dict';
+  if (raw === '()' || (raw.startsWith('(') && raw.endsWith(')') && raw.includes(','))) return 'tuple';
+  return null;
+}
+
+/** Insert a valid empty Python literal matching the known variable type. */
+function typeTemplate(type: LiteralType): string {
+  return { str: "''", int: '0', float: '0.0', bool: 'False', list: '[]', dict: '{}', tuple: '()', None: 'None' }[type];
 }
 
 export interface ResolvedNames {
@@ -83,11 +122,19 @@ function uniqueCI(list: string[]): string[] {
 export function buildObjectIndex(input: ObjectIndexInput): ObjectIndex {
   const sections = uniqueCI(input.sections.map(normSection));
   const variables = new Map<string, string[]>();
+  const variableTypes = new Map<string, Map<string, LiteralType>>();
   for (const m of input.macros) {
     if (m.variables && m.variables.length > 0) variables.set(m.name.toUpperCase(), m.variables);
+    const types = new Map<string, LiteralType>();
+    for (const [name, raw] of Object.entries(m.variableDefaults ?? {})) {
+      const type = literalType(raw, true);
+      if (type) types.set(name.toLowerCase(), type);
+    }
+    if (types.size) variableTypes.set(m.name.toUpperCase(), types);
   }
   const objects = input.objects && input.objects.length > 0 ? uniqueCI(input.objects) : sections;
-  return { entries: sections.map(toEntry), variables, objects, input };
+  return { entries: sections.map(toEntry), variables, variableTypes,
+    savedVariables: input.savedVariables ?? {}, objects, input };
 }
 
 /** Данные принтера + секции и макросы из редактируемого файла (последние дополняют и перекрывают). */
@@ -103,6 +150,7 @@ export function mergeObjectIndex(
       ...base.input.macros.filter((m) => !localMacroNames.has(m.name.toUpperCase())),
       ...local.macros,
     ],
+    savedVariables: base.input.savedVariables,
     objects: base.input.objects ? [...base.input.objects, ...local.sections] : undefined,
   });
 }
@@ -254,6 +302,24 @@ export function resolveNames(
 ): ResolvedNames | null {
   const cmd = command.toUpperCase();
   const p = param.toUpperCase();
+  if (cmd === 'SET_GCODE_VARIABLE' && p === 'MACRO') {
+    const names = fromSource(index, { types: ['gcode_macro'] })
+      .filter((item) => (index.variables.get(item.value.toUpperCase())?.length ?? 0) > 0);
+    return { names: sortedUnique(names) };
+  }
+  if (cmd === 'SAVE_VARIABLE' && p === 'VARIABLE') {
+    return { names: sortedUnique(Object.keys(index.savedVariables)
+      .map((value) => ({ value, detail: 'save_variables' }))) };
+  }
+  if ((cmd === 'SET_GCODE_VARIABLE' || cmd === 'SAVE_VARIABLE') && p === 'VALUE') {
+    const name = (values.VARIABLE ?? '').toLowerCase();
+    const type = cmd === 'SET_GCODE_VARIABLE'
+      ? index.variableTypes.get((values.MACRO ?? '').toUpperCase())?.get(name)
+      : literalType(index.savedVariables[name]);
+    if (!type) return { names: [] };
+    const insert = typeTemplate(type);
+    return { names: [{ value: insert, insert, detail: type }] };
+  }
   const rule = RULES.find(
     (r) => r.params.includes(p) && (!r.command || r.command.test(cmd)),
   );

@@ -12,6 +12,8 @@ export interface MacroSource {
   params: MacroParam[];
   /** `variable_*` макроса без префикса (так они видны в jinja и в SET_GCODE_VARIABLE) */
   variables?: string[];
+  /** Original Python literals from variable_* options for conservative type hints. */
+  variableDefaults?: Record<string, string>;
 }
 
 interface Block extends MacroSource {
@@ -32,6 +34,7 @@ function scan(text: string): Block[] {
     description: string;
     body: string[];
     variables: string[];
+    variableDefaults: Record<string, string>;
     inBody: boolean;
   } | null = null;
   const close = (to: number): void => {
@@ -41,6 +44,7 @@ function scan(text: string): Block[] {
       description: cur.description,
       params: parseMacroParams(cur.body.join('\n')),
       variables: cur.variables,
+      variableDefaults: cur.variableDefaults,
       from: cur.from,
       to,
     });
@@ -61,6 +65,7 @@ function scan(text: string): Block[] {
           description: '',
           body: [],
           variables: [],
+          variableDefaults: {},
           inBody: false,
         };
       }
@@ -78,7 +83,9 @@ function scan(text: string): Block[] {
       if (k === 'gcode') cur.body.push(key[2] ?? '');
       else if (k === 'description') cur.description = (key[2] ?? '').trim();
       else if (k.startsWith('variable_') && k.length > 'variable_'.length) {
-        cur.variables.push(k.slice('variable_'.length));
+        const name = k.slice('variable_'.length);
+        cur.variables.push(name);
+        cur.variableDefaults[name] = (key[2] ?? '').trim();
       }
       continue;
     }
@@ -91,11 +98,12 @@ function scan(text: string): Block[] {
 
 /** Все `[gcode_macro NAME]` текста с описанием и параметрами из тела `gcode:`. */
 export function scanLocalMacros(text: string): MacroSource[] {
-  return scan(text).map(({ name, description, params, variables }) => ({
+  return scan(text).map(({ name, description, params, variables, variableDefaults }) => ({
     name,
     description,
     params,
     variables,
+    variableDefaults,
   }));
 }
 

@@ -29,9 +29,11 @@ interface PrinterHints {
   sections: string[];
   /** результат printer.objects.list (имена для printer[...] в jinja) */
   objects: string[];
+  /** Values currently loaded by Klipper's save_variables object. */
+  savedVariables: Record<string, unknown>;
 }
 
-const EMPTY: PrinterHints = { help: null, macros: [], docs: null, sections: [], objects: [] };
+const EMPTY: PrinterHints = { help: null, macros: [], docs: null, sections: [], objects: [], savedVariables: {} };
 
 // $state.raw: данные крупные и заменяются целиком — глубокая реактивность не нужна
 let hintsByPrinter = $state.raw<Record<string, PrinterHints>>({});
@@ -66,6 +68,7 @@ export function getObjects(printerId: string): ObjectIndex {
     sections: src.sections,
     macros: src.macros,
     objects: src.objects,
+    savedVariables: src.savedVariables,
   });
   objectsMemo.set(printerId, { src, index });
   return index;
@@ -100,10 +103,20 @@ export function parseMacroSections(configfile: unknown): MacroSource[] {
         variables: Object.keys(sec)
           .filter((k) => k.toLowerCase().startsWith('variable_') && k.length > 'variable_'.length)
           .map((k) => k.slice('variable_'.length)),
+        variableDefaults: Object.fromEntries(Object.entries(sec)
+          .filter(([key]) => key.toLowerCase().startsWith('variable_') && key.length > 'variable_'.length)
+          .map(([key, value]) => [key.slice('variable_'.length).toLowerCase(), String(value)])),
       });
     }
   }
   return out;
+}
+
+/** Ignore malformed or unavailable status rather than fabricating stored variables. */
+export function parseSavedVariables(status: unknown): Record<string, unknown> {
+  const value = (status as { save_variables?: { variables?: unknown } } | null)?.save_variables?.variables;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([name]) => /^[a-z_][a-z0-9_]*$/.test(name)));
 }
 
 /** Имена всех секций конфигурации; `config` (исходный регистр) раньше `settings`. */
@@ -127,7 +140,7 @@ async function loadLive(api: PluginApi, printerId: string): Promise<void> {
   liveSeq.set(printerId, seq);
   try {
     const h = api.moonrakerFor(printerId);
-    const [help, cfgRes, objRes] = await Promise.all([
+    const [help, cfgRes, objRes, savedRes] = await Promise.all([
       h.request<Record<string, string>>('printer.gcode.help'),
       h
         .request<{ status?: { configfile?: unknown } }>('printer.objects.query', {
@@ -135,6 +148,10 @@ async function loadLive(api: PluginApi, printerId: string): Promise<void> {
         })
         .catch(() => null),
       h.request<{ objects?: unknown }>('printer.objects.list').catch(() => null),
+      // save_variables is optional; a missing object must not hide configfile hints.
+      h.request<{ status?: { save_variables?: unknown } }>('printer.objects.query', {
+        objects: { save_variables: ['variables'] },
+      }).catch(() => null),
     ]);
     if (liveSeq.get(printerId) !== seq) return; // пришёл более свежий запрос
     const next: Partial<PrinterHints> = {};
@@ -143,6 +160,7 @@ async function loadLive(api: PluginApi, printerId: string): Promise<void> {
       next.macros = parseMacroSections(cfgRes.status?.configfile);
       next.sections = parseSectionNames(cfgRes.status?.configfile);
     }
+    next.savedVariables = parseSavedVariables(savedRes?.status);
     if (objRes && Array.isArray(objRes.objects)) {
       next.objects = objRes.objects.filter((o): o is string => typeof o === 'string');
     }
