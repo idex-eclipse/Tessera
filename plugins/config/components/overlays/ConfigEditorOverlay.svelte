@@ -23,6 +23,11 @@
   $effect(() => api.onLocaleChange((_locale, direction) => { uiDir = direction; }));
   let session = $derived(editorSession(printerId));
   let active = $derived(session.tabs.find((tab) => tab.id === session.activeId) ?? null);
+  // The confirmation is a separate overlay, so expose its changing title as the dialog name.
+  let promptTitle = $derived(session.tabCloseId
+    ? i18n.t('config.tabUnsaved', { file: session.tabs.find((tab) => tab.id === session.tabCloseId)?.ref.path ?? '' })
+    : session.restartAttempt?.files.length || session.moonrakerRestartPending
+      ? i18n.t('config.partialSaveWarning') : i18n.t('config.macroUnsaved'));
   let macroNames = $state<string[]>([]);
   let macroDefinitions = $state<MacroDefinition[]>([]);
   let macroFiles = new Map<string, string>();
@@ -311,11 +316,8 @@
 
 {#if session.closePrompt || session.tabCloseId}
   <div class="session-prompt-backdrop" role="presentation"></div>
-  <div class="session-prompt" role="alertdialog" aria-modal="true" dir={uiDir}>
-    <strong>{session.tabCloseId
-      ? i18n.t('config.tabUnsaved', { file: session.tabs.find((tab) => tab.id === session.tabCloseId)?.ref.path ?? '' })
-      : session.restartAttempt?.files.length || session.moonrakerRestartPending
-        ? i18n.t('config.partialSaveWarning') : i18n.t('config.macroUnsaved')}</strong>
+  <div class="session-prompt" role="alertdialog" aria-modal="true" aria-label={promptTitle} dir={uiDir}>
+    <strong>{promptTitle}</strong>
     {#if session.error}<p role="alert">{session.error}</p>{/if}
     <div class="prompt-actions">
       {#if session.tabCloseId}

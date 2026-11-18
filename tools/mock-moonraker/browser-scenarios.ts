@@ -254,13 +254,14 @@ async function main(): Promise<void> {
     await page.keyboard.type('\n# shortcut save\n');
     await page.keyboard.press('Control+s');
     await eventually(() => app.session.ready.files.get('config/printer.cfg')?.content.toString().includes('# shortcut save') ?? false, 'shortcut save');
-    await page.locator('.editor-overlay').getByRole('button', { name: 'Close', exact: true }).click();
-    // Save & Restart must retain its check and separate recovery copy across F5.
+    // Session actions live above the embedded editor, outside its former dialog shell.
+    await page.locator('.session-window').getByRole('button', { name: 'Close', exact: true }).first().click();
+    // The session-wide restart action must retain its check and separate recovery copy across F5.
     await page.locator('tr.row-file').filter({ hasText: 'printer.cfg' }).first().click();
     await page.locator('.editor-overlay .cm-content').first().click();
     await page.keyboard.press('Control+End');
     await page.keyboard.type('\n# mock restart check\n');
-    await page.getByRole('button', { name: 'Save & Restart', exact: true }).click();
+    await page.getByRole('button', { name: 'Save all & Restart', exact: true }).click();
     await page.getByText('Klipper is starting.', { exact: false }).waitFor();
     const safeContent = app.session.ready.files.get('config/printer.cfg')?.content.toString() ?? '';
     assert.ok(safeContent.includes('# mock restart check'));
@@ -275,7 +276,7 @@ async function main(): Promise<void> {
     await page.locator('.editor-overlay .cm-content').first().click();
     await page.keyboard.press('Control+End');
     await page.keyboard.type('\n# mock bad config\n');
-    await page.getByRole('button', { name: 'Save & Restart', exact: true }).click();
+    await page.getByRole('button', { name: 'Save all & Restart', exact: true }).click();
     await page.getByText('Klipper is starting.', { exact: false }).waitFor();
     await eventually(() => app.session.ready.klippyState === 'error', 'failed Klipper startup');
     await page.evaluate(() => {
@@ -302,7 +303,7 @@ async function main(): Promise<void> {
     await page.locator('html').evaluate((element) => element.setAttribute('dir', 'ltr'));
     await page.getByRole('button', { name: 'Compare attempt copy' }).click();
     await page.locator('.compare-backup').waitFor();
-    await page.locator('.editor-overlay').getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.session-window').getByRole('button', { name: 'Close', exact: true }).first().click();
     app.session.ready.putFile('config/printer.cfg', Buffer.from(`${app.session.ready.files.get('config/printer.cfg')?.content.toString()}\n# newer edit\n`));
     await page.evaluate(() => { location.hash = '#/p/mock-ready/machine'; });
     await page.getByText('Machine', { exact: true }).first().waitFor();
@@ -328,7 +329,7 @@ async function main(): Promise<void> {
     });
     assert.equal(lightCaret.color, lightCaret.text);
     assert.notEqual(lightCaret.color, darkCaret.color);
-    await page.locator('.editor-overlay').getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.session-window').getByRole('button', { name: 'Close', exact: true }).first().click();
 
     // Reopen each built-in screen at three widths; RTL is checked on the dense screens.
     const routes = ['#/', '#/p/mock-ready/console', '#/p/mock-ready/jobs', '#/p/mock-ready/history',
