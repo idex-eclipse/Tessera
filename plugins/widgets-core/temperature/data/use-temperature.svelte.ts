@@ -331,19 +331,25 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
     } else {
       try {
         store = await h.request('server.temperature_store');
-        if (gen !== generation || !store || typeof store !== 'object') return;
-        reseedCache.set(printerId, { store, ts: Date.now() });
+        if (gen !== generation) return;
+        // An empty store can precede the first temperature sample after a restart.
+        if (store && typeof store === 'object' && Object.keys(store).some((name) => classifySensor(name))) {
+          reseedCache.set(printerId, { store, ts: Date.now() });
+        }
       } catch {
-        return;
+        // Live status can still be subscribed to when history is unavailable.
+        store = null;
       }
     }
 
-    if (gen !== generation || !store || typeof store !== 'object') return;
+    if (gen !== generation) return;
 
     const next: TemperatureSensor[] = [];
     let colorIndex = 0;
 
-    for (const [name, entry] of Object.entries(store as Record<string, any>)) {
+    for (const [name, entry] of Object.entries(
+      store && typeof store === 'object' ? store as Record<string, any> : {},
+    )) {
       const kind = classifySensor(name);
       if (!kind) continue;
 
@@ -394,6 +400,37 @@ function createTemperatureCore(api: PluginApi, printerId: string) {
         chartVisible: prev?.chartVisible ?? true,
         powerVisible: prev?.powerVisible ?? false,
       });
+    }
+
+    if (next.length === 0) {
+      // The history store may be empty just after Klipper becomes ready. Discover live
+      // objects so subscribe() can fill current values without waiting for a page reload.
+      try {
+        const listed = await h.request<{ objects: string[] }>('printer.objects.list');
+        if (gen !== generation) return;
+        for (const name of listed.objects ?? []) {
+          const kind = classifySensor(name);
+          if (!kind) continue;
+          const prev = sensors.find((s) => s.name === name);
+          next.push({
+            name,
+            displayName: displayName(name),
+            kind,
+            color: PALETTE[colorIndex++ % PALETTE.length] ?? '#9e9e9e',
+            temperature: null,
+            target: null,
+            power: null,
+            rate: null,
+            speed: null,
+            minTemp: prev?.minTemp ?? null,
+            maxTemp: prev?.maxTemp ?? null,
+            chartVisible: prev?.chartVisible ?? true,
+            powerVisible: prev?.powerVisible ?? false,
+          });
+        }
+      } catch {
+        // The next ready/reconnect event can retry discovery.
+      }
     }
 
     next.sort(
