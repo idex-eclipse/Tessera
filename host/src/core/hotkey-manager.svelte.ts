@@ -193,8 +193,25 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
     return deps.registry.getPages().find((p) => p.contribution.id === pageId)?.pluginId;
   }
 
-  function isInScope(binding: HotkeyBinding): boolean {
+  function editorOwner(event: KeyboardEvent): string | null {
+    // The composed path retains the owner marker even when Svelte renders into a shadow root.
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    for (const node of path) {
+      if (!node || typeof node !== 'object' || !('dataset' in node)) continue;
+      const owner = (node as HTMLElement).dataset?.hotkeyEditorOwner;
+      if (owner) return owner;
+    }
+    return null;
+  }
+
+  function isInScope(binding: HotkeyBinding, owner: string | null): boolean {
     const scope = binding.contribution.scope;
+    // Modal editors keep page and host navigation keys out of their input surface.
+    if (owner) {
+      // A persistent editor can stay open after navigation, so its owner marker defines its scope.
+      return binding.pluginId === owner && Boolean(binding.contribution.when) && !deps.isFleetOpen?.();
+    }
+    if (binding.contribution.when === 'editor') return false;
     if (scope === 'global') return true;
     if (deps.isFleetOpen?.()) return false;
 
@@ -218,19 +235,21 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
   }
 
   /** Обработчик keydown. Возвращает true, если комбинация была обработана. */
-  function handleKeydown(event: KeyboardEvent): boolean {
+  function handleKeydown(event: KeyboardEvent, editorCapture = false): boolean {
     if (suspended) return false;
     if (event.defaultPrevented || event.repeat || event.isComposing) return false;
 
     const editable = isEditableTarget(event);
+    const owner = editorOwner(event);
 
     for (const binding of analysis.bindings) {
       if (!binding.enabled) continue;
+      if (editorCapture !== (owner !== null && Boolean(binding.contribution.when))) continue;
       if (!eventMatches(event, binding.combo)) continue;
       // В полях ввода: по умолчанию только комбинации с Ctrl/Alt/Meta; allowInInputs переопределяет.
       const allowInInputs = binding.contribution.allowInInputs ?? hasCommandModifier(binding.combo);
       if (editable && !allowInInputs) continue;
-      if (!isInScope(binding)) continue;
+      if (!isInScope(binding, owner)) continue;
       if (binding.pluginId === HOST_HOTKEY_OWNER) {
         const host = hostByKey.get(binding.contribution.id);
         if (!host) continue;
@@ -290,9 +309,14 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
   /** Подключает слушатель и слежение за конфликтами. Возвращает stop. */
   function start(): () => void {
     const target = deps.target ?? window;
+    // Contextual commands run before CodeMirror's keymap so user reassignments can override editing keys.
+    const editorListener = (event: Event) => {
+      handleKeydown(event as KeyboardEvent, true);
+    };
     const listener = (event: Event) => {
       handleKeydown(event as KeyboardEvent);
     };
+    target.addEventListener('keydown', editorListener, true);
     target.addEventListener('keydown', listener);
 
     checkConflicts();
@@ -303,6 +327,7 @@ export function createHotkeyManager(deps: HotkeyManagerDeps) {
     });
 
     return () => {
+      target.removeEventListener('keydown', editorListener, true);
       target.removeEventListener('keydown', listener);
       stopEffects();
     };

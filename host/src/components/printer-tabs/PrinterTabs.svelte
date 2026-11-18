@@ -148,7 +148,6 @@
     color: var(--text-on-header-muted);
     cursor: pointer;
     transition: background var(--transition-fast), color var(--transition-fast);
-    z-index: 250;
   }
 
   .fleet-toggle:hover {
