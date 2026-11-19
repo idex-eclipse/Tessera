@@ -32,12 +32,59 @@ describe('guard-agent', () => {
     expect(order).toEqual([]);
   });
 
-  it('skips initiator own guards (anti-recursion)', async () => {
+  it('runs the initiator own guard in registration order', async () => {
     const agent = agentWith();
-    const h = vi.fn(() => ({ action: 'allow' as const }));
-    agent.registerGuards('a', [{ id: 'g1', match: ['m'], handler: 'h' }], { h });
+    const order: string[] = [];
+    agent.registerGuards('a', [{ id: 'g1', match: ['m'], handler: 'h' }], {
+      h: () => { order.push('a'); return { action: 'allow' }; },
+    });
+    agent.registerGuards('b', [{ id: 'g2', match: ['m'], handler: 'h' }], {
+      h: () => { order.push('b'); return { action: 'allow' }; },
+    });
     await agent.runPreflight('a', 'pA', 'm', undefined);
-    expect(h).not.toHaveBeenCalled();
+    expect(order).toEqual(['a', 'b']);
+  });
+
+  it('skips an active guard for its own async nested request', async () => {
+    const agent = agentWith();
+    const own = vi.fn(async () => {
+      // The nested request happens after an await, while the first decision is pending.
+      await Promise.resolve();
+      await agent.runPreflight('a', 'pA', 'm', undefined);
+      return { action: 'allow' as const };
+    });
+    const other = vi.fn(() => ({ action: 'allow' as const }));
+    agent.registerGuards('a', [{ id: 'g1', match: ['m'], handler: 'h' }], { h: own });
+    agent.registerGuards('b', [{ id: 'g2', match: ['m'], handler: 'h' }], { h: other });
+
+    await agent.runPreflight('a', 'pA', 'm', undefined);
+    expect(own).toHaveBeenCalledTimes(1);
+    expect(other).toHaveBeenCalledTimes(2);
+  });
+
+  it('denies cross-plugin re-entry into an active guard', async () => {
+    const agent = agentWith();
+    let nestedError: GuardError | null = null;
+    const own = vi.fn(async () => {
+      await agent.runPreflight('a', 'pA', 'nested', undefined);
+      return { action: 'allow' as const };
+    });
+    const other = vi.fn(async () => {
+      // B's request would call A again unless the host stops the cycle.
+      nestedError = await agent.runPreflight('b', 'pA', 'outer', undefined).then(
+        () => null,
+        (error) => error as GuardError,
+      );
+      return { action: 'allow' as const };
+    });
+    agent.registerGuards('a', [{ id: 'g1', match: ['outer'], handler: 'h' }], { h: own });
+    agent.registerGuards('b', [{ id: 'g2', match: ['nested'], handler: 'h' }], { h: other });
+
+    await agent.runPreflight('a', 'pA', 'outer', undefined);
+    expect(own).toHaveBeenCalledTimes(1);
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(nestedError).toBeInstanceOf(GuardError);
+    expect(nestedError!.rejection).toMatchObject({ code: 'denied_by_guard', pluginId: 'a', guardId: 'g1' });
   });
 
   it('deny rejects with attribution and stops the chain', async () => {
@@ -48,7 +95,7 @@ describe('guard-agent', () => {
     });
     agent.registerGuards('b', [{ id: 'g2', match: ['m'], handler: 'h' }], { h: second });
 
-    const err = await agent.runPreflight('x', 'pA', 'm', undefined).then(
+    const err = await agent.runPreflight('a', 'pA', 'm', undefined).then(
       () => null,
       (e) => e as GuardError,
     );
@@ -76,17 +123,17 @@ describe('guard-agent', () => {
     agent.registerGuards('b', [{ id: 'after', match: ['m'], handler: 'after' }], { after });
 
     let settled = false;
-    const p = agent.runPreflight('x', 'pA', 'm', { v: 1 }).then(() => { settled = true; });
+    const p = agent.runPreflight('a', 'pA', 'm', { v: 1 }).then(() => { settled = true; });
     await flush();
     expect(settled).toBe(false);
     expect(agent.getParkedChains()).toHaveLength(1);
 
-    await expect(agent.runPreflight('x', 'pA', 'm', { v: 1 })).rejects.toMatchObject({
+    await expect(agent.runPreflight('a', 'pA', 'm', { v: 1 })).rejects.toMatchObject({
       rejection: { code: 'already_pending' },
     });
 
     // другие params — не дубль: цепочка проходит насквозь (f уже allow)
-    await agent.runPreflight('x', 'pA', 'm', { v: 2 });
+    await agent.runPreflight('a', 'pA', 'm', { v: 2 });
 
     agent.resume(token!, 'accept');
     await p;
@@ -120,6 +167,9 @@ describe('guard-agent', () => {
       },
     });
     const a = agent.runPreflight('caller', 'pA', 'm', { value: 1 });
+    // Let the first handler finish freezing before another caller reaches this guard.
+    await flush();
+    expect(agent.getParkedChains()).toHaveLength(1);
     const b = agent.runPreflight('caller', 'pB', 'm', { value: 1 });
     await flush();
     expect(agent.getParkedChains()).toHaveLength(2);
@@ -144,6 +194,30 @@ describe('guard-agent', () => {
     expect(events).toEqual([
       { kind: 'decision_timeout', pluginId: 'a', guardId: 'slow', method: 'm', targetPrinterId: 'pA' },
     ]);
+  });
+
+  it('late settlement after timeout does not clear a newer active call', async () => {
+    const agent = agentWith({ decisionTimeoutMs: 100 });
+    const finish: Array<() => void> = [];
+    agent.registerGuards('a', [{ id: 'slow', match: ['m'], handler: 'h' }], {
+      h: () => new Promise<{ action: 'allow' }>((resolve) => {
+        finish.push(() => resolve({ action: 'allow' }));
+      }),
+    });
+
+    await expect(agent.runPreflight('a', 'pA', 'm', undefined)).rejects.toMatchObject({
+      rejection: { code: 'guard_timeout' },
+    });
+    const current = agent.runPreflight('a', 'pA', 'm', undefined);
+    finish[0]!();
+    await Promise.resolve();
+
+    // The first handler's late answer must not expose the second active handler.
+    await expect(agent.runPreflight('b', 'pA', 'm', undefined)).rejects.toMatchObject({
+      rejection: { code: 'denied_by_guard', pluginId: 'a', guardId: 'slow' },
+    });
+    finish[1]!();
+    await expect(current).resolves.toBeUndefined();
   });
 
   it('park timeout → guard_timeout + notify sink', async () => {

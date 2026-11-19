@@ -55,14 +55,12 @@ export function isFaultRecoveryRestart(request: GuardRequest, state: KlippyState
 }
 
 /**
- * Guard `system-print-safety`: пока на принтере-адресате идёт печать (или пауза), другим
- * плагинам нельзя перезапускать Klipper/прошивку, перезагружать или выключать хост и
- * запускать обновления. Состояние печати — из трекера, при его отсутствии разовый запрос
- * к Moonraker; если узнать нельзя (оффлайн) — запрос проходит (команда всё равно не дойдёт).
+ * Guard `system-print-safety` blocks disruptive machine actions during a print or pause,
+ * including actions requested by System itself. It uses the target printer's tracked
+ * state, querying Moonraker once when that state is missing. If the state is unavailable,
+ * the request proceeds so Moonraker can report the connection failure.
  *
- * Запросы самого плагина System (правая панель) гард не видит (анти-рекурсия): для них
- * защитой служат диалоги подтверждения и блокировки в самом интерфейсе. Аварийная остановка
- * (printer.emergency_stop) НИКОГДА не блокируется.
+ * Emergency stop (printer.emergency_stop) is never blocked by this guard.
  */
 export const guardSystemPrintSafety = async (
   request: GuardRequest,

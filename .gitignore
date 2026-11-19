@@ -34,7 +34,9 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
-.claude/*
+.claude
+.codex
+graphify*
 
 #Klipper config reference
 Config_Reference.md

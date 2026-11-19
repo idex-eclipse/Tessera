@@ -1,7 +1,8 @@
 # GuardAgent: preflight checks of requests
 
-A guard is a declarative plugin check that runs **before** another plugin's
-`request()` is sent to Moonraker. Guards implement rules such as "do not start a
+A guard is a declarative plugin check that runs **before** any plugin's
+`request()` is sent to Moonraker, including requests from the guard's own plugin.
+Guards implement rules such as "do not start a
 print until the spools are confirmed" or "do not run `SAVE_CONFIG` during a print".
 
 GuardAgent is host infrastructure. It is **not a bus**: plugins do not exchange
@@ -155,13 +156,22 @@ function onUserDecision(ok: boolean) {
 
 ## How the chain is built
 
-1. All guards whose matchers match the method are taken.
-2. **Minus the initiating plugin's own guards** — a guard does not guard its own
-   plugin's requests (protection against recursion).
-3. Order = registration order: core plugins first in bundle order, then remote ones
+1. All guards whose matchers match the method are taken, including the initiating
+   plugin's own guards.
+2. Order = registration order: core plugins first in bundle order, then remote ones
    as they finish loading, so the order of remote guards is not guaranteed; do not rely
    on it. There are no priorities.
-4. The walk is sequential. A veto from any guard wins (intersection).
+3. The walk is sequential. A veto from any guard wins (intersection).
+
+While a guard handler is still deciding, a nested request from **that guard's own
+plugin** skips only that active guard; the remaining matching guards still run. If
+a request from **another plugin** reaches the active guard, the host rejects it as
+`denied_by_guard` with that guard's attribution. This stops cycles between plugins.
+The active state ends when the handler answers, throws, or times out; a parked
+(`freeze`) guard is no longer active. Because the host cannot distinguish an async
+handler's nested request from an unrelated request by the same plugin, the latter
+can also skip that guard while its handler is running. Likewise, an unrelated
+request from another plugin can temporarily be rejected during that interval.
 
 Practical takeaway: you do not need to (and cannot) "intercept first". Assume the
 other guards will also run.

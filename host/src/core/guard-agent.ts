@@ -4,16 +4,14 @@ import type {
 } from '../../../plugin-sdk/src/types';
 
 /**
- * GuardAgent — префлайт-конвейер request() (решение O, CONTEXT.md).
+ * GuardAgent runs plugin request() preflight checks in registration order.
  *
- * - цепочка = гарды с совпавшими матчерами МИНУС гарды инициатора;
- * - порядок = порядок регистрации (core по бандлу, remote по mpu:v2:plugins);
- * - allow → следующий; deny → reject с атрибуцией; freeze → парковка с токеном,
- *   возобновление ТОЛЬКО через resume(token);
- * - таймауты fail-closed: решение 10с, парковка 10мин → deny + notify;
- * - идентичный (method+params) запрос при живой парковке → already_pending;
- * - выгрузка плагина атомарно снимает гарды и deny-ит его парковки;
- * - гарды НЕ мутируют запрос; subscribe/poll/HTTP мимо конвейера.
+ * - Every matching guard, including the initiator's, joins the chain.
+ * - An active guard is skipped for its own plugin's requests and denies re-entry
+ *   through another plugin's requests, preventing asynchronous handler cycles.
+ * - allow continues, deny rejects with attribution, and freeze parks until resume().
+ * - Decision and parking timeouts fail closed; duplicate parked requests are rejected.
+ * - Guards cannot mutate requests; subscribe, poll, and HTTP bypass this pipeline.
  */
 
 export interface GuardRequest {
@@ -131,6 +129,8 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
   let seq = 0;
   const parked = new Map<string, ParkedChain>();
   const parkedByIdentity = new Map<string, string>();
+  // Track only unsettled handler calls; a parked chain no longer has an active handler.
+  const activeGuards = new Set<RegisteredGuard>();
   const changeListeners = new Set<() => void>();
 
   function emitChange(): void {
@@ -216,10 +216,8 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
   // Конвейер
   // ------------------------------------------------------------------
 
-  function buildChain(initiatorPluginId: string, method: string): RegisteredGuard[] {
-    return guards.filter(
-      (g) => g.pluginId !== initiatorPluginId && g.matchers.some((m) => matchMatcher(m, method)),
-    );
+  function buildChain(method: string): RegisteredGuard[] {
+    return guards.filter((g) => g.matchers.some((m) => matchMatcher(m, method)));
   }
 
   function runPreflight(
@@ -228,7 +226,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
     method: string,
     params: unknown,
   ): Promise<void> {
-    const chain = buildChain(initiatorPluginId, method);
+    const chain = buildChain(method);
     if (chain.length === 0) return Promise.resolve();
 
     const identityKey = identityKeyFor(targetPrinterId, method, params);
@@ -280,6 +278,15 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
   ): Promise<void> {
     for (let i = index; i < chain.length; i++) {
       const guard = chain[i]!;
+      if (activeGuards.has(guard)) {
+        // A handler's own nested request may proceed, but a cross-plugin cycle fails closed.
+        if (guard.pluginId === ctx.initiatorPluginId) continue;
+        throw new GuardError({
+          code: 'denied_by_guard',
+          guardId: guard.guardId,
+          pluginId: guard.pluginId,
+        });
+      }
       const { decision, token } = await callGuard(guard, ctx);
 
       if (decision.action === 'allow') continue;
@@ -293,7 +300,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
         });
       }
 
-      // freeze: суспенд до resume(token); продолжение — walk(nextIndex)
+      // A frozen handler is settled; resume continues from the next guard.
       await park(chain, i, guard, ctx, token);
       return;
     }
@@ -306,7 +313,20 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
     const token = newToken();
 
     return new Promise<{ decision: GuardDecision; token: string }>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let timer: ReturnType<typeof setTimeout>;
+      let finished = false;
+      // Late Promise settlement must not clear a newer invocation of this guard.
+      const finish = (): boolean => {
+        if (finished) return false;
+        finished = true;
+        clearTimeout(timer);
+        activeGuards.delete(guard);
+        return true;
+      };
+
+      activeGuards.add(guard);
+      timer = setTimeout(() => {
+        if (!finish()) return;
         notify({
           kind: 'decision_timeout',
           pluginId: guard.pluginId,
@@ -331,7 +351,7 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
           { targetPrinterId: ctx.targetPrinterId },
         );
       } catch (e) {
-        clearTimeout(timer);
+        if (!finish()) return;
         console.error('[guard-agent] handler threw', guard.pluginId, guard.guardId, e);
         reject(
           new GuardError({
@@ -345,11 +365,11 @@ export function createGuardAgent(options: GuardAgentOptions = {}) {
 
       Promise.resolve(out).then(
         (d) => {
-          clearTimeout(timer);
+          if (!finish()) return;
           resolve({ decision: d, token });
         },
         (e) => {
-          clearTimeout(timer);
+          if (!finish()) return;
           console.error('[guard-agent] handler rejected', guard.pluginId, guard.guardId, e);
           reject(
             new GuardError({

@@ -39,7 +39,7 @@ What a plugin **can** do:
 - read printer state and call Moonraker methods (`api.moonraker()`);
 - store its own settings (`api.settings`);
 - show pages, dashboard widgets, banners, overlays, quick-access chips, fleet-mode panels;
-- intercept other plugins' requests with guards (`allow`/`deny`/`freeze`);
+- check its own and other plugins' requests with guards (`allow`/`deny`/`freeze`);
 - register hotkeys;
 - translate its UI into the host's languages.
 
