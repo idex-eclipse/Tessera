@@ -413,10 +413,11 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
 - Panels stack inside the card in registration order. The user can reorder and
   hide panels ("Edit panels" in the fleet header); `titleKey` is used as the name
   in that editor.
-- Making panels **read-only** is recommended: actions on non-active printers are
-  not recommended yet (guards of plugins unaware of the target printer would
-  decide based on the active one — see
-  [guards.md](guards.md#target-scoped-guards)).
+- Panels may offer actions for their own printer. Send requests through
+  `api.moonrakerFor(params.printerId)` and read printer-specific settings through
+  `api.settingsFor(params.printerId)`; never use the active-printer handles for a
+  card action. Guards must check `ctx.targetPrinterId` rather than the active
+  printer (see [guards.md](guards.md#target-scoped-guards)).
 - To take part in the fleet **search and filters**, publish an index from the panel
   with `api.fleet.publish(params.printerId, { tags, searchText })` (in an
   `$effect`/`connectedCallback`) and call `api.fleet.retract(params.printerId)` when
