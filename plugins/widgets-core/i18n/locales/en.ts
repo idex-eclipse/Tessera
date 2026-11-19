@@ -353,6 +353,9 @@ export const en = {
     },
     temps: {
       title: 'Temperatures',
+      editTarget: 'Set target for {name}',
+      invalidTarget: 'Enter a temperature within this sensor’s limits, or 0 to turn it off.',
+      setFailed: 'Could not set the target temperature. Check the printer connection and try again.',
       notReady: 'Klipper not ready',
       noHeaters: 'No heaters configured',
     },

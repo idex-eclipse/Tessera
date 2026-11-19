@@ -4,6 +4,9 @@
   import { useWidget, useI18n } from '../../../../../plugin-sdk/src/svelte/index';
 
   import { useTemperatureData } from '../../data/use-temperature.svelte.ts';
+  import { buildTargetGcode } from '../../lib/data.ts';
+  import type { TemperatureSensor } from '../../types.ts';
+  import TargetInput from '../shared/TargetInput.svelte';
 
   let {
     mpuApi,
@@ -28,6 +31,44 @@
 
   const store = useTemperatureData(api, printerId);
 
+  // Reuse the widget field while keeping requests and errors scoped to this card.
+  let busy = $state(false);
+  let error = $state('');
+  let errorSensor = $state<string | null>(null);
+
+  /** Passive sensors and cards without a known target must never expose commands. */
+  function canEdit(sensor: TemperatureSensor): boolean {
+    return Boolean(injected?.printerId) && store.connected && store.klippyState === 'ready'
+      && (sensor.kind === 'heater' || sensor.kind === 'fan');
+  }
+
+  /** Validate against this printer's discovered limits before sending a guarded request. */
+  async function saveTarget(sensor: TemperatureSensor, value: number): Promise<void> {
+    if (!canEdit(sensor) || busy) return;
+    errorSensor = sensor.name;
+    const withinLimits = Number.isFinite(value) && value >= 0
+      && (value === 0 || sensor.minTemp == null || value >= sensor.minTemp)
+      && (sensor.maxTemp == null || value <= sensor.maxTemp);
+    const script = withinLimits ? buildTargetGcode(sensor.name, sensor.kind, value) : null;
+    if (!script) {
+      error = i18n.t('fleet.temps.invalidTarget');
+      return;
+    }
+
+    busy = true;
+    error = '';
+    try {
+      await api.moonrakerFor(printerId).request('printer.gcode.script', { script });
+    } catch (cause) {
+      // Guard rejections already appear in the host notification center for this printer.
+      if (!(cause as { rejection?: unknown } | null)?.rejection) {
+        error = i18n.t('fleet.temps.setFailed');
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
   function fmtTemp(v: number | null): string {
     return v == null ? '—' : String(Math.round(v));
   }
@@ -39,11 +80,25 @@
             <div class="ft-empty">{i18n.t('fleet.temps.noHeaters')}</div>
         {:else}
             {#each store.sensors as s (s.name)}
-                <div class="ft-row">
-                    <span class="ft-swatch" style:background={s.color}></span>
-                    <span class="ft-name" title={s.name}>{s.displayName}</span>
-                    <span class="ft-cur">{fmtTemp(s.temperature)}°</span>
-                    <span class="ft-target">/ {fmtTemp(s.target)}°</span>
+                <div class="ft-item">
+                    <div class="ft-row">
+                        <span class="ft-swatch" style:background={s.color}></span>
+                        <span class="ft-name" title={s.name}>{s.displayName}</span>
+                        <span class="ft-cur">{fmtTemp(s.temperature)}°</span>
+                        {#if canEdit(s)}
+                            <TargetInput
+                                value={s.target}
+                                disabled={busy}
+                                label={i18n.t('fleet.temps.editTarget', { name: s.displayName })}
+                                onCommit={(value) => void saveTarget(s, value)}
+                            />
+                        {:else}
+                            <span class="ft-target">/ {fmtTemp(s.target)}°</span>
+                        {/if}
+                    </div>
+                    {#if error && errorSensor === s.name}
+                        <p class="ft-error" role="alert">{error}</p>
+                    {/if}
                 </div>
             {/each}
         {/if}
@@ -68,6 +123,11 @@
     background: var(--bg-surface);
     min-width: 0;
   }
+
+  .ft-item { min-width: 0; }
+  /* Compact inline targets reuse the widget's field and leave room for names in narrow RTL cards. */
+  .ft-row :global(.target-field) { max-width: 110px; }
+  .ft-error { margin: var(--space-xs) var(--space-sm) 0; color: var(--danger); overflow-wrap: anywhere; }
 
   .ft-swatch {
     width: 10px;
@@ -104,17 +164,6 @@
     flex-shrink: 0;
     direction: ltr;
   }
-
-  .ft-klippy {
-    padding: var(--space-sm);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--warning) 18%, transparent);
-    color: var(--warning);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-align: center;
-  }
-
   .ft-empty {
     padding: var(--space-sm);
     color: var(--text-muted);

@@ -4,11 +4,17 @@
   let {
     value = null,
     block = false,
+    disabled = false,
+    label,
     onCommit,
   }: {
     value: number | null;
     /** На всю ширину контейнера (popover), а не 110px колонки таблицы. */
     block?: boolean;
+    /** Prevents a fleet card from accepting another target while its request is pending. */
+    disabled?: boolean;
+    /** Gives compact fields a sensor-specific accessible name without changing their visual layout. */
+    label?: string;
     onCommit: (v: number) => void;
   } = $props();
 
@@ -53,12 +59,15 @@
   }
 </script>
 
-<label class="mpu-field target-field" class:block>
+<label class="mpu-field target-field" class:block dir="ltr">
   <input
     class="mpu-input"
     type="number"
+    dir="ltr"
     min="0"
     step="1"
+    {disabled}
+    aria-label={label}
     bind:value={draft}
     onfocus={() => (focused = true)}
     onblur={() => {
@@ -81,6 +90,8 @@
 
 <style>
   .target-field {
+    /* Keep the numeric value and °C unit in their physical order inside RTL cards. */
+    unicode-bidi: isolate;
     width: 110px;
     flex: none;
     margin-top: 0;
