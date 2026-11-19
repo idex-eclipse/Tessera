@@ -383,6 +383,8 @@ export const ru = {
 
   fleet: {
     status: {
+      cancelPrinterConfirm: 'Отменить текущую печать на принтере «{name}»?',
+      keepPrinting: 'Продолжить печать',
       title: 'Статус печати',
       idle: 'Нет активной печати',
       notPrinting: 'Ожидание',

@@ -391,6 +391,8 @@ export const en = {
   fleet: {
     status: {
       title: 'Print Status',
+      cancelPrinterConfirm: 'Cancel the current print on {name}?',
+      keepPrinting: 'Keep printing',
       idle: 'No active print',
       notPrinting: 'Idle',
       completed: 'Completed',

@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { useI18n } from '../../plugin-sdk/src/svelte/index';
+
   let {
     open,
     title,
     message,
     confirmLabel,
+    cancelLabel,
     danger = false,
     onConfirm,
     onClose,
@@ -12,10 +15,15 @@
     title: string;
     message: string;
     confirmLabel: string;
+    /** Lets callers localize the shared dialog's dismissal action. */
+    cancelLabel?: string;
     danger?: boolean;
     onConfirm: () => void;
     onClose: () => void;
   } = $props();
+
+  // Plugin dialogs share the host's current locale, while callers may choose a contextual label.
+  const i18n = useI18n();
 </script>
 
 {#if open}
@@ -24,7 +32,7 @@
     <div class="dialog-header"><h3>{title}</h3></div>
     <div class="dialog-body"><p class="dialog-message">{message}</p></div>
     <div class="dialog-footer">
-      <button class="btn btn-secondary" onclick={onClose}>Cancel</button>
+      <button class="btn btn-secondary" onclick={onClose}>{cancelLabel ?? i18n.t('common.cancel')}</button>
       <button class="btn" class:danger onclick={() => { onConfirm(); onClose(); }}>{confirmLabel}</button>
     </div>
   </div>

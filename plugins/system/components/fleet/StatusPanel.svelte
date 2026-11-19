@@ -15,6 +15,8 @@
   import { useKlippyState } from '../../../shared/klippy-state/use-klippy-state.svelte.ts';
   import { isKlippyFault } from '../../../shared/klippy-state/klippy-fault.ts';
   import { buildFleetIndex } from '../../fleet-index.ts';
+  import { reportSystemActionError } from '../../notifications.ts';
+  import ConfirmDialog from '../../../shared/confirm-dialog.svelte';
 
   let {
     mpuApi,
@@ -70,6 +72,34 @@
   let remaining = $derived(computeRemaining(m, mode));
   let eta = $derived(computeEta(m, mode));
 
+  // Keep the request and confirmation bound to this card even while another printer is active.
+  let busy = $state(false);
+  let confirmCancel = $state(false);
+  let cancelPrinterName = $state('');
+  let canControl = $derived(Boolean(injected?.printerId) && klippy.state === 'ready' && printing);
+
+  /** Capture the current target name when opening a destructive confirmation. */
+  function askCancel(): void {
+    if (!canControl || busy) return;
+    cancelPrinterName = api.printers.find((printer) => printer.id === printerId)?.name ?? printerId;
+    confirmCancel = true;
+  }
+
+  /** Route print actions to this card and let the host report guard rejections. */
+  async function act(method: 'printer.print.pause' | 'printer.print.resume' | 'printer.print.cancel'): Promise<void> {
+    if (!canControl || busy) return;
+    busy = true;
+    try {
+      await api.moonrakerFor(printerId).request(method);
+    } catch (error) {
+      const actionKey = method === 'printer.print.pause' ? 'system.status.pause'
+        : method === 'printer.print.resume' ? 'system.status.resume' : 'system.status.cancel';
+      reportSystemActionError(api, printerId, i18n.t(actionKey), error);
+    } finally {
+      busy = false;
+    }
+  }
+
   // Публикуем в fleet-индекс хоста теги и имя активного файла (поиск/фильтры fleet).
   // Хост дедуплицирует одинаковые записи, так что тики прогресса его не будят.
   $effect(() => {
@@ -95,7 +125,7 @@
             <span class="fs-state" class:printing={stateClass === 'printing'} class:paused={stateClass === 'paused'} class:error={stateClass === 'error'}>
             {m.state}
             </span>
-            <span class="fs-fname" title={m.filename}>
+            <span class="fs-fname" title={m.filename} dir="ltr">
             {m.filename || i18n.t('fleet.status.idle')}
             </span>
         </div>
@@ -103,6 +133,20 @@
         {#if printing}
             <div class="fs-bar">
             <div class="fs-fill" style="width: {progress != null ? progress * 100 : 0}%"></div>
+            </div>
+            <div class="fs-actions">
+                {#if m.state === 'printing'}
+                    <button type="button" class="fs-action" disabled={busy || !canControl} onclick={() => void act('printer.print.pause')}>
+                        {i18n.t('system.status.pause')}
+                    </button>
+                {:else}
+                    <button type="button" class="fs-action" disabled={busy || !canControl} onclick={() => void act('printer.print.resume')}>
+                        {i18n.t('system.status.resume')}
+                    </button>
+                {/if}
+                <button type="button" class="fs-action danger" disabled={busy || !canControl} onclick={askCancel}>
+                    {i18n.t('system.status.cancel')}
+                </button>
             </div>
 
             <div class="fs-metrics">
@@ -125,12 +169,23 @@
             <div class="fs-complete">
             <span class="fs-label">{i18n.t('fleet.status.completed')}</span>
             {#if m.filename}
-                <span class="fs-fname-secondary">{m.filename}</span>
+                <span class="fs-fname-secondary" dir="ltr">{m.filename}</span>
             {/if}
             </div>
         {/if}
     {/if}
 </div>
+
+<ConfirmDialog
+  open={confirmCancel}
+  title={i18n.t('system.status.cancel')}
+  message={i18n.t('fleet.status.cancelPrinterConfirm', { name: cancelPrinterName })}
+  confirmLabel={i18n.t('system.status.cancel')}
+  cancelLabel={i18n.t('fleet.status.keepPrinting')}
+  danger={true}
+  onConfirm={() => { if (canControl) void act('printer.print.cancel'); }}
+  onClose={() => (confirmCancel = false)}
+/>
 
 <style>
   .fleet-status {
@@ -175,6 +230,8 @@
   }
 
   .fs-fname {
+    /* File names keep their LTR spelling inside a direction-aware card. */
+    unicode-bidi: isolate;
     flex: 1;
     min-width: 0;
     font-size: var(--font-size-sm);
@@ -186,6 +243,7 @@
   }
 
   .fs-fname-secondary {
+    unicode-bidi: isolate;
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     overflow: hidden;
@@ -248,6 +306,20 @@
     text-align: center;
     font-size: var(--font-size-sm);
   }
+
+  /* Wrapping keeps both actions reachable in narrow cards and long translations. */
+  .fs-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); min-width: 0; }
+  .fs-action {
+    min-height: 40px;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .fs-action.danger { color: var(--danger); }
+  .fs-action:disabled { opacity: 0.5; cursor: default; }
 
   .fs-klippy {
     padding: var(--space-sm);
