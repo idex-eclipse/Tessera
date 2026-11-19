@@ -30,13 +30,8 @@
   const store = useToolhead(api, printerId);
   const klippy = useKlippyState(api, printerId);
 
-  /**
-   * v1: буква direct-оси — ui-настройка плагина (tools.directAxis), а
-   * namespace settingsFor(activePrinterId) привязан к активному принтеру. Поэтому в fleet
-   * показываем конвенциональную 'U'; per-printer буква приедет вместе с
-   * settingsFor(printerId).
-   */
-  const DIRECT_LABEL = 'U';
+  // The toolhead core reads settingsFor(printerId), so use this card's configured direct axis.
+  let directLabel = $derived(store.ui.directAxis || 'U');
 
   let directActive = $derived(store.isDirectActive);
 
@@ -46,12 +41,12 @@
       { label: 'Y', idx: 1, dec: 2 },
       { label: 'Z', idx: 2, dec: 3 },
     ];
-    if (directActive) out.push({ label: DIRECT_LABEL, idx: 4, dec: 2 });
+    if (directActive) out.push({ label: directLabel, idx: 4, dec: 2 });
     return out;
   });
 
   function homedFor(label: string): boolean {
-    return label === DIRECT_LABEL ? store.directHomed : store.homed(label);
+    return label === directLabel ? store.directHomed : store.homed(label);
   }
 </script>
 
@@ -65,7 +60,7 @@
             class:unhomed={!homed}
             title={homed ? undefined : i18n.t('fleet.position.unhomed')}
             >
-            <span class="fp-value">
+            <span class="fp-value" dir="ltr">
                 {r.label} [{(store.th.position[r.idx] ?? 0).toFixed(2)}]
             </span>
             </div>
@@ -107,6 +102,8 @@
   }
 
   .fp-value {
+    /* Coordinates keep axis letters and numbers in their canonical order in RTL. */
+    unicode-bidi: isolate;
     font-size: var(--font-size-md);
     font-weight: 700;
     font-family: monospace;
