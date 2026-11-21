@@ -3,7 +3,9 @@ import { findFreeSpot, overlaps, settle } from './layout-utils.ts';
 
 /** Fleet cards share a compact 12-column template across all printers. */
 export const FLEET_GRID_COLUMNS = 12;
-export const FLEET_MIN_WIDTH = 6;
+// Width 4 (a third of the card) is enough for compact one-row panels
+// (health indicator, Jobs, Job Queue); resize clamps and saved-layout repair use this floor.
+export const FLEET_MIN_WIDTH = 4;
 export const FLEET_MIN_HEIGHT = 1;
 export const FLEET_MAX_HEIGHT = 16;
 export const FLEET_DEFAULT_HEIGHT = 4;

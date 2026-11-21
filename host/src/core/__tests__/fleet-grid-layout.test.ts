@@ -39,9 +39,9 @@ describe('fleet card grid layout', () => {
       { ...panels[2]!, defaultSize: { w: 6, h: 1 } },
     ];
     expect(mergeFleetGridLayout(registered, [], false)).toEqual([
-      { ...panels[0]!, visible: true, x: 0, y: 0, w: 6, h: 1 },
+      { ...panels[0]!, visible: true, x: 0, y: 0, w: 4, h: 1 },
       { ...panels[1]!, visible: true, x: 0, y: 1, w: 12, h: 16 },
-      { ...panels[2]!, visible: true, x: 6, y: 0, w: 6, h: 1 },
+      { ...panels[2]!, visible: true, x: 4, y: 0, w: 6, h: 1 },
     ]);
 
     const saved = [{ ...panels[2]!, visible: true, x: 0, y: 3, w: 12, h: 5 }];
