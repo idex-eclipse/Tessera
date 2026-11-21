@@ -321,6 +321,26 @@ describe('settings-store / ui state', () => {
     expect(createSettingsStore({ storage }).getFleetPanels()[0]).toMatchObject({ x: 6, w: 6 });
   });
 
+  it('keeps narrow four-column fleet panels across a reload', () => {
+    const storage = new MemoryStorage();
+    const store = createSettingsStore({ storage });
+    // The grid editor allows w down to FLEET_MIN_WIDTH (4) and x up to 12 - w;
+    // the reload normalizer must accept those same bounds.
+    store.setFleetPanels([
+      { pluginId: 'system', contributionId: 'health', visible: true, x: 8, y: 0, w: 4, h: 1 },
+      { pluginId: 'jobs', contributionId: 'jobs', visible: true, x: 0, y: 1, w: 5, h: 2 },
+    ]);
+    store.setFleetPanelsFor('p2', [
+      { pluginId: 'system', contributionId: 'health', visible: true, x: 8, y: 0, w: 4, h: 1 },
+    ]);
+    const reloaded = createSettingsStore({ storage });
+    expect(reloaded.getFleetPanels()).toMatchObject([
+      { x: 8, y: 0, w: 4, h: 1 },
+      { x: 0, y: 1, w: 5, h: 2 },
+    ]);
+    expect(reloaded.getFleetPanelsFor('p2')[0]).toMatchObject({ x: 8, w: 4 });
+  });
+
   it('keeps an unsynced printer card separate from the shared fleet template', () => {
     const storage = new MemoryStorage();
     const store = createSettingsStore({ storage });

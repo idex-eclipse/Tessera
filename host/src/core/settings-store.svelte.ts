@@ -21,6 +21,13 @@ import {
 
 import { isPluginSynced, isDashboardSynced, onSyncChange, setPluginSynced, setDashboardSynced } from './settings-sync.svelte';
 
+import {
+  FLEET_GRID_COLUMNS,
+  FLEET_MAX_HEIGHT,
+  FLEET_MIN_HEIGHT,
+  FLEET_MIN_WIDTH,
+} from './fleet-grid-layout';
+
 /**
  * Modular Printer UI v2
  * Settings store.
@@ -1397,7 +1404,11 @@ export function normalizeGlyphWidth(value: unknown): number {
     : 0;
 }
 
-/** Accept old order-only Fleet entries and bound imported grid coordinates. */
+/**
+ * Accept old order-only Fleet entries and bound imported grid coordinates.
+ * The bounds come from fleet-grid-layout so narrow (four-column) panels saved
+ * by the current editor survive a reload instead of being reset to full width.
+ */
 function normalizeFleetPanelEntries(value: unknown): FleetPanelLayoutItem[] {
   const panels: FleetPanelLayoutItem[] = [];
   if (!Array.isArray(value)) return panels;
@@ -1408,10 +1419,10 @@ function normalizeFleetPanelEntries(value: unknown): FleetPanelLayoutItem[] {
       contributionId: item.contributionId,
       visible: typeof item.visible === 'boolean' ? item.visible : true,
       // Legacy entries only had an order; keep it as full-width rows.
-      x: typeof item.x === 'number' && Number.isInteger(item.x) && item.x >= 0 && item.x <= 6 ? item.x : 0,
+      x: typeof item.x === 'number' && Number.isInteger(item.x) && item.x >= 0 && item.x <= FLEET_GRID_COLUMNS - FLEET_MIN_WIDTH ? item.x : 0,
       y: typeof item.y === 'number' && Number.isInteger(item.y) && item.y >= 0 && item.y <= 1000 ? item.y : index * 4,
-      w: typeof item.w === 'number' && Number.isInteger(item.w) && item.w >= 6 && item.w <= 12 ? item.w : 12,
-      h: typeof item.h === 'number' && Number.isInteger(item.h) && item.h >= 1 && item.h <= 16 ? item.h : 4,
+      w: typeof item.w === 'number' && Number.isInteger(item.w) && item.w >= FLEET_MIN_WIDTH && item.w <= FLEET_GRID_COLUMNS ? item.w : FLEET_GRID_COLUMNS,
+      h: typeof item.h === 'number' && Number.isInteger(item.h) && item.h >= FLEET_MIN_HEIGHT && item.h <= FLEET_MAX_HEIGHT ? item.h : 4,
       autoHeight: item.autoHeight === true,
     });
   }
