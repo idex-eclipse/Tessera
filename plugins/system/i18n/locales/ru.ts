@@ -403,6 +403,15 @@ export const ru = {
       idle: 'Простаивает',
       klippyError: 'Ошибка Klipper',
     },
+    health: {
+      title: 'Состояние машины',
+      ok: 'Все системы в норме',
+      openMonitoring: 'Система → Мониторинг',
+      issuesTooltip: '{state} · проблем: {count}, критичных: {crit}',
+      cpuTemp: 'Температура CPU {value} °C',
+      failedComponent: 'Компонент Moonraker не работает: {name}',
+      moonrakerWarning: 'Moonraker: {text}',
+    },
   },
 
   tmf: {

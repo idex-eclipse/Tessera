@@ -265,6 +265,15 @@ describe('hotkeys', () => {
   });
 });
 
+describe('fleet health panel', () => {
+  it('registers the compact Machine Health fleet panel', () => {
+    expect(systemManifest.printerPanels).toEqual([
+      expect.objectContaining({ id: 'fleet-status' }),
+      expect.objectContaining({ id: 'fleet-health', defaultSize: { w: 4, h: 1 } }),
+    ]);
+  });
+});
+
 describe('print status formatting', () => {
   it('fmtDuration uses localized units', () => {
     expect(fmtDuration(3725)).toBe('1h 2m');

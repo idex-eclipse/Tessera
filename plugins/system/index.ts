@@ -46,3 +46,6 @@ defineMpuElement('mpu-widgets-status-header', StatusHeader);
 
 import StatusPanel from './components/fleet/StatusPanel.svelte';
 defineMpuElement('mpu-system-fleet-status', StatusPanel);
+
+import HealthPanel from './components/fleet/HealthPanel.svelte';
+defineMpuElement('mpu-system-fleet-health', HealthPanel);

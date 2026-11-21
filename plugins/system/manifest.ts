@@ -69,6 +69,13 @@ export const systemManifest = definePlugin({
       element: 'mpu-system-fleet-status',
       titleKey: 'fleet.status.title',
     },
+    {
+      id: 'fleet-health',
+      element: 'mpu-system-fleet-health',
+      titleKey: 'fleet.health.title',
+      // compact indicator: one row, a third of the card width — fits next to Jobs / Job Queue
+      defaultSize: { w: 4, h: 1 },
+    },
   ],
 
   guards: [

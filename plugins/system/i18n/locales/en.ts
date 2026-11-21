@@ -410,6 +410,15 @@ export const en = {
       idle: 'Idle',
       klippyError: 'Klipper error',
     },
+    health: {
+      title: 'Machine Health',
+      ok: 'All systems OK',
+      openMonitoring: 'Machine → Monitoring',
+      issuesTooltip: '{state} · {count} issue(s), {crit} critical',
+      cpuTemp: 'CPU temperature {value} °C',
+      failedComponent: 'Moonraker component failed: {name}',
+      moonrakerWarning: 'Moonraker: {text}',
+    },
   },
 
   tmf: {
