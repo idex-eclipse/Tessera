@@ -118,7 +118,11 @@
   // ---------- Shared and printer-specific Fleet grid layouts ----------
 
   function panelIds() {
-    return registryPanels.map((panel) => ({ pluginId: panel.pluginId, contributionId: panel.contribution.id }));
+    return registryPanels.map((panel) => ({
+      pluginId: panel.pluginId,
+      contributionId: panel.contribution.id,
+      defaultSize: panel.contribution.defaultSize,
+    }));
   }
 
   function mergeLayout(): FleetPanelLayoutItem[] {

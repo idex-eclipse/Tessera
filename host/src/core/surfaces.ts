@@ -136,6 +136,16 @@ function isPositiveInt(value: unknown): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
+/** Fleet panel defaults remain manifest data; grid-specific bounds are applied by the layout engine. */
+function isValidPrinterPanel(value: unknown): boolean {
+  if (!hasStrings(value, ID_AND_ELEMENT)) return false;
+  const panel = value as Record<string, unknown>;
+  if (panel.defaultSize === undefined) return true;
+  if (!panel.defaultSize || typeof panel.defaultSize !== 'object') return false;
+  const size = panel.defaultSize as Record<string, unknown>;
+  return isPositiveInt(size.w) && isPositiveInt(size.h);
+}
+
 function isValidExtensionPoint(value: unknown): boolean {
   if (!hasStrings(value, ['id', 'kind'])) return false;
   const p = value as Record<string, unknown>;
@@ -190,7 +200,7 @@ export const SURFACE_SPECS: Record<SurfaceKind, SurfaceSpec> = {
   },
   printerPanels: {
     label: 'printerPanel',
-    validate: (v) => hasStrings(v, ID_AND_ELEMENT),
+    validate: isValidPrinterPanel,
     persistent: true,
   },
   hotkeys: {

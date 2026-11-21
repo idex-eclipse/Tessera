@@ -41,7 +41,7 @@ export function fleetPanelKey(item: Pick<FleetPanelLayoutItem, 'pluginId' | 'con
 
 /** Reconcile saved cards with the registry without dropping a user's placement. */
 export function mergeFleetGridLayout(
-  registered: Array<Pick<FleetPanelLayoutItem, 'pluginId' | 'contributionId'>>,
+  registered: Array<Pick<FleetPanelLayoutItem, 'pluginId' | 'contributionId'> & { defaultSize?: { w: number; h: number } }>,
   stored: FleetPanelLayoutItem[],
   customized: boolean,
 ): FleetPanelLayoutItem[] {
@@ -70,8 +70,12 @@ export function mergeFleetGridLayout(
     const key = fleetPanelKey(item);
     if (seen.has(key)) continue;
     seen.add(key);
-    const position = findFreeSpot(result, FLEET_GRID_COLUMNS, FLEET_DEFAULT_HEIGHT);
-    result.push({ ...item, ...position, w: FLEET_GRID_COLUMNS, h: FLEET_DEFAULT_HEIGHT, visible: true });
+    // Manifest defaults affect only newly registered or explicitly reset panels; saved geometry wins above.
+    const w = Math.max(FLEET_MIN_WIDTH, Math.min(FLEET_GRID_COLUMNS, item.defaultSize?.w ?? FLEET_GRID_COLUMNS));
+    const h = Math.max(FLEET_MIN_HEIGHT, Math.min(FLEET_MAX_HEIGHT, item.defaultSize?.h ?? FLEET_DEFAULT_HEIGHT));
+    const position = findFreeSpot(result, w, h);
+    const { defaultSize: _defaultSize, ...identity } = item;
+    result.push({ ...identity, ...position, w, h, visible: true });
   }
   return result;
 }

@@ -913,7 +913,7 @@ describe('plugin-loader / sanitize', () => {
       id: '@test/plugin',
       printerPanels: [
         { id: 'panel1', element: 'mpu-test-panel1' },
-        { id: 'panel2', element: 'mpu-test-panel2', titleKey: 'test.panel2' },
+        { id: 'panel2', element: 'mpu-test-panel2', titleKey: 'test.panel2', defaultSize: { w: 6, h: 1 } },
       ],
     });
 
@@ -926,6 +926,23 @@ describe('plugin-loader / sanitize', () => {
     expect(registry.getPrinterPanels()).toHaveLength(2);
     expect(registry.getPrinterPanels()[0]!.contribution.id).toBe('panel1');
     expect(registry.getPrinterPanels()[1]!.contribution.titleKey).toBe('test.panel2');
+    expect(registry.getPrinterPanels()[1]!.contribution.defaultSize).toEqual({ w: 6, h: 1 });
+  });
+
+  it('rejects printerPanels with malformed defaultSize', async () => {
+    const manifest = createTestManifest({
+      id: '@test/plugin',
+      printerPanels: [
+        { id: 'valid', element: 'mpu-test-valid', defaultSize: { w: 6, h: 1 } },
+        { id: 'zero', element: 'mpu-test-zero', defaultSize: { w: 0, h: 1 } },
+        { id: 'fraction', element: 'mpu-test-fraction', defaultSize: { w: 6.5, h: 1 } },
+      ] as any,
+    });
+    const { loader, registry } = setup({ fetchManifest: vi.fn(async () => manifest) });
+
+    await loader.installRemotePlugin('http://plugin.example.com/manifest.json');
+
+    expect(registry.getPrinterPanels().map((panel) => panel.contribution.id)).toEqual(['valid']);
   });
 
   it('rejects printerPanels without id', async () => {

@@ -32,6 +32,22 @@ describe('fleet card grid layout', () => {
     expect(layout[1]).toMatchObject({ x: 0, y: 4 });
   });
 
+  it('uses clamped manifest defaults only for new or reset panels', () => {
+    const registered = [
+      { ...panels[0]!, defaultSize: { w: 4, h: 0 } },
+      { ...panels[1]!, defaultSize: { w: 20, h: 20 } },
+      { ...panels[2]!, defaultSize: { w: 6, h: 1 } },
+    ];
+    expect(mergeFleetGridLayout(registered, [], false)).toEqual([
+      { ...panels[0]!, visible: true, x: 0, y: 0, w: 6, h: 1 },
+      { ...panels[1]!, visible: true, x: 0, y: 1, w: 12, h: 16 },
+      { ...panels[2]!, visible: true, x: 6, y: 0, w: 6, h: 1 },
+    ]);
+
+    const saved = [{ ...panels[2]!, visible: true, x: 0, y: 3, w: 12, h: 5 }];
+    expect(mergeFleetGridLayout([registered[2]!], saved, true)[0]).toMatchObject({ x: 0, y: 3, w: 12, h: 5 });
+  });
+
   it('pushes colliding neighbors below the moved panel without losing identity', () => {
     const layout = mergeFleetGridLayout(panels.slice(0, 2), [], false);
     const moved = layout.map((item) => item.contributionId === 'temperature' ? { ...item, y: 0 } : item);
