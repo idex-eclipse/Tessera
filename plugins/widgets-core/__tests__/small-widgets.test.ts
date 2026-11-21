@@ -76,7 +76,7 @@ describe('locales of the small widgets', () => {
 
   it('registers a compact Job Queue fleet launcher', () => {
     expect(jobQueueFleet).toEqual([
-      expect.objectContaining({ id: 'fleet-job-queue', defaultSize: { w: 6, h: 1 } }),
+      expect.objectContaining({ id: 'fleet-job-queue', defaultSize: { w: 4, h: 1 } }),
     ]);
   });
 });

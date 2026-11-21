@@ -17,7 +17,7 @@ export const jobQueueFleet: PrinterPanelContribution[] = [
     id: 'fleet-job-queue',
     element: 'mpu-core-widgets-fleet-job-queue',
     titleKey: 'widgets.jobQueue.title',
-    defaultSize: { w: 6, h: 1 },
+    defaultSize: { w: 4, h: 1 },
   },
 ];
 
