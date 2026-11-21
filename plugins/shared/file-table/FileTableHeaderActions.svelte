@@ -18,6 +18,7 @@
     root = 'gcodes',
     showAdd = false,
     menuEnabled = true,
+    printerId,
     onThreeMF = null,  // НОВОЕ
   }: {
     scope: string;
@@ -25,12 +26,13 @@
     root?: string;
     showAdd?: boolean;
     menuEnabled?: boolean;
+    printerId?: string;
     onThreeMF?: ((file: File) => void) | null;  // НОВОЕ
   } = $props();
 
   const api = usePluginApi();
   const i18n = api.i18n;
-  const ops = createFileOps(api);
+  const ops = createFileOps(api, printerId);
 
   let columnsOpen = $state(false);
   let addMenu = $state<{ x: number; y: number } | null>(null);
@@ -39,7 +41,7 @@
   let createFileOpen = $state(false);
   let createDirOpen = $state(false);
 
-  let search = $derived(getSearch(api, scope));
+  let search = $derived(getSearch(api, scope, printerId));
 
   /** Текст ошибки: отказ гарда → перевод reasonKey, иначе message. */
   function errText(e: unknown): string {
@@ -50,31 +52,31 @@
 
   // Внешний запрос фокуса на поиск (hotkey Ctrl+F плагина вместо поиска браузера)
   let searchEl = $state<HTMLInputElement | null>(null);
-  let lastFocusTick = getSearchFocusTick(api, scope);
+  let lastFocusTick = getSearchFocusTick(api, scope, printerId);
   $effect(() => {
-    const tick = getSearchFocusTick(api, scope);
+    const tick = getSearchFocusTick(api, scope, printerId);
     if (tick === lastFocusTick) return;
     lastFocusTick = tick;
     searchEl?.focus();
     searchEl?.select();
   });
 
-  ensureColumnsLoaded(api, scope);
+  ensureColumnsLoaded(api, scope, printerId);
   $effect(() => {
-    void api.printer.id;
-    ensureColumnsLoaded(api, scope);
+    if (!printerId) void api.printer.id;
+    ensureColumnsLoaded(api, scope, printerId);
   });
 
   const allKeys = COLUMNS.map((c) => c.key);
   let visibleKeys = $derived(
-    getVisibleColumns(api, scope, allKeys, scope.startsWith('widget') ? WIDGET_DEFAULTS : PAGE_DEFAULTS),
+    getVisibleColumns(api, scope, allKeys, scope.startsWith('widget') ? WIDGET_DEFAULTS : PAGE_DEFAULTS, printerId),
   );
 
   function toggleColumn(key: string): void {
     const cur = visibleKeys;
     let next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
     if (!next.includes('name')) next = ['name', ...next];
-    setVisibleColumns(api, scope, next);
+    setVisibleColumns(api, scope, next, printerId);
   }
 
   const addItems = $derived.by<ContextMenuItem[]>(() => [
@@ -101,7 +103,7 @@
     const list = input.files;
     input.value = '';
     if (!list || list.length === 0) return;
-    const dir = getCurrentPath(api, scope);
+    const dir = getCurrentPath(api, scope, printerId);
     try {
       for (const f of Array.from(list)) {
         // Перехват .3mf файлов — открываем инспектор вместо загрузки
@@ -111,9 +113,9 @@
         }
         await ops.upload(root, dir, f);
       }
-      setNotice(api, scope, null);
+      setNotice(api, scope, null, printerId);
     } catch (err) {
-      setNotice(api, scope, errText(err));
+      setNotice(api, scope, errText(err), printerId);
     }
   }
 
@@ -122,32 +124,32 @@
     const list = input.files;
     input.value = '';
     if (!list || list.length === 0) return;
-    const base = getCurrentPath(api, scope);
+    const base = getCurrentPath(api, scope, printerId);
     try {
       for (const f of Array.from(list)) {
         const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? f.name;
         const relDir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
         await ops.upload(root, [base, relDir].filter(Boolean).join('/'), f);
       }
-      setNotice(api, scope, null);
+      setNotice(api, scope, null, printerId);
     } catch (err) {
-      setNotice(api, scope, errText(err));
+      setNotice(api, scope, errText(err), printerId);
     }
   }
 
   async function handleCreateFile(name: string): Promise<void> {
     try {
-      await ops.createFile(root, getCurrentPath(api, scope), name);
-      setNotice(api, scope, null);
-    } catch (e) { setNotice(api, scope, errText(e)); }
+      await ops.createFile(root, getCurrentPath(api, scope, printerId), name);
+      setNotice(api, scope, null, printerId);
+    } catch (e) { setNotice(api, scope, errText(e), printerId); }
   }
 
   async function handleCreateDir(name: string): Promise<void> {
     try {
-      const base = getCurrentPath(api, scope);
+      const base = getCurrentPath(api, scope, printerId);
       await ops.createDirectory(root, base ? `${base}/${name}` : name);
-      setNotice(api, scope, null);
-    } catch (e) { setNotice(api, scope, errText(e)); }
+      setNotice(api, scope, null, printerId);
+    } catch (e) { setNotice(api, scope, errText(e), printerId); }
   }
 </script>
 
@@ -160,10 +162,10 @@
     dir="auto"
     bind:this={searchEl}
     value={search}
-    oninput={(e) => setSearch(api, scope, e.currentTarget.value)}
+    oninput={(e) => setSearch(api, scope, e.currentTarget.value, printerId)}
   />
 
-  <button class="icon-btn" title={i18n.t('ft.refresh')} onclick={() => requestRefresh(api, scope)}>
+  <button class="icon-btn" title={i18n.t('ft.refresh')} onclick={() => requestRefresh(api, scope, printerId)}>
     <Icon name="refresh" />
   </button>
 

@@ -13,8 +13,8 @@ export function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : '';
 }
 
-export function getEditableExt(api: PluginApi): string[] {
-  const custom = api.settingsFor(api.printer.id).get<string[]>('editableExt');
+export function getEditableExt(api: PluginApi, printerId?: string): string[] {
+  const custom = api.settingsFor(printerId ?? api.printer.id).get<string[]>('editableExt');
   return Array.isArray(custom) && custom.length > 0 ? custom : DEFAULT_EDITABLE_EXT;
 }
 
@@ -24,7 +24,7 @@ export interface FileCap {
   readonly: boolean;
 }
 
-export function fileCap(api: PluginApi, filename: string, root: string): FileCap {
+export function fileCap(api: PluginApi, filename: string, root: string, printerId?: string): FileCap {
   const ext = extOf(filename);
   const readonlyRoot = READONLY_ROOTS.includes(root);
 
@@ -35,7 +35,7 @@ export function fileCap(api: PluginApi, filename: string, root: string): FileCap
   // логи, включая ротированные: klippy.log, klippy.log.2026-08-11, telegram.log.1
   const isLog = /\.log(\..*)?$/i.test(filename);
 
-  const editable = getEditableExt(api).includes(ext) || isLog;
+  const editable = getEditableExt(api, printerId).includes(ext) || isLog;
 
   if (editable) {
     // логи read-only всегда; логи/докс/примеры — read-only по руту

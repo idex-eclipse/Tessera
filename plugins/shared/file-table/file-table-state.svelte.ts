@@ -7,66 +7,64 @@ let pathMap = $state<Record<string, string>>({});
 let noticeMap = $state<Record<string, string | null>>({});
 let focusMap = $state<Record<string, number>>({});
 
-// реактивность: bump при любом onChange настроек плагина (в т.ч. смена sync-namespace)
+// One revision signal lets table settings react to either active or fixed printer namespaces.
 let rev = $state(0);
-const wired = new WeakSet<object>();
+const wired = new WeakMap<object, Set<string>>();
 
-function wire(api: PluginApi): void {
-  if (wired.has(api)) return;
-  wired.add(api);
+function wire(api: PluginApi, printerId?: string): void {
+  const target = printerId ?? '@active';
+  const targets = wired.get(api) ?? new Set<string>();
+  if (targets.has(target)) return;
+  targets.add(target);
+  wired.set(api, targets);
 
-  // One subscription per plugin API, deliberately never released: it is shared by every table
-  // of the plugin and lives as long as the page does. watchSettings re-binds it on printer
-  // switches and ignores the (always empty) key, so any settings change bumps `rev`.
-  watchSettings(api, () => {
-    rev++;
-  });
-}
-
-function key(api: PluginApi, scope: string): string {
-  return `${api.printer.id}:${scope}`;
+  // Fixed fleet tables subscribe to their printer namespace; active tables retain switch-aware behavior.
+  if (printerId) api.settingsFor(printerId).onChange(() => { rev++; });
+  else watchSettings(api, () => { rev++; });
 }
 
-// ---------------- search / refresh / path / notice ----------------
-
-export function getSearch(api: PluginApi, scope: string): string {
-  return searchMap[key(api, scope)] ?? '';
-}
-export function setSearch(api: PluginApi, scope: string, v: string): void {
-  searchMap[key(api, scope)] = v;
-}
-export function requestRefresh(api: PluginApi, scope: string): void {
-  const k = key(api, scope);
-  tickMap[k] = (tickMap[k] ?? 0) + 1;
-}
-export function getRefreshTick(api: PluginApi, scope: string): number {
-  return tickMap[key(api, scope)] ?? 0;
-}
-export function getCurrentPath(api: PluginApi, scope: string): string {
-  return pathMap[key(api, scope)] ?? '';
-}
-export function setCurrentPath(api: PluginApi, scope: string, p: string): void {
-  pathMap[key(api, scope)] = p;
-}
-/** Запрос фокуса на поле поиска таблицы (hotkey Ctrl+F вместо браузерного поиска). */
-export function requestSearchFocus(api: PluginApi, scope: string): void {
-  const k = key(api, scope);
-  focusMap[k] = (focusMap[k] ?? 0) + 1;
-}
-export function getSearchFocusTick(api: PluginApi, scope: string): number {
-  return focusMap[key(api, scope)] ?? 0;
-}
-export function getNotice(api: PluginApi, scope: string): string | null {
-  return noticeMap[key(api, scope)] ?? null;
-}
-export function setNotice(api: PluginApi, scope: string, m: string | null): void {
-  noticeMap[key(api, scope)] = m;
+function key(api: PluginApi, scope: string, printerId?: string): string {
+  return `${printerId ?? api.printer.id}:${scope}`;
 }
 
-// Read columns from the active printer's explicit settings namespace.
+// Search, refresh, navigation, notices and focus remain isolated per printer and table scope.
+export function getSearch(api: PluginApi, scope: string, printerId?: string): string {
+  return searchMap[key(api, scope, printerId)] ?? '';
+}
+export function setSearch(api: PluginApi, scope: string, value: string, printerId?: string): void {
+  searchMap[key(api, scope, printerId)] = value;
+}
+export function requestRefresh(api: PluginApi, scope: string, printerId?: string): void {
+  const mapKey = key(api, scope, printerId);
+  tickMap[mapKey] = (tickMap[mapKey] ?? 0) + 1;
+}
+export function getRefreshTick(api: PluginApi, scope: string, printerId?: string): number {
+  return tickMap[key(api, scope, printerId)] ?? 0;
+}
+export function getCurrentPath(api: PluginApi, scope: string, printerId?: string): string {
+  return pathMap[key(api, scope, printerId)] ?? '';
+}
+export function setCurrentPath(api: PluginApi, scope: string, path: string, printerId?: string): void {
+  pathMap[key(api, scope, printerId)] = path;
+}
+/** Request focus for a table search input, normally from the Jobs hotkey. */
+export function requestSearchFocus(api: PluginApi, scope: string, printerId?: string): void {
+  const mapKey = key(api, scope, printerId);
+  focusMap[mapKey] = (focusMap[mapKey] ?? 0) + 1;
+}
+export function getSearchFocusTick(api: PluginApi, scope: string, printerId?: string): number {
+  return focusMap[key(api, scope, printerId)] ?? 0;
+}
+export function getNotice(api: PluginApi, scope: string, printerId?: string): string | null {
+  return noticeMap[key(api, scope, printerId)] ?? null;
+}
+export function setNotice(api: PluginApi, scope: string, message: string | null, printerId?: string): void {
+  noticeMap[key(api, scope, printerId)] = message;
+}
 
-export function ensureColumnsLoaded(api: PluginApi, scope: string): void {
-  wire(api); // no-op по данным, только гарантирует подписку
+/** Ensure settings changes for this table target invalidate derived column and sort state. */
+export function ensureColumnsLoaded(api: PluginApi, _scope: string, printerId?: string): void {
+  wire(api, printerId);
 }
 
 export function getVisibleColumns(
@@ -74,38 +72,35 @@ export function getVisibleColumns(
   scope: string,
   allKeys: string[],
   defaults: string[],
+  printerId?: string,
 ): string[] {
-  wire(api);
-  void rev; // перечитывать при любом onChange (в т.ч. смена namespace)
-
-  const stored = api.settingsFor(api.printer.id).get<string[]>(`columns:${scope}`);
+  wire(api, printerId);
+  void rev;
+  const stored = api.settingsFor(printerId ?? api.printer.id).get<string[]>(`columns:${scope}`);
   if (!Array.isArray(stored) || stored.length === 0) return defaults;
-
-  const filtered = stored.filter((k) => allKeys.includes(k));
+  const filtered = stored.filter((columnKey) => allKeys.includes(columnKey));
   if (!filtered.includes('name')) filtered.unshift('name');
   return filtered;
 }
 
-export function setVisibleColumns(api: PluginApi, scope: string, keys: string[]): void {
-  api.settingsFor(api.printer.id).set(`columns:${scope}`, keys);
+export function setVisibleColumns(api: PluginApi, scope: string, keys: string[], printerId?: string): void {
+  api.settingsFor(printerId ?? api.printer.id).set(`columns:${scope}`, keys);
 }
 
-// ---------------- sort (тоже напрямую) ----------------
-
+/** Persisted sort descriptor for one printer and table scope. */
 export interface SortState {
   key: string;
   dir: 1 | -1;
 }
 
-export function getSort(api: PluginApi, scope: string): SortState {
-  wire(api);
+export function getSort(api: PluginApi, scope: string, printerId?: string): SortState {
+  wire(api, printerId);
   void rev;
-
-  const s = api.settingsFor(api.printer.id).get<SortState>(`sort:${scope}`);
-  if (s && typeof s.key === 'string' && (s.dir === 1 || s.dir === -1)) return s;
+  const stored = api.settingsFor(printerId ?? api.printer.id).get<SortState>(`sort:${scope}`);
+  if (stored && typeof stored.key === 'string' && (stored.dir === 1 || stored.dir === -1)) return stored;
   return { key: 'modified', dir: -1 };
 }
 
-export function setSort(api: PluginApi, scope: string, key: string, dir: 1 | -1): void {
-  api.settingsFor(api.printer.id).set(`sort:${scope}`, { key, dir });
+export function setSort(api: PluginApi, scope: string, key: string, dir: 1 | -1, printerId?: string): void {
+  api.settingsFor(printerId ?? api.printer.id).set(`sort:${scope}`, { key, dir });
 }

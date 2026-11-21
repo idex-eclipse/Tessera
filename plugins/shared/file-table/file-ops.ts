@@ -62,9 +62,9 @@ function encodeSegments(p: string): string {
   return p.split('/').map(encodeURIComponent).join('/');
 }
 
-export function createFileOps(api: PluginApi) {
-  // Resolve the active ID for each operation so a kept helper cannot write to a stale printer.
-  const handle = () => api.moonrakerFor(api.printer.id);
+export function createFileOps(api: PluginApi, printerId?: string) {
+  // A fixed fleet target wins; ordinary pages still resolve the active ID for every operation.
+  const handle = () => api.moonrakerFor(printerId ?? api.printer.id);
 
   /** Bearer-токен для fetch (если Moonraker требует авторизацию). */
   function authHeaders(): Record<string, string> {

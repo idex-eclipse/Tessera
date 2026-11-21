@@ -44,6 +44,7 @@ let {
   mode,
   title,
   showHeader = true,
+  showHeaderTitle = true,
   showAdd = false,
   menuItems,
   onAction,
@@ -56,12 +57,15 @@ let {
   onHasUnsavedEditor,
   onClearEditorSession,
   onReplaceOpenFile,
+  printerId,
 }: {
   root: string;
   scope: string;
   mode: 'gcode' | 'simple'|'history';
   title?: string;
   showHeader?: boolean;
+  /** Keep the toolbar while a parent dialog owns the visible title. */
+  showHeaderTitle?: boolean;
   showAdd?: boolean;
   menuItems?: (ref: FileRef, isDir: boolean) => ContextMenuItem[];
   onAction?: (id: string, ref: FileRef) => void | Promise<void>;
@@ -77,11 +81,14 @@ let {
   onClearEditorSession?: (printerId: string) => void;
   /** A late replacement may take over only an unchanged, still-active built-in file. */
   onReplaceOpenFile?: (ref: FileRef) => boolean;
+  /** Pin every data source, operation and setting to one printer instead of the active tab. */
+  printerId?: string;
 } = $props();
 
   const api = usePluginApi();
   const i18n = api.i18n;
-  const ops = createFileOps(api);
+  const targetPrinterId = (): string => printerId ?? api.printer.id;
+  const ops = createFileOps(api, printerId);
   let restartView = $state<RestartAttempt | null>(null);
   let restartSeconds = $state(0);
   let restoreBusy = $state(false);
@@ -90,7 +97,7 @@ let {
   // The monitor is module-owned; this subscription only controls the visible Config panel.
   $effect(() => {
     if (root !== 'config') return;
-    const monitor = configRestartMonitor(api.printer.id, api.moonrakerFor(api.printer.id));
+    const monitor = configRestartMonitor(targetPrinterId(), api.moonrakerFor(targetPrinterId()));
     const unsub = monitor.subscribe((attempt) => {
       restartView = attempt;
       restartSeconds = attempt?.phase === 'checking' ? Math.max(0, Math.ceil((attempt.deadline - Date.now()) / 1000)) : 0;
@@ -112,9 +119,9 @@ let {
     return e instanceof Error ? e.message : String(e);
   }
 
-  const gcode = mode === 'gcode' ? useGcodeFiles(api) : null;
-  const simple = mode === 'simple' ? useDirFiles(api, root) : null;
-  const history = mode === 'history' ? useHistoryFiles(api) : null;
+  const gcode = mode === 'gcode' ? useGcodeFiles(api, printerId) : null;
+  const simple = mode === 'simple' ? useDirFiles(api, root, printerId) : null;
+  const history = mode === 'history' ? useHistoryFiles(api, printerId) : null;
 
   type FileRow = { name: string; modified: number; size: number } & Record<string, any>;
 
@@ -147,22 +154,22 @@ let {
   const loading = $derived(source.loading === true);
   const sourceError = $derived(source.error ?? null);
 
-  ensureColumnsLoaded(api, scope);
-  $effect(() => { void api.printer.id; ensureColumnsLoaded(api, scope); });
+  ensureColumnsLoaded(api, scope, printerId);
+  $effect(() => { if (!printerId) void api.printer.id; ensureColumnsLoaded(api, scope, printerId); });
 
   // sync path + refresh + search
-  $effect(() => { setCurrentPath(api, scope, dataPath); });
+  $effect(() => { setCurrentPath(api, scope, dataPath, printerId); });
   let lastTick = $state(-1);
   $effect(() => {
-    const t = getRefreshTick(api, scope);
+    const t = getRefreshTick(api, scope, printerId);
     if (t !== lastTick) {
       const first = lastTick === -1;
       lastTick = t;
       if (!first) source.refresh();
     }
   });
-  let search = $derived(getSearch(api, scope).trim().toLowerCase());
-  let notice = $derived(getNotice(api, scope));
+  let search = $derived(getSearch(api, scope, printerId).trim().toLowerCase());
+  let notice = $derived(getNotice(api, scope, printerId));
 
   // ---------------- columns ----------------
   const SIMPLE_COLS: ColumnDef[] = [
@@ -172,7 +179,7 @@ let {
   ];
   const allKeys = COLUMNS.map((c) => c.key);
   let visibleKeys = $derived(
-    getVisibleColumns(api, scope, allKeys, scope.startsWith('widget') ? WIDGET_DEFAULTS : PAGE_DEFAULTS),
+    getVisibleColumns(api, scope, allKeys, scope.startsWith('widget') ? WIDGET_DEFAULTS : PAGE_DEFAULTS, printerId),
   );
   let cols = $derived(
     mode === 'simple'
@@ -182,7 +189,7 @@ let {
   let COLSPAN = $derived(cols.length);
 
   // ---------------- sorting ----------------
-  let sort = $derived(getSort(api, scope));
+  let sort = $derived(getSort(api, scope, printerId));
   let sortKey = $derived(sort.key);
   let sortDir = $derived(sort.dir);
 
@@ -191,7 +198,7 @@ let {
       sort.key === key
         ? sort.dir === 1 ? -1 : 1
         : key === 'name' || key === 'status' || key === 'filament' ? 1 : -1;
-    setSort(api, scope, key, dir);
+    setSort(api, scope, key, dir, printerId);
   }
 
   function asStrings(v: unknown): string[] { /* как в jobs */ 
@@ -281,7 +288,7 @@ let {
     const from = order.indexOf(colDrag), to = order.indexOf(key);
     if (from < 0 || to < 0) return;
     const next = [...order]; next.splice(from,1); next.splice(to,0,colDrag);
-    setVisibleColumns(api, scope, next);
+    setVisibleColumns(api, scope, next, printerId);
   }
 
   // ---------------- rows / menu ----------------
@@ -313,7 +320,8 @@ let {
 
   /** Point params are strings only (MpuParams); they also reach the extension's `available(api, params)`. */
   function fileParams(ref: FileRef): MpuParams {
-    return { root: ref.root, path: ref.path, isDir: String(ref.isDir) };
+    // Extensions need the explicit target because their PluginApi still exposes the active printer.
+    return { root: ref.root, path: ref.path, isDir: String(ref.isDir), printerId: targetPrinterId() };
   }
 
   /** Extension actions of `file-actions`, appended after the page's own menu items. */
@@ -358,9 +366,9 @@ let {
 
   /** Rebuild on lookup so edits and Moonraker file changes cannot leave stale locations. */
   async function refreshMacroIndex(): Promise<void> {
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     const result = await loadMacroIndex(api.moonrakerFor(printerId), ops.readText, bufferedFiles());
-    if (api.printer.id !== printerId) return;
+    if (targetPrinterId() !== printerId) return;
     macroFiles = result.files;
     macroDefinitions = result.definitions;
     macroNames = [...new Set(result.definitions.map((definition) => definition.name.toUpperCase()))];
@@ -404,7 +412,7 @@ let {
   async function savePeek(definition: MacroDefinition): Promise<boolean> {
     const tab = editorTabs.find((item) => item.ref.path === definition.path && item.ref.root === 'config');
     if (!tab || tab.content === tab.saved) return true;
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     const submitted = tab.content;
     try {
       await ops.saveConfigText(tab.ref, submitted, api.moonrakerFor(printerId));
@@ -412,7 +420,7 @@ let {
       void source.refresh();
       return true;
     } catch (error) {
-      setNotice(api, scope, errText(error));
+      setNotice(api, scope, errText(error), printerId);
       return false;
     }
   }
@@ -420,7 +428,7 @@ let {
   /** Save all dirty cfg tabs before closing, preserving every file's existing backup workflow. */
   async function saveAllEditorTabs(): Promise<boolean> {
     if (saveBusy) return false;
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     saveBusy = true;
     try {
       for (const tab of editorTabs) {
@@ -434,7 +442,7 @@ let {
       if (editorTabs.some((tab) => tab.content !== tab.saved)) return false;
       return true;
     } catch (error) {
-      setNotice(api, scope, errText(error));
+      setNotice(api, scope, errText(error), printerId);
       return false;
     } finally {
       saveBusy = false;
@@ -463,7 +471,7 @@ let {
     const tab = editorTabs.find((item) => item.ref.root === 'config' && item.ref.path === path);
     if (!tab) return false;
     const wasActive = editorRef?.root === 'config' && editorRef.path === path;
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     saveBusy = true;
     try {
       const result = await closeConfigEditorTab(editorTabs, path, saveChanges,
@@ -473,12 +481,12 @@ let {
       macroFiles.delete(path);
       if (!editorTabs.length) editorOpen = false;
       else if (wasActive && result.nextPath) selectEditorTab(result.nextPath);
-      setNotice(api, scope, null);
+      setNotice(api, scope, null, printerId);
       void source.refresh();
       void refreshMacroIndex().catch(() => {});
       return true;
     } catch (error) {
-      setNotice(api, scope, errText(error));
+      setNotice(api, scope, errText(error), printerId);
       return false;
     } finally {
       saveBusy = false;
@@ -499,12 +507,12 @@ let {
   async function loadEditorBackup(): Promise<{ text: string; path: string } | null> {
     const ref = editorRef;
     if (!ref) return null;
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     // Recovery comparison must use this attempt's immutable snapshot, not the rolling .bak.
     const backup = comparisonAttemptRef
       ? { text: await ops.readText(comparisonAttemptRef, api.moonrakerFor(printerId)), ref: comparisonAttemptRef }
       : await ops.readConfigBackup(ref, api.moonrakerFor(printerId));
-    if (api.printer.id !== printerId) return null;
+    if (targetPrinterId() !== printerId) return null;
     return backup ? { text: backup.text.replace(/\r\n?/g, '\n'), path: backup.ref.path } : null;
   }
 
@@ -521,14 +529,14 @@ let {
 
   /** Report explicit restart rejections after the editor has already closed. */
   function reportRestartError(e: unknown): void {
-    setNotice(api, scope, errText(e));
+    setNotice(api, scope, errText(e), printerId);
   }
 
   /** Save all dirty cfg tabs before one restart; the active cfg remains the recovery anchor. */
   async function saveAndRestart(text: string, klippyState: KlippyState): Promise<boolean> {
     if (!editorRef || saveBusy) return false;
     const ref = editorRef;
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     const target = api.moonrakerFor(printerId);
     const monitorKlipper = ref.root === 'config' && !/^moonraker\.conf$/i.test(ref.path) && Boolean(configBackupRef(ref));
     const attemptId = newRestartAttemptId();
@@ -538,12 +546,12 @@ let {
         const saved = await saveConfigTabsForRestart(editorTabs, ref.path, attemptId, target, ops);
         if (!saved) return false;
         if (saved.changedDuringSave) {
-          setNotice(api, scope, i18n.t('config.restartEditedDuringSave'));
+          setNotice(api, scope, i18n.t('config.restartEditedDuringSave'), printerId);
           return false;
         }
         const primary = saved.files[0]!;
         editorOpen = editorTabs.some((tab) => tab.content !== tab.saved);
-        setNotice(api, scope, null);
+        setNotice(api, scope, null, printerId);
         void source.refresh();
         configRestartMonitor(printerId, target).start(attemptId, primary.file, primary.backup,
           primary.text, saved.files);
@@ -560,17 +568,17 @@ let {
       if (tab) { tab.content = text; tab.saved = text; }
       // Other tabs may still contain edits when the current file restarts Klipper.
       editorOpen = editorTabs.some((tab) => tab.ref.path !== ref.path && tab.content !== tab.saved);
-      setNotice(api, scope, null);
+      setNotice(api, scope, null, printerId);
       void source.refresh();
       // Klippy can take a long time to answer during a startup fault; saving is already complete.
       if (monitorKlipper) configRestartMonitor(printerId, target).start(attemptId, ref, prepared?.backup ?? null, text);
       dispatchConfigRestart(target, ref, prepared?.state ?? klippyState, (error) => {
         if (monitorKlipper) configRestartMonitor(printerId, target).commandFailed(attemptId, error);
-        else if (api.printer.id === printerId) reportRestartError(error);
+        else if (targetPrinterId() === printerId) reportRestartError(error);
       });
       return true;
     } catch (e) {
-      setNotice(api, scope, errText(e));
+      setNotice(api, scope, errText(e), printerId);
       return false;
     } finally {
       saveBusy = false;
@@ -582,7 +590,7 @@ let {
     const attempt = restartView;
     if (!attempt?.backup) return;
     if ((onHasUnsavedEditor?.() ?? editorTabs.some((tab) => tab.content !== tab.saved))) {
-      setNotice(api, scope, i18n.t('config.restartUnsaved'));
+      setNotice(api, scope, i18n.t('config.restartUnsaved'), printerId);
       return;
     }
     void openEditor(attempt.file, true, attempt.backup);
@@ -592,11 +600,11 @@ let {
   async function restoreRestartAttempt(confirmed = false): Promise<void> {
     const attempt = restartView;
     if (!attempt?.backup || restoreBusy || saveBusy) return;
+    const printerId = targetPrinterId();
     if ((onHasUnsavedEditor?.() ?? editorTabs.some((tab) => tab.content !== tab.saved))) {
-      setNotice(api, scope, i18n.t('config.restartUnsaved'));
+      setNotice(api, scope, i18n.t('config.restartUnsaved'), printerId);
       return;
     }
-    const printerId = api.printer.id;
     restoreBusy = true;
     try {
       const outcome = await restoreConfigAttempt(api, printerId, attempt.id, confirmed);
@@ -611,7 +619,7 @@ let {
       void source.refresh();
       restoreConflict = false;
     } catch (error) {
-      setNotice(api, scope, errText(error));
+      setNotice(api, scope, errText(error), printerId);
     } finally {
       restoreBusy = false;
     }
@@ -637,7 +645,7 @@ let {
         return;
     }
 
-    const cap = fileCap(api, name, root);
+    const cap = fileCap(api, name, root, printerId);
     if (cap.canOpen && cap.mode === 'edit') {
       menu = null;
       void openEditor(refOf(name, false));
@@ -673,10 +681,10 @@ let {
   $effect(() => {
     void extTick;
     const ref = delegatedRef;
-    if (!ref || delegatedPrinterId !== api.printer.id || !onReplaceOpenFile) return;
+    if (!ref || delegatedPrinterId !== targetPrinterId() || !onReplaceOpenFile) return;
     const point = delegatedKind === 'viewer' ? FILE_TABLE_POINT_IDS.viewer : FILE_TABLE_POINT_IDS.editor;
     const params = delegatedKind === 'viewer' ? fileParams(ref) : {
-      ...fileParams(ref), readonly: String(fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
+      ...fileParams(ref), readonly: String(fileCap(api, ref.path.split('/').pop() ?? '', ref.root, printerId).readonly ||
         (ref.root === 'config' && /\.(cfg|conf)\.bak$/i.test(ref.path))),
     };
     if (api.extensions.resolve(point, params).original || !onReplaceOpenFile(ref)) return;
@@ -690,13 +698,13 @@ let {
   );
   async function openEditor(ref: FileRef, compareInitially = false, attemptBackup: FileRef | null = null): Promise<void> {
     // Replacement extensions retain their original FileTable-owned modal contract.
-    const readonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root).readonly ||
+    const readonly = fileCap(api, ref.path.split('/').pop() ?? '', ref.root, printerId).readonly ||
       (ref.root === 'config' && /\.(cfg|conf)\.bak$/i.test(ref.path));
     if (onOpenFile && api.extensions.resolve(FILE_TABLE_POINT_IDS.editor,
       { ...fileParams(ref), readonly: String(readonly) }).original) {
       delegatedRef = ref;
       delegatedKind = 'editor';
-      delegatedPrinterId = api.printer.id;
+      delegatedPrinterId = targetPrinterId();
       await onOpenFile(ref, { compare: compareInitially, attemptBackup });
       return;
     }
@@ -725,7 +733,7 @@ let {
         }
     } catch (e) {
         editorOpen = false;
-        setNotice(api, scope, errText(e));
+        setNotice(api, scope, errText(e), printerId);
     } finally {
         editorLoading = false;
     }
@@ -735,7 +743,7 @@ let {
     if (onOpenFile && api.extensions.resolve(FILE_TABLE_POINT_IDS.viewer, fileParams(ref)).original) {
       delegatedRef = ref;
       delegatedKind = 'viewer';
-      delegatedPrinterId = api.printer.id;
+      delegatedPrinterId = targetPrinterId();
       void onOpenFile(ref);
       return;
     }
@@ -799,7 +807,7 @@ let {
     const ref = menu.ref;
     try {
       if (id === 'edit') {
-        if (fileCap(api, ref.path.split('/').pop() ?? '', ref.root).mode === 'view') openViewer(ref);
+        if (fileCap(api, ref.path.split('/').pop() ?? '', ref.root, printerId).mode === 'view') openViewer(ref);
         else await openEditor(ref);
       }
       else if (id === 'zip') await ops.createZip(ref);
@@ -814,7 +822,7 @@ let {
       }
       else await onAction?.(id, ref);
     } catch (e) {
-      setNotice(api, scope, errText(e));
+      setNotice(api, scope, errText(e), printerId);
     }
   }
 
@@ -835,7 +843,7 @@ let {
     const dir = fp.includes('/') ? fp.slice(0, fp.lastIndexOf('/')) : '';
     const rel = dir ? `${dir}/${best.relative_path}` : best.relative_path;
 
-    return `${api.moonrakerFor(api.printer.id).httpBaseUrl}/server/files/gcodes/${rel
+    return `${api.moonrakerFor(targetPrinterId()).httpBaseUrl}/server/files/gcodes/${rel
         .split('/')
         .map(encodeURIComponent)
         .join('/')}`;
@@ -876,7 +884,7 @@ let {
   async function handleSave(t: string): Promise<boolean> {
     if (!editorRef || saveBusy) return false;
     const ref = editorRef;
-    const printerId = api.printer.id;
+    const printerId = targetPrinterId();
     saveBusy = true;
     try {
       if (configBackupRef(ref)) await ops.saveConfigText(ref, t, api.moonrakerFor(printerId));
@@ -884,11 +892,11 @@ let {
       editorContent = t; // Confirm the editor buffer only after both backup and upload succeed.
       const tab = editorTabs.find((item) => item.ref.path === ref.path && item.ref.root === ref.root);
       if (tab) { tab.content = t; tab.saved = t; }
-      setNotice(api, scope, null);
+      setNotice(api, scope, null, printerId);
       void source.refresh();
       return true;
     } catch (e) {
-      setNotice(api, scope, errText(e));
+      setNotice(api, scope, errText(e), printerId);
       return false;
     } finally {
       saveBusy = false;
@@ -899,9 +907,9 @@ let {
 <div class="ft-card" class:embedded bind:this={cardEl}>
   {#if showHeader}
     <div class="page-header">
-      <span class="page-title">{title}</span>
+      {#if showHeaderTitle}<span class="page-title">{title}</span>{/if}
       <div class="actions">
-        <FileTableHeaderActions {scope} {mode} {showAdd} {root} {menuEnabled} {onThreeMF} />
+        <FileTableHeaderActions {scope} {mode} {showAdd} {root} {menuEnabled} {onThreeMF} {printerId} />
       </div>
     </div>
   {/if}
@@ -926,7 +934,7 @@ let {
   {#if notice}
     <p class="notice">{notice}</p>
   {/if}
-  {#if root === 'config' && restartView && restartView.printerId === api.printer.id}
+  {#if root === 'config' && restartView && restartView.printerId === targetPrinterId()}
     <section class="restart-panel" aria-live="polite" aria-label={i18n.t('config.restartTitle')}>
       <div class="restart-panel-head">
         <strong>{i18n.t('config.restartTitle')}</strong>
@@ -961,7 +969,7 @@ let {
         {/if}
       {/if}
       {#if restartView.phase !== 'checking'}
-        <button class="restart-dismiss" onclick={() => configRestartMonitor(api.printer.id, api.moonrakerFor(api.printer.id)).dismiss()}>{i18n.t('config.restartDismiss')}</button>
+        <button class="restart-dismiss" onclick={() => configRestartMonitor(targetPrinterId(), api.moonrakerFor(targetPrinterId())).dismiss()}>{i18n.t('config.restartDismiss')}</button>
       {/if}
     </section>
   {/if}
@@ -1097,7 +1105,7 @@ let {
     title={i18n.t('ft.renameTitle')} 
     initial={renameRef?.path.split('/').pop() ?? ''} 
     confirmLabel={i18n.t('ft.rename')} 
-    onSubmit={(v)=>{ if(renameRef) ops.rename(renameRef,v).catch((e) => setNotice(api, scope, errText(e))); }} 
+    onSubmit={(v)=>{ if(renameRef) ops.rename(renameRef,v).catch((e) => setNotice(api, scope, errText(e), printerId)); }} 
     onClose={() => (renameOpen = false)} 
   />
   <ConfirmDialog 
@@ -1106,7 +1114,7 @@ let {
     message={i18n.t('ft.deleteMessage', { name: deleteRef?.path.split('/').pop() ?? '' })} 
     confirmLabel={i18n.t('ft.delete')} 
     danger 
-    onConfirm={()=>{ if(deleteRef) ops.remove(deleteRef).catch((e) => setNotice(api, scope, errText(e))); }} 
+    onConfirm={()=>{ if(deleteRef) ops.remove(deleteRef).catch((e) => setNotice(api, scope, errText(e), printerId)); }} 
     onClose={() => (deleteOpen = false)} 
   />
   <!-- file-editor / file-viewer (replacement): a contribution takes the whole dialog and is mounted
