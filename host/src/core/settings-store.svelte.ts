@@ -108,6 +108,7 @@ const DEFAULT_UI_STATE: UiState = {
   fleetOpen: false,
   fleetPanels: [],
   fleetPanelsCustomized: false,
+  fleetPanelOverrides: {},
   hotkeyOverrides: {},
   extensionResolutions: {},
   notifications: { ignoredPatterns: [], soundEnabled: false },
@@ -365,6 +366,11 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
   }
 
   function removePrinterData(printerId: string): void {
+    if (ui.fleetPanelOverrides[printerId]) {
+      const next = { ...ui.fleetPanelOverrides };
+      delete next[printerId];
+      patchUi({ fleetPanelOverrides: next });
+    }
     removeItem(storage, printerSettingsStorageKey(printerId));
 
     const pluginPrefix = `mpu:v2:plugin-settings:${printerId}:`;
@@ -790,6 +796,36 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     patchUi({ fleetPanels: [], fleetPanelsCustomized: false });
   }
 
+  /** A missing override means this printer follows the shared Fleet template. */
+  function isFleetPanelLayoutSynced(printerId: string): boolean {
+    return ui.fleetPanelOverrides[printerId]?.synced !== false;
+  }
+
+  /** Preserve an independent template when switching sync back on. */
+  function setFleetPanelLayoutSynced(printerId: string, synced: boolean, current: FleetPanelLayoutItem[]): void {
+    const prior = ui.fleetPanelOverrides[printerId];
+    patchUi({
+      fleetPanelOverrides: {
+        ...ui.fleetPanelOverrides,
+        [printerId]: { synced, panels: prior?.panels ?? current.map((item) => ({ ...item })) },
+      },
+    });
+  }
+
+  /** Write only this card's independent template. */
+  function setFleetPanelsFor(printerId: string, panels: FleetPanelLayoutItem[]): void {
+    patchUi({
+      fleetPanelOverrides: {
+        ...ui.fleetPanelOverrides,
+        [printerId]: { synced: false, panels },
+      },
+    });
+  }
+
+  function getFleetPanelsFor(printerId: string): FleetPanelLayoutItem[] {
+    return ui.fleetPanelOverrides[printerId]?.panels ?? [];
+  }
+
   // ------------------------------------------------------------------
   // Hotkey overrides (device-global)
   // ------------------------------------------------------------------
@@ -1164,6 +1200,10 @@ export function createSettingsStore(options: SettingsStoreOptions = {}) {
     getFleetPanels,
     setFleetPanels,
     resetFleetPanels,
+    isFleetPanelLayoutSynced,
+    setFleetPanelLayoutSynced,
+    getFleetPanelsFor,
+    setFleetPanelsFor,
     getHotkeyOverrides,
     setHotkeyOverride,
     clearHotkeyOverride,
@@ -1357,6 +1397,27 @@ export function normalizeGlyphWidth(value: unknown): number {
     : 0;
 }
 
+/** Accept old order-only Fleet entries and bound imported grid coordinates. */
+function normalizeFleetPanelEntries(value: unknown): FleetPanelLayoutItem[] {
+  const panels: FleetPanelLayoutItem[] = [];
+  if (!Array.isArray(value)) return panels;
+  for (const [index, item] of value.entries()) {
+    if (!isRecord(item) || typeof item.pluginId !== 'string' || typeof item.contributionId !== 'string') continue;
+    panels.push({
+      pluginId: item.pluginId,
+      contributionId: item.contributionId,
+      visible: typeof item.visible === 'boolean' ? item.visible : true,
+      // Legacy entries only had an order; keep it as full-width rows.
+      x: typeof item.x === 'number' && Number.isInteger(item.x) && item.x >= 0 && item.x <= 6 ? item.x : 0,
+      y: typeof item.y === 'number' && Number.isInteger(item.y) && item.y >= 0 && item.y <= 1000 ? item.y : index * 4,
+      w: typeof item.w === 'number' && Number.isInteger(item.w) && item.w >= 6 && item.w <= 12 ? item.w : 12,
+      h: typeof item.h === 'number' && Number.isInteger(item.h) && item.h >= 1 && item.h <= 16 ? item.h : 4,
+      autoHeight: item.autoHeight === true,
+    });
+  }
+  return panels;
+}
+
 function normalizeUiState(value: unknown): UiState {
   const source = isRecord(value) ? value : {};
 
@@ -1417,20 +1478,15 @@ function normalizeUiState(value: unknown): UiState {
       ? source.fleetOpen
       : DEFAULT_UI_STATE.fleetOpen;
 
-  const fleetPanels: FleetPanelLayoutItem[] = [];
-  if (Array.isArray(source.fleetPanels)) {
-    for (const item of source.fleetPanels) {
-      if (
-        isRecord(item) &&
-        typeof item.pluginId === 'string' &&
-        typeof item.contributionId === 'string'
-      ) {
-        fleetPanels.push({
-          pluginId: item.pluginId,
-          contributionId: item.contributionId,
-          visible: typeof item.visible === 'boolean' ? item.visible : true,
-        });
-      }
+  const fleetPanels = normalizeFleetPanelEntries(source.fleetPanels);
+  const fleetPanelOverrides: UiState['fleetPanelOverrides'] = {};
+  if (isRecord(source.fleetPanelOverrides)) {
+    for (const [printerId, override] of Object.entries(source.fleetPanelOverrides)) {
+      if (!isRecord(override) || typeof override.synced !== 'boolean') continue;
+      fleetPanelOverrides[printerId] = {
+        synced: override.synced,
+        panels: normalizeFleetPanelEntries(override.panels),
+      };
     }
   }
 
@@ -1502,6 +1558,7 @@ function normalizeUiState(value: unknown): UiState {
     fleetOpen,
     fleetPanels,
     fleetPanelsCustomized,
+    fleetPanelOverrides,
     hotkeyOverrides,
     extensionResolutions,
     notifications,

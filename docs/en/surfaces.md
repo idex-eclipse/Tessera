@@ -410,9 +410,16 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   settings through `api.settingsFor(params.printerId)`.
 - `api.moonraker()` and `api.settings` are **not suitable** here: they are about
   the *active* printer, and fleet does not change the active printer.
-- Panels stack inside the card in registration order. The user can reorder and
-  hide panels ("Edit panels" in the fleet header); `titleKey` is used as the name
-  in that editor.
+- Panels occupy cells in a 12-column grid inside each card. The fleet grid editor
+  lets the user drag panels, resize them from any side or corner (down to one row),
+  and choose which panels appear through the labelled Panels button in the card
+  header. Arrow keys move a focused panel; Shift+arrows
+  resize it. Each card header has a "Sync layout" checkbox in edit mode. It is on
+  by default: synced cards use one shared template, while an unsynced card keeps
+  its own layout. `titleKey` supplies the panel's name in the editor. Panel borders
+  are shown only while editing. Resize handles cover each entire side and highlight
+  on hover. The grid size is centered, and the providing plugin ID appears at the
+  upper left in LTR order.
 - Panels may offer actions for their own printer. Send requests through
   `api.moonrakerFor(params.printerId)` and read printer-specific settings through
   `api.settingsFor(params.printerId)`; never use the active-printer handles for a
@@ -424,8 +431,16 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   the panel is removed. See [plugin-api.md](plugin-api.md#fleet).
 - Closing fleet = unmounting: subscriptions and streams are released. Cache what is
   expensive to re-create (at module level).
-- The panel height follows its content; the host draws the card header (printer
-  name, connection status, "Activate").
+- The panel's height follows its grid size; content that exceeds it scrolls inside
+  the panel. A full-width (12-column) panel has a "Fit content height" checkbox in
+  edit mode. When enabled, each printer card grows that panel to fit its own
+  content to pixel precision and shifts panels below it; disabling it restores the
+  saved grid height. Panels that normally use `height: 100%` for fixed cards can
+  use `height: var(--fleet-panel-content-height, 100%)` so they expose their
+  intrinsic height when fitting is enabled. The bundled camera reserves a 16:9
+  frame even before its image or video provides dimensions.
+  The host draws the card header (printer name, connection status,
+  "Activate").
 
 ---
 

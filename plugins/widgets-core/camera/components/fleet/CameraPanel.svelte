@@ -100,12 +100,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
-    height: 100%;
+    /* Fill fixed cards, but let the Fleet host measure intrinsic height when fitting content. */
+    height: var(--fleet-panel-content-height, 100%);
     min-height: 0;
   }
 
   .fleet-camera-stream {
-    flex: 1;
+    /* Auto-height cards reserve a 16:9 frame before the stream has media dimensions. */
+    flex: var(--fleet-panel-stream-flex, 1);
+    width: 100%;
     min-height: 0;
     aspect-ratio: 16 / 9;
     border-radius: var(--radius-md);

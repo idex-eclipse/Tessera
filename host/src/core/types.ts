@@ -84,6 +84,8 @@ export interface UiState {
   fleetOpen?: boolean;
   fleetPanels: FleetPanelLayoutItem[];
   fleetPanelsCustomized: boolean;
+  /** Printer-specific Fleet layouts live here so dashboard sync cannot merge them. */
+  fleetPanelOverrides: Record<string, { synced: boolean; panels: FleetPanelLayoutItem[] }>;
   /**
    * Переопределения горячих клавиш (device-global).
    * Ключ `${pluginId}:${hotkeyId}`; строка — новая комбинация,
@@ -157,13 +159,20 @@ export type QuickChipsLayoutMode = 'grid' | 'scroll';
 
 /**
  * One fleet panel layout entry (device-global).
- * Position in array = display order in fleet cards.
- * visible=false = hidden in all fleet cards.
+ * One shared grid template for every printer card. Array order preserves the
+ * legacy panel order and determines the initial position of new contributions.
  */
 export interface FleetPanelLayoutItem {
   pluginId: string;
   contributionId: string;
   visible: boolean;
+  /** Grid coordinates and size in the 12-column fleet card. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Full-width Fleet panels can follow their content instead of a fixed row count. */
+  autoHeight?: boolean;
 }
 
 /**

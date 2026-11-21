@@ -57,6 +57,7 @@ describe('settings-store / base state', () => {
       fleetOpen: false,
       fleetPanels: [],
       fleetPanelsCustomized: false,
+      fleetPanelOverrides: {},
       hotkeyOverrides: {},
       extensionResolutions: {},
       notifications: { ignoredPatterns: [], soundEnabled: false },
@@ -302,6 +303,43 @@ describe('settings-store / remote plugins', () => {
 });
 
 describe('settings-store / ui state', () => {
+  it('restores legacy fleet panel order and persists grid geometry', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(SETTINGS_STORAGE_KEYS.ui, JSON.stringify({
+      fleetPanelsCustomized: true,
+      fleetPanels: [
+        { pluginId: 'system', contributionId: 'status', visible: true },
+        { pluginId: 'widgets', contributionId: 'camera', visible: false },
+      ],
+    }));
+    const store = createSettingsStore({ storage });
+    expect(store.getFleetPanels()).toMatchObject([
+      { x: 0, y: 0, w: 12, h: 4, visible: true },
+      { x: 0, y: 4, w: 12, h: 4, visible: false },
+    ]);
+    store.setFleetPanels([{ ...store.getFleetPanels()[0]!, x: 6, w: 6 }]);
+    expect(createSettingsStore({ storage }).getFleetPanels()[0]).toMatchObject({ x: 6, w: 6 });
+  });
+
+  it('keeps an unsynced printer card separate from the shared fleet template', () => {
+    const storage = new MemoryStorage();
+    const store = createSettingsStore({ storage });
+    const shared = [{ pluginId: 'system', contributionId: 'status', visible: true, x: 0, y: 0, w: 12, h: 4 }];
+    store.setFleetPanels(shared);
+    expect(store.isFleetPanelLayoutSynced('p2')).toBe(true);
+    store.setFleetPanelLayoutSynced('p2', false, shared);
+    store.setFleetPanelsFor('p2', [{ ...shared[0]!, h: 1, autoHeight: true }]);
+    expect(store.getFleetPanels()).toEqual(shared);
+    expect(store.getFleetPanelsFor('p2')[0]?.h).toBe(1);
+    expect(store.getFleetPanelsFor('p2')[0]?.autoHeight).toBe(true);
+    store.setFleetPanelLayoutSynced('p2', true, shared);
+    expect(store.isFleetPanelLayoutSynced('p2')).toBe(true);
+    store.setFleetPanelLayoutSynced('p2', false, shared);
+    expect(store.getFleetPanelsFor('p2')[0]?.h).toBe(1);
+    expect(createSettingsStore({ storage }).getFleetPanelsFor('p2')[0]?.h).toBe(1);
+    expect(createSettingsStore({ storage }).getFleetPanelsFor('p2')[0]?.autoHeight).toBe(true);
+  });
+
   it('rejects corrupt or oversized font data', () => {
     expect(normalizeCustomFont({ name: 'bad.ttf', dataUrl: 'data:text/plain;base64,AAAA' })).toBeNull();
     expect(normalizeCustomFont({ name: 'large.woff', dataUrl: `data:font/woff;base64,${'A'.repeat(FONT_MAX_CHARS)}` })).toBeNull();

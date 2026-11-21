@@ -5,6 +5,12 @@
   import type { PrinterManager, PrinterConnectionState } from '../../core/printer-manager.svelte.ts';
   import type { UiStore } from '../../core/ui-store.svelte.ts';
   import type { FleetPanelLayoutItem } from '../../core/settings-store.svelte.ts';
+  import {
+    FLEET_GRID_COLUMNS, FLEET_MAX_HEIGHT, FLEET_MIN_HEIGHT, FLEET_MIN_WIDTH,
+    FLEET_ROW_GAP, FLEET_ROW_HEIGHT, fleetPanelKey, mergeFleetGridLayout,
+    projectFleetGridLayout, resizeFleetPanel, settleFleetGridLayout,
+    type FleetPanelDisplayItem, type FleetResizeDir,
+  } from '../../core/fleet-grid-layout.ts';
 
   import { getAppContext } from '../../app-context.ts';
   import { getPluginApi } from '../../core/plugin-api-cache.ts';
@@ -104,85 +110,106 @@
 
   // ---------- Fleet panel layout (device-global, in UiState) ----------
 
-  /** Стабильный ключ панели = pluginId:contributionId */
+  /** The registry wrapper and the saved layout use the same stable identity. */
   function keyOf(panel: { pluginId: string; contribution: { id: string } }): string {
-    return `${panel.pluginId}:${panel.contribution.id}`;
+    return fleetPanelKey({ pluginId: panel.pluginId, contributionId: panel.contribution.id });
   }
 
-  // ---------- Layout (device-global, mpu:v2:ui.fleetPanels) ----------
+  // ---------- Shared and printer-specific Fleet grid layouts ----------
+
+  function panelIds() {
+    return registryPanels.map((panel) => ({ pluginId: panel.pluginId, contributionId: panel.contribution.id }));
+  }
 
   function mergeLayout(): FleetPanelLayoutItem[] {
-    const stored = ctx.settings.getFleetPanels();
-    const customized = ctx.settings.ui.fleetPanelsCustomized;
-
-    if (!customized || stored.length === 0) {
-      return registryPanels.map((p) => ({
-        pluginId: p.pluginId,
-        contributionId: p.contribution.id,
-        visible: true,
-      }));
-    }
-
-    const registryByKey = new Map(registryPanels.map((p) => [keyOf(p), p]));
-    const storedKeys = new Set(stored.map((s) => `${s.pluginId}:${s.contributionId}`));
-
-    const preserved: FleetPanelLayoutItem[] = [];
-    for (const item of stored) {
-      const k = `${item.pluginId}:${item.contributionId}`;
-      if (registryByKey.has(k)) preserved.push(item);
-    }
-
-    const added: FleetPanelLayoutItem[] = [];
-    for (const p of registryPanels) {
-      const k = keyOf(p);
-      if (!storedKeys.has(k)) {
-        added.push({ pluginId: p.pluginId, contributionId: p.contribution.id, visible: true });
-      }
-    }
-
-    return [...preserved, ...added];
+    return mergeFleetGridLayout(
+      panelIds(),
+      ctx.settings.getFleetPanels(),
+      ctx.settings.ui.fleetPanelsCustomized,
+    );
   }
 
   let layout = $state<FleetPanelLayoutItem[]>(mergeLayout());
+  let printerLayouts = $state<Record<string, FleetPanelLayoutItem[]>>({});
+  let measuredHeights = $state<Record<string, Record<string, number>>>({});
+
+  function layoutFor(printerId: string): FleetPanelLayoutItem[] {
+    return ctx.settings.isFleetPanelLayoutSynced(printerId)
+      ? layout
+      : (printerLayouts[printerId] ?? mergeFleetGridLayout(panelIds(), ctx.settings.getFleetPanelsFor(printerId), true));
+  }
 
   $effect(() => {
     void registryPanels;
     void ctx.settings.ui.fleetPanels;
     void ctx.settings.ui.fleetPanelsCustomized;
     layout = mergeLayout();
+    const next: Record<string, FleetPanelLayoutItem[]> = {};
+    for (const printer of printers) {
+      if (!ctx.settings.isFleetPanelLayoutSynced(printer.id)) {
+        next[printer.id] = mergeFleetGridLayout(panelIds(), ctx.settings.getFleetPanelsFor(printer.id), true);
+      }
+    }
+    printerLayouts = next;
   });
 
-  function persistLayout(): void {
-    ctx.settings.setFleetPanels(layout);
+  function persistLayout(printerId: string): void {
+    if (ctx.settings.isFleetPanelLayoutSynced(printerId)) ctx.settings.setFleetPanels(layout);
+    else ctx.settings.setFleetPanelsFor(printerId, printerLayouts[printerId] ?? []);
+  }
+
+  function editLayout(printerId: string, change: (items: FleetPanelLayoutItem[]) => FleetPanelLayoutItem[]): void {
+    if (ctx.settings.isFleetPanelLayoutSynced(printerId)) layout = change(layout);
+    else printerLayouts = { ...printerLayouts, [printerId]: change(layoutFor(printerId)) };
+  }
+
+  function setLayoutSync(printerId: string, synced: boolean): void {
+    ctx.settings.setFleetPanelLayoutSynced(printerId, synced, layoutFor(printerId));
   }
 
   /**
-   * Map для быстрого lookup: key → { orderIndex, visible }.
-   * Используется в шаблоне для CSS order + display:none.
-   * DOM-порядок НЕ меняется — только CSS-свойства.
+   * Registry order stays fixed in the DOM while CSS grid coordinates move panels.
+   * This avoids disconnecting the plugin custom elements during edits.
    */
-  let layoutMap = $derived.by(() => {
-    const map = new Map<string, { orderIndex: number; visible: boolean }>();
-    layout.forEach((item, index) => {
-      map.set(`${item.pluginId}:${item.contributionId}`, {
-        orderIndex: index,
-        visible: item.visible,
-      });
-    });
-    return map;
-  });
+  function layoutMapFor(printerId: string): Map<string, FleetPanelDisplayItem> {
+    return new Map(projectFleetGridLayout(layoutFor(printerId), measuredHeights[printerId] ?? {})
+      .map((item) => [fleetPanelKey(item), item]));
+  }
 
-  /** Видимые панели (для счётчика "пусто ли в карточке") */
-  let visibleCount = $derived(
-    layoutMap.size > 0
-      ? layout.filter((item) => item.visible).length
-      : registryPanels.length,
-  );
+  /** Observe intrinsic panel height so a full-width panel can grow without changing its saved grid size. */
+  function measureContent(node: HTMLElement, options: { printerId: string; key: string; enabled: boolean }) {
+    let current = options;
+    let frame = 0;
+    const measure = (): void => {
+      if (!current.enabled) return;
+      const height = Math.ceil(node.getBoundingClientRect().height);
+      if (measuredHeights[current.printerId]?.[current.key] === height) return;
+      measuredHeights = {
+        ...measuredHeights,
+        [current.printerId]: { ...measuredHeights[current.printerId], [current.key]: height },
+      };
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return {
+      update(next: typeof options) {
+        current = next;
+        // A mode switch changes the wrapper from fixed to intrinsic height after Svelte updates the DOM.
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(measure);
+      },
+      destroy() {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+      },
+    };
+  }
 
   // ---------- Editor ----------
 
+  let editorTarget = $state<string | null>(null);
   let editorItems = $derived(
-    layout.map((item, index) => {
+    (editorTarget ? layoutFor(editorTarget) : []).map((item, index) => {
       const p = registryPanels.find(
         (r) => r.pluginId === item.pluginId && r.contribution.id === item.contributionId,
       );
@@ -203,6 +230,7 @@
   const apiFor = (pluginId: string) => getPluginApi(ctx, pluginId);
 
   function handleClose() {
+    editMode = false;
     ui.setFleet(false);
   }
 
@@ -214,6 +242,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       if (editorOpen) editorOpen = false;
+      else if (editMode) editMode = false;
       else if (query && document.activeElement === searchEl) query = '';
       else handleClose();
     }
@@ -228,15 +257,15 @@
     return p;
   }
 
-  // ---------- Editor DnD ----------
+  // ---------- Shared in-card grid editor ----------
 
   let editorOpen = $state(false);
-  let dragIndex = $state<number | null>(null);
-  let dragOverIndex = $state<number | null>(null);
-  let dragOverSide = $state<'before' | 'after' | null>(null);
+  let editMode = $state(false);
+  let activeKey = $state<string | null>(null);
 
-  function openEditor(): void {
+  function openEditor(printerId: string): void {
     layout = mergeLayout();
+    editorTarget = printerId;
     editorOpen = true;
   }
 
@@ -244,76 +273,105 @@
     editorOpen = false;
   }
 
-  function toggleVisible(index: number): void {
-    layout = layout.map((item, i) =>
+  function toggleVisible(printerId: string, index: number): void {
+    editLayout(printerId, (items) => items.map((item, i) =>
       i === index ? { ...item, visible: !item.visible } : item,
-    );
-    persistLayout();
+    ));
+    persistLayout(printerId);
   }
 
-  function onDragStart(e: DragEvent, index: number): void {
-    dragIndex = index;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(index));
-    }
+  /** Keep the fixed row count as a fallback when content fitting is switched off. */
+  function setAutoHeight(printerId: string, key: string, enabled: boolean): void {
+    editLayout(printerId, (items) => items.map((item) =>
+      fleetPanelKey(item) === key && item.w === FLEET_GRID_COLUMNS
+        ? { ...item, autoHeight: enabled }
+        : item,
+    ));
+    persistLayout(printerId);
   }
 
-  function onDragOver(e: DragEvent, index: number): void {
-    if (dragIndex === null) return;
+  /** Measure the card's own tracks, since card widths change with the fleet viewport. */
+  function gridStep(tile: HTMLElement): { col: number; row: number } | null {
+    const grid = tile.closest('.fleet-card-body') as HTMLElement | null;
+    if (!grid) return null;
+    const css = getComputedStyle(grid);
+    const gap = parseFloat(css.columnGap) || 0;
+    const innerWidth = grid.clientWidth - (parseFloat(css.paddingLeft) || 0) - (parseFloat(css.paddingRight) || 0);
+    return {
+      col: (innerWidth - gap * (FLEET_GRID_COLUMNS - 1)) / FLEET_GRID_COLUMNS + gap,
+      row: FLEET_ROW_HEIGHT + (parseFloat(css.columnGap) || FLEET_ROW_GAP),
+    };
+  }
+
+  const RESIZE_DIRS: FleetResizeDir[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+
+  /** A gesture updates the shared template or just this printer's private one. */
+  function startGridGesture(printerId: string, key: string, e: PointerEvent, resize: FleetResizeDir | null): void {
+    if (!editMode || e.button !== 0) return;
+    const tile = (e.currentTarget as HTMLElement).closest('.fleet-panel-slot') as HTMLElement | null;
+    if (!tile) return;
+    const step = gridStep(tile);
+    const initial = layoutFor(printerId).find((item) => fleetPanelKey(item) === key);
+    if (!step || !initial || step.col <= 0 || step.row <= 0) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    if (dragIndex === index) return;
+    const px = e.clientX;
+    const py = e.clientY;
+    const rtl = document.documentElement.dir === 'rtl';
+    activeKey = `${printerId}:${key}`;
 
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const side: 'before' | 'after' = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
-    dragOverIndex = index;
-    dragOverSide = side;
+    const move = (event: PointerEvent): void => {
+      const dx = Math.round(((event.clientX - px) * (rtl ? -1 : 1)) / step.col);
+      const dy = Math.round((event.clientY - py) / step.row);
+      editLayout(printerId, (items) => items.map((item) => {
+        if (fleetPanelKey(item) !== key) return item;
+        if (resize) return resizeFleetPanel(initial, resize, dx, dy);
+        return {
+          ...item,
+          x: Math.min(FLEET_GRID_COLUMNS - item.w, Math.max(0, initial.x + dx)),
+          y: Math.max(0, initial.y + dy),
+        };
+      }));
+    };
+    const finish = (): void => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      editLayout(printerId, (items) => settleFleetGridLayout(items, key));
+      activeKey = null;
+      persistLayout(printerId);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
   }
 
-  function onDragLeave(): void {
-    dragOverIndex = null;
-    dragOverSide = null;
-  }
-
-  function onDrop(e: DragEvent, index: number): void {
-    e.preventDefault();
-    e.stopPropagation();
-    if (dragIndex === null || dragIndex === index) {
-      endDrag();
-      return;
-    }
-
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const after = e.clientY >= r.top + r.height / 2;
-
-    const next = [...layout];
-    const [moved] = next.splice(dragIndex, 1);
-
-    let target = index;
-    if (dragIndex < index) target -= 1;
-    if (after) target += 1;
-
-    if (moved) next.splice(target, 0, moved);
-    layout = next;
-    persistLayout();
-    endDrag();
-  }
-
-  function onDragEnd(): void {
-    endDrag();
-  }
-
-  function endDrag(): void {
-    dragIndex = null;
-    dragOverIndex = null;
-    dragOverSide = null;
+  /** Arrow keys move a panel; Shift+arrows resize it without requiring a pointer. */
+  function onTileKeydown(printerId: string, key: string, event: KeyboardEvent): void {
+    if (event.target !== event.currentTarget) return;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const rtl = document.documentElement.dir === 'rtl';
+    const dx = event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0;
+    const dy = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    editLayout(printerId, (items) => settleFleetGridLayout(items.map((item) => {
+      if (fleetPanelKey(item) !== key) return item;
+      if (!event.shiftKey) return { ...item, x: Math.min(FLEET_GRID_COLUMNS - item.w, Math.max(0, item.x + dx)), y: Math.max(0, item.y + dy) };
+      const w = Math.min(FLEET_GRID_COLUMNS - item.x, Math.max(FLEET_MIN_WIDTH, item.w + dx));
+      return { ...item, w, h: Math.min(FLEET_MAX_HEIGHT, Math.max(FLEET_MIN_HEIGHT, item.h + dy)),
+        autoHeight: w === FLEET_GRID_COLUMNS && item.autoHeight === true };
+    }), key));
+    persistLayout(printerId);
   }
 
   function resetLayout(): void {
-    ctx.settings.resetFleetPanels();
-    layout = mergeLayout();
+    if (!editorTarget) return;
+    if (ctx.settings.isFleetPanelLayoutSynced(editorTarget)) {
+      ctx.settings.resetFleetPanels();
+      layout = mergeLayout();
+    } else {
+      ctx.settings.setFleetPanelsFor(editorTarget, mergeFleetGridLayout(panelIds(), [], false));
+    }
   }
 </script>
 
@@ -372,12 +430,13 @@
       {#if registryPanels.length > 0}
         <button
           class="fleet-edit-btn"
-          onclick={openEditor}
-          title={i18n.t('fleet.editPanels')}
-          aria-label={i18n.t('fleet.editPanels')}
+          class:on={editMode}
+          onclick={() => (editMode = !editMode)}
+          title={i18n.t(editMode ? 'fleet.doneEditing' : 'fleet.editPanels')}
+          aria-label={i18n.t(editMode ? 'fleet.doneEditing' : 'fleet.editPanels')}
         >
-          <Icon name="settings" size={16} />
-          <span class="btn-label">{i18n.t('fleet.editPanels')}</span>
+          <Icon name={editMode ? 'grid' : 'settings'} size={16} />
+          <span class="btn-label">{i18n.t(editMode ? 'fleet.doneEditing' : 'fleet.editPanels')}</span>
         </button>
       {/if}
       <button class="fleet-close" onclick={handleClose} aria-label={i18n.t('fleet.close')}>
@@ -413,6 +472,8 @@
       {#each printers as printer (printer.id)}
         {@const connection = connections[printer.id] ?? null}
         {@const isActive = printer.id === activePrinterId}
+        {@const cardLayout = layoutFor(printer.id)}
+        {@const cardMap = layoutMapFor(printer.id)}
 
         <!--
           Отфильтрованные карточки скрываются ТОЛЬКО через CSS (display:none),
@@ -424,48 +485,97 @@
           class:active={isActive}
           class:filtered-out={!visibleIds.has(printer.id)}
         >
-          <div
-            class="fleet-card-header"
-            onclick={() => handleActivate(printer.id)}
-          >
-            <div class="fleet-card-info">
-              <span class="fleet-card-name">{printer.name}</span>
-              {#if connection}
-                <ConnectionStatus status={connection.status} />
-              {/if}
-            </div>
+          <div class="fleet-card-header">
+            <button type="button" class="fleet-card-activate" disabled={editMode} onclick={() => handleActivate(printer.id)}>
+              <span class="fleet-card-info">
+                <span class="fleet-card-name">{printer.name}</span>
+                {#if connection}<ConnectionStatus status={connection.status} />{/if}
+              </span>
+            </button>
+            {#if editMode}
+              <div class="fleet-card-editor-actions">
+                <label class="fleet-sync" title={i18n.t('fleet.syncLayout')}>
+                  <input
+                    type="checkbox"
+                    checked={ctx.settings.isFleetPanelLayoutSynced(printer.id)}
+                    onchange={(event) => setLayoutSync(printer.id, event.currentTarget.checked)}
+                  />
+                  <span>{i18n.t('fleet.syncLayout')}</span>
+                </label>
+                <button type="button" class="fleet-card-choose" onclick={() => openEditor(printer.id)} aria-label={i18n.t('fleet.choosePanels')} title={i18n.t('fleet.choosePanels')}>
+                  <Icon name="preview" size={16} />
+                  <span>{i18n.t('fleet.panels')}</span>
+                </button>
+              </div>
+            {/if}
           </div>
 
-          <div class="fleet-card-body">
-            {#if visibleCount === 0}
+          <div class="fleet-card-body" class:editing={editMode}>
+            {#if !cardLayout.some((item) => item.visible)}
               <p class="fleet-card-empty">{i18n.t('fleet.noPanels')}</p>
             {:else}
               <!--
-                КРИТИЧНО: {#each} итерирует registryPanels в СТАБИЛЬНОМ порядке
-                регистрации. Визуальный порядок задаётся через CSS order.
-                DOM-узлы НИКОГДА не перемещаются/удаляются при reorder —
-                Custom Elements не получают disconnectedCallback.
+                Stable registry iteration keeps custom elements connected while
+                their CSS grid coordinates change on every card.
               -->
               {#each registryPanels as panel (keyOf(panel))}
-                {@const info = layoutMap.get(keyOf(panel))}
-                {@const order = info ? info.orderIndex : 999}
+                {@const baseInfo = cardLayout.find((item) => fleetPanelKey(item) === keyOf(panel))}
+                {@const info = cardMap.get(keyOf(panel))}
                 {@const hidden = info ? !info.visible : false}
+                {@const autoHeight = baseInfo?.w === FLEET_GRID_COLUMNS && baseInfo.autoHeight === true}
                 {@const api = apiFor(panel.pluginId)}
                 <div
                   class="fleet-panel-slot"
                   class:panel-hidden={hidden}
-                  style:order={order}
+                  class:dragging={activeKey === `${printer.id}:${keyOf(panel)}`}
+                  class:single-row={(info?.heightPx ?? 0) < 80}
+                  style={info ? `grid-column: ${info.x + 1} / span ${info.w}; grid-row: ${info.topPx + 1} / span ${info.heightPx};` : undefined}
                 >
-                  {#if api}
-                    <PluginElementHost
-                      tag={panel.contribution.element}
-                      {api}
-                      params={paramsFor(printer.id)}
-                      fill={false}
-                    />
-                  {:else}
-                    <div class="fleet-card-missing">
-                      {i18n.t('fleet.pluginMissing')} · {panel.pluginId}
+                  <div class="fleet-panel-content" class:edit-concealed={editMode} class:auto-height={autoHeight}
+                    use:measureContent={{ printerId: printer.id, key: keyOf(panel), enabled: autoHeight }}>
+                    {#if api}
+                      <PluginElementHost
+                        tag={panel.contribution.element}
+                        {api}
+                        params={paramsFor(printer.id)}
+                        fill={!autoHeight}
+                      />
+                    {:else}
+                      <div class="fleet-card-missing">
+                        {i18n.t('fleet.pluginMissing')} · {panel.pluginId}
+                      </div>
+                    {/if}
+                  </div>
+                  {#if editMode}
+                    <div class="fleet-edit-tile">
+                      <button
+                        type="button"
+                        class="fleet-move-target"
+                        aria-label={i18n.t('fleet.movePanel', { name: i18n.t(panel.contribution.titleKey ?? panel.contribution.id) })}
+                        onpointerdown={(event) => startGridGesture(printer.id, keyOf(panel), event, null)}
+                        onkeydown={(event) => onTileKeydown(printer.id, keyOf(panel), event)}
+                      >
+                        <span class="fleet-provider" dir="ltr">{panel.pluginId}</span>
+                        <span class="fleet-edit-name">{i18n.t(panel.contribution.titleKey ?? panel.contribution.id)}</span>
+                        <span class="fleet-edit-size" dir="ltr">{baseInfo?.w ?? 12}×{baseInfo?.h ?? 4}</span>
+                      </button>
+                      {#if baseInfo?.w === FLEET_GRID_COLUMNS}
+                        <label class="fleet-auto-height">
+                          <input type="checkbox" checked={autoHeight}
+                            onchange={(event) => setAutoHeight(printer.id, keyOf(panel), event.currentTarget.checked)} />
+                          <span>{i18n.t('fleet.autoHeight')}</span>
+                        </label>
+                      {/if}
+                      {#each RESIZE_DIRS as dir (dir)}
+                        <button
+                          type="button"
+                          class="fleet-resize-handle resize-{dir}"
+                          tabindex={dir === 'se' ? 0 : -1}
+                          title={i18n.t('fleet.resizePanel')}
+                          aria-label={i18n.t('fleet.resizePanel')}
+                          onpointerdown={(event) => startGridGesture(printer.id, keyOf(panel), event, dir)}
+                        ></button>
+                      {/each}
                     </div>
                   {/if}
                 </div>
@@ -487,7 +597,7 @@
     aria-label={i18n.t('fleet.editPanelsTitle')}
   >
     <header class="editor-header">
-      <h3 class="editor-title">{i18n.t('fleet.editPanelsTitle')}</h3>
+      <h3 class="editor-title">{i18n.t('fleet.editPanelsTitle')} · {printers.find((printer) => printer.id === editorTarget)?.name ?? ''}</h3>
       <button class="editor-close" onclick={closeEditor} aria-label={i18n.t('fleet.close')}>
         <Icon name="x" size={14} />
       </button>
@@ -502,27 +612,14 @@
           {#each editorItems as item, i (`${item.pluginId}:${item.contributionId}`)}
             <li
               class="editor-item"
-              class:dragging={dragIndex === i}
-              class:drag-over-before={dragOverIndex === i && dragOverSide === 'before'}
-              class:drag-over-after={dragOverIndex === i && dragOverSide === 'after'}
               class:hidden-item={!item.visible}
               class:unloaded={!item.loaded}
-              draggable="true"
-              ondragstart={(e) => onDragStart(e, i)}
-              ondragover={(e) => onDragOver(e, i)}
-              ondragleave={onDragLeave}
-              ondrop={(e) => onDrop(e, i)}
-              ondragend={onDragEnd}
             >
-              <span class="editor-grip" aria-hidden="true">
-                <Icon name="grip" size={14} />
-              </span>
-
-              <label class="editor-check" onclick={(e) => e.stopPropagation()}>
+              <label class="editor-check">
                 <input
                   type="checkbox"
                   checked={item.visible}
-                  onchange={() => toggleVisible(i)}
+                  onchange={() => { if (editorTarget) toggleVisible(editorTarget, i); }}
                 />
               </label>
 
@@ -549,7 +646,7 @@
     </div>
 
     <footer class="editor-footer">
-      {#if ctx.settings.ui.fleetPanelsCustomized}
+      {#if editorTarget && (ctx.settings.ui.fleetPanelsCustomized || !ctx.settings.isFleetPanelLayoutSynced(editorTarget))}
         <button class="editor-reset" onclick={resetLayout}>
           {i18n.t('common.reset')}
         </button>
@@ -624,6 +721,11 @@
     background: var(--bg-surface-hover);
     color: var(--text-primary);
     border-color: var(--accent);
+  }
+  .fleet-edit-btn.on {
+    background: var(--accent-subtle-strong);
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
   .fleet-close {
     display: flex;
@@ -752,6 +854,7 @@
   }
   @media (max-width: 768px) {
     .fleet-grid { grid-template-columns: 1fr; }
+    .fleet-grid > .fleet-card { grid-column: 1 / -1; }
   }
   .fleet-card {
     grid-column: span 4;
@@ -770,12 +873,39 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-sm) var(--space-md);
+    width: 100%;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    border: 0;
     background: var(--bg-surface-hover);
     border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: start;
     flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .fleet-card-activate {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-xs) 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
     cursor: pointer;
   }
+  .fleet-card-activate:disabled { cursor: default; }
+  .fleet-card-editor-actions { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
+  /* Checkbox text wraps in narrow or translated card headers without covering the printer name. */
+  .fleet-sync { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; font-size: var(--font-size-xs); cursor: pointer; }
+  .fleet-sync input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+  .fleet-sync span { overflow-wrap: anywhere; }
+  /* The short label keeps the visibility action discoverable without crowding narrow card headers. */
+  .fleet-card-choose { min-height: var(--touch-target); padding-inline: var(--space-sm); display: flex; align-items: center; justify-content: center; gap: var(--space-xs); flex-shrink: 0; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: var(--font-size-xs); white-space: nowrap; cursor: pointer; }
   .fleet-card-info {
     display: flex;
     align-items: center;
@@ -794,13 +924,22 @@
   .fleet-card-body {
     flex: 1;
     padding: var(--space-md);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    /* One-pixel tracks preserve exact content height; saved edits still snap to 44px cells. */
+    grid-auto-rows: 1px;
+    column-gap: var(--space-xs);
+    row-gap: 0;
+    align-content: start;
     min-height: 0;
     overflow-y: auto;
   }
+  /* Card tracks stay logical in RTL; one shared template fits both wide and narrow fleet. */
+  .fleet-card-body.editing {
+    background: var(--bg-surface-hover);
+  }
   .fleet-card-empty {
+    grid-column: 1 / -1;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     text-align: center;
@@ -815,15 +954,140 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Панель-слот: flex-shrink 0 предотвращает сжатие;
-     order управляет визуальным порядком без DOM-перемещений */
   .fleet-panel-slot {
-    flex-shrink: 0;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     transition: opacity var(--transition-fast);
   }
+  .fleet-card-body.editing .fleet-panel-slot {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+  }
+  .fleet-panel-slot.dragging { z-index: 2; border-color: var(--accent); }
   .fleet-panel-slot.panel-hidden {
     display: none;
   }
+  .fleet-panel-content {
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+  }
+  /* Intrinsic height is measured before grid tracks are expanded for this printer. */
+  .fleet-panel-content.auto-height {
+    height: auto;
+    overflow: visible;
+    --fleet-panel-content-height: auto;
+    --fleet-panel-stream-flex: 0 0 auto;
+  }
+  .fleet-panel-content.edit-concealed { visibility: hidden; }
+  .fleet-edit-tile {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+  }
+  .fleet-move-target {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: var(--space-sm);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .fleet-move-target:active { cursor: grabbing; }
+  .fleet-move-target:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .fleet-edit-name {
+    position: absolute;
+    inset-inline-start: var(--space-sm);
+    inset-block-end: var(--space-xs);
+    max-inline-size: 45%;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .fleet-panel-slot.single-row .fleet-edit-name { display: none; }
+  /* The provider follows the leading corner while its technical ID remains LTR. */
+  .fleet-provider {
+    position: absolute;
+    inset-inline-start: var(--space-sm);
+    inset-block-start: var(--space-xs);
+    max-inline-size: calc(100% - var(--touch-target) - var(--space-md));
+    font-family: monospace;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    unicode-bidi: isolate;
+  }
+  /* dir=ltr isolates the ID, so the RTL corner needs an explicit override. */
+  :global([dir='rtl']) .fleet-provider { inset-inline-start: auto; inset-inline-end: var(--space-sm); }
+  .fleet-edit-size {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  /* The control stays in a bottom corner so narrow cards keep their central size readable. */
+  .fleet-auto-height {
+    position: absolute;
+    inset-inline-end: var(--space-sm);
+    inset-block-end: var(--space-xs);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: 28px;
+    max-inline-size: 48%;
+    font-size: var(--font-size-xs);
+    line-height: 1.2;
+    cursor: pointer;
+  }
+  .fleet-auto-height input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+  .fleet-auto-height span { overflow-wrap: anywhere; }
+  /* One-row cards use opposite corners for provider and checkbox, keeping both controls reachable. */
+  .fleet-panel-slot.single-row .fleet-auto-height {
+    inset-inline-start: var(--space-sm);
+    inset-inline-end: auto;
+    inset-block-end: 2px;
+    min-height: 18px;
+  }
+  .fleet-resize-handle {
+    position: absolute;
+    z-index: 2;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    touch-action: none;
+  }
+  .fleet-resize-handle:hover, .fleet-resize-handle:focus-visible {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .fleet-resize-handle:focus-visible { outline: 2px solid var(--accent); }
+  /* Full-side handles mirror dashboard; corners take precedence at intersections. */
+  .resize-n { inset-block-start: 0; inset-inline: 0; block-size: 7px; cursor: ns-resize; }
+  .resize-s { inset-block-end: 0; inset-inline: 0; block-size: 7px; cursor: ns-resize; }
+  .resize-e { inset-inline-end: 0; inset-block: 0; inline-size: 7px; cursor: ew-resize; }
+  .resize-w { inset-inline-start: 0; inset-block: 0; inline-size: 7px; cursor: ew-resize; }
+  .resize-ne { inset-block-start: 0; inset-inline-end: 0; inline-size: 12px; block-size: 12px; cursor: nesw-resize; }
+  .resize-nw { inset-block-start: 0; inset-inline-start: 0; inline-size: 12px; block-size: 12px; cursor: nwse-resize; }
+  .resize-se { inset-block-end: 0; inset-inline-end: 0; inline-size: 12px; block-size: 12px; cursor: nwse-resize; }
+  .resize-sw { inset-block-end: 0; inset-inline-start: 0; inline-size: 12px; block-size: 12px; cursor: nesw-resize; }
+  :global([dir='rtl']) .resize-ne, :global([dir='rtl']) .resize-sw { cursor: nwse-resize; }
+  :global([dir='rtl']) .resize-nw, :global([dir='rtl']) .resize-se { cursor: nesw-resize; }
 
   /* ---------- Editor overlay ---------- */
   .editor-backdrop {
@@ -930,46 +1194,14 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--bg-surface-hover-no-override);
-    cursor: grab;
     transition: opacity var(--transition-fast), transform var(--transition-fast);
   }
-  .editor-item:active { cursor: grabbing; }
   .editor-item.hidden-item {
     opacity: 0.55;
     background: transparent;
     border-style: dashed;
   }
   .editor-item.unloaded { opacity: 0.7; }
-  .editor-item.dragging {
-    opacity: 0.35;
-    transform: scale(0.98);
-  }
-  .editor-item.drag-over-before,
-  .editor-item.drag-over-after {
-    outline: 2px dashed var(--accent);
-    outline-offset: 2px;
-    position: relative;
-  }
-  .editor-item.drag-over-before::before,
-  .editor-item.drag-over-after::after {
-    content: '';
-    position: absolute;
-    left: 4px;
-    right: 4px;
-    height: 3px;
-    background: var(--accent);
-    border-radius: 2px;
-    pointer-events: none;
-  }
-  .editor-item.drag-over-before::before { top: -5px; }
-  .editor-item.drag-over-after::after  { bottom: -5px; }
-
-  .editor-grip {
-    display: flex;
-    align-items: center;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
   .editor-check {
     display: flex;
     align-items: center;

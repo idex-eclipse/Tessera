@@ -55,8 +55,10 @@ interface UiState {
   bgImage: string | null;          // data URL of the user's background
   accent: string | null;           // accent color, '#rrggbb'
   fleetOpen?: boolean;
-  fleetPanels: { pluginId: string; contributionId: string; visible: boolean }[];
+  fleetPanels: { pluginId: string; contributionId: string; visible: boolean;
+                 x: number; y: number; w: number; h: number; autoHeight?: boolean }[];
   fleetPanelsCustomized: boolean;
+  fleetPanelOverrides: Record<string, { synced: boolean; panels: FleetPanelLayoutItem[] }>;
   hotkeyOverrides: Record<string, string | null>;   // "<pluginId>:<id>" → combination | null
 }
 ```
@@ -65,6 +67,14 @@ The font key is separate from `ui`, so changing appearance settings does not upl
 the font again. The file is included in settings export/import and mirrored to
 Moonraker; without Moonraker it remains available in this browser. Code and G-code
 keep their monospaced fonts.
+
+Fleet panel coordinates use a 12-column card grid. The shared `fleetPanels` template
+applies to printers with layout sync enabled (the default). When sync is switched off
+for a printer, its current layout is copied into `fleetPanelOverrides[printerId]` and
+edited independently. Turning sync on preserves that private layout for later.
+Older entries that only contain order and visibility are restored as full-width rows.
+`autoHeight` applies only to panels that span all 12 columns. The saved `h` remains
+the fixed-height fallback; each printer measures its own content when fitting is on.
 
 ### `mpu:v2:settings:<printerId>`
 

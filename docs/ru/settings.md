@@ -54,8 +54,10 @@ interface UiState {
   bgImage: string | null;          // data-URL пользовательского фона
   accent: string | null;           // акцентный цвет, '#rrggbb'
   fleetOpen?: boolean;
-  fleetPanels: { pluginId: string; contributionId: string; visible: boolean }[];
+  fleetPanels: { pluginId: string; contributionId: string; visible: boolean;
+                 x: number; y: number; w: number; h: number; autoHeight?: boolean }[];
   fleetPanelsCustomized: boolean;
+  fleetPanelOverrides: Record<string, { synced: boolean; panels: FleetPanelLayoutItem[] }>;
   hotkeyOverrides: Record<string, string | null>;   // "<pluginId>:<id>" → комбинация | null
 }
 ```
@@ -64,6 +66,15 @@ interface UiState {
 заново. Файл входит в экспорт/импорт настроек и синхронизируется через Moonraker;
 без Moonraker остаётся доступным в этом браузере. Для кода и G-code сохраняется
 моноширинный шрифт.
+
+Координаты панелей fleet задают 12-колоночную сетку карточки. Общая раскладка
+`fleetPanels` применяется к принтерам с включённой синхронизацией (по умолчанию).
+При отключении текущая раскладка копируется в `fleetPanelOverrides[printerId]` и
+редактируется отдельно. Повторное включение синхронизации сохраняет собственную
+раскладку на будущее. Старые записи только с порядком и видимостью восстанавливаются
+как строки на всю ширину.
+`autoHeight` действует только для панелей шириной 12 колонок. Сохранённое `h` остаётся
+запасной фиксированной высотой; при включённом флажке каждый принтер измеряет своё содержимое.
 
 ### `mpu:v2:settings:<printerId>`
 
