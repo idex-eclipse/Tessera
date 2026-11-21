@@ -422,7 +422,7 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   on hover. The grid size is centered, and the providing plugin ID appears at the
   upper left in LTR order.
 - Optional `defaultSize` sets the size only when a panel is first added or the
-  fleet layout is reset. The host clamps positive integer values to width 6–12
+  fleet layout is reset. The host clamps positive integer values to width 4–12
   and height 1–16. Existing saved layouts are never rewritten when a plugin
   changes its default.
 - Panels may offer actions for their own printer. Send requests through
