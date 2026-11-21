@@ -75,12 +75,14 @@ export async function jobsCustomAction(
   id: string,
   ref: FileRef,
   klippyReady: boolean,
+  printerId?: string,
 ): Promise<void> {
+  const targetPrinterId = printerId ?? api.printer.id;
   if (id === 'print') {
     // .3mf не печатается напрямую: инспектор живёт на странице Jobs
     // (из виджета дашборда переходим на неё).
     if (is3mf(ref.path)) {
-      globalThis.location.hash = inspectUrl(api.printer.id, ref.path);
+      globalThis.location.hash = inspectUrl(targetPrinterId, ref.path);
       return;
     }
     // страховка от обхода disabled (клавиатура / programmatic):
@@ -96,14 +98,14 @@ export async function jobsCustomAction(
     if (is3mf(ref.path)) {
       throw new Error('3MF projects cannot be queued; extract the G-code first');
     }
-    await api.moonrakerFor(api.printer.id).request('server.job_queue.post_job', {
+    await api.moonrakerFor(targetPrinterId).request('server.job_queue.post_job', {
       filenames: [ref.path],
       reset: false,
     });
     // Успех не сообщаем: виджет очереди live обновится через notify_job_queue_changed.
   } else if (id === 'preview') {
     globalThis.location.hash =
-      `#/p/${api.printer.id}/gcode-preview?file=${encodeURIComponent(`${ref.root}/${ref.path}`)}`;
+      `#/p/${encodeURIComponent(targetPrinterId)}/gcode-preview?file=${encodeURIComponent(`${ref.root}/${ref.path}`)}`;
   } else if (id === 'meta') {
     await ops.refreshMetadata(ref);
   }

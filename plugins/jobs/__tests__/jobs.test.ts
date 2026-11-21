@@ -12,14 +12,14 @@ import { guardNo3mfPrint } from '../guards';
 import * as hotkeys from '../hotkeys';
 import { inspectUrl, is3mf, jobsCustomAction, jobsMenuItems } from '../lib/jobs-menu';
 import { jobsManifest } from '../manifest';
-import { jobsUi } from '../state/page-ui-state.svelte';
+import { acquireJobsModal, resetJobsModalForTests } from '../state/page-ui-state.svelte';
 
 const DENY = { action: 'deny', reasonKey: 'jobs.guard.three_mf_not_printable' };
 const ALLOW = { action: 'allow' };
 
 afterEach(() => {
   editorUi.openCount = 0;
-  jobsUi.modalOpen = false;
+  resetJobsModalForTests();
   vi.unstubAllGlobals();
 });
 
@@ -74,11 +74,12 @@ describe('jobs menu', () => {
 describe('jobsCustomAction', () => {
   function setup() {
     const request = vi.fn(async () => ({}));
-    const api = { printer: { id: 'p 1' }, moonrakerFor: () => ({ request }) } as unknown as PluginApi;
+    const moonrakerFor = vi.fn(() => ({ request }));
+    const api = { printer: { id: 'p 1' }, moonrakerFor } as unknown as PluginApi;
     const ops = { startPrint: vi.fn(async () => {}), refreshMetadata: vi.fn(async () => {}) };
     const location = { hash: '' };
     vi.stubGlobal('location', location);
-    return { api, ops, request, location };
+    return { api, ops, request, location, moonrakerFor };
   }
 
   it('starts a gcode print only when Klipper is ready', async () => {
@@ -106,6 +107,14 @@ describe('jobsCustomAction', () => {
     expect(request).toHaveBeenCalledWith('server.job_queue.post_job', { filenames: ['a.gcode'], reset: false });
   });
 
+  it('routes fleet queue and preview actions to the explicit printer', async () => {
+    const { api, ops, location, moonrakerFor } = setup();
+    await jobsCustomAction(api, ops, 'queue', file('fleet.gcode'), true, 'p2');
+    expect(moonrakerFor).toHaveBeenCalledWith('p2');
+    await jobsCustomAction(api, ops, 'preview', file('fleet.gcode'), true, 'p2');
+    expect(location.hash).toContain('#/p/p2/gcode-preview');
+  });
+
   it('is3mf matches only the extension', () => {
     expect(is3mf('a.3mf')).toBe(true);
     expect(is3mf('A.3MF')).toBe(true);
@@ -130,15 +139,22 @@ describe('hotkeys', () => {
     hotkeys.hotkeyFindJob(api);
     editorUi.openCount = 0;
 
-    jobsUi.modalOpen = true;
+    const releaseModal = acquireJobsModal();
     hotkeys.hotkeyFindJob(api);
     hotkeys.hotkeyRefreshJobs(api);
+    releaseModal();
 
     expect(getSearchFocusTick(api, 'page:gcodes')).toBe(before);
   });
 });
 
 describe('manifest', () => {
+  it('registers the compact Jobs fleet launcher', () => {
+    expect(jobsManifest.printerPanels).toEqual([
+      expect.objectContaining({ id: 'fleet-jobs', defaultSize: { w: 6, h: 1 } }),
+    ]);
+  });
+
   it('every guard and hotkey handler is exported by the plugin modules', () => {
     const exported = { ...hotkeys, guardNo3mfPrint } as Record<string, unknown>;
     for (const g of jobsManifest.guards ?? []) expect(typeof exported[g.handler]).toBe('function');
@@ -172,5 +188,18 @@ describe('file-ops readBlob', () => {
     const [url, init] = (fetchMock.mock.calls as unknown as Array<[string, RequestInit]>)[0]!;
     expect(url).toBe('http://pr:7125/server/files/gcodes/a%20b.3mf');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
+  });
+
+  it('keeps a fleet helper bound to its explicit printer after the active tab changes', async () => {
+    const request = vi.fn(async () => ({}));
+    const moonrakerFor = vi.fn(() => ({ request }));
+    const api = { printer: { id: 'p1' }, moonrakerFor } as unknown as PluginApi;
+    const ops = createFileOps(api, 'p2');
+    api.printer.id = 'p3';
+
+    await ops.startPrint(file('fleet.gcode'));
+
+    expect(moonrakerFor).toHaveBeenLastCalledWith('p2');
+    expect(request).toHaveBeenCalledWith('printer.print.start', { filename: 'fleet.gcode' });
   });
 });

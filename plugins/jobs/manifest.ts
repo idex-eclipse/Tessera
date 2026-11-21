@@ -4,7 +4,7 @@ import { fileTablePoints } from '../shared/file-table/extension-points';
 export const jobsManifest: PluginManifest = {
   id: '@core/jobs',
   name: 'Jobs',
-  version: '4.0.0',
+  version: '4.1.0',
   entry: '/plugins/jobs/index.js',
   pages: [
     { 
@@ -23,6 +23,14 @@ export const jobsManifest: PluginManifest = {
       element: 'mpu-jobs-widget', headerElement: 'mpu-jobs-widget-header',
       defaultSize: { w: 6, h: 4 },
       minSize: { w: 4, h: 2 },
+    },
+  ],
+  printerPanels: [
+    {
+      id: 'fleet-jobs',
+      element: 'mpu-jobs-fleet',
+      titleKey: 'jobs.title',
+      defaultSize: { w: 6, h: 1 },
     },
   ],
   guards: [

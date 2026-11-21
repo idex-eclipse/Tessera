@@ -2,6 +2,7 @@ import { defineMpuElement } from '../../plugin-sdk/src/element/define-element';
 import JobsPage from './components/page/JobsPage.svelte';
 import JobsWidget from './components/widgets/Jobs/JobsWidget.svelte';
 import JobsWidgetHeaderActions from './components/widgets/Jobs/JobsWidgetHeaderActions.svelte';
+import JobsFleetPanel from './components/fleet/JobsFleetPanel.svelte';
 
 import fileIcon from './icons/file.svg?raw';
 
@@ -15,3 +16,4 @@ export { hotkeyFindJob, hotkeyRefreshJobs, hotkeyOpenJobs } from './hotkeys.ts';
 defineMpuElement('mpu-jobs-page', JobsPage);
 defineMpuElement('mpu-jobs-widget', JobsWidget);
 defineMpuElement('mpu-jobs-widget-header', JobsWidgetHeaderActions);
+defineMpuElement('mpu-jobs-fleet', JobsFleetPanel);

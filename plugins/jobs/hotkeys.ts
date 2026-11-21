@@ -31,5 +31,6 @@ export function hotkeyRefreshJobs(api: PluginApi): void {
 
 /** J: открыть страницу (клавиша глобальная — работает с любой страницы). */
 export function hotkeyOpenJobs(api: PluginApi): void {
+  if (blocked()) return;
   openPluginPage(api, 'jobs');
 }

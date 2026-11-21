@@ -1,6 +1,7 @@
 export const ru = {
   jobs: {
     title: 'Задания',
+    fleetDialogTitle: 'Задания — {name}',
     print: 'Напечатать',
     edit: 'Редактировать',
     meta: 'Обновить метаданные',

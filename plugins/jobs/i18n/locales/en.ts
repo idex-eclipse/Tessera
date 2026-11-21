@@ -1,6 +1,7 @@
 export const en = {
   jobs: {
     title: 'Jobs',
+    fleetDialogTitle: 'Jobs — {name}',
     print: 'Print',
     edit: 'Edit',
     meta: 'Refresh metadata',
