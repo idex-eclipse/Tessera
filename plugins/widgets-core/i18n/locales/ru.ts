@@ -318,6 +318,7 @@ cp: {
     },
     jobQueue: {
       title: 'Очередь заданий',
+      fleetDialogTitle: 'Очередь заданий — {name}',
       empty: 'Очередь пуста',
       unavailable: 'Очередь заданий не настроена',
       state: {

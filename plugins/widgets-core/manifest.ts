@@ -8,13 +8,13 @@ import { outputsChips, outputsPoints, outputsWidgets } from './outputs/manifest'
 import { ledsChips, ledsPoints, ledsWidgets } from './leds/manifest';
 import { cameraFleet, cameraPoints, cameraWidgets } from './camera/manifest';
 import { filamentChips, filamentPoints, filamentWidgets } from './filament-sensors/manifest';
-import { jobQueuePoints, jobQueueWidgets } from './job-queue/manifest';
+import { jobQueueFleet, jobQueuePoints, jobQueueWidgets } from './job-queue/manifest';
 import { sliderPoints } from '../shared/slider-field/extension-points';
 
 export const widgetsCoreManifest: PluginManifest = {
   id: '@core/widgets',
   name: 'Core Widgets',
-  version: '3.1.0',
+  version: '3.2.0',
   entry: '/plugins/widgets-core/index.js',
   pages: [],
   widgets: [...temperatureWidgets, ...macrosWidgets, 
@@ -22,7 +22,7 @@ export const widgetsCoreManifest: PluginManifest = {
     ...filamentWidgets, ...jobQueueWidgets],
   chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...ledsChips, ...toolsChips,
     ...filamentChips], 
-  printerPanels: [...cameraFleet, ...toolsFleet, ...temperatureFleet],
+  printerPanels: [...cameraFleet, ...toolsFleet, ...temperatureFleet, ...jobQueueFleet],
   // Extensions replace whole widgets and their headers, large parts of Temperature / Tools / Camera, and
   // add panels to Temperature and Tools and tabs to Camera. All points are version 1; ids are unique across the plugin, so
   // they are prefixed by widget. The slider point belongs to the shared SliderField used by Tools, Outputs,

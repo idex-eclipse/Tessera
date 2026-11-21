@@ -1,4 +1,4 @@
-import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
+import type { WidgetContribution, ExtensionPointDecl, PrinterPanelContribution } from '../../../plugin-sdk/src/types';
 
 export const jobQueueWidgets: WidgetContribution[] = [
   {
@@ -8,6 +8,16 @@ export const jobQueueWidgets: WidgetContribution[] = [
     element: 'mpu-widgets-job-queue',
     defaultSize: { w: 4, h: 3 },
     minSize: { w: 3, h: 2 },
+  },
+];
+
+/** Compact fleet launcher opens the same queue view against a fixed printer. */
+export const jobQueueFleet: PrinterPanelContribution[] = [
+  {
+    id: 'fleet-job-queue',
+    element: 'mpu-core-widgets-fleet-job-queue',
+    titleKey: 'widgets.jobQueue.title',
+    defaultSize: { w: 6, h: 1 },
   },
 ];
 

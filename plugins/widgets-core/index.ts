@@ -107,3 +107,5 @@ defineMpuElement('mpu-core-widgets-chip-filament-picker', FilamentChipPicker);
 //Widget
 import JobQueueWidget from './job-queue/components/widgets/JobQueue/JobQueueWidget.svelte';
 defineMpuElement('mpu-widgets-job-queue', JobQueueWidget);
+import JobQueueFleetPanel from './job-queue/components/fleet/JobQueueFleetPanel.svelte';
+defineMpuElement('mpu-core-widgets-fleet-job-queue', JobQueueFleetPanel);

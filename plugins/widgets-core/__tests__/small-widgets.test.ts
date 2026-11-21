@@ -5,7 +5,7 @@ import { mapMacroHelp } from '../macros/lib/macro-help';
 import { filamentChips, filamentWidgets } from '../filament-sensors/manifest';
 import { en } from '../i18n/locales/en';
 import { ru } from '../i18n/locales/ru';
-import { jobQueueWidgets } from '../job-queue/manifest';
+import { jobQueueFleet, jobQueueWidgets } from '../job-queue/manifest';
 import { limitsWidgets } from '../limits/manifest';
 import { outputsChips, outputsWidgets } from '../outputs/manifest';
 import { ledsChips, ledsWidgets } from '../leds/manifest';
@@ -72,6 +72,12 @@ describe('locales of the small widgets', () => {
       expect(f['widgets.jobQueue.unit.m']).toBeTruthy();
       expect(f['widgets.jobQueue.unit.s']).toBeTruthy();
     }
+  });
+
+  it('registers a compact Job Queue fleet launcher', () => {
+    expect(jobQueueFleet).toEqual([
+      expect.objectContaining({ id: 'fleet-job-queue', defaultSize: { w: 6, h: 1 } }),
+    ]);
   });
 });
 

@@ -318,6 +318,7 @@ export const en = {
     },
     jobQueue: {
       title: 'Job queue',
+      fleetDialogTitle: 'Job Queue — {name}',
       empty: 'Queue is empty',
       unavailable: 'Job queue is not configured',
       state: {
