@@ -400,7 +400,8 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
 
 ```json
 { "printerPanels": [ { "id": "acme-state", "element": "acme-state-panel",
-                       "titleKey": "hello.fleet.state" } ] }
+                       "titleKey": "hello.fleet.state",
+                       "defaultSize": { "w": 6, "h": 1 } } ] }
 ```
 
 - The element is created **one instance per configured printer**.
@@ -420,6 +421,10 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   are shown only while editing. Resize handles cover each entire side and highlight
   on hover. The grid size is centered, and the providing plugin ID appears at the
   upper left in LTR order.
+- Optional `defaultSize` sets the size only when a panel is first added or the
+  fleet layout is reset. The host clamps positive integer values to width 6–12
+  and height 1–16. Existing saved layouts are never rewritten when a plugin
+  changes its default.
 - Panels may offer actions for their own printer. Send requests through
   `api.moonrakerFor(params.printerId)` and read printer-specific settings through
   `api.settingsFor(params.printerId)`; never use the active-printer handles for a
