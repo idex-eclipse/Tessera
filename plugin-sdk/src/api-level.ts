@@ -26,8 +26,10 @@
  *          (tessera-ext serve, секрет хранится на принтере)
  *   0.14 — api.notifications.push actions: plugin-owned Custom Element actions in notifications
  *   1.0 — active-printer moonraker() and settings deprecated
+ *   1.1 — editor-aware plugin hotkeys
+ *   1.2 — printerPanels[].defaultSize
  */
-export const PLUGIN_API = '1.1';
+export const PLUGIN_API = '1.2';
 
 export const LEGACY_PLUGIN_API = '0.7';
 
@@ -55,8 +57,8 @@ export function checkPluginApi(
   const need = parsePluginApi(required);
   const have = parsePluginApi(host);
   if (!need || !have) return 'invalid';
-  // Keep the migration window through 1.1 so an additive hotkey field cannot disable installed plugins.
-  if (have[0] === 1 && have[1] <= 1 && need[0] === 0) {
+  // Keep the migration window through 1.2 so additive manifest fields cannot disable installed plugins.
+  if (have[0] === 1 && have[1] <= 2 && need[0] === 0) {
     if (need[1] < parsePluginApi(LEGACY_PLUGIN_API)![1]) return 'major';
     return need[1] <= parsePluginApi(LAST_LEGACY_PLUGIN_API)![1] ? 'ok' : 'newer';
   }

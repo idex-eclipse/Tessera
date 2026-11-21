@@ -185,6 +185,8 @@ export interface CollapsedBannerContribution extends SurfaceContribution {
  */
 export interface PrinterPanelContribution extends SurfaceContribution {
   titleKey?: string;
+  /** Initial fleet-grid size for new or reset layouts; the host clamps it to the supported grid. */
+  defaultSize?: WidgetSize;
 }
 
 /**

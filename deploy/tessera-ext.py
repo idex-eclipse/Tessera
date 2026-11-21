@@ -106,7 +106,7 @@ SOURCE_NAME_RE = re.compile(r'[a-z0-9][a-z0-9._-]{0,31}')
 # "MAJOR.MINOR". A plugin fits when MAJOR is the same and its MINOR is not above ours.
 # Same value as PLUGIN_API in plugin-sdk/src/api-level.ts. Extension points are not part of
 # it: they come with the owner's version (manifest.dependencies).
-HOST_PLUGIN_API = '1.1'
+HOST_PLUGIN_API = '1.2'
 # Registry entries without pluginApi or with the integer 1 of the first registries.
 LEGACY_PLUGIN_API = '0.7'
 PLUGIN_API_RE = re.compile(r'(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})')
@@ -944,8 +944,8 @@ def plugin_api_problem(value, host=HOST_PLUGIN_API):
     need, have = parse_plugin_api(value), parse_plugin_api(host)
     if need is None or have is None:
         return 'invalid'
-    # Keep the migration window through 1.1 for the additive editor-hotkey field.
-    if have[0] == 1 and have[1] <= 1 and need[0] == 0:
+    # Keep the migration window through 1.2 for additive manifest fields.
+    if have[0] == 1 and have[1] <= 2 and need[0] == 0:
         if need[1] < 7:
             return 'major'
         return 'newer' if need[1] > 14 else None
