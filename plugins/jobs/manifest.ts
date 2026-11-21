@@ -30,7 +30,7 @@ export const jobsManifest: PluginManifest = {
       id: 'fleet-jobs',
       element: 'mpu-jobs-fleet',
       titleKey: 'jobs.title',
-      defaultSize: { w: 6, h: 1 },
+      defaultSize: { w: 4, h: 1 },
     },
   ],
   guards: [

@@ -151,7 +151,7 @@ describe('hotkeys', () => {
 describe('manifest', () => {
   it('registers the compact Jobs fleet launcher', () => {
     expect(jobsManifest.printerPanels).toEqual([
-      expect.objectContaining({ id: 'fleet-jobs', defaultSize: { w: 6, h: 1 } }),
+      expect.objectContaining({ id: 'fleet-jobs', defaultSize: { w: 4, h: 1 } }),
     ]);
   });
 
