@@ -37,10 +37,8 @@ function mountSystem(handle: ReturnType<typeof fakeHandle>, pid: string) {
   const api = {
     printer: { id: pid, url: 'http://x' },
     moonrakerFor: () => handle,
-    moonraker: () => handle,
     onPrintersChange: () => () => {},
     onPrinterChange: () => () => {},
-    settings: { get: () => undefined, set() {}, onChange: () => () => {} },
     settingsFor: () => ({ get: () => undefined, set() {}, onChange: () => () => {} }),
   } as unknown as PluginApi;
 

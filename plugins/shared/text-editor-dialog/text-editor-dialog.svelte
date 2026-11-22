@@ -714,7 +714,7 @@
     const seq = ++devSeq[kind];
     devState[kind] = { status: 'loading', cards: [], error: '' };
     try {
-      // moonraker() бросает синхронно, если нет активного принтера — ловим вместе с запросом
+      // Keep handle lookup inside the try because an empty or stale printer ID is recoverable UI state.
       const handle = api.moonrakerFor(api.printer.id);
       const cards = await loadDevices((m, p) => handle.request(m, p), kind, { canInterface });
       if (seq !== devSeq[kind]) return;

@@ -20,12 +20,12 @@ describe('plugin API version', () => {
     expect(checkPluginApi(1, '0.8')).toBe('ok');
     expect(checkPluginApi('0.9', '0.8')).toBe('newer');
     expect(checkPluginApi('1.0', '0.8')).toBe('major');
-    expect(checkPluginApi('0.8', '1.0')).toBe('ok');
-    expect(checkPluginApi('0.14', '1.0')).toBe('ok');
+    expect(checkPluginApi('0.8', '1.0')).toBe('major');
+    expect(checkPluginApi('0.14', '1.0')).toBe('major');
     expect(checkPluginApi('0.6', '1.0')).toBe('major');
-    expect(checkPluginApi('0.15', '1.0')).toBe('newer');
-    expect(checkPluginApi('0.14', '1.1')).toBe('ok');
-    expect(checkPluginApi('0.14', '1.2')).toBe('ok');
+    expect(checkPluginApi('0.15', '1.0')).toBe('major');
+    expect(checkPluginApi('0.14', '1.1')).toBe('major');
+    expect(checkPluginApi('0.14', '1.2')).toBe('major');
     expect(checkPluginApi('1.1', '1.0')).toBe('newer');
     expect(checkPluginApi('1.2', '1.1')).toBe('newer');
     expect(checkPluginApi('x', '0.8')).toBe('invalid');
@@ -37,9 +37,11 @@ describe('plugin API version', () => {
     expect(checkPluginApi('0.10', '0.10')).toBe('ok');
   });
 
-  it('the host version is valid and not below the legacy one', () => {
+  it('the host version is valid and rejects legacy forms as another major', () => {
     expect(parsePluginApi(PLUGIN_API)).not.toBeNull();
-    expect(checkPluginApi(LEGACY_PLUGIN_API)).toBe('ok');
+    expect(checkPluginApi(LEGACY_PLUGIN_API)).toBe('major');
+    expect(checkPluginApi(undefined)).toBe('major');
+    expect(checkPluginApi(1)).toBe('major');
     expect(formatPluginApi(undefined)).toBe('0.7');
     expect(formatPluginApi('nope')).toBe('nope');
   });

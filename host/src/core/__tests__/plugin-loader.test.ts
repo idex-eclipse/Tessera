@@ -19,6 +19,7 @@ function createTestManifest(overrides: Partial<PluginManifest> = {}): PluginMani
     name: 'Test Plugin',
     version: '1.0.0',
     entry: '/index.js',
+    pluginApi: PLUGIN_API,
     ...overrides,
   };
 }
@@ -1489,13 +1490,16 @@ describe('plugin-loader / pluginApi', () => {
   it('does not import a plugin that needs a newer or another major API', async () => {
     const [major, minor] = PLUGIN_API.split('.').map(Number);
     const missingApiManifest = createTestManifest({ id: '@third/missing' });
+    // Delete the default explicitly so this fixture represents a pre-versioned manifest.
     delete missingApiManifest.pluginApi;
     const manifests: Record<string, PluginManifest> = {
-      'http://missing/manifest.json': missingApiManifest,
       'http://newer/manifest.json': createTestManifest({ id: '@third/newer', name: 'Newer', pluginApi: `${major}.${minor! + 1}` }),
       'http://major/manifest.json': createTestManifest({ id: '@third/major', pluginApi: `${major! + 1}.0` }),
       'http://bad/manifest.json': createTestManifest({ id: '@third/bad', pluginApi: 'latest' }),
-      'http://unsupported/manifest.json': createTestManifest({ id: '@third/unsupported', pluginApi: '0.15' }),
+      'http://missing/manifest.json': missingApiManifest,
+      'http://integer/manifest.json': createTestManifest({ id: '@third/integer', pluginApi: 1 as unknown as string }),
+      'http://legacy/manifest.json': createTestManifest({ id: '@third/legacy', pluginApi: '0.7' }),
+      'http://last-legacy/manifest.json': createTestManifest({ id: '@third/last-legacy', pluginApi: '0.14' }),
     };
     const importModule = vi.fn(async () => ({ default: {} }));
     const { loader, settings } = setup({ fetchManifest: vi.fn(async (url: string) => manifests[url]!), importModule });
@@ -1515,6 +1519,9 @@ describe('plugin-loader / pluginApi', () => {
     expect(byId['@third/bad']?.pluginApi?.problem).toBe('invalid');
     expect(byId['@third/unsupported']?.pluginApi?.problem).toBe('major');
     expect(byId['@third/missing']?.pluginApi?.problem).toBe('major');
+    expect(byId['@third/integer']?.pluginApi?.problem).toBe('major');
+    expect(byId['@third/legacy']?.pluginApi?.problem).toBe('major');
+    expect(byId['@third/last-legacy']?.pluginApi?.problem).toBe('major');
   });
 
   it('installRemotePlugin throws on an incompatible plugin', async () => {

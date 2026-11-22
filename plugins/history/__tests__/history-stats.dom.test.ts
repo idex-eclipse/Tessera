@@ -46,11 +46,9 @@ function fakeApi(): PluginApi {
   return {
     printer: { id: 'p-history-stats', name: 'Printer', url: 'http://printer' },
     printers: [{ id: 'p-history-stats', name: 'Printer', url: 'http://printer' }],
-    moonraker: () => handle,
     moonrakerFor: () => handle,
     onPrinterChange: () => () => {},
     onPrintersChange: () => () => {},
-    settings: { get: () => undefined, set: () => {}, onChange: () => () => {} },
     settingsFor: () => ({ get: () => undefined, set: () => {}, onChange: () => () => {} }),
     i18n: { t: (key: string) => key },
     theme: { current: 'dark' },

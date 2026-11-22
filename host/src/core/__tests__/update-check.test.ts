@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RegistryPlugin } from '../extensions-installer.svelte.ts';
 import { runUpdateCheck, updateCheckDue, type UpdateCheckDeps } from '../update-check.ts';
 import type { UiUpdateStatus } from '../ui-updater.svelte.ts';
+import { PLUGIN_API } from '../../../../plugin-sdk/src/api-level.ts';
 
 const HOUR = 3_600_000;
 const NOW = 1_800_000_000_000;
@@ -26,7 +27,7 @@ const plugin = (over: Partial<RegistryPlugin> = {}): RegistryPlugin => ({
   description: '',
   managed: true,
   manifestUrl: '/extensions/hello/manifest.json',
-  pluginApi: '0.8',
+  pluginApi: PLUGIN_API,
   ...over,
 });
 

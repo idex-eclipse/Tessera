@@ -18,88 +18,10 @@ import { createServicesApi } from './plugin-services';
 import type { AppContext } from '../app-context';
 
 /**
- * Обёртка handle: request() идёт через GuardAgent с атрибуцией инициатора;
- * subscribe/onNotify/poll/геттеры делегируются без изменений (poll и subscribe
- * вне конвейера по CONTEXT). Handle резолвится лениво на каждый вызов —
- * после смены принтера обёртка указывает на новый ProxyInstance.
- */
-function createGuardedHandle(
-  resolveHandle: () => MoonrakerProxyHandle,
-  resolveTargetPrinterId: () => string,
-  pluginId: string,
-): MoonrakerProxyHandle {
-  return {
-    request<T = unknown>(method: string, params?: unknown): Promise<T> {
-      let handle: MoonrakerProxyHandle;
-      try {
-        handle = resolveHandle();
-      } catch (e) {
-        return Promise.reject(e);
-      }
-      return guardAgent
-        .runPreflight(pluginId, resolveTargetPrinterId(), method, params)
-        .then(() => handle.request<T>(method, params));
-    },
-
-    subscribe(objects, cb, opts) {
-      return resolveHandle().subscribe(objects, cb, opts);
-    },
-
-    onNotify(event, cb) {
-      return resolveHandle().onNotify(event, cb);
-    },
-
-    poll(method, params, intervalMs) {
-      return resolveHandle().poll(method, params, intervalMs);
-    },
-
-    klippyStream(method, params, onData, onStatus, onAck) {
-      return resolveHandle().klippyStream(method, params, onData, onStatus, onAck);
-    },
-
-    klippyRequest(method, params, options) {
-      return resolveHandle().klippyRequest(method, params, options);
-    },
-
-    get httpBaseUrl() {
-      return resolveHandle().httpBaseUrl;
-    },
-
-    get readyState() {
-      return resolveHandle().readyState;
-    },
-
-    get authToken() {
-      return resolveHandle().authToken;
-    },
-
-    onReady(cb) {
-      return resolveHandle().onReady(cb);
-    },
-
-    onConnectionStatusChange(cb) {
-      return resolveHandle().onConnectionStatusChange(cb);
-    },
-  };
-}
-
-/**
- * Мультипринтерный handle (api.moonrakerFor): статически привязан к printerId,
- * но ProxyInstance резолвит лениво по ТЕКУЩЕМУ url принтера.
- *
- * Свойства:
- * - переживает retry() (пересоздание прокси на том же url): следующий вызов
- *   подхватит новый instance;
- * - следует за сменой url в Settings: резолв идёт через список printers;
- * - принтер удалён: request.reject, subscribe/onNotify/poll = noop,
- *   readyState = 'closed' — БЕЗ воскрешения прокси для удалённого принтера
- *   (getMoonrakerProxy создал бы соединение заново, поэтому явный null-check);
- * - принтер с пустым url трактуется как отсутствующий (live() = null).
- *
- * Подписки, снятые до swap прокси, не переживают swap — та же семантика, что
- * у handle активного принтера: плагины переподписываются на onReady/'open'.
- *
- * GuardAgent receives the bound printer ID for every request, including fleet actions.
+ * Creates a handle permanently bound to one printer ID while resolving its current URL lazily.
+ * This preserves object identity across retries and URL changes without reconnecting a removed
+ * printer. Existing subscriptions do not survive a proxy swap, so plugins resubscribe on ready.
+ * GuardAgent receives the bound printer ID for every request.
  */
 function createGuardedHandleFor(
   printerId: string,
@@ -252,28 +174,9 @@ export function createPluginApi(
     return printerManager.activePrinterId ?? '';
   }
 
-  function resolveHandle(): MoonrakerProxyHandle {
-    const printer = printerManager.activePrinter;
-    if (!printer) {
-      throw new Error(`[plugin-api] No active printer for moonraker()`);
-    }
-    return getMoonrakerProxy(printer.url).handle;
-  }
-
-  const guardedHandle = createGuardedHandle(
-    resolveHandle,
-    () => printerManager.activePrinterId ?? '',
-    pluginId,
-  );
-
-  /**
-   * Кэш мультипринтерных хендлов: стабильность объекта между вызовами
-   * (плагины держат handle в module-state). Размер ограничен числом принтеров,
-   * виденных за сессию; хендлы удалённых принтеров инертны (live() = null)
-   * и соединений не держат.
-   */
+  /** Keep one inert-capable handle per printer so plugins can safely retain object identity. */
   const fleetHandles = new Map<string, MoonrakerProxyHandle>();
-    /** Кэш объектов settingsFor: стабильность идентичности на принтер. */
+  /** Keep one settings facade per printer for stable listener ownership. */
   const settingsForCache = new Map<string, PluginSettingsApi>();
 
   const api: PluginApi = {
@@ -295,14 +198,6 @@ export function createPluginApi(
         name: p.name,
         url: p.url,
       }));
-    },
-
-    moonraker() {
-      // прежнее поведение: синхронный throw без активного принтера
-      if (!printerManager.activePrinter) {
-        throw new Error(`[plugin-api] No active printer for moonraker()`);
-      }
-      return guardedHandle;
     },
 
     moonrakerFor(printerId: string): MoonrakerProxyHandle {
@@ -347,29 +242,6 @@ export function createPluginApi(
 
     onThemeChange(cb) {
       return ui.onThemeChange(cb);
-    },
-
-    settings: {
-      get<T>(key: string): T | undefined {
-        const printerId = getPrinterId();
-        if (!printerId) return undefined;
-        return settings.getPluginSetting<T>(printerId, pluginId, key);
-      },
-
-      set(key: string, value: unknown): void {
-        const printerId = getPrinterId();
-        if (!printerId) return;
-        settings.setPluginSetting(printerId, pluginId, key, value);
-      },
-
-      onChange(cb) {
-        const printerId = getPrinterId();
-        if (!printerId) return () => {};
-        return settings.onPluginSettingsChange(printerId, pluginId, () => {
-          const current = settings.getPluginSettings(printerId, pluginId);
-          cb('', current);
-        });
-      },
     },
 
     settingsFor(printerId: string): PluginSettingsApi {

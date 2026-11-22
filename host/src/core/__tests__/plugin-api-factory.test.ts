@@ -176,36 +176,7 @@ beforeEach(() => {
 
 // ------------------------------------------------------------------
 
-describe('plugin-api-factory / active printer sugar', () => {
-  it('moonraker() throws when there is no active printer', () => {
-    const manager = createFakeManager();
-    const api = createPluginApi(createCtx(manager), MANIFEST.id, { ...MANIFEST });
-
-    expect(() => api.moonraker()).toThrow(/No active printer/);
-  });
-
-  it('moonraker().request routes to the active printer proxy', async () => {
-    const { api } = setupWithPrinters();
-
-    const result = await api.moonraker().request('printer.info');
-
-    expect(result).toMatchObject({ ok: true, method: 'printer.info', url: 'http://a.local' });
-    expect(handleOf('http://a.local')!.request).toHaveBeenCalledWith('printer.info', undefined);
-    expect(handleOf('http://b.local')).toBeUndefined();
-  });
-
-  it('moonraker() handle follows active printer switch (lazy resolve)', async () => {
-    const { manager, api } = setupWithPrinters();
-
-    const handle = api.moonraker();
-    manager.setActivePrinter('b');
-
-    const result = await handle.request('server.info');
-
-    expect(result).toMatchObject({ url: 'http://b.local' });
-    expect(handleOf('http://b.local')!.request).toHaveBeenCalled();
-  });
-
+describe('plugin-api-factory / active printer state', () => {
   it('printer getter reflects active printer; empty object without printers', () => {
     const manager = createFakeManager();
     const api = createPluginApi(createCtx(manager), MANIFEST.id, { ...MANIFEST });
@@ -214,6 +185,14 @@ describe('plugin-api-factory / active printer sugar', () => {
     manager.add('a', 'Printer A', 'http://a.local');
     manager.setActivePrinter('a');
     expect(api.printer).toEqual({ id: 'a', name: 'Printer A', url: 'http://a.local' });
+  });
+
+  it('does not expose removed active-printer shortcuts at runtime', () => {
+    const { api } = setupWithPrinters();
+
+    // Runtime shape must match the final 1.0 type contract for non-TypeScript plugins.
+    expect('moonraker' in api).toBe(false);
+    expect('settings' in api).toBe(false);
   });
 });
 
