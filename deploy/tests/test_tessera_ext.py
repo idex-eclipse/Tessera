@@ -98,7 +98,7 @@ class Base(unittest.TestCase):
             f.write(data)
         entry = {
             'id': pid, 'dir': directory, 'name': 'Hello', 'version': version,
-            'pluginApi': 1, 'url': name, 'sha256': hashlib.sha256(data).hexdigest(),
+            'pluginApi': ext.HOST_PLUGIN_API, 'url': name, 'sha256': hashlib.sha256(data).hexdigest(),
         }
         entry.update(extra)
         self.entries = [e for e in self.entries if e['id'] != pid] + [entry]
@@ -244,14 +244,6 @@ class InstallTests(Base):
         self.publish(plugin_files(), pluginApi=f'{major}.{minor + 1}')
         self.assert_refused('Update Tessera first')
 
-    def test_refuses_unimplemented_legacy_minor(self):
-        self.publish(plugin_files(), pluginApi='0.15')
-        self.assert_refused('Update Tessera first')
-
-    def test_refuses_older_than_legacy_contract(self):
-        self.publish(plugin_files(), pluginApi='0.6')
-        self.assert_refused('not compatible')
-
     def test_refuses_other_major_plugin_api(self):
         major, _ = ext.parse_plugin_api(ext.HOST_PLUGIN_API)
         self.publish(plugin_files(), pluginApi=f'{major + 1}.0')
@@ -263,18 +255,25 @@ class InstallTests(Base):
                 self.publish(plugin_files(), pluginApi=bad)
                 self.assert_refused('Invalid pluginApi')
 
-    def test_installs_legacy_and_current_plugin_api(self):
-        for value in (1, None, ext.LEGACY_PLUGIN_API, '0.14', ext.HOST_PLUGIN_API):
+    def test_refuses_legacy_plugin_api_forms(self):
+        for value in (1, None, ext.LEGACY_PLUGIN_API, '0.14', '0.15'):
             with self.subTest(pluginApi=value):
                 entry = self.publish(plugin_files(), pluginApi=value)
                 if value is None:
                     del entry['pluginApi']
                     with open(os.path.join(self.registry, 'registry.json'), 'w', encoding='utf-8') as f:
                         json.dump({'schema': 1, 'plugins': self.entries}, f)
-                self.install()
-                self.assertIn('acme/hello', ext.scan_installed())
-                with self.quiet():
-                    ext.cmd_remove('acme/hello', True)
+                self.assert_refused('not compatible')
+
+    def test_installs_current_plugin_api(self):
+        self.publish(plugin_files(), pluginApi=ext.HOST_PLUGIN_API)
+        self.install()
+        self.assertIn('acme/hello', ext.scan_installed())
+
+    def test_force_installs_incompatible_plugin_api(self):
+        self.publish(plugin_files(), pluginApi='0.14')
+        self.install(force=True)
+        self.assertIn('acme/hello', ext.scan_installed())
 
     def test_refuses_bad_dir_in_registry(self):
         for bad in ('../evil', 'a/b', '.hidden', ''):
@@ -364,7 +363,7 @@ class InstallTests(Base):
         self.publish(plugin_files('acme/new'), pid='acme/new', directory='new', pluginApi='0.9')
         self.put_manual('manual', 'acme/manual')
         rows = {r['id']: ext.plugin_view(r) for r in ext.collect_status(self.entries, ext.scan_installed())}
-        self.assertEqual(rows['acme/hello']['pluginApi'], ext.LEGACY_PLUGIN_API)
+        self.assertEqual(rows['acme/hello']['pluginApi'], ext.HOST_PLUGIN_API)
         self.assertEqual(rows['acme/new']['pluginApi'], '0.9')
         self.assertIsNone(rows['acme/manual']['pluginApi'])
 
@@ -384,6 +383,9 @@ class InstallTests(Base):
         self.assertEqual(ext.plugin_api_problem('08.1', '0.8'), 'invalid')
         self.assertEqual(ext.plugin_api_problem('0.10', '0.9'), 'newer')
         self.assertIsNone(ext.plugin_api_problem('0.9', '0.10'))
+        for legacy in (None, 1, '0.7', '0.14', '0.15'):
+            with self.subTest(stableHostLegacy=legacy):
+                self.assertEqual(ext.plugin_api_problem(legacy, '1.0'), 'major')
 
     def test_registry_text_cannot_reach_the_terminal(self):
         self.publish(plugin_files(), name='Evil\x1b[2J', description='a\x07b')
@@ -746,7 +748,7 @@ class ExtraRegistry:
             f.write(data)
         entry = {
             'id': pid, 'dir': directory, 'name': pid, 'version': version,
-            'pluginApi': '0.7', 'url': name, 'sha256': hashlib.sha256(data).hexdigest(),
+            'pluginApi': ext.HOST_PLUGIN_API, 'url': name, 'sha256': hashlib.sha256(data).hexdigest(),
         }
         entry.update(extra)
         self.entries = [e for e in self.entries if e['id'] != pid] + [entry]
