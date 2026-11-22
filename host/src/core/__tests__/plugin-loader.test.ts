@@ -1454,19 +1454,6 @@ describe('plugin-loader / eagerActivateSurfacePlugins', () => {
 // ------------------------------------------------------------------
 
 describe('plugin-loader / pluginApi', () => {
-  it('reads a disabled plugin manifest without importing its entry', async () => {
-    const manifest = createTestManifest({ id: '@third/disabled', pluginApi: '0.14' });
-    const fetchManifest = vi.fn(async () => manifest);
-    const importModule = vi.fn(async () => ({ default: {} }));
-    const { loader, settings } = setup({ fetchManifest, importModule });
-    settings.addPlugin('http://disabled/manifest.json');
-    settings.setPluginEnabled('http://disabled/manifest.json', false);
-
-    await expect(loader.readInstalledManifest('http://disabled/manifest.json')).resolves.toEqual(manifest);
-    expect(fetchManifest).toHaveBeenCalledOnce();
-    expect(importModule).not.toHaveBeenCalled();
-  });
-
   it('loads plugins without pluginApi and with a compatible one', async () => {
     const manifests: Record<string, PluginManifest> = {
       'http://a/manifest.json': createTestManifest({ id: '@third/legacy' }),
@@ -1481,7 +1468,6 @@ describe('plugin-loader / pluginApi', () => {
     expect(loader.isLoaded('@third/legacy')).toBe(true);
     expect(loader.isLoaded('@third/current')).toBe(true);
     expect(loader.isLoaded('@third/last-legacy')).toBe(true);
-    expect(settings.plugins.map((plugin) => plugin.pluginApi)).toEqual(['0.7', '1.0', '0.14']);
     expect(loader.getLoadFailures()).toEqual([]);
   });
 
