@@ -70,6 +70,8 @@ export class MockPrinterState {
       fan: { speed: 0 },
       'fan_generic chamber': { speed: 0.35 },
       'output_pin case_light': { value: 1 },
+      'neopixel case': { color_data: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]] },
+      'led chamber': { color_data: [[0, 0, 0, 0]] },
       'filament_switch_sensor runout': { filament_detected: true, enabled: true },
       toolhead: {
         position: [0, 0, 0, 0], homed_axes: 'xyz', extruder: 'extruder',
@@ -107,6 +109,8 @@ export class MockPrinterState {
           bed_mesh: { mesh_min: '20,20', mesh_max: '200,200', probe_count: '3,3' },
           'fan_generic chamber': { pin: 'mock:fan' },
           'output_pin case_light': { pin: 'mock:light', value: 1 },
+          'neopixel case': { pin: 'mock:neopixel', chain_count: 3, color_order: 'GRB' },
+          'led chamber': { red_pin: 'mock:led_r', green_pin: 'mock:led_g', blue_pin: 'mock:led_b', white_pin: 'mock:led_w' },
           'filament_switch_sensor runout': { switch_pin: 'mock:filament' },
         },
         config: { 'gcode_macro TEST_MOCK': { gcode: 'RESPOND MSG="Mock macro complete"' } },

@@ -63,6 +63,16 @@ function directory(state: MockPrinterState, path: string): Record<string, unknow
   return { dirs, files, disk_usage: { total: 1_000_000_000, used: 10_000_000, free: 990_000_000 } };
 }
 
+/** Finds the status object of a configurable LED (`neopixel case` for LED=case, and so on). */
+function findLedObjectKey(state: MockPrinterState, name: string | undefined): string | null {
+  if (!name) return null;
+  for (const kind of ['led', 'neopixel', 'dotstar', 'pca9533', 'pca9632']) {
+    const key = `${kind} ${name}`;
+    if (key in state.objects) return key;
+  }
+  return null;
+}
+
 /** Simulates only G-code commands used by the bundled controls and the sample macro. */
 function gcode(state: MockPrinterState, script: string): string {
   if (state.klippyState !== 'ready' && !/^\s*(FIRMWARE_RESTART|RESTART)\s*$/i.test(script)) {
@@ -150,6 +160,21 @@ function gcode(state: MockPrinterState, script: string): string {
       const pinValue = value('VALUE');
       if (!name || pinValue === null || !state.objects[`output_pin ${name}`]) throw new MockRpcError('Invalid output pin');
       state.patch(`output_pin ${name}`, { value: pinValue });
+    } else if (command === 'SET_LED') {
+      // LED names with spaces arrive quoted (the UI escapes them like Klipper's shlex does).
+      const name = /LED=(?:"([^"]+)"|([^\s]+))/i.exec(line);
+      const ledName = name?.[1] ?? name?.[2];
+      const key = findLedObjectKey(state, ledName);
+      if (!key) throw new MockRpcError(`Invalid LED: ${ledName ?? '(missing)'}`);
+      const pixel = [value('RED') ?? 0, value('GREEN') ?? 0, value('BLUE') ?? 0, value('WHITE') ?? 0];
+      const current = state.objects[key]?.color_data;
+      const data = Array.isArray(current) ? current.map((px) => [...px] as number[]) : [pixel];
+      const index = value('INDEX');
+      if (index !== null && index >= 1 && index <= data.length) data[index - 1] = pixel;
+      else for (let i = 0; i < data.length; i++) data[i] = [...pixel];
+      state.patch(key, { color_data: data });
+    } else if (command === 'SET_LED_TEMPLATE') {
+      // Templates animate over time; the mock keeps the last SET_LED color instead.
     } else if (command === 'SET_FILAMENT_SENSOR') {
       const name = /SENSOR=([^\s]+)/i.exec(line)?.[1];
       const enabled = value('ENABLE');

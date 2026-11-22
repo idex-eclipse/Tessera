@@ -80,6 +80,10 @@ import LedChipPicker from './leds/components/chips/LedChipPicker.svelte';
 defineMpuElement('mpu-core-widgets-chip-led', LedChip);
 defineMpuElement('mpu-core-widgets-chip-led-picker', LedChipPicker);
 
+// Fleet
+import LedsFleetPanel from './leds/components/fleet/LedsFleetPanel.svelte';
+defineMpuElement('mpu-core-widgets-fleet-leds', LedsFleetPanel);
+
 
 /** CAMERA */
 //Widget

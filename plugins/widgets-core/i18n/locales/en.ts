@@ -360,5 +360,9 @@ export const en = {
       notReady: 'Klipper not ready',
       noHeaters: 'No heaters configured',
     },
+    leds: {
+      title: 'Lights',
+      empty: 'No LEDs configured',
+    },
   },
 };

@@ -76,4 +76,9 @@ export const ICONS: Record<string, string> = {
     '<g fill="currentColor" stroke="none"><circle cx="12" cy="12" r="4.5"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="M4.93 4.93l2.12 2.12"/><path d="M16.95 16.95l2.12 2.12"/><path d="M4.93 19.07l2.12-2.12"/><path d="M16.95 7.05l2.12-2.12"/></g></g>',
   'kind-power':
     '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></g>',
+  // Lightbulb pair for the fleet Lights button: filled when any LED is lit, outline otherwise.
+  'bulb-on':
+    '<g fill="currentColor" stroke="none"><path d="M12 2a7 7 0 0 0-4.95 11.95c.62.62.95 1.45.95 2.3V17h8v-.75c0-.85.33-1.68.95-2.3A7 7 0 0 0 12 2zm-3 17h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1z"/></g>',
+  'bulb-off':
+    '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4.95 11.95c.62.62.95 1.45.95 2.3V17h8v-.75c0-.85.33-1.68.95-2.3A7 7 0 0 0 12 2z"/><path d="M9 18h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1z"/></g>',
 };

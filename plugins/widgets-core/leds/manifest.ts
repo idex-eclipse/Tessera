@@ -1,5 +1,5 @@
 import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
-import type { ChipContribution } from '../../../plugin-sdk/src/types';
+import type { ChipContribution, PrinterPanelContribution } from '../../../plugin-sdk/src/types';
 
 export const ledsWidgets: WidgetContribution[] = [
   {
@@ -21,6 +21,16 @@ export const ledsChips: ChipContribution[] = [
     element: 'mpu-core-widgets-chip-led',
     pickerElement: 'mpu-core-widgets-chip-led-picker',
     icon: 'kind-led',
+  },
+];
+
+export const ledsFleet: PrinterPanelContribution[] = [
+  {
+    id: 'fleet-leds',
+    element: 'mpu-core-widgets-fleet-leds',
+    titleKey: 'fleet.leds.title',
+    // One compact row: the panel is a single button that opens the LED popover.
+    defaultSize: { w: 4, h: 1 },
   },
 ];
 
