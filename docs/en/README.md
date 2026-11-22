@@ -31,11 +31,11 @@ and in the text diverge, trust the code and fix the document.
 
 - **How does a plugin get into the UI?** A manifest + an ES module that registers
   Custom Elements; the host sets the `api` and `params` properties on the element.
-- **How do I get printer data?** `api.moonraker().subscribe(…)` — see
+- **How do I get printer data?** `api.moonrakerFor(api.printer.id).subscribe(…)` — see
   [moonraker-proxy.md](moonraker-proxy.md).
-- **How do I send a command?** `api.moonraker().request('printer.gcode.script', { script })`;
+- **How do I send a command?** `api.moonrakerFor(api.printer.id).request('printer.gcode.script', { script })`;
   it goes through the guards.
-- **How do I save a setting?** `api.settings.set/get` — see [settings.md](settings.md).
+- **How do I save a setting?** `api.settingsFor(api.printer.id).set/get` — see [settings.md](settings.md).
 - **How do I update a plugin?** From the registry: Update in Settings → Plugins or
   `tessera-ext update --all`, then F5. A plugin copied by hand: replace the files in `extensions/<name>/`, bump
   `version`, run `tessera-ext sync`, press Update in Settings, F5 if the

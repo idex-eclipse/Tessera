@@ -291,7 +291,7 @@ A typical skeleton:
 class AcmeDialog extends HTMLElement {
   #open = false;
   connectedCallback() {
-    this.#off = this.api.moonraker().subscribe({ manual_probe: ['is_active'] }, (d) => {
+    this.#off = this.api.moonrakerFor(this.api.printer.id).subscribe({ manual_probe: ['is_active'] }, (d) => {
       this.#open = d.manual_probe?.is_active === true;
       this.#render();
     });
@@ -362,7 +362,7 @@ interpret it. What items exist and how they look is up to the plugin.
   actions in this mode.
 - No item (a sensor disappeared) → draw the *missing* state: a dashed border and
   muted text.
-- A chip's actions are an ordinary `api.moonraker().request()`, so guards see them.
+- A chip's actions are an ordinary `api.moonrakerFor(api.printer.id).request()`, so guards see them.
 
 ### Picker (`pickerElement`)
 
@@ -407,8 +407,8 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   otherwise the CE would be re-created.
 - Read your printer's data through `api.moonrakerFor(params.printerId)` and
   settings through `api.settingsFor(params.printerId)`.
-- `api.moonraker()` and `api.settings` are **not suitable** here: they are about
-  the *active* printer, and fleet does not change the active printer.
+- The stable API has no active-printer shortcuts: always use the explicit
+  `params.printerId` supplied to the panel.
 - Panels stack inside the card in registration order. The user can reorder and
   hide panels ("Edit panels" in the fleet header); `titleKey` is used as the name
   in that editor.

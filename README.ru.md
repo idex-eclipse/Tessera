@@ -400,17 +400,11 @@ interface PluginManifest {
 API плагина даёт:
 
 ```ts
-api.moonraker()             // guarded request(), subscribe(), onNotify(), poll(),
-                            // httpBaseUrl для бинарщины, readyState, auth token
+api.moonrakerFor(printerId) // guarded request(), subscribe(), onNotify(), poll(),
+                            // httpBaseUrl, readyState и auth token явного принтера
 
-api.moonrakerFor(printerId) // тот же guarded handle, но привязан к конкретному принтеру
-                            // (для панелей флита и мультипринтерных workflow)
-
-api.settings                // namespaced get/set/onChange для активного принтера
+api.settingsFor(printerId)  // namespaced get/set/onChange для явного принтера
                             // (или девайс-глобал, когда sync включён)
-
-api.settingsFor(printerId)  // тот же PluginSettingsApi, но scoped на конкретный принтер
-                            // (для панелей флита, персистящих per-printer предпочтения)
 
 api.i18n                    // t(key, params), живая locale
 api.theme                   // текущая тема

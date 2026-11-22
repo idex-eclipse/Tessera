@@ -2,9 +2,8 @@
 
 Plugins do not open WebSockets themselves. The host keeps a **proxy pool** — one
 connection per Moonraker (the printer's normalized origin) — and gives a plugin a
-**handle**: `api.moonraker()` for the active printer or
-`api.moonrakerFor(printerId)` for any printer.
-`api.moonraker()` is deprecated in plugin API 1.0; new plugins should pass the printer ID explicitly.
+**handle** through `api.moonrakerFor(printerId)`. Stable plugin API 1.0 always
+requires an explicit configured printer ID.
 
 What the proxy provides:
 
@@ -55,9 +54,9 @@ interface MoonrakerProxyHandle {
 A JSON-RPC call to Moonraker over the WebSocket. Returns the response's `result`.
 
 ```ts
-const info = await api.moonraker().request<{ state: string }>('printer.info');
+const info = await api.moonrakerFor(api.printer.id).request<{ state: string }>('printer.info');
 
-await api.moonraker().request('printer.gcode.script', { script: 'G28' });
+await api.moonrakerFor(api.printer.id).request('printer.gcode.script', { script: 'G28' });
 ```
 
 The request path:
@@ -80,12 +79,11 @@ plugin → GuardAgent (preflight) → cache → WebSocket → Moonraker
 | A guard did not answer / parking expired | `GuardError` | `'guard_timeout'` |
 | An identical request is already waiting for a decision | `GuardError` | `'already_pending'` |
 | The printer was removed (for `moonrakerFor`) | `Error` | `printer '…' is not configured` |
-| No active printer (for a kept `moonraker()` handle) | `Error` | `[plugin-api] No active printer for moonraker()` |
 | The proxy was replaced while the request was in flight | `Error` | `Moonraker proxy disposed` |
 
 ```ts
 try {
-  await api.moonraker().request('printer.print.start', { filename });
+  await api.moonrakerFor(api.printer.id).request('printer.print.start', { filename });
 } catch (e) {
   const r = (e as { rejection?: { code: string; pluginId?: string; reasonKey?: string } }).rejection;
   if (r?.code === 'denied_by_guard') showDenied(api.i18n.t(r.reasonKey ?? 'guards.denied'));
@@ -141,7 +139,7 @@ needs periodic refresh, use `poll()`.
 A subscription to Klipper status objects (`printer.objects.subscribe`).
 
 ```ts
-const off = api.moonraker().subscribe(
+const off = api.moonrakerFor(api.printer.id).subscribe(
   { extruder: ['temperature', 'target'], heater_bed: ['temperature', 'target'] },
   (delta) => {
     // delta: { extruder?: { temperature?: number, target?: number }, heater_bed?: {...} }
@@ -214,10 +212,10 @@ instantly. The list is refreshed when the socket opens, on
 A subscription to arbitrary Moonraker JSON-RPC notifications by method name:
 
 ```ts
-api.moonraker().onNotify('notify_gcode_response', (params) => {
+api.moonrakerFor(api.printer.id).onNotify('notify_gcode_response', (params) => {
   const line = Array.isArray(params) ? params[0] : params;   // Moonraker sends an array of strings
 });
-api.moonraker().onNotify('notify_filelist_changed', () => reload());
+api.moonrakerFor(api.printer.id).onNotify('notify_filelist_changed', () => reload());
 ```
 
 `params` are passed "as is" (usually an array). Frequently used events:
@@ -246,9 +244,9 @@ calls the method itself and refreshes the cache `request()` reads from. Returns 
 cancel function.
 
 ```ts
-const stop = api.moonraker().poll('server.history.totals', undefined, 5000);
+const stop = api.moonrakerFor(api.printer.id).poll('server.history.totals', undefined, 5000);
 // …
-const totals = await api.moonraker().request('server.history.totals'); // from cache
+const totals = await api.moonrakerFor(api.printer.id).request('server.history.totals'); // from cache
 stop();
 ```
 
@@ -274,7 +272,7 @@ opens and keeps one socket per printer on the same origin as the main socket, wi
 token. Returns a cancel function.
 
 ```ts
-const stop = api.moonraker().klippyStream(
+const stop = api.moonrakerFor(api.printer.id).klippyStream(
   'load_cell/dump_force',
   { sensor: 'my_cell' },
   (batch) => {
@@ -338,8 +336,8 @@ the same method and params rules and the same denylist as `klippyStream`; a refu
 rejected promise (not a console warning).
 
 ```ts
-const { objects } = (await api.moonraker().klippyRequest('objects/list')) as { objects: string[] };
-const info = await api.moonraker().klippyRequest('info', {}, { timeoutMs: 5000 });
+const { objects } = (await api.moonrakerFor(api.printer.id).klippyRequest('objects/list')) as { objects: string[] };
+const info = await api.moonrakerFor(api.printer.id).klippyRequest('info', {}, { timeoutMs: 5000 });
 ```
 
 - resolves with Klipper's `result`; rejects with the text of `error.message` when Klipper
@@ -356,10 +354,10 @@ const info = await api.moonraker().klippyRequest('info', {}, { timeoutMs: 5000 }
 ## Connection state
 
 ```ts
-api.moonraker().readyState;                 // 'connecting' | 'open' | 'closed'
+api.moonrakerFor(api.printer.id).readyState; // 'connecting' | 'open' | 'closed'
 
-const off = api.moonraker().onConnectionStatusChange((status) => { … });
-const offReady = api.moonraker().onReady(() => initialLoad());
+const off = api.moonrakerFor(api.printer.id).onConnectionStatusChange((status) => { … });
+const offReady = api.moonrakerFor(api.printer.id).onReady(() => initialLoad());
 ```
 
 - `readyState` is the socket state (not Klipper's!). `'closed'` also holds between
@@ -376,8 +374,8 @@ const offReady = api.moonraker().onReady(() => initialLoad());
 - A URL change in Settings and the overlay's **Retry** are different: they replace the
   proxy, and `subscribe`, `onNotify`, `onReady`, `onConnectionStatusChange` and `poll`
   registrations on the old one are dropped. Your handle then talks to the new proxy,
-  but only for calls made afterwards. For the active printer `onPrinterChange` reports a
-  URL change; Retry raises no event.
+  but only for calls made afterwards. `onPrintersChange` reports URL changes for every
+  printer (`onPrinterChange` covers the active one); Retry raises no event.
 - You do not need to show "no connection" to the user yourself: the host draws the
   offline overlay. But your element must not crash on rejected `request`s.
 
@@ -396,7 +394,7 @@ Binary operations (uploading and downloading files, thumbnails, camera snapshots
 go over plain HTTP to Moonraker, **bypassing the proxy, cache and guards**:
 
 ```ts
-const base = api.moonraker().httpBaseUrl;           // e.g. http://printer.local:7125
+const base = api.moonrakerFor(api.printer.id).httpBaseUrl; // e.g. http://printer.local:7125
 const encoded = path.split('/').map(encodeURIComponent).join('/');   // keep the slashes
 const thumb = `${base}/server/files/gcodes/${encoded}`;
 ```
@@ -404,7 +402,7 @@ const thumb = `${base}/server/files/gcodes/${encoded}`;
 Headers for an authorized Moonraker:
 
 ```ts
-const token = api.moonraker().authToken;            // string | null
+const token = api.moonrakerFor(api.printer.id).authToken; // string | null
 fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 ```
 

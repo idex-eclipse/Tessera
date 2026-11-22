@@ -287,7 +287,7 @@ fleet-режимом, offline-overlay и диалогами хоста. Типо
 class AcmeDialog extends HTMLElement {
   #open = false;
   connectedCallback() {
-    this.#off = this.api.moonraker().subscribe({ manual_probe: ['is_active'] }, (d) => {
+    this.#off = this.api.moonrakerFor(this.api.printer.id).subscribe({ manual_probe: ['is_active'] }, (d) => {
       this.#open = d.manual_probe?.is_active === true;
       this.#render();
     });
@@ -358,7 +358,7 @@ class AcmeDialog extends HTMLElement {
   не должен выполнять действий.
 - Нет предмета (датчик исчез) → рисуйте состояние *missing*: пунктирная
   рамка и приглушённый текст.
-- Действия чипа — обычный `api.moonraker().request()`, поэтому гарды их видят.
+- Действия чипа — обычный `api.moonrakerFor(api.printer.id).request()`, поэтому гарды их видят.
 
 ### Picker (`pickerElement`)
 
@@ -404,8 +404,8 @@ Fleet-режим — полноэкранный drawer хоста со сетк�
   иначе CE пересоздавался бы.
 - Читайте данные **своего** принтера через `api.moonrakerFor(params.printerId)`,
   настройки — через `api.settingsFor(params.printerId)`.
-- `api.moonraker()` и `api.settings` здесь **не подходят**: они про *активный*
-  принтер, а fleet не меняет активного принтера.
+- В stable API нет shortcuts активного принтера: всегда используйте явный
+  `params.printerId`, переданный панели.
 - Панели складываются в стек внутри карточки в порядке регистрации. Пользователь
   может переупорядочить и скрыть панели («Редактировать панели» в шапке fleet);
   `titleKey` используется как название в этом редакторе.
