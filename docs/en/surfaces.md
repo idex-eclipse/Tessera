@@ -732,23 +732,39 @@ SDK wrapper, which does all of the above:
 A replacement of `overlay-test-z` takes over the manual probe Accept/Abort controls: it
 must provide them itself.
 
-`@core/system` (all `version: 1`, no params; a contribution gets only its own api), since
-owner version `4.0.0`:
+`@core/system` (all `version: 1`; a contribution gets only its own api):
 
-| Point | kind | mode | Where |
-|---|---|---|---|
-| `tabs` | tab | append | Machine page: extra tabs (deep link `?section=<extPluginId>/<id>`; no Alt+N hotkey) |
-| `tab-overview`, `tab-monitoring`, `tab-maintenance` | tab | replacement | the whole body of a built-in tab (the tab button stays) |
-| `panel-info`, `panel-sd`, `panel-charts` | panel | replacement | System tab: system information, SD card, process charts |
-| `panel-host`, `panel-mcu`, `panel-tmc` | panel | replacement | Monitoring tab: host, MCUs, TMC drivers |
-| `panel-storage`, `panel-database`, `panel-updates` | panel | replacement | Storage & updates tab: storage, database, updates |
-| `panels-overview`, `panels-monitoring`, `panels-maintenance` | panel | append | extra panels at the end of the respective tab |
-| `widget-status` | element | replacement | the whole content of the Status widget (its header stays) |
-| `banner-status`, `banner-klipper-error` | element | replacement | the whole body of the print status and Klipper error banners; the plugin still decides **when** they are shown |
-| `banner-status-collapsed`, `banner-klipper-error-collapsed` | element | replacement | the whole body of the collapsed banners |
-| `banner-status-progress`, `banner-status-eta` | element | replacement | the progress bar with the percentage, and the ETA (while printing) |
-| `banner-status-actions` | action | append | extra buttons next to Pause/Resume/Cancel while printing; context `{ state: 'printing' \| 'paused', filename: string }` |
-| `panels-right` | panel | append | extra sections of the right panel after the built-in ones (expanded view only) |
+| Point | kind | mode | Since | Where |
+|---|---|---|---|---|
+| `tabs` | tab | append | 4.0.0 | Machine page: extra tabs (deep link `?section=<extPluginId>/<id>`; no Alt+N hotkey) |
+| `tab-overview`, `tab-monitoring`, `tab-maintenance` | tab | replacement | 4.0.0 | the whole body of a built-in tab (the tab button stays) |
+| `panel-info`, `panel-sd`, `panel-charts` | panel | replacement | 4.0.0 | System tab: system information, SD card, process charts |
+| `panel-host`, `panel-mcu`, `panel-tmc` | panel | replacement | 4.0.0 | Monitoring tab: host, MCUs, TMC drivers |
+| `panel-storage`, `panel-database`, `panel-updates` | panel | replacement | 4.0.0 | Storage & updates tab: storage, database, updates |
+| `panels-overview`, `panels-monitoring`, `panels-maintenance` | panel | append | 4.0.0 | extra panels at the end of the respective tab |
+| `widget-status` | element | replacement | 4.0.0 | the whole content of the Status widget (its header stays) |
+| `banner-status`, `banner-klipper-error` | element | replacement | 4.0.0 | the whole body of the print status and Klipper error banners; the plugin still decides **when** they are shown |
+| `banner-status-collapsed`, `banner-klipper-error-collapsed` | element | replacement | 4.0.0 | the whole body of the collapsed banners |
+| `banner-status-progress`, `banner-status-eta` | element | replacement | 4.0.0 | the progress bar with the percentage, and the ETA (while printing) |
+| `banner-status-actions` | action | append | 4.0.0 | extra buttons next to Pause/Resume/Cancel while printing; context `{ state: 'printing' \| 'paused', filename: string }` |
+| `panels-right` | panel | append | 4.0.0 | extra sections of the right panel after the built-in ones (expanded view only) |
+| `fleet-health-sections` | element | append | 5.3.0 | extra sections of a printer card's Fleet Health popover; params `{ printerId: string }` |
+
+`fleet-health-sections` contributions stay mounted for the lifetime of their Fleet panel,
+including while its popover is closed. This lets a contribution observe its own
+printer-bound state and update the indicator without requiring the user to open the popover.
+The contribution should render a compact section, or render nothing when it has no details.
+It must use the `printerId` parameter with printer-bound handles such as `moonrakerFor` and
+`settingsFor`, rather than relying on the active printer.
+
+To report aggregate health, the contribution dispatches a bubbling and composed
+`mpu:fleet-health-report` custom event with
+`detail: { severity: 'none' | 'warn' | 'crit'; count: number }`. `none` requires `count: 0`;
+`warn` and `crit` require a positive integer count. System keeps the latest valid report per
+contribution, clears it when the contribution unmounts, and clears and logs a malformed report.
+The worst report is combined with System's own machine health; critical machine problems still
+produce a critical indicator. System receives only severity and count—the contribution owns its
+details, actions and navigation.
 
 Not extensible on purpose: the E-stop button, upload & print, and the Pause/Resume/Cancel
 buttons (see "Modes" above). Only a replacement of `banner-status` as a whole takes them over,

@@ -732,23 +732,38 @@ SDK даёт обёртку, которая делает всё это сама:
 Замена `overlay-test-z` забирает кнопки Accept/Abort ручного зондирования: вклад обязан
 предоставить их сам.
 
-`@core/system` (все `version: 1`, без params; вклад получает только свой api), начиная с
-версии владельца `4.0.0`:
+`@core/system` (все `version: 1`; вклад получает только свой api):
 
-| Точка | kind | mode | Где |
-|---|---|---|---|
-| `tabs` | tab | append | страница «Система»: свои вкладки (deep link `?section=<extPluginId>/<id>`; горячей клавиши Alt+N нет) |
-| `tab-overview`, `tab-monitoring`, `tab-maintenance` | tab | replacement | всё тело встроенной вкладки (кнопка вкладки остаётся) |
-| `panel-info`, `panel-sd`, `panel-charts` | panel | replacement | вкладка «Система»: информация о системе, SD-карта, графики процессов |
-| `panel-host`, `panel-mcu`, `panel-tmc` | panel | replacement | вкладка «Мониторинг»: хост, MCU, драйверы TMC |
-| `panel-storage`, `panel-database`, `panel-updates` | panel | replacement | вкладка «Хранилище и обновления»: хранилище, база данных, обновления |
-| `panels-overview`, `panels-monitoring`, `panels-maintenance` | panel | append | свои панели в конце соответствующей вкладки |
-| `widget-status` | element | replacement | всё содержимое виджета «Статус» (шапка остаётся) |
-| `banner-status`, `banner-klipper-error` | element | replacement | всё тело баннеров статуса печати и ошибки Klipper; **когда** их показывать, решает плагин |
-| `banner-status-collapsed`, `banner-klipper-error-collapsed` | element | replacement | всё тело свёрнутых баннеров |
-| `banner-status-progress`, `banner-status-eta` | element | replacement | полоса прогресса с процентами и оставшееся время (во время печати) |
-| `banner-status-actions` | action | append | дополнительные кнопки рядом с Pause/Resume/Cancel во время печати; контекст `{ state: 'printing' \| 'paused', filename: string }` |
-| `panels-right` | panel | append | свои секции правой панели после встроенных (только в развёрнутом виде) |
+| Точка | kind | mode | Начиная с | Где |
+|---|---|---|---|---|
+| `tabs` | tab | append | 4.0.0 | страница «Система»: свои вкладки (deep link `?section=<extPluginId>/<id>`; горячей клавиши Alt+N нет) |
+| `tab-overview`, `tab-monitoring`, `tab-maintenance` | tab | replacement | 4.0.0 | всё тело встроенной вкладки (кнопка вкладки остаётся) |
+| `panel-info`, `panel-sd`, `panel-charts` | panel | replacement | 4.0.0 | вкладка «Система»: информация о системе, SD-карта, графики процессов |
+| `panel-host`, `panel-mcu`, `panel-tmc` | panel | replacement | 4.0.0 | вкладка «Мониторинг»: хост, MCU, драйверы TMC |
+| `panel-storage`, `panel-database`, `panel-updates` | panel | replacement | 4.0.0 | вкладка «Хранилище и обновления»: хранилище, база данных, обновления |
+| `panels-overview`, `panels-monitoring`, `panels-maintenance` | panel | append | 4.0.0 | свои панели в конце соответствующей вкладки |
+| `widget-status` | element | replacement | 4.0.0 | всё содержимое виджета «Статус» (шапка остаётся) |
+| `banner-status`, `banner-klipper-error` | element | replacement | 4.0.0 | всё тело баннеров статуса печати и ошибки Klipper; **когда** их показывать, решает плагин |
+| `banner-status-collapsed`, `banner-klipper-error-collapsed` | element | replacement | 4.0.0 | всё тело свёрнутых баннеров |
+| `banner-status-progress`, `banner-status-eta` | element | replacement | 4.0.0 | полоса прогресса с процентами и оставшееся время (во время печати) |
+| `banner-status-actions` | action | append | 4.0.0 | дополнительные кнопки рядом с Pause/Resume/Cancel во время печати; контекст `{ state: 'printing' \| 'paused', filename: string }` |
+| `panels-right` | panel | append | 4.0.0 | свои секции правой панели после встроенных (только в развёрнутом виде) |
+| `fleet-health-sections` | element | append | 5.3.0 | дополнительные секции popover «Состояние машины» в карточке принтера; params `{ printerId: string }` |
+
+Вклады `fleet-health-sections` остаются смонтированными всё время жизни своей Fleet-панели,
+в том числе при закрытом popover. Поэтому вклад может следить за состоянием своего принтера и
+обновлять индикатор без предварительного открытия пользователем. Вклад должен вывести компактную
+секцию либо ничего, если подробностей нет. `printerId` нужно передавать в привязанные к принтеру
+объекты, например `moonrakerFor` и `settingsFor`, а не полагаться на активный принтер.
+
+Для передачи сводного состояния вклад отправляет bubbling/composed CustomEvent
+`mpu:fleet-health-report` с
+`detail: { severity: 'none' | 'warn' | 'crit'; count: number }`. Для `none` требуется `count: 0`,
+для `warn` и `crit` — положительное целое число. System хранит последний корректный отчёт каждого
+вклада, удаляет его при размонтировании, а некорректный отчёт сбрасывает и записывает в лог.
+Худший отчёт объединяется с собственным состоянием машины; критические проблемы машины остаются
+критическими. System получает только срочность и количество — подробности, действия и навигация
+остаются у вклада.
 
 Намеренно не расширяются: кнопка E-stop, загрузка и печать, кнопки Pause/Resume/Cancel
 (см. «Режимы» выше). Забрать их может только замена `banner-status` целиком, и тогда вклад
