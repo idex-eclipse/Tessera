@@ -11,14 +11,13 @@ The schema is versioned with the `mpu:v2:` prefix.
 |---|---|
 | `mpu:v2:printers` | `[{ id, name, url }]` — the printer registry |
 | `mpu:v2:activePrinter` | the active printer's `id` |
-| `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion, pluginApi?, pluginName? }]` |
-| `mpu:v2:host-notices` | per-browser fingerprints of host compatibility notices; not mirrored to Moonraker |
+| `mpu:v2:plugins` | remote plugins: `[{ manifestUrl, enabled, printerIds, source, installedVersion }]` |
 | `mpu:v2:ui` | device UI: theme, language, `dir`, panel sizes, background, accent, fleet, hotkey overrides |
 | `mpu:v2:custom-font` | one uploaded WOFF2, WOFF, TTF or OTF font (up to 1 MiB), as a data URL and file name; mirrored separately |
 | `mpu:v2:editor-colors` | config editor syntax colors: `{ v: 1, light: { <token>: '#rrggbb' }, dark: { … } }` — only the tokens the user changed; applied as CSS variables `--tok-<token>` (editor header → settings button) |
 | `mpu:v2:settings:<printerId>` | printer settings: page visibility, widget providers, dashboard layout, chips |
 | `mpu:v2:settings:GLOBAL` | the same, shared by all printers (if dashboard sync is on; see below) |
-| `mpu:v2:plugin-settings:<printerId>:<pluginId>` | a plugin's settings for a printer (`api.settings`) |
+| `mpu:v2:plugin-settings:<printerId>:<pluginId>` | a plugin's settings for a printer (`api.settingsFor(printerId)`) |
 | `mpu:v2:plugin-settings:GLOBAL:<pluginId>` | a plugin's settings shared across the device (sync on) |
 | `mpu:v2:settingsSync` | `{ plugins: { <pluginId>: boolean }, dashboard: boolean }` — sync flags |
 | `mpu:v2:auth:<printerId>` | the Moonraker authorization token for a printer |
@@ -35,7 +34,6 @@ bundle.
 | `printerIds` | empty — on all printers; otherwise only on those listed (applies to chips and hotkeys) |
 | `source` | `'catalog'` or `'url'` — where it was installed from |
 | `installedVersion` | the version at install time (for the "update available" badge) |
-| `pluginApi`, `pluginName` | last verified API declaration and name, used when an installed plugin's manifest is offline |
 
 ### `mpu:v2:ui`
 
@@ -133,7 +131,7 @@ transfer concerns its set):
 reload. Later writes notify only subscriptions made after the switch, so re-subscribe
 if your plugin toggles sync while it runs.
 
-Consequence for developers: **anything you write to `api.settings` may end up shared
+Consequence for developers: **anything you write through `api.settingsFor(printerId)` may end up shared
 across all printers** (table columns, sortings, user prefs). Do not store things
 there that must be unique per printer (calibrations, a specific camera's URL), or
 provide keys that include the printer identifier.

@@ -36,8 +36,8 @@ the host.
 
 What a plugin **can** do:
 
-- read printer state and call Moonraker methods (`api.moonraker()`);
-- store its own settings (`api.settings`);
+- read printer state and call Moonraker methods (`api.moonrakerFor(printerId)`);
+- store its own settings (`api.settingsFor(printerId)`);
 - show pages, dashboard widgets, banners, overlays, quick-access chips, fleet-mode panels;
 - check its own and other plugins' requests with guards (`allow`/`deny`/`freeze`);
 - register hotkeys;
@@ -211,14 +211,11 @@ SDK hooks (`@sdk/svelte`):
 | Hook | Returns |
 |---|---|
 | `usePluginApi()` | the full `PluginApi` (throws outside a plugin context) |
-| `useMoonraker()` | `api.moonraker()` — the stable handle that follows the **active** printer; throws if there is none |
 | `useI18n()` | `api.i18n` |
 | `useWidget()` | same as `usePluginApi()` (for widgets) |
 
-> The handle re-resolves the active printer on each call, but existing subscriptions
-> stay on the old printer. To react to a printer change, subscribe to
-> `api.onPrinterChange` and re-create your subscriptions (or use
-> `api.moonrakerFor(printerId)` with an explicit printer).
+Use `api.moonrakerFor(printerId)` directly. Stable API 1.0 deliberately has no hook
+or handle that follows the active printer implicitly.
 
 ### Build
 
@@ -283,15 +280,13 @@ at runtime. What is there for layout:
 
 ### Reading settings reactively (core plugins)
 
-`api.settings.onChange` calls back as `cb('', allSettings)`: the key is always empty
-([plugin-api.md](plugin-api.md#settings)), and the subscription stays bound to the printer
-that was active when you subscribed. Two mistakes follow from that, and both used to make
-widgets keep stale values after settings arrived from the Moonraker database or after a printer
-switch:
+`api.settingsFor(printerId).onChange` calls back as `cb('', allSettings)`: the key is
+always empty ([plugin-api.md](plugin-api.md#settings)). Core helpers bind the explicit
+printer and rebuild that binding when the active printer changes. Two common mistakes
+used to leave widgets with stale values after settings arrived from the Moonraker database:
 
 - `onChange((k) => { if (k === 'my.key') … })` never fires, because `k` is `''`;
-- a one-off `api.settings.get(...)` at mount, or an `onChange` subscribed once, ignores a later
-  printer switch.
+- a one-off `api.settingsFor(api.printer.id).get(...)` at mount ignores later database updates.
 
 Core plugins therefore read settings **only** through `plugins/shared/settings`:
 
@@ -306,7 +301,7 @@ const stop = watchSettings(api, () => { cfg = readCfg(); }); // re-read on ANY c
 
 Always give a default (the host does not apply `manifest.defaultSettings`) and a parser that
 falls back for malformed data: settings are plain JSON that an import or another browser may
-have written. Do not store per-printer data under `api.settings` if sync may be on
+have written. Do not store per-printer data through `api.settingsFor(printerId)` if sync may be on
 ([settings.md](settings.md#synchronization-between-printers-sync)).
 
 ### Layout of built-in plugins
@@ -392,7 +387,7 @@ The parameters are additionally mirrored into the element's `dataset`
 - Releases subscriptions in `disconnectedCallback`. The host may unmount the
   element at any moment (route change, closing fleet, switching tabs).
 - Does not assume the element lives forever: state that must survive unmounting
-  is kept at module level (module state) or in `api.settings`.
+  is kept at module level (module state) or in `api.settingsFor(printerId)`.
 
 ### Which `params` each surface receives
 
@@ -421,7 +416,7 @@ interface PluginManifest {
   name: string;          // required, display name
   version: string;       // required, a string (compared as a string!)
   entry: string;         // required, path to the ES module relative to the manifest
-  pluginApi?: string;    // "MAJOR.MINOR" of the plugin contract you need; none = "0.7"
+  pluginApi?: string;    // "MAJOR.MINOR"; omission is legacy 0.7 and rejected by stable 1.x
   dependencies?: Record<string, string>; // minimal versions of other plugins, see "Dependencies"
 
   pages?: PageContribution[];
@@ -458,18 +453,14 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 - Extension points are not part of the plugin API: the set of points belongs to the
   owner's version, built-in plugins included (see [Dependencies](#dependencies)).
 - A plugin fits when its MAJOR equals the host's and its MINOR is not above it.
-  The 1.2 host also accepts `0.7`–`0.14` during the migration window; `0.15+` is unsupported.
-  A later release will end support for the old 0.x contract.
-- Put the version where everything you use first appeared. A plugin without the field
-  is `0.7` (the contract before extension points); one that extends points or states
-  `dependencies` needs at least `0.8`.
+  Stable hosts 1.x reject every 0.x contract as another MAJOR.
+- Put the version where everything you use first appeared. A missing field and the
+  historical integer `1` are diagnosed as `0.7`, which is incompatible with a 1.x host.
 - An incompatible plugin is not installed (`tessera-ext`, the registry block refuses it)
   and not loaded (the host does not import it and lists it under "Not loaded" in
   Settings → Plugins with "update Tessera"). The catalog behaves like the registry
   block: no Update button for an incompatible version, and a failed update leaves the
   running version untouched.
-- While API 1.2 accepts old plugins, the host shows a one-time compatibility notice for
-  installed `0.7`–`0.14` plugins, including disabled ones. It repeats if that set changes.
 
 | Version | What appeared |
 |---|---|
@@ -481,7 +472,7 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 | `0.12` | `klippyStream`: denylist instead of allowlist (the bridge is open for reads), `onAck`; `klippyRequest`: one-shot requests with an answer over `/klippysocket` |
 | `0.13` | `manifest.services` and `api.services`: the host proxy to the plugin's external HTTP services, the secret kept on the printer ([plugin-api.md](plugin-api.md#services)) |
 | `0.14` | optional plugin-owned Custom Element actions in `api.notifications.push` ([plugin-api.md](plugin-api.md#notifications)) |
-| `1.0` | `api.moonraker()` and `api.settings` deprecated; use explicit printer IDs through `moonrakerFor` and `settingsFor` |
+| `1.0` | removed `api.moonraker()`, `api.settings` and `useMoonraker`; `moonrakerFor` and `settingsFor` require explicit printer IDs |
 | `1.1` | optional `hotkeys[].when` for contextual editor bindings ([hotkeys.md](hotkeys.md#modal-editor-bindings)) |
 | `1.2` | optional `printerPanels[].defaultSize` for new or reset fleet layouts |
 
@@ -492,7 +483,7 @@ manifest and the CE contract. The host keeps its own in `plugin-sdk/src/api-leve
 ```json
 {
   "id": "tessera/shaketune",
-  "pluginApi": "0.8",
+  "pluginApi": "1.0",
   "dependencies": { "@core/calibrations": "3.0.0" },
   "extensions": [{ "point": "@core/calibrations#panel-graphs", "kind": "panel", "version": 1, … }]
 }
@@ -685,18 +676,17 @@ Collected from the actual behaviour of the code:
    to the component as a plain value, and the host does not update a live element: a new
    query string (`?file=`) or a new `narrow` means a new element and a fresh component.
    State inside it is lost, so keep what must survive in settings or at module level.
-2. **`api.settings.onChange` calls the callback as `cb('', allPluginSettings)`.**
+2. **`api.settingsFor(printerId).onChange` calls the callback as `cb('', allPluginSettings)`.**
    The first argument is always an empty string and the second is the **whole**
    settings object of the current printer, not a single value. Compare the keys
    you care about yourself.
-3. **With no active printer** `api.printer` = `{ id: '', name: '', url: '' }`,
-   `api.moonraker()` throws synchronously, `api.settings.get` returns `undefined`,
-   and `set` silently does nothing.
+3. **With no active printer** `api.printer` = `{ id: '', name: '', url: '' }`.
+   Do not pass the empty ID to `moonrakerFor` or `settingsFor`; both require a configured printer.
 4. **`onPrinterChange` fires only for a non-empty printer**; resetting the active
    printer does not reach the callback.
 5. **`defaultSettings` from the manifest is currently not applied by the host.**
-   For default values write `api.settings.get<T>(key) ?? defaultValue`.
-6. **`moonraker().request()` can hang for minutes:** a request intercepted by a
+   For default values write `api.settingsFor(printerId).get<T>(key) ?? defaultValue`.
+6. **`moonrakerFor(printerId).request()` can hang for minutes:** a request intercepted by a
    guard with `freeze` waits for the user's decision (up to 10 minutes). Do not
    put short timeouts on it and do not assume "long" means "broken".
 7. **`subscribe()` and `poll()` are not guarded**, only `request()` is. Direct

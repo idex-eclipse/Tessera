@@ -2,9 +2,8 @@
 
 Плагины не открывают WebSocket сами. Хост держит **пул прокси** — по одному
 соединению на каждый Moonraker (нормализованный origin принтера) — и выдаёт
-плагину **handle**: `api.moonraker()` для активного принтера или
-`api.moonrakerFor(printerId)` для любого.
-`api.moonraker()` устарел в plugin API 1.0; новые плагины должны передавать ID принтера явно.
+плагину **handle** через `api.moonrakerFor(printerId)`. Stable plugin API 1.0 всегда
+требует явный ID настроенного принтера.
 
 Что даёт прокси:
 
@@ -54,9 +53,9 @@ interface MoonrakerProxyHandle {
 JSON-RPC вызов Moonraker по WebSocket. Возвращает `result` ответа.
 
 ```ts
-const info = await api.moonraker().request<{ state: string }>('printer.info');
+const info = await api.moonrakerFor(api.printer.id).request<{ state: string }>('printer.info');
 
-await api.moonraker().request('printer.gcode.script', { script: 'G28' });
+await api.moonrakerFor(api.printer.id).request('printer.gcode.script', { script: 'G28' });
 ```
 
 Путь запроса:
@@ -79,12 +78,11 @@ await api.moonraker().request('printer.gcode.script', { script: 'G28' });
 | Гард не ответил / парковка истекла | `GuardError` | `'guard_timeout'` |
 | Идентичный запрос уже ждёт решения | `GuardError` | `'already_pending'` |
 | Принтер удалён (для `moonrakerFor`) | `Error` | `printer '…' is not configured` |
-| Нет активного принтера (для сохранённого handle из `moonraker()`) | `Error` | `[plugin-api] No active printer for moonraker()` |
 | Прокси заменён, пока запрос был в полёте | `Error` | `Moonraker proxy disposed` |
 
 ```ts
 try {
-  await api.moonraker().request('printer.print.start', { filename });
+  await api.moonrakerFor(api.printer.id).request('printer.print.start', { filename });
 } catch (e) {
   const r = (e as { rejection?: { code: string; pluginId?: string; reasonKey?: string } }).rejection;
   if (r?.code === 'denied_by_guard') showDenied(api.i18n.t(r.reasonKey ?? 'guards.denied'));
@@ -140,7 +138,7 @@ try {
 Подписка на status-объекты Klipper (`printer.objects.subscribe`).
 
 ```ts
-const off = api.moonraker().subscribe(
+const off = api.moonrakerFor(api.printer.id).subscribe(
   { extruder: ['temperature', 'target'], heater_bed: ['temperature', 'target'] },
   (delta) => {
     // delta: { extruder?: { temperature?: number, target?: number }, heater_bed?: {...} }
@@ -212,10 +210,10 @@ Moonraker на `printer.objects.subscribe`. Значения, которых е�
 Подписка на произвольные JSON-RPC уведомления Moonraker по имени метода:
 
 ```ts
-api.moonraker().onNotify('notify_gcode_response', (params) => {
+api.moonrakerFor(api.printer.id).onNotify('notify_gcode_response', (params) => {
   const line = Array.isArray(params) ? params[0] : params;   // Moonraker шлёт массив строк
 });
-api.moonraker().onNotify('notify_filelist_changed', () => reload());
+api.moonrakerFor(api.printer.id).onNotify('notify_filelist_changed', () => reload());
 ```
 
 `params` отдаются «как есть» (чаще всего массив). Часто используемые события:
@@ -244,9 +242,9 @@ api.moonraker().onNotify('notify_filelist_changed', () => reload());
 функцию отмены.
 
 ```ts
-const stop = api.moonraker().poll('server.history.totals', undefined, 5000);
+const stop = api.moonrakerFor(api.printer.id).poll('server.history.totals', undefined, 5000);
 // …
-const totals = await api.moonraker().request('server.history.totals'); // из кэша
+const totals = await api.moonrakerFor(api.printer.id).request('server.history.totals'); // из кэша
 stop();
 ```
 
@@ -271,7 +269,7 @@ stop();
 прокси на том же origin, что и основной сокет, с тем же токеном. Возвращает функцию отмены.
 
 ```ts
-const stop = api.moonraker().klippyStream(
+const stop = api.moonrakerFor(api.printer.id).klippyStream(
   'load_cell/dump_force',
   { sensor: 'my_cell' },
   (batch) => {
@@ -335,8 +333,8 @@ stop();
 promise (а не предупреждение в консоль).
 
 ```ts
-const { objects } = (await api.moonraker().klippyRequest('objects/list')) as { objects: string[] };
-const info = await api.moonraker().klippyRequest('info', {}, { timeoutMs: 5000 });
+const { objects } = (await api.moonrakerFor(api.printer.id).klippyRequest('objects/list')) as { objects: string[] };
+const info = await api.moonrakerFor(api.printer.id).klippyRequest('info', {}, { timeoutMs: 5000 });
 ```
 
 - resolves значением `result` Klipper; rejected с текстом `error.message`, если Klipper
@@ -353,10 +351,10 @@ const info = await api.moonraker().klippyRequest('info', {}, { timeoutMs: 5000 }
 ## Состояние соединения
 
 ```ts
-api.moonraker().readyState;                 // 'connecting' | 'open' | 'closed'
+api.moonrakerFor(api.printer.id).readyState; // 'connecting' | 'open' | 'closed'
 
-const off = api.moonraker().onConnectionStatusChange((status) => { … });
-const offReady = api.moonraker().onReady(() => initialLoad());
+const off = api.moonrakerFor(api.printer.id).onConnectionStatusChange((status) => { … });
+const offReady = api.moonrakerFor(api.printer.id).onReady(() => initialLoad());
 ```
 
 - `readyState` — состояние сокета (не Klipper!). `'closed'` — между попытками
@@ -373,8 +371,8 @@ const offReady = api.moonraker().onReady(() => initialLoad());
 - Смена URL в Settings и кнопка **Retry** в оверлее — другое дело: они заменяют прокси, и
   регистрации `subscribe`, `onNotify`, `onReady`, `onConnectionStatusChange` и `poll` на
   старом сбрасываются. Ваш handle затем работает с новым прокси, но только для последующих
-  вызовов. Для активного принтера о смене URL сообщает `onPrinterChange`; Retry события не
-  даёт.
+  вызовов. О смене URL любого принтера сообщает `onPrintersChange` (`onPrinterChange`
+  покрывает активный); Retry события не даёт.
 - Показывать пользователю «нет связи» самому не нужно: хост рисует
   offline-overlay. Но ваш элемент должен не падать от отклонённых `request`.
 
@@ -393,7 +391,7 @@ Moonraker может быть доступен при `klippy is not ready`. Т�
 обычному HTTP к Moonraker, **мимо прокси, кэша и гардов**:
 
 ```ts
-const base = api.moonraker().httpBaseUrl;           // например http://printer.local:7125
+const base = api.moonrakerFor(api.printer.id).httpBaseUrl; // например http://printer.local:7125
 const encoded = path.split('/').map(encodeURIComponent).join('/');   // слэши сохраняются
 const thumb = `${base}/server/files/gcodes/${encoded}`;
 ```
@@ -401,7 +399,7 @@ const thumb = `${base}/server/files/gcodes/${encoded}`;
 Заголовки для авторизованного Moonraker:
 
 ```ts
-const token = api.moonraker().authToken;            // string | null
+const token = api.moonrakerFor(api.printer.id).authToken; // string | null
 fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 ```
 

@@ -33,7 +33,7 @@ offline  : the connection-state overlay (above main, overlays and right)
 fleet    : a full-screen drawer below the header, cards of all printers
 
 pool: Map<printerUrl, MoonrakerProxy>      ← infrastructure, not host state
-        │  api.moonraker() (WS: subscriptions + request + cache)   │ HTTP directly for files/previews
+        │  api.moonrakerFor(id) (subscriptions + request + cache) │ HTTP directly for files/previews
         ▼                                                           ▼
    Moonraker (WebSocket + HTTP)  →  Klipper
 ```
@@ -171,8 +171,8 @@ tab leads to that printer's dashboard.
 
 - The host has a printer registry; one of them is *active* (the tab).
 - The proxies of all printers live at the same time; switching the tab does not drop them.
-- Plugin API: `moonraker()` / `settings` — the active printer (sugar),
-  `moonrakerFor(id)` / `settingsFor(id)` — any printer.
+- Plugin API: `moonrakerFor(id)` / `settingsFor(id)` always bind operations to an
+  explicit configured printer.
 - **Fleet mode** is a drawer below the header that covers main, the sidebar and the
   right panel. Opening fleet does *not* change the active printer. A closed fleet is
   unmounted.

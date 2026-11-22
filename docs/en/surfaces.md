@@ -292,7 +292,7 @@ A typical skeleton:
 class AcmeDialog extends HTMLElement {
   #open = false;
   connectedCallback() {
-    this.#off = this.api.moonraker().subscribe({ manual_probe: ['is_active'] }, (d) => {
+    this.#off = this.api.moonrakerFor(this.api.printer.id).subscribe({ manual_probe: ['is_active'] }, (d) => {
       this.#open = d.manual_probe?.is_active === true;
       this.#render();
     });
@@ -363,7 +363,7 @@ interpret it. What items exist and how they look is up to the plugin.
   actions in this mode.
 - No item (a sensor disappeared) → draw the *missing* state: a dashed border and
   muted text.
-- A chip's actions are an ordinary `api.moonraker().request()`, so guards see them.
+- A chip's actions are an ordinary `api.moonrakerFor(api.printer.id).request()`, so guards see them.
 
 ### Picker (`pickerElement`)
 
@@ -409,8 +409,7 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   otherwise the CE would be re-created.
 - Read your printer's data through `api.moonrakerFor(params.printerId)` and
   settings through `api.settingsFor(params.printerId)`.
-- `api.moonraker()` and `api.settings` are **not suitable** here: they are about
-  the *active* printer, and fleet does not change the active printer.
+- The stable API has no active-printer shortcuts: use the explicit panel printer ID.
 - Panels occupy cells in a 12-column grid inside each card. The fleet grid editor
   lets the user drag panels, resize them from any side or corner (down to one row),
   and choose which panels appear through the labelled Panels button in the card
@@ -427,8 +426,7 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   changes its default.
 - Panels may offer actions for their own printer. Send requests through
   `api.moonrakerFor(params.printerId)` and read printer-specific settings through
-  `api.settingsFor(params.printerId)`; never use the active-printer handles for a
-  card action. Guards must check `ctx.targetPrinterId` rather than the active
+  `api.settingsFor(params.printerId)`. Guards must check `ctx.targetPrinterId` rather than the active
   printer (see [guards.md](guards.md#target-scoped-guards)).
 - To take part in the fleet **search and filters**, publish an index from the panel
   with `api.fleet.publish(params.printerId, { tags, searchText })` (in an

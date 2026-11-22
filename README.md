@@ -401,17 +401,11 @@ Surfaces are rendered as **Custom Elements**; the host injects the plugin API an
 The plugin API gives you:
 
 ```ts
-api.moonraker()             // guarded request(), subscribe(), onNotify(), poll(),
-                            // httpBaseUrl for binary traffic, readyState, auth token
+api.moonrakerFor(printerId) // guarded request(), subscribe(), onNotify(), poll(),
+                            // httpBaseUrl, readyState and auth token for an explicit printer
 
-api.moonrakerFor(printerId) // same guarded handle, but bound to a specific printer
-                            // (for fleet panels and multi-printer workflows)
-
-api.settings                // namespaced get/set/onChange for the active printer
+api.settingsFor(printerId)  // namespaced get/set/onChange for an explicit printer
                             // (or device-global when sync is enabled)
-
-api.settingsFor(printerId)  // same PluginSettingsApi, but scoped to a specific printer
-                            // (for fleet panels that persist per-printer prefs)
 
 api.i18n                    // t(key, params), live locale
 api.theme                   // current theme

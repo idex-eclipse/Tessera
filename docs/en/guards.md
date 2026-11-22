@@ -222,9 +222,8 @@ event any more.
 
 ## Target-scoped guards
 
-A request knows its target printer:
+A request always knows its explicit target printer:
 
-- `api.moonraker().request()` → the active printer at the time of the call;
 - `api.moonrakerFor(pid).request()` → `pid`.
 
 The handler receives the target in its **third argument** `ctx.targetPrinterId`

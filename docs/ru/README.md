@@ -31,11 +31,11 @@
 
 - **Как плагин попадает в интерфейс?** Манифест + ES-модуль, регистрирующий
   Custom Elements; хост выставляет элементу свойства `api` и `params`.
-- **Как получить данные принтера?** `api.moonraker().subscribe(…)` — см.
+- **Как получить данные принтера?** `api.moonrakerFor(api.printer.id).subscribe(…)` — см.
   [moonraker-proxy.md](moonraker-proxy.md).
-- **Как отправить команду?** `api.moonraker().request('printer.gcode.script', { script })`;
+- **Как отправить команду?** `api.moonrakerFor(api.printer.id).request('printer.gcode.script', { script })`;
   она пройдёт через гарды.
-- **Как сохранить настройку?** `api.settings.set/get` — см. [settings.md](settings.md).
+- **Как сохранить настройку?** `api.settingsFor(api.printer.id).set/get` — см. [settings.md](settings.md).
 - **Как обновить плагин?** Из реестра: Update в Settings → Plugins или `tessera-ext update --all`, затем F5.
   Плагин, положенный вручную: заменить файлы в `extensions/<имя>/`, поднять `version`,
   `tessera-ext sync`, Update в Settings, F5 при изменении кода.

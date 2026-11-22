@@ -84,10 +84,9 @@ tessera-ext branch dev          # ветка реестра (и в меню: S) 
 - в архиве только обычные файлы и папки: без симлинков, абсолютных путей и `..`;
 - архив не больше 20 МБ и распаковывается не больше чем в 100 МБ и 5000 записей;
 - `manifest.json` из архива совпадает с записью реестра по `id` и `version`;
-- `pluginApi` записи подходит хосту: MAJOR тот же, MINOR не больше хостового (сейчас `1.0`)
-  либо версия из временно поддерживаемого диапазона `0.7`–`0.14`
-  (см. [plugin-development.md](plugin-development.md#версия-plugin-api)). Целое `1` старых
-  записей означает `0.7`;
+- `pluginApi` записи подходит хосту: MAJOR тот же, MINOR не больше хостового
+  (сейчас `1.0`). Отсутствующее поле и историческое целое `1` распознаются как
+  `0.7` и отклоняются из-за другого MAJOR;
 - подходят [зависимости](plugin-development.md#зависимости): плагины из `requires` ставятся
   первыми, установленный, но старше `dependencies`, обновляется; CLI отказывает, если в
   реестре нет подходящей версии или `@core/*` этой Tessera (`host/dist/core-plugins.json`
@@ -181,7 +180,7 @@ node tools/extensions-sync.cjs  # в dev-checkout, тот же формат
     "icon": "optional",
     "description": "optional",
     "origin": "registry",
-    "pluginApi": "0.10",
+    "pluginApi": "1.0",
     "sha256": "…"
   }
 ]
@@ -280,7 +279,7 @@ UI. Без меню: `TESSERA_ALLOW_REMOTE_PLUGINS=1 bash ~/tessera/deploy/insta
 
 ## Безопасность и доверие
 
-- У плагина **полный** доступ к `api.moonraker()` (в том числе к G-code и
+- У плагина **полный** доступ к `api.moonrakerFor(printerId)` (в том числе к G-code и
   отключению питания): рантайм-песочницы и гранулярных разрешений нет.
   Устанавливайте только то, чему доверяете. Для install-по-URL хост требует
   явного подтверждения.
@@ -564,13 +563,14 @@ node <Tessera>/tools/registry-pack.cjs dist --dir hello --url-base . --out <Tess
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": "0.8", "requires": ["@core/calibrations"],
+  "pluginApi": "1.0", "requires": ["@core/calibrations"],
   "dependencies": { "@core/calibrations": "3.0.0" }, "url": "hello-1.2.0.tar.gz",
   "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
 
-`pluginApi` берётся из `manifest.pluginApi` (без поля — наследное `1`); `--plugin-api`
-только проверяет, что он ожидаемый. CLI отказывается ставить несовместимую запись.
+`pluginApi` берётся из `manifest.pluginApi`; манифест без поля считается legacy `0.7`
+и несовместим со stable `1.x`. `--plugin-api` только проверяет, что он ожидаемый.
+CLI отказывается ставить несовместимую запись.
 `requires` — все плагины, от которых он зависит (владельцы точек из `extensions` и ключи
 `manifest.dependencies`), `dependencies` — `manifest.dependencies` как есть. Поля раздельные:
 старые CLI принимают в `requires` только строки. Для упаковки нужен GNU tar (`--sort=name`).

@@ -7,6 +7,9 @@
 Все геттеры читают актуальное состояние при каждом обращении (принтер, тема,
 язык), поэтому объект `api` можно держать долго.
 
+Stable plugin API 1.0 требует явный ID принтера для Moonraker и настроек. Beta-shortcuts
+`moonraker()` и `settings` удалены, а плагины 0.x не импортируются хостом 1.x.
+
 ```ts
 interface PluginApi {
   readonly pluginId: string;
@@ -20,11 +23,9 @@ interface PluginApi {
   onPrintersChange(cb: (printers: PrinterInfo[]) => void): () => void;
 
   // Moonraker
-  moonraker(): MoonrakerProxyHandle;                   // deprecated: активный принтер
   moonrakerFor(printerId: string): MoonrakerProxyHandle;
 
   // настройки
-  settings: PluginSettingsApi;                         // deprecated: активный принтер
   settingsFor(printerId: string): PluginSettingsApi;
 
   // окружение
@@ -112,19 +113,6 @@ interface PrinterInfo { id: string; name: string; url: string }
 
 ## Moonraker
 
-### `moonraker()`
-
-Устарел в plugin API `1.0`. Для нового кода используйте `moonrakerFor(printerId)`.
-Старый метод остаётся доступен в этом релизе, поэтому плагины с API `0.7`–`0.14` продолжают работать.
-В следующем релизе Tessera поддержка этого старого контракта прекратится.
-
-Handle активного принтера. **Бросает синхронное исключение**, если активного
-принтера нет. Сам handle — стабильный объект, но он каждый вызов резолвит
-текущий активный принтер заново: после смены вкладки ваши подписки надо
-пересоздать (подписки не «переезжают» между принтерами). Если сохранённым handle
-пользуются без активного принтера, `request` отклоняется, а остальные члены бросают
-исключение.
-
 ### `moonrakerFor(printerId)`
 
 Полноценный handle (с гардами) любого принтера, независимо от активного.
@@ -157,8 +145,7 @@ Handle активного принтера. **Бросает синхронно�
 - **sync выключен (по умолчанию)** — свои настройки на каждый принтер;
 - **sync включён** — одни настройки на все принтеры устройства.
 
-API в обоих режимах одинаков, хост сам выбирает пространство имён. После переключения
-подпишитесь на `onChange` заново, см. [settings.md](settings.md).
+API в обоих режимах одинаков, хост сам выбирает пространство имён.
 
 ```ts
 interface PluginSettingsApi {
@@ -168,16 +155,11 @@ interface PluginSettingsApi {
 }
 ```
 
-### `settings` и `settingsFor(printerId)`
+### `settingsFor(printerId)`
 
-- `settings` устарел в plugin API `1.0`; для нового кода используйте
-  `settingsFor(printerId)`.
-- `settings` — настройки **активного** принтера. Без активного принтера
-  `get` возвращает `undefined`, `set` ничего не делает, `onChange` возвращает
-  пустую функцию. `get` и `set` следуют за активным принтером, а `onChange` остаётся
-  привязан к принтеру, активному при подписке: подписывайтесь заново в `onPrinterChange`.
-- `settingsFor(id)` — настройки конкретного принтера; несуществующий `id` →
-  исключение; объект стабилен.
+Возвращает настройки конкретного принтера. Несуществующий `printerId` вызывает
+исключение, возвращаемый объект стабилен. В stable plugin API 1.0 нет shortcut
+настроек активного принтера.
 
 ### Особенности `onChange`
 
@@ -186,7 +168,7 @@ interface PluginSettingsApi {
 хост не сообщает.
 
 ```ts
-api.settings.onChange((_key, all) => {
+api.settingsFor(printerId).onChange((_key, all) => {
   const next = (all as Record<string, unknown>).theme;
   if (next !== current) { /* ... */ }
 });
@@ -197,7 +179,7 @@ api.settings.onChange((_key, all) => {
 - Не сравнивайте аргумент `key` в `onChange`: он всегда `''`. Перечитывайте нужные ключи.
   Встроенные плагины используют `useSetting` / `watchSettings`
   ([plugin-development.md](plugin-development.md#реактивное-чтение-настроек-core-плагины)).
-- Значения по умолчанию задавайте на чтении: `api.settings.get('limit') ?? 50`
+- Значения по умолчанию задавайте на чтении: `api.settingsFor(printerId).get('limit') ?? 50`
   (`manifest.defaultSettings` хостом сейчас не применяется).
 - Ключи лучше называть с префиксом области (`columns:page:gcodes`).
 - Храните компактные значения. Всё лежит в `localStorage` (лимит браузера
@@ -318,7 +300,7 @@ API) через прокси на принтере. Доступно с `pluginA
 запрос не может поменять ни заголовок, ни пути.
 
 ```json
-"pluginApi": "0.13",
+"pluginApi": "1.0",
 "services": [
   { "name": "obico", "authHeader": "X-Api-Key", "allowPaths": ["api/v1/", "media/"] }
 ]
@@ -468,7 +450,7 @@ let unsubscribe = () => {};
 function bind() {
   unsubscribe();
   if (!api.printer.id) return;                       // нет активного принтера
-  unsubscribe = api.moonraker().subscribe(
+  unsubscribe = api.moonrakerFor(api.printer.id).subscribe(
     { extruder: ['temperature', 'target'] },
     (delta) => render(delta.extruder),
   );

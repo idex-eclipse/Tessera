@@ -7,6 +7,10 @@ are in [`plugin-sdk/src/types.ts`](../../plugin-sdk/src/types.ts).
 All getters read the current state on every access (printer, theme, language),
 so you can keep the `api` object for as long as you like.
 
+Stable plugin API 1.0 requires an explicit printer ID for Moonraker and settings.
+The beta shortcuts `moonraker()` and `settings` were removed, and 0.x plugins are
+not imported by a 1.x host.
+
 ```ts
 interface PluginApi {
   readonly pluginId: string;
@@ -20,11 +24,9 @@ interface PluginApi {
   onPrintersChange(cb: (printers: PrinterInfo[]) => void): () => void;
 
   // Moonraker
-  moonraker(): MoonrakerProxyHandle;                   // deprecated: active printer
   moonrakerFor(printerId: string): MoonrakerProxyHandle;
 
   // settings
-  settings: PluginSettingsApi;                         // deprecated: active printer
   settingsFor(printerId: string): PluginSettingsApi;
 
   // environment
@@ -112,18 +114,6 @@ receives the whole current list.
 
 ## Moonraker
 
-### `moonraker()`
-
-Deprecated in plugin API `1.0`. Use `moonrakerFor(printerId)` for new code.
-The old method remains available in this release, so plugins declaring API `0.7`–`0.14` still work.
-Support for that old contract ends in the next Tessera release.
-
-The handle of the active printer. **Throws synchronously** if there is no active
-printer. The handle itself is a stable object, but it resolves the current active
-printer anew on every call: after a tab switch your subscriptions must be
-re-created (subscriptions do not "move" between printers). If a kept handle is used
-with no active printer, `request` rejects and the other members throw.
-
 ### `moonrakerFor(printerId)`
 
 A full-featured handle (with guards) of any printer, regardless of the active one.
@@ -157,8 +147,7 @@ user (the plugin's sync toggle):
 - **sync off (default)** — separate settings per printer;
 - **sync on** — one set of settings for all printers on the device.
 
-The API is the same in both modes, the host picks the namespace. Re-subscribe
-`onChange` after a switch, see [settings.md](settings.md).
+The API is the same in both modes, and the host picks the namespace.
 
 ```ts
 interface PluginSettingsApi {
@@ -168,15 +157,10 @@ interface PluginSettingsApi {
 }
 ```
 
-### `settings` and `settingsFor(printerId)`
+### `settingsFor(printerId)`
 
-- `settings` is deprecated in plugin API `1.0`; use `settingsFor(printerId)` for new code.
-- `settings` — the **active** printer's settings. With no active printer `get`
-  returns `undefined`, `set` does nothing, `onChange` returns an empty function.
-  `get` and `set` follow the active printer, while `onChange` stays bound to the
-  printer that was active at subscribe time: re-subscribe in `onPrinterChange`.
-- `settingsFor(id)` — a specific printer's settings; a non-existent `id` →
-  exception; the object is stable.
+Returns a specific printer's settings. A non-existent `printerId` throws, and the
+returned object is stable. Stable plugin API 1.0 has no active-printer settings shortcut.
 
 ### `onChange` specifics
 
@@ -185,7 +169,7 @@ string and the value is the **whole** settings object of the plugin. The host do
 not tell you which key changed.
 
 ```ts
-api.settings.onChange((_key, all) => {
+api.settingsFor(printerId).onChange((_key, all) => {
   const next = (all as Record<string, unknown>).theme;
   if (next !== current) { /* ... */ }
 });
@@ -193,7 +177,7 @@ api.settings.onChange((_key, all) => {
 
 ### In practice
 
-- Set defaults on read: `api.settings.get('limit') ?? 50`
+- Set defaults on read: `api.settingsFor(printerId).get('limit') ?? 50`
   (`manifest.defaultSettings` is currently not applied by the host).
 - Do not compare the `key` argument of `onChange`: it is always `''`. Re-read the keys you
   care about. Built-in plugins use `useSetting` / `watchSettings`
@@ -317,7 +301,7 @@ host, like installing plugins.
 *installed* manifest; a request can never change the header or the paths.
 
 ```json
-"pluginApi": "0.13",
+"pluginApi": "1.0",
 "services": [
   { "name": "obico", "authHeader": "X-Api-Key", "allowPaths": ["api/v1/", "media/"] }
 ]
@@ -468,7 +452,7 @@ let unsubscribe = () => {};
 function bind() {
   unsubscribe();
   if (!api.printer.id) return;                       // no active printer
-  unsubscribe = api.moonraker().subscribe(
+  unsubscribe = api.moonrakerFor(api.printer.id).subscribe(
     { extruder: ['temperature', 'target'] },
     (delta) => render(delta.extruder),
   );

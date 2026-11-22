@@ -288,7 +288,7 @@ fleet-режимом, offline-overlay и диалогами хоста. Типо
 class AcmeDialog extends HTMLElement {
   #open = false;
   connectedCallback() {
-    this.#off = this.api.moonraker().subscribe({ manual_probe: ['is_active'] }, (d) => {
+    this.#off = this.api.moonrakerFor(this.api.printer.id).subscribe({ manual_probe: ['is_active'] }, (d) => {
       this.#open = d.manual_probe?.is_active === true;
       this.#render();
     });
@@ -359,7 +359,7 @@ class AcmeDialog extends HTMLElement {
   не должен выполнять действий.
 - Нет предмета (датчик исчез) → рисуйте состояние *missing*: пунктирная
   рамка и приглушённый текст.
-- Действия чипа — обычный `api.moonraker().request()`, поэтому гарды их видят.
+- Действия чипа — обычный `api.moonrakerFor(api.printer.id).request()`, поэтому гарды их видят.
 
 ### Picker (`pickerElement`)
 
@@ -406,8 +406,7 @@ Fleet-режим — полноэкранный drawer хоста со сетк�
   иначе CE пересоздавался бы.
 - Читайте данные **своего** принтера через `api.moonrakerFor(params.printerId)`,
   настройки — через `api.settingsFor(params.printerId)`.
-- `api.moonraker()` и `api.settings` здесь **не подходят**: они про *активный*
-  принтер, а fleet не меняет активного принтера.
+- В stable API нет shortcuts активного принтера: используйте явный ID панели.
 - Панели занимают ячейки 12-колоночной сетки внутри карточки. Редактор fleet
   позволяет перетаскивать панели, менять размер за любую сторону или угол (вплоть
   до одной строки) и выбирать видимые панели кнопкой «Панели» в заголовке карточки.
@@ -424,8 +423,7 @@ Fleet-режим — полноэкранный drawer хоста со сетк�
   перезаписывает уже сохранённые пользовательские раскладки.
 - Панели могут предлагать действия для своего принтера. Отправляйте запросы через
   `api.moonrakerFor(params.printerId)`, а настройки читайте через
-  `api.settingsFor(params.printerId)`; не используйте методы активного принтера
-  для действий из карточки. Гарды должны проверять `ctx.targetPrinterId`, а не
+  `api.settingsFor(params.printerId)`. Гарды должны проверять `ctx.targetPrinterId`, а не
   активный принтер (см. [guards.md](guards.md#target-scoped-гарды)).
 - Чтобы участвовать в **поиске и фильтрах** fleet, публикуйте индекс из панели:
   `api.fleet.publish(params.printerId, { tags, searchText })` (в `$effect` или

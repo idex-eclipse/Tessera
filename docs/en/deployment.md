@@ -86,9 +86,9 @@ What the CLI checks before anything lands in `extensions/`:
   paths, no `..`;
 - the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
-- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's (now `1.0`),
-  or the temporary legacy range `0.7`–`0.14` (see [plugin-development.md](plugin-development.md#plugin-api-version)).
-  The integer `1` of older entries means `0.7`;
+- `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's
+  (now `1.0`). Missing fields and the historical integer `1` are diagnosed as
+  `0.7` and rejected as a different MAJOR;
 - its [dependencies](plugin-development.md#dependencies) fit: plugins from `requires` are
   installed first, an installed one older than `dependencies` asks is updated; the CLI
   refuses when the registry has no fitting version, or when a `@core/*` plugin of this
@@ -185,7 +185,7 @@ The command walks `extensions/*/manifest.json` and writes:
     "icon": "optional",
     "description": "optional",
     "origin": "registry",
-    "pluginApi": "0.10",
+    "pluginApi": "1.0",
     "sha256": "…"
   }
 ]
@@ -285,7 +285,7 @@ cannot be disabled or removed.
 
 ## Security and trust
 
-- A plugin has **full** access to `api.moonraker()` (including G-code and power-off):
+- A plugin has **full** access to `api.moonrakerFor(printerId)` (including G-code and power-off):
   there is no runtime sandbox or granular permissions. Install only what you trust.
   For install-by-URL the host requires explicit confirmation.
 - A plugin runs in the context of the host page: it sees its origin's `localStorage`
@@ -570,13 +570,14 @@ in `registry/registry.json`:
 ```json
 { "schema": 1, "plugins": [ {
   "id": "acme/hello", "dir": "hello", "name": "Hello", "version": "1.2.0",
-  "pluginApi": "0.8", "requires": ["@core/calibrations"],
+  "pluginApi": "1.0", "requires": ["@core/calibrations"],
   "dependencies": { "@core/calibrations": "3.0.0" }, "url": "hello-1.2.0.tar.gz",
   "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
 
-`pluginApi` comes from `manifest.pluginApi` (a manifest without it gets the legacy `1`);
-`--plugin-api` only checks that it is the expected one. The CLI refuses an incompatible entry.
+`pluginApi` comes from `manifest.pluginApi`; a manifest without it is legacy `0.7`
+and incompatible with stable `1.x`. `--plugin-api` only checks that it is the expected
+one. The CLI refuses an incompatible entry.
 `requires` lists every plugin it depends on (owners of the points in `extensions` and the
 keys of `manifest.dependencies`); `dependencies` is `manifest.dependencies` as is. They are
 separate fields because older CLIs accept only strings in `requires`.

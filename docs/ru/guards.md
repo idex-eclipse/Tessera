@@ -222,9 +222,8 @@ interface GuardRejection {
 
 ## Target-scoped гарды
 
-Запрос знает принтера-адресата:
+Запрос всегда знает явно указанного принтера-адресата:
 
-- `api.moonraker().request()` → активный принтер на момент вызова;
 - `api.moonrakerFor(pid).request()` → `pid`.
 
 Обработчик получает адресата в **третьем аргументе** `ctx.targetPrinterId` (и в
