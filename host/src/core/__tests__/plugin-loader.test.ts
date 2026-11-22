@@ -1471,40 +1471,27 @@ describe('plugin-loader / eagerActivateSurfacePlugins', () => {
 // ------------------------------------------------------------------
 
 describe('plugin-loader / pluginApi', () => {
-  it('reads a disabled plugin manifest without importing its entry', async () => {
-    const manifest = createTestManifest({ id: '@third/disabled', pluginApi: '0.14' });
-    const fetchManifest = vi.fn(async () => manifest);
-    const importModule = vi.fn(async () => ({ default: {} }));
-    const { loader, settings } = setup({ fetchManifest, importModule });
-    settings.addPlugin('http://disabled/manifest.json');
-    settings.setPluginEnabled('http://disabled/manifest.json', false);
-
-    await expect(loader.readInstalledManifest('http://disabled/manifest.json')).resolves.toEqual(manifest);
-    expect(fetchManifest).toHaveBeenCalledOnce();
-    expect(importModule).not.toHaveBeenCalled();
-  });
-
-  it('loads plugins without pluginApi and with a compatible one', async () => {
+  it('loads plugins with a compatible API', async () => {
     const manifests: Record<string, PluginManifest> = {
-      'http://a/manifest.json': createTestManifest({ id: '@third/legacy' }),
       'http://b/manifest.json': createTestManifest({ id: '@third/current', pluginApi: PLUGIN_API }),
-      'http://c/manifest.json': createTestManifest({ id: '@third/last-legacy', pluginApi: '0.14' }),
+      'http://c/manifest.json': createTestManifest({ id: '@third/stable', pluginApi: '1.0' }),
     };
     const { loader, settings } = setup({ fetchManifest: vi.fn(async (url: string) => manifests[url]!) });
     for (const url of Object.keys(manifests)) settings.addPlugin(url);
 
     await loader.loadEnabledPlugins();
 
-    expect(loader.isLoaded('@third/legacy')).toBe(true);
     expect(loader.isLoaded('@third/current')).toBe(true);
-    expect(loader.isLoaded('@third/last-legacy')).toBe(true);
-    expect(settings.plugins.map((plugin) => plugin.pluginApi)).toEqual(['0.7', PLUGIN_API, '0.14']);
+    expect(loader.isLoaded('@third/stable')).toBe(true);
     expect(loader.getLoadFailures()).toEqual([]);
   });
 
   it('does not import a plugin that needs a newer or another major API', async () => {
     const [major, minor] = PLUGIN_API.split('.').map(Number);
+    const missingApiManifest = createTestManifest({ id: '@third/missing' });
+    delete missingApiManifest.pluginApi;
     const manifests: Record<string, PluginManifest> = {
+      'http://missing/manifest.json': missingApiManifest,
       'http://newer/manifest.json': createTestManifest({ id: '@third/newer', name: 'Newer', pluginApi: `${major}.${minor! + 1}` }),
       'http://major/manifest.json': createTestManifest({ id: '@third/major', pluginApi: `${major! + 1}.0` }),
       'http://bad/manifest.json': createTestManifest({ id: '@third/bad', pluginApi: 'latest' }),
@@ -1526,7 +1513,8 @@ describe('plugin-loader / pluginApi', () => {
     });
     expect(byId['@third/major']?.pluginApi?.problem).toBe('major');
     expect(byId['@third/bad']?.pluginApi?.problem).toBe('invalid');
-    expect(byId['@third/unsupported']?.pluginApi?.problem).toBe('newer');
+    expect(byId['@third/unsupported']?.pluginApi?.problem).toBe('major');
+    expect(byId['@third/missing']?.pluginApi?.problem).toBe('major');
   });
 
   it('installRemotePlugin throws on an incompatible plugin', async () => {

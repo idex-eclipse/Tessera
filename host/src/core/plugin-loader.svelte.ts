@@ -368,7 +368,6 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     activate(loaded);
 
     settings.addPlugin(manifestUrl, printerIds, source, version);
-    settings.rememberPluginApi(manifestUrl, formatPluginApi(loaded.manifest.pluginApi), loaded.manifest.name);
   }
 
   /**
@@ -437,7 +436,6 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     loadFailures.delete(manifestUrl);
     activate(next.loaded);
     settings.addPlugin(manifestUrl, printerIds, source, next.version);
-    settings.rememberPluginApi(manifestUrl, formatPluginApi(next.loaded.manifest.pluginApi), next.loaded.manifest.name);
 
     if (!wasEnabled) {
       setPluginEnabled(manifestUrl, false);
@@ -483,7 +481,6 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
         try {
           const { loaded } = await fetchRemote(plugin.manifestUrl);
           activate(loaded);
-          settings.rememberPluginApi(plugin.manifestUrl, formatPluginApi(loaded.manifest.pluginApi), loaded.manifest.name);
         } catch (error) {
           console.error(
             `[plugin-loader] Failed to load plugin from ${plugin.manifestUrl}:`,
@@ -540,13 +537,6 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
 
   function getLoadFailures(): PluginLoadFailure[] {
     return Array.from(loadFailures.values());
-  }
-
-  /** Fetches an installed manifest for compatibility checks without importing disabled code. */
-  async function readInstalledManifest(manifestUrl: string): Promise<PluginManifest> {
-    const manifest = await fetchManifest(manifestUrl);
-    validateManifest(manifest, manifestUrl);
-    return manifest;
   }
 
     // ------------------------------------------------------------------
@@ -620,7 +610,6 @@ export function createPluginLoader(deps: PluginLoaderDeps) {
     getLoadedPlugins,
     isLoaded,
     getLoadFailures,
-    readInstalledManifest,
   };
 }
 
