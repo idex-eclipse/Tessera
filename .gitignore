@@ -34,7 +34,9 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
-.claude/*
+.claude
+.codex
+graphify*
 
 #Klipper config reference
 Config_Reference.md
@@ -44,7 +46,7 @@ G-Codes.md
 *_PLAN.md
 CLAUDE.md
 AGENTS.md
-#release notes (only for local reference; not to be published)
+# Pre-release and archived release notes remain local references.
 *release-notes.md
 
 # Local test plugin
