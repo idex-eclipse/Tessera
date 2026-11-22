@@ -1,4 +1,4 @@
-import type { WidgetContribution, ExtensionPointDecl } from '../../../plugin-sdk/src/types';
+import type { WidgetContribution, ExtensionPointDecl, ExtensionContribution } from '../../../plugin-sdk/src/types';
 import type { ChipContribution } from '../../../plugin-sdk/src/types';
 
 export const filamentWidgets: WidgetContribution[] = [
@@ -20,6 +20,18 @@ export const filamentChips: ChipContribution[] = [
     element: 'mpu-core-widgets-chip-filament',
     pickerElement: 'mpu-core-widgets-chip-filament-picker',
     icon: 'kind-filament',
+  },
+];
+
+/** Adds read-only filament details and a critical summary to System's Fleet Health. */
+export const filamentHealthExtensions: ExtensionContribution[] = [
+  {
+    point: '@core/system#fleet-health-sections',
+    kind: 'element',
+    version: 1,
+    id: 'filament-health',
+    titleKey: 'widgets.filament.title',
+    element: 'mpu-core-widgets-fleet-filament-health',
   },
 ];
 

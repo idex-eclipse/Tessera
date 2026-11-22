@@ -764,6 +764,12 @@ The worst report is combined with System's own machine health; critical machine 
 produce a critical indicator. System receives only severity and count—the contribution owns its
 details, actions and navigation.
 
+Bundled Core Widgets 3.3.0 contributes a read-only filament sensor section here. It shows the
+current sensor states for that card's printer. A detected filament loss from an enabled sensor
+during printing or pause raises a critical notification, and Fleet Health stays critical until
+the sensor recovers or is disabled. A runout already present when the UI connects colors the
+indicator without replaying a notification. The monitor stays active when Fleet is closed.
+
 Not extensible on purpose: the E-stop button, upload & print, and the Pause/Resume/Cancel
 buttons (see "Modes" above). Only a replacement of `banner-status` as a whole takes them over,
 and then the contribution must provide print controls itself. A contribution in `panels-right`

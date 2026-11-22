@@ -343,6 +343,11 @@ export const en = {
   },
 
   fleet: {
+    filament: {
+      notReady: 'Filament sensor status unavailable',
+      unknown: 'Unknown',
+      runout: 'Filament lost on {printer}: {sensor}',
+    },
     camera: {
       title: 'Camera',
       noCameras: 'No enabled webcams on this printer',

@@ -100,6 +100,12 @@ defineMpuElement('mpu-core-widgets-fleet-camera', FleetCameraPanel);
 import FilamentWidget from './filament-sensors/components/widgets/Filament/FilamentWidget.svelte';
 defineMpuElement('mpu-widgets-filament', FilamentWidget);
 
+// Fleet Health uses a System extension, while the overlay watches every printer.
+import FilamentHealthSection from './filament-sensors/components/fleet/FilamentHealthSection.svelte';
+import FilamentMonitor from './filament-sensors/components/overlays/FilamentMonitor.svelte';
+defineMpuElement('mpu-core-widgets-fleet-filament-health', FilamentHealthSection);
+defineMpuElement('mpu-core-widgets-filament-monitor', FilamentMonitor);
+
 // Quick access chip
 import FilamentChip from './filament-sensors/components/chips/FilamentChip.svelte';
 import FilamentChipPicker from './filament-sensors/components/chips/FilamentChipPicker.svelte';

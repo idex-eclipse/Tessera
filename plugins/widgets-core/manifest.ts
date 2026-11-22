@@ -7,22 +7,27 @@ import { limitsPoints, limitsWidgets } from './limits/manifest';
 import { outputsChips, outputsPoints, outputsWidgets } from './outputs/manifest';
 import { ledsChips, ledsFleet, ledsPoints, ledsWidgets } from './leds/manifest';
 import { cameraFleet, cameraPoints, cameraWidgets } from './camera/manifest';
-import { filamentChips, filamentPoints, filamentWidgets } from './filament-sensors/manifest';
+import { filamentChips, filamentHealthExtensions, filamentPoints, filamentWidgets } from './filament-sensors/manifest';
 import { jobQueueFleet, jobQueuePoints, jobQueueWidgets } from './job-queue/manifest';
 import { sliderPoints } from '../shared/slider-field/extension-points';
 
 export const widgetsCoreManifest: PluginManifest = {
   id: '@core/widgets',
   name: 'Core Widgets',
-  version: '3.2.0',
+  version: '3.3.0',
   entry: '/plugins/widgets-core/index.js',
+  // This version of System owns the Fleet Health extension contract used below.
+  dependencies: { '@core/system': '5.3.0' },
   pages: [],
+  // The invisible overlay keeps runout notifications active outside Fleet mode.
+  overlays: [{ id: 'filament-monitor', element: 'mpu-core-widgets-filament-monitor' }],
   widgets: [...temperatureWidgets, ...macrosWidgets, 
     ...toolsWidgets, ...limitsWidgets, ...outputsWidgets, ...ledsWidgets, ...cameraWidgets, 
     ...filamentWidgets, ...jobQueueWidgets],
   chips: [...temperatureChips, ...macrosChips, ...outputsChips, ...ledsChips, ...toolsChips,
     ...filamentChips], 
   printerPanels: [...cameraFleet, ...toolsFleet, ...temperatureFleet, ...jobQueueFleet, ...ledsFleet],
+  extensions: [...filamentHealthExtensions],
   // Extensions replace whole widgets and their headers, large parts of Temperature / Tools / Camera, and
   // add panels to Temperature and Tools and tabs to Camera. All points are version 1; ids are unique across the plugin, so
   // they are prefixed by widget. The slider point belongs to the shared SliderField used by Tools, Outputs,
