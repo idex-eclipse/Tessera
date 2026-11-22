@@ -48,6 +48,7 @@ export const ru = {
       bannerStatusEta: 'Баннер статуса печати: оставшееся время',
       bannerStatusActions: 'Баннер статуса печати: дополнительные кнопки',
       panelsRight: 'Дополнительные секции правой панели',
+      fleetHealthSections: 'Секции состояния машины во Fleet',
     },
     health: {
       title: 'Состояние принтера',

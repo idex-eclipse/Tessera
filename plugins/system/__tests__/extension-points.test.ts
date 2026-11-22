@@ -32,6 +32,13 @@ function usedPointIds(): Set<string> {
 }
 
 describe('system / extension points', () => {
+  it('versions the Fleet Health contract with its owner plugin', () => {
+    expect(systemManifest.version).toBe('5.3.0');
+    expect(points).toContainEqual(expect.objectContaining({
+      id: 'fleet-health-sections', kind: 'element', mode: 'append', version: 1,
+    }));
+  });
+
   it('declares valid points with unique ids', () => {
     const validate = SURFACE_SPECS.extensionPoints.validate!;
     for (const p of points) expect(validate(p), p.id).toBe(true);

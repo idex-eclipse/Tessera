@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PluginApi } from '../../../../plugin-sdk/src/types.ts';
+  import type { ExtensionRef, PluginApi } from '../../../../plugin-sdk/src/types.ts';
 
   import { useWidget, useI18n } from '../../../../plugin-sdk/src/svelte/index';
 
@@ -20,6 +20,10 @@
     params?: Record<string, string>;
   } = $props();
 
+  type ExtensionSeverity = 'none' | 'warn' | 'crit';
+  type ExtensionReport = { severity: Exclude<ExtensionSeverity, 'none'>; count: number };
+
+  const REPORT_EVENT = 'mpu:fleet-health-report';
   const ctxApi = useWidget();
   const api = mpuApi ?? ctxApi;
   const i18n = useI18n();
@@ -28,12 +32,68 @@
   const printerId = injected?.printerId ?? api.printer.id;
 
   if (!injected?.printerId) {
-    console.warn(
-      '[fleet-health] printerId NOT injected — fallback to active printer.',
-    );
+    console.warn('[fleet-health] printerId NOT injected — fallback to active printer.');
   }
 
   const health = useHealth(api, printerId);
+
+  // Extension sections stay mounted while fleet is open so their summary can colour the
+  // compact indicator before the user opens the popover.
+  let extensionVersion = $state(0);
+  let extensionReports = $state<Record<string, ExtensionReport>>({});
+  const invalidReportWarnings = new Set<string>();
+  $effect(() => api.extensions.onChange(() => extensionVersion += 1));
+
+  let healthExtensions = $derived.by(() => {
+    void extensionVersion;
+    return api.extensions.list('fleet-health-sections', { printerId });
+  });
+
+  /** Removes one contribution's summary without disturbing other providers. */
+  function clearExtensionReport(ref: string): void {
+    if (!(ref in extensionReports)) return;
+    const next = { ...extensionReports };
+    delete next[ref];
+    extensionReports = next;
+  }
+
+  /** Accepts only the documented point contract so a broken extension cannot poison health. */
+  function readExtensionReport(detail: unknown): ExtensionReport | null | undefined {
+    if (!detail || typeof detail !== 'object') return undefined;
+    const { severity, count } = detail as { severity?: unknown; count?: unknown };
+    if (severity === 'none' && count === 0) return null;
+    if ((severity === 'warn' || severity === 'crit') && Number.isInteger(count) && (count as number) > 0) {
+      return { severity, count: count as number };
+    }
+    return undefined;
+  }
+
+  /** Mounts a provider with its own PluginApi and owns its latest summary by contribution ref. */
+  function mountHealthExtension(node: HTMLElement, ref: ExtensionRef) {
+    const onReport = (event: Event): void => {
+      const report = readExtensionReport((event as CustomEvent<unknown>).detail);
+      if (report === undefined) {
+        clearExtensionReport(ref.ref);
+        if (!invalidReportWarnings.has(ref.ref)) {
+          invalidReportWarnings.add(ref.ref);
+          console.warn(`[fleet-health] ${ref.ref} sent an invalid ${REPORT_EVENT} payload.`);
+        }
+        return;
+      }
+      if (report === null) clearExtensionReport(ref.ref);
+      else extensionReports = { ...extensionReports, [ref.ref]: report };
+    };
+    node.addEventListener(REPORT_EVENT, onReport);
+    const mounted = api.extensions.mount(node, ref.ref, { printerId });
+    return {
+      destroy(): void {
+        node.removeEventListener(REPORT_EVENT, onReport);
+        mounted.destroy();
+        clearExtensionReport(ref.ref);
+        invalidReportWarnings.delete(ref.ref);
+      },
+    };
+  }
 
   let issues = $derived(
     collectHealthIssues({
@@ -47,17 +107,26 @@
     }),
   );
 
-  // Итоговая окраска: худшая из известных проблем; без проблем — зелёный только при готовом
-  // Klipper, иначе серый «нет данных»: зелёное «OK» при лежащем Klipper вводило бы в заблуждение.
-  let worst = $derived.by<Severity>(() => {
-    if (issues.length > 0) return issues.some((i) => i.severity === 'crit') ? 'crit' : 'warn';
+  // Core health stays honest when Klipper is unavailable: no issues is not automatically OK.
+  let coreWorst = $derived.by<Severity>(() => {
+    if (issues.length > 0) return issues.some((issue) => issue.severity === 'crit') ? 'crit' : 'warn';
     return health.klippyReady ? 'ok' : 'unknown';
   });
 
-  // «Всё ок» в popover честно только при готовом Klipper; иначе данные MCU/драйверов устарели.
+  let extensionCount = $derived(Object.values(extensionReports).reduce((sum, report) => sum + report.count, 0));
+  let extensionCritical = $derived(
+    Object.values(extensionReports).reduce((sum, report) => sum + (report.severity === 'crit' ? report.count : 0), 0),
+  );
+  let worst = $derived.by<Severity>(() => {
+    const reports = Object.values(extensionReports);
+    if (coreWorst === 'crit' || reports.some((report) => report.severity === 'crit')) return 'crit';
+    if (coreWorst === 'warn' || reports.some((report) => report.severity === 'warn')) return 'warn';
+    return coreWorst;
+  });
+
   let allOk = $derived(issues.length === 0 && health.klippyReady);
 
-  // Группировка для popover: хост → MCU → драйверы; порядок групп фиксирован.
+  // Groups have a stable host → MCU → driver order in every locale and direction.
   const SCOPES = ['host', 'mcu', 'tmc'] as const;
   const scopeLabel: Record<(typeof SCOPES)[number], string> = {
     host: 'system.health.host',
@@ -67,47 +136,49 @@
   let grouped = $derived(
     SCOPES.map((scope) => ({
       scope,
-      issues: issues.filter((i) => i.scope === scope),
-    })).filter((g) => g.issues.length > 0),
+      issues: issues.filter((issue) => issue.scope === scope),
+    })).filter((group) => group.issues.length > 0),
   );
 
-  /** Динамические ключи (состояния шины) могут не иметь перевода — тогда показываем сырое значение. */
+  /** Dynamic bus-state keys may have no translation, so MCU values fall back to raw text. */
   function issueText(issue: HealthIssue): string {
-    const t = i18n.t(issue.textKey, issue.params ?? {});
-    return t === issue.textKey && issue.scope === 'mcu' && issue.textKey.startsWith('system.link.bus.')
+    const translated = i18n.t(issue.textKey, issue.params ?? {});
+    return translated === issue.textKey && issue.scope === 'mcu' && issue.textKey.startsWith('system.link.bus.')
       ? issue.textKey.slice('system.link.bus.'.length)
-      : t;
+      : translated;
   }
 
   let indicatorTitle = $derived.by(() => {
-    if (issues.length === 0) {
-      return allOk ? i18n.t('fleet.health.ok') : i18n.t('system.health.state.unknown');
-    }
+    const count = issues.length + extensionCount;
+    if (count === 0) return allOk ? i18n.t('fleet.health.ok') : i18n.t('system.health.state.unknown');
     return i18n.t('fleet.health.issuesTooltip', {
       state: i18n.t(`system.health.state.${worst}`),
-      count: issues.length,
-      crit: countCritical(issues),
+      count,
+      crit: countCritical(issues) + extensionCritical,
     });
   });
-
-  // ---------- popover (паттерн LiveZChip) ----------
 
   const POPOVER_WIDTH = 280;
   let btnEl = $state<HTMLButtonElement | null>(null);
   let popoverOpen = $state(false);
   let popoverStyle = $state('');
 
+  /** Positions and opens the fixed popover without being clipped by the fleet card. */
   function openPopover(): void {
     const rect = btnEl?.getBoundingClientRect();
     if (rect) {
-      // Поповер растёт от начальной стороны кнопки; при нехватке места переключается на конечную (RTL-aware).
+      // The shared helper aligns to the logical start and flips to the end when space is tight.
       popoverStyle = placeChipPopover(rect, { width: POPOVER_WIDTH, height: 240 });
     }
     popoverOpen = true;
   }
-  function closePopover(): void { popoverOpen = false; }
 
-  /** Переход на Machine → Мониторинг этого принтера; смена hash закрывает fleet-режим сама. */
+  /** Closes the popover without unmounting extension providers. */
+  function closePopover(): void {
+    popoverOpen = false;
+  }
+
+  /** Opens Machine → Monitoring for this card's printer; routing closes fleet mode. */
   function openMonitoring(): void {
     closePopover();
     if (!printerId) return;
@@ -131,39 +202,44 @@
 
   {#if popoverOpen}
     <div class="fh-backdrop" onclick={closePopover} role="presentation"></div>
-    <div class="fh-popover" style={popoverStyle} role="dialog" aria-label={i18n.t('fleet.health.title')}>
-      <h3 class="fh-title">{i18n.t('fleet.health.title')}</h3>
+  {/if}
 
-      {#if allOk}
+  <!-- Hidden popover content remains connected so extension reports stay current. -->
+  <div class="fh-popover" style={popoverStyle} role="dialog" aria-label={i18n.t('fleet.health.title')} hidden={!popoverOpen}>
+    <h3 class="fh-title">{i18n.t('fleet.health.title')}</h3>
+
+    <div class="fh-list">
+      {#if allOk && extensionCount === 0}
         <p class="fh-ok">{i18n.t('fleet.health.ok')}</p>
-      {:else if issues.length === 0}
+      {:else if issues.length === 0 && !health.klippyReady}
         <p class="fh-unknown">{i18n.t('system.health.state.unknown')}</p>
-      {:else}
-        <!-- max-height + скролл: список проблем не должен уезжать за пределы вьюпорта -->
-        <div class="fh-list">
-          {#each grouped as g (g.scope)}
-            <div class="fh-group">
-              <span class="fh-group-name">{i18n.t(scopeLabel[g.scope])}</span>
-              <ul>
-                {#each g.issues as issue (`${issue.scope}:${issue.target}:${issue.textKey}`)}
-                  <li class="fh-issue" class:crit={issue.severity === 'crit'}>
-                    <span class="fh-dot" aria-hidden="true"></span>
-                    <span class="fh-text">
-                      {#if issue.target}<bdi class="fh-target">{issue.target}</bdi>: {/if}{issueText(issue)}
-                    </span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {/each}
-        </div>
+      {:else if issues.length > 0}
+        {#each grouped as group (group.scope)}
+          <div class="fh-group">
+            <span class="fh-group-name">{i18n.t(scopeLabel[group.scope])}</span>
+            <ul>
+              {#each group.issues as issue (`${issue.scope}:${issue.target}:${issue.textKey}`)}
+                <li class="fh-issue" class:crit={issue.severity === 'crit'}>
+                  <span class="fh-dot" aria-hidden="true"></span>
+                  <span class="fh-text">
+                    {#if issue.target}<bdi class="fh-target">{issue.target}</bdi>: {/if}{issueText(issue)}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/each}
       {/if}
 
-      <button type="button" class="fh-open" onclick={openMonitoring}>
-        {i18n.t('fleet.health.openMonitoring')}
-      </button>
+      {#each healthExtensions as extension (extension.ref)}
+        <div class="fh-extension" use:mountHealthExtension={extension}></div>
+      {/each}
     </div>
-  {/if}
+
+    <button type="button" class="fh-open" onclick={openMonitoring}>
+      {i18n.t('fleet.health.openMonitoring')}
+    </button>
+  </div>
 </div>
 
 <style>
@@ -173,7 +249,7 @@
     display: flex;
   }
 
-  /* Растяжение на всю ячейку сетки — как у панелей Jobs / Job Queue (fleet-action-button). */
+  /* The button fills its grid cell, matching other compact fleet actions. */
   .fh-indicator {
     display: flex;
     align-items: center;
@@ -221,6 +297,10 @@
     box-shadow: var(--shadow-md);
   }
 
+  .fh-popover[hidden] {
+    display: none;
+  }
+
   .fh-title {
     margin: 0;
     font-size: var(--font-size-sm);
@@ -241,12 +321,17 @@
     font-size: var(--font-size-sm);
   }
 
+  /* One scroll container keeps core and extension sections inside narrow viewports. */
   .fh-list {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
     min-height: 0;
+  }
+
+  .fh-extension {
+    min-width: 0;
   }
 
   .fh-group {
@@ -294,7 +379,7 @@
     transform: translateY(-1px);
   }
 
-  /* long localized texts wrap instead of clipping — narrow fleet cards and mobile */
+  /* Long localized text wraps instead of clipping narrow fleet cards and mobile screens. */
   .fh-text {
     min-width: 0;
     overflow-wrap: anywhere;

@@ -49,6 +49,7 @@ export const en = {
       bannerStatusEta: 'Print status banner: ETA',
       bannerStatusActions: 'Print status banner: extra buttons',
       panelsRight: 'Extra sections of the right panel',
+      fleetHealthSections: 'Fleet Health sections',
     },
     health: {
       title: 'Printer health',

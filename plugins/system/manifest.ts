@@ -3,7 +3,7 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const systemManifest = definePlugin({
   id: '@core/system',
   name: 'System',
-  version: '5.2.0',
+  version: '5.3.0',
   entry: '/plugins/system/index.js',
 
   pages: [
@@ -209,6 +209,9 @@ export const systemManifest = definePlugin({
 
     // right panel: own sections after the built-in ones (expanded view only)
     { id: 'panels-right', kind: 'panel', mode: 'append', version: 1, titleKey: 'system.ext.panelsRight' },
+
+    // Fleet Health: provider-owned sections plus the documented summary event contract.
+    { id: 'fleet-health-sections', kind: 'element', mode: 'append', version: 1, titleKey: 'system.ext.fleetHealthSections' },
   ],
 
   locales: ['en', 'ru'],
