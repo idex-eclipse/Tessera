@@ -3,8 +3,10 @@ import { definePlugin } from '../../plugin-sdk/src/define-plugin';
 export const calibrationsManifest = definePlugin({
   id: '@core/calibrations',
   name: 'Calibrations',
-  version: '4.1.0',
+  version: '4.2.0',
   entry: '/plugins/calibrations/index.js',
+  // This version of System owns the Fleet Health extension contract used below.
+  dependencies: { '@core/system': '5.3.0' },
 
   pages: [
     {
@@ -51,6 +53,18 @@ export const calibrationsManifest = definePlugin({
       element: 'mpu-core-calibrations-chip-livez',
       pickerElement: 'mpu-core-calibrations-chip-livez-picker',
       icon: 'kind-tuning',
+    },
+  ],
+
+  // Adds the active PID-deviation alerts to System's Fleet Health popover.
+  extensions: [
+    {
+      point: '@core/system#fleet-health-sections',
+      kind: 'element',
+      version: 1,
+      id: 'heaters-health',
+      titleKey: 'calibrations.section.heaters',
+      element: 'mpu-calibrations-fleet-heaters-health',
     },
   ],
 

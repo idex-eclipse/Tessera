@@ -195,6 +195,12 @@ export const en = {
       saveConfirmText: 'Klipper will restart the firmware to persist the new Kp/Ki/Kd values. Heaters will cool down during restart.',
     },
 
+    // Fleet Health popover section: active PID-deviation alerts of the card's printer.
+    fleet: {
+      deviationRow: '{dev}°C off target {target}°C',
+      pidHint: 'Sustained deviation usually means the PID coefficients need re-tuning',
+    },
+
     mesh: {
       currentProfile: 'Current profile',
       openPage: 'Open Bed Mesh',

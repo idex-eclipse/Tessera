@@ -770,6 +770,12 @@ during printing or pause raises a critical notification, and Fleet Health stays 
 the sensor recovers or is disabled. A runout already present when the UI connects colors the
 indicator without replaying a notification. The monitor stays active when Fleet is closed.
 
+Bundled Calibrations 4.2.0 contributes a heaters section. It lists the card printer's active
+heater deviation alerts — a sustained gap between temperature and target that usually means the
+PID coefficients need re-tuning — and reports a critical summary while any alert is active.
+Each row deep-links to that printer's Calibrations → Heaters tab. The section renders nothing
+while every heater holds its target.
+
 Not extensible on purpose: the E-stop button, upload & print, and the Pause/Resume/Cancel
 buttons (see "Modes" above). Only a replacement of `banner-status` as a whole takes them over,
 and then the contribution must provide print controls itself. A contribution in `panels-right`

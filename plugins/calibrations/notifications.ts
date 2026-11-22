@@ -7,7 +7,17 @@ import type {
 
 import { asNumber } from '../shared/settings/parsers';
 
+import {
+  clearHeaterAlerts,
+  publishHeaterAlert,
+  retractHeaterAlert,
+} from './data/heater-alerts.svelte.ts';
 import { scanPidActivity, type GcodeStoreEntry } from './lib/gcode-scanner';
+
+// The alert snapshot store lives in data/heater-alerts so fleet contributions can read it
+// without importing the producer; these re-exports keep older import sites working.
+export { subscribeHeaterDeviationAlerts } from './data/heater-alerts.svelte.ts';
+export type { HeaterDeviationAlert, HeaterDeviationListener } from './data/heater-alerts.svelte.ts';
 
 const DEFAULT_THRESHOLD = 5;
 const SETTLE_MS = 45_000;
@@ -131,53 +141,6 @@ export function advanceHeaterDeviation(
   return { state, notify: false };
 }
 
-/** Read-only alert data exposed to heater UI panels. */
-export interface HeaterDeviationAlert {
-  printerId: string;
-  heaterId: string;
-  displayName: string;
-  deviation: number;
-  target: number;
-}
-
-/** Receives immutable snapshots of all active heater deviations. */
-export type HeaterDeviationListener = (alerts: readonly HeaterDeviationAlert[]) => void;
-
-const activeAlerts = new Map<string, HeaterDeviationAlert>();
-const alertListeners = new Set<HeaterDeviationListener>();
-
-/** Returns copied records so UI consumers cannot mutate producer state. */
-function alertSnapshot(): readonly HeaterDeviationAlert[] {
-  return Array.from(activeAlerts.values(), (alert) => ({ ...alert }));
-}
-
-/** Publishes an immutable snapshot to every mounted Heaters panel. */
-function emitAlerts(): void {
-  const snapshot = alertSnapshot();
-  for (const listener of alertListeners) listener(snapshot);
-}
-
-/** Subscribes UI-only consumers to active alerts without exposing Moonraker subscriptions. */
-export function subscribeHeaterDeviationAlerts(listener: HeaterDeviationListener): () => void {
-  alertListeners.add(listener);
-  listener(alertSnapshot());
-  return () => alertListeners.delete(listener);
-}
-
-function alertKey(printerId: string, objectName: string): string {
-  return `${printerId}\u0000${objectName}`;
-}
-
-function removePrinterAlerts(printerId: string): void {
-  let changed = false;
-  for (const [key, alert] of activeAlerts) {
-    if (alert.printerId !== printerId) continue;
-    activeAlerts.delete(key);
-    changed = true;
-  }
-  if (changed) emitAlerts();
-}
-
 /** Maps a Moonraker object name to the shorter identifier used by the UI route. */
 interface HeaterDescriptor {
   objectName: string;
@@ -264,7 +227,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
   function resetWatch(watch: PrinterWatch): void {
     const now = Date.now();
     for (const heater of watch.heaters.values()) heater.detector = initialHeaterDeviationState(now);
-    removePrinterAlerts(watch.printerId);
+    clearHeaterAlerts(watch.printerId);
   }
 
   /** Publishes a localized alert with a stable deep link to its source heater. */
@@ -286,7 +249,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
   function updateHeater(watch: PrinterWatch, heater: HeaterWatch): void {
     if (heater.temperature === null || heater.target === null || heater.target <= 0) {
       heater.detector = initialHeaterDeviationState(Date.now());
-      if (activeAlerts.delete(alertKey(watch.printerId, heater.objectName))) emitAlerts();
+      retractHeaterAlert(watch.printerId, heater.heaterId);
       return;
     }
 
@@ -303,18 +266,16 @@ export function startNotificationProducers(api: PluginApi): () => void {
     );
     heater.detector = step.state;
 
-    const key = alertKey(watch.printerId, heater.objectName);
     if (step.state.active) {
-      activeAlerts.set(key, {
+      publishHeaterAlert({
         printerId: watch.printerId,
         heaterId: heater.heaterId,
         displayName: heater.displayName,
         deviation,
         target: heater.target,
       });
-      emitAlerts();
-    } else if (activeAlerts.delete(key)) {
-      emitAlerts();
+    } else {
+      retractHeaterAlert(watch.printerId, heater.heaterId);
     }
 
     if (step.notify) publishDeviation(watch, heater, deviation);
@@ -408,7 +369,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
       });
     }
     watch.heaters = next;
-    removePrinterAlerts(watch.printerId);
+    clearHeaterAlerts(watch.printerId);
 
     const objects: Record<string, string[]> = { print_stats: ['state'] };
     for (const descriptor of descriptors) objects[descriptor.objectName] = ['temperature', 'target'];
@@ -515,7 +476,7 @@ export function startNotificationProducers(api: PluginApi): () => void {
     if (watch.statusUnsub) watch.statusUnsub();
     if (watch.gcodeRefreshTimer !== null) clearTimeout(watch.gcodeRefreshTimer);
     watches.delete(printerId);
-    removePrinterAlerts(printerId);
+    clearHeaterAlerts(printerId);
   }
 
   /** Reconciles watchers against the host's current printer registry. */
