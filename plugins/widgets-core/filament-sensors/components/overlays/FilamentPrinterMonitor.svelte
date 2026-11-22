@@ -3,6 +3,7 @@
 
   import type { PluginApi } from '../../../../../plugin-sdk/src/types.ts';
   import { useKlippyState } from '../../../../shared/klippy-state/use-klippy-state.svelte.ts';
+  import { publishFilamentRunout } from '../../../notifications.ts';
   import {
     clearFilamentAlerts,
     EMPTY_FILAMENT_ALERT_STATE,
@@ -47,15 +48,7 @@
     alertState = result.next;
     setFilamentAlerts(printerId, result.next.active);
 
-    for (const sensor of result.triggered) {
-      const printer = api.printers.find((item) => item.id === printerId)?.name ?? printerId;
-      api.notifications.push({
-        printerId,
-        severity: 'critical',
-        label: api.i18n.t('widgets.filament.title'),
-        text: api.i18n.t('fleet.filament.runout', { printer, sensor: sensor.name }),
-      });
-    }
+    for (const sensor of result.triggered) publishFilamentRunout(api, printerId, sensor.name);
   });
 
   onDestroy(() => clearFilamentAlerts(printerId));
