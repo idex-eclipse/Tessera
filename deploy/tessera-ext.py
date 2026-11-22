@@ -944,11 +944,6 @@ def plugin_api_problem(value, host=HOST_PLUGIN_API):
     need, have = parse_plugin_api(value), parse_plugin_api(host)
     if need is None or have is None:
         return 'invalid'
-    # Keep the migration window through 1.2 for additive manifest fields.
-    if have[0] == 1 and have[1] <= 2 and need[0] == 0:
-        if need[1] < 7:
-            return 'major'
-        return 'newer' if need[1] > 14 else None
     if need[0] != have[0]:
         return 'major'
     return 'newer' if need[1] > have[1] else None
