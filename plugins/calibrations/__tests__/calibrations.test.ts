@@ -62,9 +62,6 @@ function createFakeApi(printerIds: string[], queryResult?: (pid: string) => unkn
       if (!handles.has(pid)) handles.set(pid, handleFor(pid));
       return handles.get(pid)!;
     },
-    moonraker() {
-      return api.moonrakerFor(activeId);
-    },
   } as unknown as PluginApi;
 
   return {

@@ -244,9 +244,7 @@ export interface HotkeyContribution {
  * печати/хоминга) и принимать решение по состоянию ЦЕЛИ, а не активного.
  */
 export interface GuardContext {
-  /** Принтер-адресат request().
-   *  - для api.moonraker().request() — активный принтер на момент вызова;
-   *  - для api.moonrakerFor(printerId).request() — переданный printerId. */
+  /** Printer explicitly targeted by moonrakerFor(printerId).request(). */
   readonly targetPrinterId: string;
 }
 
@@ -399,8 +397,8 @@ export interface PluginManifest {
   version: string;
   entry: string;
   /**
-   * Минимальная версия контракта плагинов "MAJOR.MINOR" (см. api-level.ts). Нет поля — "0.7".
-   * Хост с другим MAJOR или меньшим MINOR плагин не грузит и не ставит.
+   * Minimum required plugin contract in MAJOR.MINOR form (see api-level.ts).
+   * Missing fields are diagnosed as legacy 0.7 and are incompatible with stable 1.x hosts.
    */
   pluginApi?: string;
   /**
@@ -754,12 +752,6 @@ export interface PluginApi {
   /** MOONRAKER */
 
   /**
-   * Returns the active printer's handle for legacy plugins.
-   * @returns A handle that follows the active printer at call time.
-   * @deprecated Use moonrakerFor(printerId) so requests keep their target printer.
-   */
-  moonraker(): MoonrakerProxyHandle;
-  /**
    * Returns the handle bound to one configured printer.
    * @param printerId The target printer ID.
    * @returns A handle that keeps this printer as its request target.
@@ -781,11 +773,6 @@ export interface PluginApi {
 
 
   /** SETTINGS */
-  /**
-   * Exposes settings of the active printer for legacy plugins.
-   * @deprecated Use settingsFor(printerId) so settings stay bound to a printer.
-   */
-  settings: PluginSettingsApi;
   /**
    * Returns one printer's plugin settings namespace.
    * @param printerId The target printer ID.

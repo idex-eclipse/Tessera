@@ -42,11 +42,9 @@ function fakeApi(printerId: string): PluginApi {
   return {
     printer: { id: printerId, name: printerId, url: 'http://printer' },
     printers: [{ id: printerId, name: printerId, url: 'http://printer' }],
-    moonraker: () => handle,
     moonrakerFor: () => handle,
     onPrinterChange: () => () => {},
     onPrintersChange: () => () => {},
-    settings: { get: () => undefined, set: () => {}, onChange: () => () => {} },
     settingsFor: () => ({ get: () => undefined, set: () => {}, onChange: () => () => {} }),
     i18n: { t: (key: string) => key },
     theme: { current: 'dark' },

@@ -129,7 +129,6 @@ function fakeApi(ids: string[], store: (pid: string) => Promise<unknown>) {
       };
     },
     moonrakerFor: handle,
-    settings: { onChange: (cb: () => void) => settingsOf(ids[0]!).onChange(cb) },
     settingsFor: settingsOf,
   } as unknown as PluginApi;
 
@@ -171,9 +170,8 @@ describe('session lifecycle', () => {
   });
 
   it('re-reads prefs that arrive for a printer other than the one active at attach time', () => {
-    // Regression: the session used one api.settings.onChange bound to the printer active at
-    // start, so settings pulled from the DB for another printer (e.g. after a printer switch)
-    // never reached the console.
+    // Regression: settings listeners must remain bound to each explicit printer so a DB pull
+    // for a non-active printer still reaches that printer's console session.
     const f = fakeApi(['s1', 's2'], async () => ({ gcode_store: [] }));
     const off = attach(f.api);
     try {
