@@ -483,7 +483,7 @@ them and asks nothing. Without the file (an installation made before the menu
 existed), values are detected from the system: branch from `build-info` or git, port and
 Moonraker from the nginx config, plugins by URL from `policy.json`.
 
-**Where the build comes from.** On every push to `main` and `dev`, CI
+**Where the build comes from.** On every push to `main`, `exp` and `dev`, CI
 (`.github/workflows/build.yml`) builds the UI and updates the rolling release
 `build-<branch>`: the archive `tessera-<commit>.tar.gz` and `build-info` with its name and
 sha256. The installer checks the sha256 and replaces `host/`, `deploy/` and `build-info`; a
