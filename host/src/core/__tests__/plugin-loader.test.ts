@@ -1500,6 +1500,7 @@ describe('plugin-loader / pluginApi', () => {
       'http://integer/manifest.json': createTestManifest({ id: '@third/integer', pluginApi: 1 as unknown as string }),
       'http://legacy/manifest.json': createTestManifest({ id: '@third/legacy', pluginApi: '0.7' }),
       'http://last-legacy/manifest.json': createTestManifest({ id: '@third/last-legacy', pluginApi: '0.14' }),
+      'http://unsupported/manifest.json': createTestManifest({ id: '@third/unsupported', pluginApi: '0.15' }),
     };
     const importModule = vi.fn(async () => ({ default: {} }));
     const { loader, settings } = setup({ fetchManifest: vi.fn(async (url: string) => manifests[url]!), importModule });
