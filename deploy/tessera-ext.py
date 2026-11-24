@@ -802,15 +802,16 @@ def resolve_plan(pid, plugins, installed, source=None, sources=None, force=False
         problems = core_problems(latest, core_versions)
         if problems and not force:
             raise ExtError(' '.join(problems))
+        # Ownership conflicts remain HTTP 409 even when no release survives version search.
         if cur and not cur['origin'] and not force:
             raise ExtError(f'{clean(pid)} in extensions/{cur["dir"]} was installed manually; '
-                           'use --force to replace it.')
+                           'use --force to replace it.', 409)
         if cur and cur['origin'] and sources is not None and not force and \
                 installed_source(cur, sources) != owner:
             old = installed_source(cur, sources)
             came_from = f'registry "{clean(old)}"' if old else 'a registry that is not configured any more'
             raise ExtError(f'{clean(pid)} was installed from {came_from}; remove it first to install it '
-                           f'from "{clean(owner)}".')
+                           f'from "{clean(owner)}".', 409)
         _plan, _missing, outdated = dependency_plan(pid, plugins, installed, owner)
         if outdated:
             raise ExtError(' '.join(outdated))

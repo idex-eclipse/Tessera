@@ -606,6 +606,28 @@ class VersionedRegistryTests(Base):
             ext.cmd_install('hello')
         self.assertEqual(ext.scan_installed()['acme/hello']['version'], '1.0.0')
 
+    def test_manual_install_remains_an_api_conflict(self):
+        # Version search must preserve the API's ownership conflict response.
+        self.put_manual()
+        self.publish_version('acme/hello', '2.0.0', 'hello')
+        with self.assertRaises(ext.ExtError) as raised:
+            ext.api_update({'id': 'acme/hello'})
+        self.assertEqual(raised.exception.status, 409)
+
+    def test_other_registry_remains_an_api_conflict(self):
+        # The resolver checks ownership before an archive can replace foreign code.
+        entry = {'id': 'acme/hello', 'dir': 'hello', 'version': '1.0.0',
+                 'pluginApi': ext.HOST_PLUGIN_API, '_source': 'official'}
+        official_url = 'https://example.com/official/registry.json'
+        foreign_url = 'https://example.com/mine/registry.json'
+        sources = [{'name': 'official', 'official': True, 'url': official_url},
+                   {'name': 'mine', 'official': False, 'url': foreign_url}]
+        installed = {'acme/hello': {'dir': 'hello', 'version': '7.0.0',
+                                    'origin': {'registry': foreign_url}}}
+        with self.assertRaises(ext.ExtError) as raised:
+            ext.resolve_plan('acme/hello', [entry], installed, 'official', sources)
+        self.assertEqual(raised.exception.status, 409)
+
     def test_core_and_transitive_dependency_fallback(self):
         self.publish_version('acme/owner', '1.0.0', 'owner')
         self.publish_version('acme/owner', '2.0.0', 'owner', plugin_api='1.3')
