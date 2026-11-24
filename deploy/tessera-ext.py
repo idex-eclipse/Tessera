@@ -340,7 +340,7 @@ def fetch_bytes(url):
 
 
 def load_registry(url=None):
-    """One registry.json: the built-in one, or the address of an additional source."""
+    """Read one registry and expand its version history into installable entries."""
     url = to_url(url or registry_source()['url'])
     try:
         data = json.loads(fetch_bytes(url).decode('utf-8'))
@@ -348,16 +348,41 @@ def load_registry(url=None):
         raise ExtError(f'Invalid registry at {url}: {e}', 500) from e
     if not isinstance(data, dict) or data.get('schema') != 1 or not isinstance(data.get('plugins'), list):
         raise ExtError(f'Unsupported registry format at {url} (expected schema 1)', 500)
+    entries, ids = [], set()
     for p in data['plugins']:
-        if (not isinstance(p, dict) or
-                not all(isinstance(p.get(k), str) for k in ('id', 'version', 'url', 'sha256', 'dir')) or
-                not DIR_NAME_RE.fullmatch(p['dir']) or
-                not SHA256_RE.fullmatch(p['sha256']) or
-                not (p.get('requires') is None or
-                     (isinstance(p['requires'], list) and all(isinstance(r, str) for r in p['requires']))) or
-                not (p.get('dependencies') is None or valid_dependencies(p['dependencies']))):
-            raise ExtError(f'Invalid registry entry: {clean(json.dumps(p))}', 500)
-    return {'url': url, 'plugins': data['plugins']}
+        if not isinstance(p, dict) or not isinstance(p.get('id'), str) or p['id'] in ids:
+            raise ExtError(f'Invalid or repeated registry id: {clean(json.dumps(p))}', 500)
+        ids.add(p['id'])
+        versions = p.get('versions', [p])
+        if not isinstance(versions, list) or not versions:
+            raise ExtError(f'Invalid version history for {clean(p["id"])}', 500)
+        seen_versions = set()
+        for version in versions:
+            if not isinstance(version, dict) or ('versions' in p and 'id' in version):
+                raise ExtError(f'Invalid version of {clean(p["id"])}', 500)
+            entry = dict(version, id=p['id'])
+            if 'versions' in p:
+                entry['_versioned'] = True
+            if (not all(isinstance(entry.get(k), str) and entry[k] for k in ('id', 'version', 'url', 'sha256', 'dir')) or
+                    parse_version(entry['version']) is None or
+                    entry['version'] in seen_versions or
+                    not DIR_NAME_RE.fullmatch(entry['dir']) or
+                    entry['dir'] != p.get('dir') or
+                    not SHA256_RE.fullmatch(entry['sha256']) or
+                    not (entry.get('requires') is None or
+                         (isinstance(entry['requires'], list) and all(isinstance(r, str) for r in entry['requires']))) or
+                    not (entry.get('dependencies') is None or valid_dependencies(entry['dependencies'])) or
+                    ('versions' in p and plugin_api_problem(entry.get('pluginApi')) == 'invalid')):
+                raise ExtError(f'Invalid registry version: {clean(json.dumps(entry))}', 500)
+            seen_versions.add(entry['version'])
+            entries.append(entry)
+        # Legacy clients read the top-level release; it must match the newest history entry.
+        latest = max((e for e in entries if e['id'] == p['id']), key=lambda e: parse_version(e['version']))
+        for key in ('dir', 'name', 'version', 'description', 'author', 'pluginApi', 'requires',
+                    'dependencies', 'url', 'sha256', 'size'):
+            if p.get(key) != latest.get(key):
+                raise ExtError(f'{clean(p["id"])}: top-level {key} differs from its latest version', 500)
+    return {'url': url, 'plugins': entries, 'count': len(ids)}
 
 
 # ------------------------------------------------------------------
@@ -510,7 +535,7 @@ def load_registries(strict=True):
         info = dict(src, error=None, count=0)
         try:
             registry = load_registry(src['url'])
-            info['count'] = len(registry['plugins'])
+            info['count'] = registry['count']
             plugins += [dict(p, _source=src['name'], _registry=registry['url']) for p in registry['plugins']]
         except ExtError as e:
             info['error'] = str(e)
@@ -552,20 +577,9 @@ def find_entry(plugins, pid, source=None, cur=None, sources=None):
     keeps its own registry (None when that one is gone: nothing may replace it silently), and
     an id that several registries offer must be chosen by the caller.
     """
-    found = [p for p in plugins if p['id'] == pid]
-    if source is not None:
-        return next((p for p in found if p.get('_source') == source), None)
-    if len(found) > 1:
-        owner = installed_source(cur, sources or []) if cur else None
-        if owner is not None:
-            return next((p for p in found if p.get('_source') == owner), None)
-        names = ', '.join(clean(p.get('_source')) for p in found)
-        raise ExtError(f'{clean(pid)} exists in several registries ({names}): choose one with --source <name>')
-    if found and cur and sources is not None:
-        owner = installed_source(cur, sources)
-        if owner is not None and found[0].get('_source') != owner:
-            return None
-    return found[0] if found else None
+    owner = root_source(plugins, pid, source, cur, sources)
+    found = [p for p in plugins if p['id'] == pid and p.get('_source') == owner]
+    return max(found, key=lambda p: parse_version(p['version'])) if found else None
 
 
 def read_json_safe(path):
@@ -695,6 +709,132 @@ def pick_dependency(plugins, pid, prefer=None):
         if entry:
             return entry
     return None
+
+
+def root_source(plugins, pid, source=None, cur=None, sources=None):
+    """Resolve the owner's registry once; versions of one id are not competing sources."""
+    found = [p for p in plugins if p['id'] == pid]
+    names = list(dict.fromkeys(p.get('_source') for p in found))
+    if source is not None:
+        return source if source in names else None
+    owner = installed_source(cur, sources or []) if cur and sources is not None else None
+    if owner is not None:
+        return owner if owner in names else None
+    if len(names) > 1:
+        raise ExtError(f'{clean(pid)} exists in several registries ({", ".join(map(clean, names))}): choose one with --source <name>')
+    return names[0] if names else None
+
+
+def resolve_plan(pid, plugins, installed, source=None, sources=None, force=False):
+    """Choose the newest installable root and a consistent version of every dependency."""
+    cur = installed.get(pid)
+    owner = root_source(plugins, pid, source, cur, sources)
+    if not any(p['id'] == pid and p.get('_source') == owner for p in plugins):
+        raise ExtError(f'{clean(pid)} is not in its selected registry')
+    core_versions = load_core_versions()
+
+    def candidates(current, need, prefer, is_root):
+        found = [p for p in plugins if p['id'] == current]
+        allowed = [owner] if is_root else list(dict.fromkeys((prefer, OFFICIAL_SOURCE, None)))
+        options = []
+        for name in allowed:
+            group = [p for p in found if p.get('_source') == name]
+            for entry in sorted(group, key=lambda p: parse_version(p['version']), reverse=True):
+                if not force and not satisfies_min(entry['version'], need):
+                    continue
+                if not force and (plugin_api_problem(entry.get('pluginApi')) or core_problems(entry, core_versions)):
+                    continue
+                previous = installed.get(current)
+                if not is_root and previous and parse_version(previous['version']) and \
+                        parse_version(entry['version']) < parse_version(previous['version']):
+                    continue
+                if previous and not previous['origin'] and not force:
+                    continue
+                if previous and previous['origin'] and sources is not None and not force and \
+                        installed_source(previous, sources) != entry.get('_source'):
+                    continue
+                options.append(entry)
+            # Keep source order: another source is tried only if this one's releases
+            # cannot satisfy the remaining dependency graph.
+        allowed_found = [p for p in found if p.get('_source') in allowed]
+        return allowed_found, options
+
+    def search(pending, selected, missing):
+        if not pending:
+            return selected, missing
+        current, need, prefer, is_root = pending[0]
+        rest = pending[1:]
+        if current in selected:
+            chosen = selected[current]
+            have = chosen['version'] if chosen else installed.get(current, {}).get('version')
+            return search(rest, selected, missing) if force or satisfies_min(have, need) else None
+        previous = installed.get(current)
+        found, options = candidates(current, need, prefer, is_root)
+        if not is_root and previous and (force or satisfies_min(previous['version'], need)):
+            # Keeping an installed dependency comes first, but backtracking can upgrade it
+            # if another selected release imposes a higher minimum later in the graph.
+            result = search(rest, {**selected, current: None}, missing)
+            if result:
+                return result
+        if not is_root and not found and not previous:
+            return search(rest, {**selected, current: None}, missing + [current])
+        for entry in options:
+            requirements = [
+                (dep, minimum, entry.get('_source'), False)
+                for dep, minimum in entry_dependencies(entry).items() if not is_core(dep)
+            ]
+            result = search(requirements + rest, {**selected, current: entry}, missing)
+            if result:
+                return result
+        return None
+
+    result = search([(pid, None, owner, True)], {}, [])
+    if result is None:
+        latest = max((p for p in plugins if p['id'] == pid and p.get('_source') == owner),
+                     key=lambda p: parse_version(p['version']))
+        problem = plugin_api_problem(latest.get('pluginApi'))
+        if problem == 'invalid':
+            raise ExtError(f'Invalid pluginApi of {clean(pid)}: {clean(latest.get("pluginApi"))}')
+        if problem and not force:
+            hint = 'Update Tessera first.' if problem == 'newer' else 'It is not compatible with this Tessera.'
+            raise ExtError(f'{clean(pid)}@{clean(latest["version"])} needs plugin API '
+                           f'{format_plugin_api(latest.get("pluginApi"))}, host provides {HOST_PLUGIN_API}. {hint}')
+        problems = core_problems(latest, core_versions)
+        if problems and not force:
+            raise ExtError(' '.join(problems))
+        if cur and not cur['origin'] and not force:
+            raise ExtError(f'{clean(pid)} in extensions/{cur["dir"]} was installed manually; '
+                           'use --force to replace it.')
+        if cur and cur['origin'] and sources is not None and not force and \
+                installed_source(cur, sources) != owner:
+            old = installed_source(cur, sources)
+            came_from = f'registry "{clean(old)}"' if old else 'a registry that is not configured any more'
+            raise ExtError(f'{clean(pid)} was installed from {came_from}; remove it first to install it '
+                           f'from "{clean(owner)}".')
+        _plan, _missing, outdated = dependency_plan(pid, plugins, installed, owner)
+        if outdated:
+            raise ExtError(' '.join(outdated))
+        raise ExtError(f'No compatible version of {clean(pid)} for plugin API {HOST_PLUGIN_API} '
+                       f'and this Tessera/dependency set (latest: {clean(latest["version"])}).')
+    selected, missing = result
+    order, visiting, visited = [], set(), set()
+
+    def visit(current):
+        if current in visited or current in visiting:
+            return  # Extensions bind lazily, so an existing dependency cycle is allowed.
+        visiting.add(current)
+        entry = selected.get(current)
+        if entry:
+            for dep in entry_dependencies(entry):
+                if not is_core(dep) and dep in selected:
+                    visit(dep)
+        visiting.remove(current)
+        visited.add(current)
+        if entry and (current not in installed or installed[current]['version'] != entry['version']):
+            order.append(current)
+
+    visit(pid)
+    return selected[pid], selected, order, missing
 
 
 def dependency_plan(pid, plugins, installed, source=None, chosen=None):
@@ -1031,6 +1171,11 @@ def install(entry, registry_url, force=False):
                 f'Archive manifest {clean(manifest.get("id"))}@{clean(manifest.get("version"))} '
                 f'does not match registry {clean(entry["id"])}@{clean(entry["version"])}'
             )
+        if entry.get('_versioned') and (
+                parse_plugin_api(manifest.get('pluginApi')) != parse_plugin_api(entry.get('pluginApi')) or
+                manifest_dependencies(manifest) != entry_dependencies(entry)):
+            raise ExtError(f'Archive requirements of {clean(entry["id"])}@{clean(entry["version"])} '
+                           'do not match registry.json')
 
         write_text_atomic(
             os.path.join(staging, ORIGIN_FILE),
@@ -1066,9 +1211,13 @@ def collect_status(plugins, installed, sources=None):
     'conflict': the same id is installed from another registry, so this entry is not
     offered (`sources` = configured_sources(); without it every entry is the owner's).
     """
-    rows = []
+    rows, groups = [], {}
     known = set()
     for p in plugins:
+        groups.setdefault((p.get('_source'), p['id']), []).append(p)
+    for (source, pid), releases in groups.items():
+        latest = max(releases, key=lambda p: parse_version(p['version']))
+        p = latest
         cur = installed.get(p['id'])
         conflict = bool(
             cur and cur['origin'] and sources is not None and p.get('_source') is not None
@@ -1076,28 +1225,46 @@ def collect_status(plugins, installed, sources=None):
         )
         if not conflict:
             known.add(p['id'])
+        selected, planned, missing = None, [], []
+        if not conflict:
+            try:
+                selected, chosen, order, missing = resolve_plan(
+                    pid, plugins, installed, source, sources)
+                planned = [{
+                    'id': dep, 'name': chosen[dep].get('name') or dep,
+                    'version': chosen[dep]['version'],
+                    'installedVersion': installed.get(dep, {}).get('version'),
+                } for dep in order if dep != pid]
+            except ExtError:
+                pass
+        target = selected or (p if not cur else None)
         if conflict:
             state = 'conflict'
         elif not cur:
-            state = 'available'
-        elif cur['version'] == p['version']:
+            state = 'available' if selected else 'incompatible'
+        elif not selected or parse_version(cur['version']) is None or \
+                parse_version(selected['version']) <= parse_version(cur['version']):
             state = 'installed'
         else:
             state = 'update'
         rows.append({
             'id': p['id'],
             'name': clean(p.get('name') or p['id']),
-            'version': clean(p['version']),
+            'version': clean(target['version'] if target else cur['version']),
+            'latest_version': clean(latest['version']),
+            'compatible_version': clean(selected['version']) if selected else None,
             'installed_version': clean(cur['version']) if cur else None,
             'state': state,
             'description': clean(p.get('description') or ''),
-            'entry': p,
+            'entry': selected or p,
             'dir': cur['dir'] if cur else p['dir'],
             # The installed copy belongs to the row of its own registry, not to a conflicting one.
             'managed': bool(cur and cur['origin']) and not conflict,
             'source': p.get('_source'),
-            'requires': entry_requires(p),
-            'dependencies': entry_dependencies(p),
+            'requires': entry_requires(selected or p),
+            'dependencies': entry_dependencies(selected or p),
+            'planned_dependencies': planned,
+            'missing_dependencies': missing,
         })
     for pid, cur in installed.items():
         if pid in known:
@@ -1115,11 +1282,17 @@ def collect_status(plugins, installed, sources=None):
             'source': None,
             'requires': list(cur['requires']),
             'dependencies': dict(cur['dependencies']),
+            'latest_version': None,
+            'compatible_version': None,
+            'planned_dependencies': [],
+            'missing_dependencies': [],
         })
     return rows
 
 
 def state_label(row):
+    if row['state'] == 'incompatible':
+        return 'no compatible version'
     if row['state'] == 'installed':
         return 'installed'
     if row['state'] == 'update':
@@ -1175,19 +1348,13 @@ def install_with_dependencies(pid, registry, force=False, source=None):
     `source`: registry name, needed when several registries offer `pid`.
     """
     installed = scan_installed()
-    entry = find_entry(registry['plugins'], pid, source, installed.get(pid), registry.get('sources'))
-    if not entry:
-        where = f'registry "{clean(source)}"' if source else f'registry {registry["url"]}'
-        raise ExtError(f'{clean(pid)} is not in {where}')
-
-    chosen = {}
-    to_install, missing, outdated = dependency_plan(
-        pid, registry['plugins'], installed, entry.get('_source'), chosen)
-    if outdated:
-        if not force:
-            raise ExtError(' '.join(outdated))
-        for message in outdated:
-            print(f'{message} Installing anyway (--force): its extensions will be rejected.', file=sys.stderr)
+    entry, chosen, to_install, missing = resolve_plan(
+        pid, registry['plugins'], installed, source, registry.get('sources'), force)
+    current = installed.get(pid)
+    if current and not force and parse_version(current['version']) and \
+            parse_version(entry['version']) < parse_version(current['version']):
+        print(f'{clean(pid)}@{clean(current["version"])} is newer than this registry offers')
+        return False, []
     for dep in missing:
         print(
             f'{clean(pid)} depends on {clean(dep)}, which is not in the registry: '
@@ -1199,6 +1366,8 @@ def install_with_dependencies(pid, registry, force=False, source=None):
     done = []
     installed = scan_installed()
     for dep in to_install:
+        if dep == pid:
+            continue
         dep_entry = chosen[dep]
         verb = 'Updating' if dep in installed else 'Installing'
         print(f'{verb} dependency {clean(dep)} of {clean(pid)}')
@@ -1242,14 +1411,25 @@ def cmd_update(query, update_all=False, force=False, quiet=False, source=None):
 
         for pid in ids:
             # An installed plugin is updated from the registry it came from, never from another.
-            entry = find_entry(registry['plugins'], pid, source, installed.get(pid), registry['sources'])
-            if not entry:
+            if not any(p['id'] == pid for p in registry['plugins']):
                 print(f'{clean(pid)} not found in its registry, skipped', file=sys.stderr)
                 continue
             if pid not in installed:
                 print(f'{clean(pid)} is not installed, skipped (use install)', file=sys.stderr)
                 continue
-            changed = install(entry, registry['url'], force) or changed
+            try:
+                entry, chosen, order, missing = resolve_plan(
+                    pid, registry['plugins'], scan_installed(), source, registry['sources'], force)
+            except ExtError as e:
+                print(f'{clean(pid)}: {e}; skipped', file=sys.stderr)
+                continue
+            current_version = parse_version(installed[pid]['version'])
+            if not force and current_version and parse_version(entry['version']) <= current_version:
+                continue
+            for dep in missing:
+                print(f'{clean(pid)} depends on missing {clean(dep)}; its extensions will wait.', file=sys.stderr)
+            for dep in order:
+                changed = install(chosen[dep], registry['url'], force) or changed
         if changed:
             scan_extensions()
     if changed and not quiet:
@@ -1680,6 +1860,10 @@ def plugin_view(row):
         'id': clean(row['id']),
         'name': row['name'],
         'version': row['version'],
+        'latestVersion': row.get('latest_version'),
+        'compatibleVersion': row.get('compatible_version'),
+        'plannedDependencies': row.get('planned_dependencies', []),
+        'missingDependencies': row.get('missing_dependencies', []),
         'installedVersion': row['installed_version'],
         'state': row['state'],
         'description': row['description'],
@@ -1759,13 +1943,22 @@ def api_update(body):
         installed = scan_installed()
         if pid not in installed:
             raise ExtError(f'{clean(pid)} is not installed', 409)
-        entry = find_entry(registry['plugins'], pid, source, installed[pid], registry['sources'])
-        if not entry:
-            raise ExtError(f'{clean(pid)} is not in the registry it was installed from')
-        changed = install(entry, registry['url'])
+        entry, chosen, order, missing = resolve_plan(
+            pid, registry['plugins'], installed, source, registry['sources'])
+        current_version = parse_version(installed[pid]['version'])
+        if current_version and parse_version(entry['version']) <= current_version:
+            return dict(api_result(pid, False), dependencies=[])
+        changed, deps = False, []
+        for dep in missing:
+            print(f'{clean(pid)} depends on missing {clean(dep)}; its extensions will wait.', file=sys.stderr)
+        for dep in order:
+            if install(chosen[dep], registry['url']):
+                changed = True
+                if dep != pid:
+                    deps.append(dep)
         if changed:
             scan_extensions()
-        return api_result(pid, changed)
+        return dict(api_result(pid, changed), dependencies=[api_result(dep, True) for dep in deps])
 
 
 def api_repo_add(body):
@@ -2347,7 +2540,7 @@ class Menu:
 
     def install_entry(self, entry, force=False):
         with ExtensionsLock():
-            done = install(entry, self.registry['url'], force)
+            done, _deps = install_with_dependencies(entry['id'], self.registry, force, entry.get('_source'))
             if done:
                 scan_extensions()
         return done
@@ -2497,6 +2690,8 @@ class Menu:
                     continue
                 if r['state'] == 'available':
                     self.act(lambda: self.install_new(r['id'], r['source']))
+                elif r['state'] == 'incompatible':
+                    print(f'###### No compatible version of {r["name"]} for this Tessera')
                 elif r['state'] == 'conflict':
                     print(f'###### {r["name"]} is installed from another registry: remove it first')
                 elif self.confirm(f'{r["name"]} is installed. Reinstall?'):

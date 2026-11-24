@@ -177,6 +177,20 @@ describe('extensions-installer / install', () => {
 });
 
 describe('extensions-installer / update', () => {
+  it('enables a dependency installed while updating the selected release', async () => {
+    const depUrl = '/extensions/owner/manifest.json';
+    const { installer, settings, loader } = setup((path) =>
+      path === 'status' ? okStatus() : okAction({
+        dependencies: [{ id: 'acme/owner', changed: true, version: '1.0.0', manifestUrl: depUrl }],
+      }),
+    );
+    await installer.update(plugin);
+    expect(settings.addPlugin).toHaveBeenCalledWith(
+      `http://printer:8000${depUrl}`, [], 'catalog', '1.0.0',
+    );
+    expect(loader.loadEnabledPlugins).toHaveBeenCalled();
+  });
+
   it('плагин включён в этом браузере: перезагрузка манифеста и плашка', async () => {
     const { installer, settings, loader } = setup((path) => (path === 'status' ? okStatus() : okAction()));
     settings.plugins = [{ manifestUrl: ABSOLUTE }];

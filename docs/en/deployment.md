@@ -87,7 +87,7 @@ What the CLI checks before anything lands in `extensions/`:
 - the archive is at most 20 MB and unpacks to at most 100 MB and 5000 entries;
 - `manifest.json` from the archive has the same `id`/`version` as the registry entry;
 - `pluginApi` of the entry fits the host: same MAJOR, MINOR not above the host's
-  (now `1.0`). Missing fields and the historical integer `1` are diagnosed as
+  (currently `1.2`). Missing fields and the historical integer `1` are diagnosed as
   `0.7` and rejected as a different MAJOR;
 - its [dependencies](plugin-development.md#dependencies) fit: plugins from `requires` are
   installed first, an installed one older than `dependencies` asks is updated; the CLI
@@ -98,6 +98,12 @@ A plugin is unpacked into a hidden staging folder and swapped in with `rename`. 
 failed update leaves the previous version in place. Registry plugins get an
 `.tessera-origin.json` file next to the manifest. The CLI refuses to overwrite a
 folder you put there by hand unless you pass `--force`.
+
+For a versioned registry, the manager tries releases from newest to oldest and selects
+the first whose PluginAPI and dependency plan fit this host. Missing dependencies still
+produce a warning; their extension points wait for the missing plugin. Update installs
+only a newer compatible release, never an automatic downgrade. Older managers read only
+the top-level latest release until Tessera is updated.
 
 **Additional registries.** Besides the built-in registry you can add registries of other
 authors: any `registry.json` in the same format (schema 1, see
@@ -564,8 +570,8 @@ npm run pack       # the plugin's own script (see plugins/spoolman), which runs:
 node <Tessera>/tools/registry-pack.cjs dist --dir hello --url-base . --out <Tessera-Ext>/registry
 ```
 
-It writes `registry/hello-<version>.tar.gz` and adds or replaces the plugin's entry
-in `registry/registry.json`:
+It writes `registry/hello-<version>.tar.gz` and appends the release to the plugin's
+history in `registry/registry.json`:
 
 ```json
 { "schema": 1, "plugins": [ {
@@ -575,13 +581,22 @@ in `registry/registry.json`:
   "sha256": "…", "size": 12345, "description": "…", "author": "…" } ] }
 ```
 
+The same entry also has `"versions": [{ "version": "1.2.0", "dir": "hello", ... },
+{ "version": "1.1.0", "dir": "hello", ... }]`; each item contains the complete release
+metadata shown above. The top-level fields describe version `1.2.0`.
+
 `pluginApi` comes from `manifest.pluginApi`; a manifest without it is legacy `0.7`
 and incompatible with stable `1.x`. `--plugin-api` only checks that it is the expected
 one. The CLI refuses an incompatible entry.
 `requires` lists every plugin it depends on (owners of the points in `extensions` and the
 keys of `manifest.dependencies`); `dependencies` is `manifest.dependencies` as is. They are
 separate fields because older CLIs accept only strings in `requires`.
-Packing needs GNU tar (`--sort=name`).
+Each plugin has one top-level entry with a `versions` array ordered newest first. Every
+version carries its own `dir`, `name`, `version`, `description`, `author`, `pluginApi`,
+`requires`, `dependencies`, `url`, `sha256`, and `size` where applicable. The top-level
+fields mirror the newest release for older managers. Registries without `versions` remain
+readable. Published versions and archives are immutable: bump the version when code or
+metadata changes. Packing needs GNU tar (`--sort=name`).
 
 The archive is reproducible on any OS: entries are sorted, timestamps and owners are
 zeroed, and the gzip header has no timestamp and a fixed OS byte. Anyone can rebuild a plugin from the reviewed

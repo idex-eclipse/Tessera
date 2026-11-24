@@ -307,6 +307,7 @@ Optional plugins are installed from the [tessera-ext](https://github.com/idex-ec
 registry, which holds each plugin's open sources and prebuilt archives. A plugin is
 downloaded, checked against its sha256 and unpacked into `~/tessera/extensions/`; nothing is
 built on the printer. The easiest way is in the UI: **Settings → Plugins → Plugin registry**.
+The manager selects the newest release compatible with this Tessera and its dependencies.
 The same in a terminal:
 
 ```bash

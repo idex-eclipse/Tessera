@@ -237,6 +237,7 @@ const en: I18nMessages = {
     registryUnreachable: 'Registry is unreachable: {error}',
     registryWorking: 'Working…',
     registryEmpty: 'No plugins in the registry',
+    registryNoCompatibleVersion: 'No compatible version for this Tessera and its dependencies',
     sources: 'Plugin sources',
     sourcesHint: 'The built-in registry and the extra registries you added. A plugin is updated only from the registry it was installed from.',
     sourceOfficial: 'built-in',

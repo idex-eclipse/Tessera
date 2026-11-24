@@ -234,6 +234,7 @@ const ru: I18nMessages = {
     registryUnreachable: 'Реестр недоступен: {error}',
     registryWorking: 'Выполняется…',
     registryEmpty: 'В реестре нет плагинов',
+    registryNoCompatibleVersion: 'Нет совместимой версии для этой Tessera и её зависимостей',
     sources: 'Источники плагинов',
     sourcesHint: 'Встроенный реестр и добавленные вами дополнительные. Плагин обновляется только из того реестра, откуда он был установлен.',
     sourceOfficial: 'встроенный',

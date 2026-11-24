@@ -24,7 +24,13 @@ export interface RegistryPlugin {
    * 'local' — установлен, но в реестре его нет. 'conflict' — тот же id установлен из другого
    * реестра: эта запись недоступна, пока тот плагин не удалён.
    */
-  state: 'available' | 'installed' | 'update' | 'local' | 'conflict';
+  state: 'available' | 'installed' | 'update' | 'local' | 'conflict' | 'incompatible';
+  /** Latest published release and the release selected for this host, if one fits. */
+  latestVersion?: string | null;
+  compatibleVersion?: string | null;
+  /** The server's exact dependency plan keeps the confirmation aligned with installation. */
+  plannedDependencies?: Array<{ id: string; name: string; version: string; installedVersion: string | null }>;
+  missingDependencies?: string[];
   description: string;
   /** Установлен из реестра. Папки, положенные вручную, служба не трогает. */
   managed: boolean;
@@ -221,6 +227,18 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
     update: RegistryPlugin[];
     missing: string[];
   } {
+    if (plugin.plannedDependencies && plugin.missingDependencies) {
+      const planned = plugin.plannedDependencies.map((dep) => ({
+        ...plugin,
+        ...dep,
+        installedVersion: dep.installedVersion,
+      }));
+      return {
+        install: planned.filter((dep) => dep.installedVersion === null),
+        update: planned.filter((dep) => dep.installedVersion !== null),
+        missing: plugin.missingDependencies,
+      };
+    }
     // Same rule as the service: a dependency comes from the registry of the plugin that needs
     // it, else from the built-in one. A third registry is never used.
     const find = (id: string, prefer: string | null | undefined): RegistryPlugin | undefined => {
@@ -290,6 +308,20 @@ export function createExtensionsInstaller(deps: ExtensionsInstallerDeps) {
       const result = await call<ActionResult>('update', target(plugin));
       if (!result.changed || !result.manifestUrl) return;
       await catalog.refresh();
+      let addedDependency = false;
+      for (const dep of result.dependencies ?? []) {
+        if (!dep.manifestUrl) continue;
+        const depUrl = absoluteManifestUrl(dep.manifestUrl);
+        if (settings.plugins.some((p) => p.manifestUrl === depUrl)) {
+          await loader.reloadRemotePlugin(depUrl);
+          reloadRequired = true;
+        } else {
+          // Newly installed dependencies must be enabled in this browser as on Install.
+          settings.addPlugin(depUrl, [], 'catalog', dep.version ?? undefined);
+          addedDependency = true;
+        }
+      }
+      if (addedDependency) await loader.loadEnabledPlugins();
       const url = absoluteManifestUrl(result.manifestUrl);
       // В этом браузере плагин могли и не включать: тогда перезагружать нечего.
       if (settings.plugins.some((p) => p.manifestUrl === url)) {
