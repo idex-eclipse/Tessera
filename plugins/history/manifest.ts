@@ -3,7 +3,7 @@ import type { PluginManifest } from '../../plugin-sdk/src/types';
 export const historyManifest: PluginManifest = {
   id: '@core/history',
   name: 'History',
-  version: '4.2.0',
+  version: '4.3.0',
   entry: '/plugins/history/index.js',
   guards: [
     {
@@ -42,5 +42,9 @@ export const historyManifest: PluginManifest = {
   locales: ['en', 'ru'],
   pages: [
     { id: 'history', titleKey: 'history.title', icon: 'history', element: 'mpu-history-page' },
+  ],
+  // Fleet starts with the same compact action size as other one-row printer panels.
+  printerPanels: [
+    { id: 'fleet-stats', element: 'mpu-history-fleet', titleKey: 'stats.combinedTitle', defaultSize: { w: 4, h: 1 } },
   ],
 };

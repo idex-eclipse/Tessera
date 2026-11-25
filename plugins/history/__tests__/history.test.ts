@@ -318,8 +318,11 @@ describe('manifest', () => {
   });
 
   it('publishes the additive History feature version without changing extension point versions', () => {
-    expect(historyManifest.version).toBe('4.2.0');
+    expect(historyManifest.version).toBe('4.3.0');
     expect(historyManifest.extensionPoints?.every((point) => point.version === 1)).toBe(true);
+    expect(historyManifest.printerPanels).toContainEqual(expect.objectContaining({
+      id: 'fleet-stats', defaultSize: { w: 4, h: 1 },
+    }));
   });
 
   it('does not conflict with the host, config or jobs (same Ctrl+F / Alt+R on different pages)', () => {

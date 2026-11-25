@@ -424,6 +424,8 @@ Fleet mode is a full-screen host drawer with a grid of cards for all printers.
   fleet layout is reset. The host clamps positive integer values to width 4–12
   and height 1–16. Existing saved layouts are never rewritten when a plugin
   changes its default.
+- History contributes a 4×1 Statistics button. It opens the same printer and
+  filament statistics shown on the History page for that card's printer.
 - Panels may offer actions for their own printer. Send requests through
   `api.moonrakerFor(params.printerId)` and read printer-specific settings through
   `api.settingsFor(params.printerId)`. Guards must check `ctx.targetPrinterId` rather than the active

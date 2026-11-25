@@ -10,9 +10,12 @@
   import { analyzeHistory } from '../../lib/history-analysis';
   import { historyUi } from '../../state/page-ui-state.svelte.ts';
 
+  /** Fleet passes its card printer explicitly; the page follows the active printer. */
+  let { printerId }: { printerId?: string } = $props();
+
   const api = usePluginApi();
   const i18n = api.i18n;
-  const history = useHistoryFiles(api);
+  const history = useHistoryFiles(api, printerId);
 
   interface Totals {
     totalJobs: number;
@@ -49,7 +52,7 @@
     loading = true;
     try {
       const res = await api
-        .moonrakerFor(api.printer.id)
+        .moonrakerFor(printerId ?? api.printer.id)
         .request<{ job_totals?: Record<string, unknown> }>('server.history.totals');
       if (seq !== loadSeq) return;
       const t = res?.job_totals ?? {};
@@ -76,7 +79,7 @@
     actionError = '';
     let h;
     try {
-      h = api.moonrakerFor(api.printer.id);
+      h = api.moonrakerFor(printerId ?? api.printer.id);
     } catch {
       return;
     }
@@ -86,7 +89,8 @@
   }
 
   init();
-  const offPrinter = api.onPrinterChange(init);
+  // A fleet dialog must keep reading its own printer while another tab is active.
+  const offPrinter = printerId === undefined ? api.onPrinterChange(init) : () => {};
   onDestroy(() => {
     for (const u of unsubs) u();
     offPrinter();
@@ -106,7 +110,7 @@
   async function doReset(): Promise<void> {
     actionError = '';
     try {
-      await api.moonrakerFor(api.printer.id).request('server.history.reset_totals');
+      await api.moonrakerFor(printerId ?? api.printer.id).request('server.history.reset_totals');
       await load();
     } catch (e) {
       // Guard rejections expose a translated reason; other errors use the generic message.

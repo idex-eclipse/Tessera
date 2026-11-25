@@ -1,6 +1,7 @@
 export const ru = {
   history: {
     title: 'История',
+    fleetDialogTitle: 'Статистика · {name}',
     tabsLabel: 'Разделы истории',
     unit: { h: 'ч', m: 'м', s: 'с', meter: 'м', km: 'км' },
     hotkeys: {

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MoonrakerProxyHandle, PluginApi } from '../../../plugin-sdk/src/types';
 import WithApi from '../../shared/file-table/__tests__/helpers/WithApi.svelte';
 import HistoryPage from '../components/page/HistoryPage.svelte';
+import HistoryFleetPanel from '../components/fleet/HistoryFleetPanel.svelte';
 import { historyUi } from '../state/page-ui-state.svelte.ts';
 
 // The fake supplies one completed job so both halves of the statistics tab render meaningful content.
@@ -119,6 +120,43 @@ describe('History page tabs', () => {
       expect(historyTab?.getAttribute('aria-selected')).toBe('true');
     } finally {
       view.stop();
+    }
+  });
+});
+
+describe('History fleet statistics', () => {
+  it('opens the shared statistics for the card printer even when another printer is active', async () => {
+    const base = fakeApi();
+    const moonrakerFor = vi.fn(() => base.moonrakerFor('p-card'));
+    const api = {
+      ...base,
+      printers: [...base.printers, { id: 'p-card', name: 'Card printer', url: 'http://card' }],
+      moonrakerFor,
+    } as PluginApi;
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(WithApi, {
+      target,
+      props: {
+        api,
+        component: HistoryFleetPanel as unknown as Component<Record<string, unknown>>,
+        props: { params: { printerId: 'p-card' } },
+      },
+    });
+    try {
+      expect(target.querySelector('[role="dialog"]')).toBeNull();
+      target.querySelector<HTMLButtonElement>('button')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      flushSync();
+      expect(target.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(target.querySelector('.printer-pane')).not.toBeNull();
+      expect(target.querySelector('.materials')).not.toBeNull();
+      expect(moonrakerFor).toHaveBeenCalledWith('p-card');
+      expect(moonrakerFor).not.toHaveBeenCalledWith('p-history-stats');
+    } finally {
+      unmount(component);
+      target.remove();
     }
   });
 });
