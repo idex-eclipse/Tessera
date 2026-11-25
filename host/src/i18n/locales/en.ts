@@ -209,6 +209,8 @@ const en: I18nMessages = {
     printerName: 'Name',
     printerNamePlaceholder: 'My awesome printer',
     printerUrl: 'URL',
+    printerUrlPlaceholder: '192.168.1.20 or https://printer.local',
+    invalidPrinterUrl: 'Enter a printer address or an HTTP(S) URL without a path.',
     testConnection: 'Test connection',
     printersActivate: 'Activate',
 

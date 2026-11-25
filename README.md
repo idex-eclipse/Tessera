@@ -348,7 +348,7 @@ config).
 ### First launch
 
 1. Open `http://<printer-host>:8000`.
-2. Tessera has already created a first printer, `MyPrinter`, at `<host>:7125`. Change its URL in **Settings → Printers** if Moonraker is elsewhere, and add more printers with **[+]** in the printer tabs.
+2. Tessera has already created a first printer, `MyPrinter`, at `<host>:7125`. Change its URL in **Settings → Printers** if Moonraker is elsewhere, and add more printers with **[+]** in the printer tabs. The add dialog accepts an IP address without `http://` (port `7125` by default) or an explicit `https://` URL.
 3. Tessera connects and lights up only the widgets, chips and pages your printer actually has — feature detection is per printer.
 
 <a id="for-developers"></a>

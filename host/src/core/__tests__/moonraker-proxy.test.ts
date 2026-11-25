@@ -424,6 +424,20 @@ describe('MoonrakerProxy / request', () => {
 });
 
 describe('MoonrakerProxy / httpBaseUrl', () => {
+  it('uses a secure WebSocket for an HTTPS printer URL', async () => {
+    const { factory, instances } = createWsFactory();
+    const proxy = createMoonrakerProxy('https://printer.local:8443', {
+      WebSocket: factory,
+    });
+
+    try {
+      expect(proxy.httpBaseUrl).toBe('https://printer.local:8443');
+      expect((await waitForSocket(instances)).url).toBe('wss://printer.local:8443/websocket');
+    } finally {
+      proxy.dispose();
+    }
+  });
+
   it('MP-HTTP-01: http URL maps to same origin', () => {
     const { factory } = createWsFactory();
 

@@ -5,6 +5,13 @@ Tessera has no backend of its own. Settings live in the browser's `localStorage`
 printer, so they survive a browser change (see [Mirror in Moonraker](#mirror-in-moonraker)).
 The schema is versioned with the `mpu:v2:` prefix.
 
+In the Add printer dialog, enter an IP address, `IP:port`, or an explicit
+`http://` or `https://` URL. An IP address without a scheme uses HTTP; without
+a port it uses Moonraker's direct port `7125`. Explicit URLs keep their scheme
+and port, so `https://printer.local` uses the normal HTTPS port. Test connection
+checks the same address that Add saves. HTTPS requires a certificate trusted by
+the browser and Moonraker access from Tessera's origin.
+
 ## localStorage keys
 
 | Key | Content |

@@ -206,6 +206,8 @@ const ru: I18nMessages = {
     printerName: 'Имя',
     printerNamePlaceholder: 'Мой замечательный принтер',
     printerUrl: 'URL',
+    printerUrlPlaceholder: '192.168.1.20 или https://printer.local',
+    invalidPrinterUrl: 'Укажите адрес принтера или HTTP(S)-URL без пути.',
     testConnection: 'Тест соединения',
     printersActivate: 'Активировать',
 
