@@ -85,6 +85,31 @@ function parseArgs(argv) {
   return opts;
 }
 
+/** Sort published releases by semver so a prerelease never displaces its final release. */
+function compareVersions(a, b) {
+  const parts = (value) => {
+    const match = SEMVER_RE.exec(value);
+    if (!match) throw new Error(`Invalid published version: ${value}`);
+    return [Number(match[1]), Number(match[2]), Number(match[3]), match[4]?.split('.')];
+  };
+  const left = parts(a);
+  const right = parts(b);
+  for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i] - right[i];
+  if (!left[3] || !right[3]) return Number(Boolean(right[3])) - Number(Boolean(left[3]));
+  for (let i = 0; i < Math.max(left[3].length, right[3].length); i++) {
+    const x = left[3][i];
+    const y = right[3][i];
+    if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
+    if (x === y) continue;
+    const xn = /^\d+$/.test(x);
+    const yn = /^\d+$/.test(y);
+    if (xn && yn) return Number(x) - Number(y);
+    if (xn !== yn) return xn ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.src || !opts.dir || !opts.urlBase) {
@@ -100,6 +125,7 @@ function main() {
       throw new Error(`manifest.json: missing "${key}"`);
     }
   }
+  if (!SEMVER_RE.test(manifest.version)) throw new Error(`manifest.json: invalid version ${manifest.version}`);
   if (!fs.existsSync(path.join(src, manifest.entry))) {
     throw new Error(`manifest.entry "${manifest.entry}" not found in ${src}`);
   }
@@ -124,8 +150,6 @@ function main() {
   // фиксируем его, чтобы архив не зависел от платформы
   const archive = zlib.gzipSync(tarBytes, { level: 9 });
   archive[9] = 0x03;
-  fs.writeFileSync(path.join(out, archiveName), archive);
-
   const sha256 = crypto.createHash('sha256').update(archive).digest('hex');
   const url = opts.urlBase === '.' ? archiveName : `${opts.urlBase.replace(/\/+$/, '')}/${archiveName}`;
 
@@ -134,8 +158,7 @@ function main() {
     ? JSON.parse(fs.readFileSync(registryPath, 'utf8'))
     : { schema: 1, plugins: [] };
 
-  const entry = {
-    id: manifest.id,
+  const release = {
     dir: opts.dir,
     name: manifest.name,
     version: manifest.version,
@@ -148,10 +171,33 @@ function main() {
     sha256,
     size: archive.length,
   };
+  if (registry.schema !== 1 || !Array.isArray(registry.plugins)) throw new Error('Invalid registry.json');
+  const previous = registry.plugins.find((p) => p.id === manifest.id);
+  if (previous && previous.dir !== opts.dir) throw new Error(`Published dir for ${manifest.id} cannot change`);
+  if (registry.plugins.some((p) => p.id !== manifest.id && p.dir === opts.dir)) {
+    throw new Error(`Published dir ${opts.dir} belongs to another plugin`);
+  }
+  const versions = previous ? (previous.versions ?? [Object.fromEntries(
+    Object.entries(previous).filter(([key]) => key !== 'id' && key !== 'versions'),
+  )]) : [];
+  const existing = versions.find((v) => v.version === release.version);
+  if (existing && JSON.stringify(existing) !== JSON.stringify(release)) {
+    throw new Error(`${manifest.id}@${release.version} was already published; bump the version instead`);
+  }
+  const archivePath = path.join(out, archiveName);
+  if (fs.existsSync(archivePath) && !fs.readFileSync(archivePath).equals(archive)) {
+    throw new Error(`${archiveName} already exists with different bytes; bump the version instead`);
+  }
+  if (!existing) versions.push(release);
+  versions.sort((a, b) => compareVersions(b.version, a.version));
+  const latest = versions[0];
+  const entry = { id: manifest.id, ...latest, versions };
   registry.plugins = registry.plugins
     .filter((p) => p.id !== entry.id)
     .concat(entry)
     .sort((a, b) => a.id.localeCompare(b.id));
+  // Validate all collisions before writing either artifact so a failed republish is inert.
+  if (!fs.existsSync(archivePath)) fs.writeFileSync(archivePath, archive, { flag: 'wx' });
   fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
 
   console.log(`${archiveName}  sha256=${sha256}  (${archive.length} bytes)`);

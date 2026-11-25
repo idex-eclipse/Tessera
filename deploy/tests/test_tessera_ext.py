@@ -572,6 +572,157 @@ class DependencyVersionTests(Base):
             ext.load_registry()
 
 
+class VersionedRegistryTests(Base):
+    """A version history chooses one compatible release for every install path."""
+
+    def publish_version(self, pid, version, directory, plugin_api=None, dependencies=None):
+        previous = next((e for e in self.entries if e['id'] == pid), None)
+        files = extension_files(pid, version, dependencies=dependencies)
+        archived_manifest = json.loads(files['manifest.json'])
+        archived_manifest['pluginApi'] = plugin_api or ext.HOST_PLUGIN_API
+        files['manifest.json'] = json.dumps(archived_manifest).encode()
+        entry = self.publish(
+            files, pid=pid,
+            version=version, directory=directory,
+            pluginApi=plugin_api or ext.HOST_PLUGIN_API,
+            **({'dependencies': dependencies, 'requires': list(dependencies)} if dependencies else {}),
+        )
+        history = list(previous['versions'] if previous and 'versions' in previous else
+                       [{k: v for k, v in previous.items() if k != 'id'}] if previous else [])
+        history.append({k: v for k, v in entry.items() if k != 'id'})
+        entry['versions'] = sorted(history, key=lambda v: ext.parse_version(v['version']), reverse=True)
+        with open(os.path.join(self.registry, 'registry.json'), 'w', encoding='utf-8') as f:
+            json.dump({'schema': 1, 'plugins': self.entries}, f)
+        return entry
+
+    def test_plugin_api_12_falls_back_on_host_11_and_status_has_one_row(self):
+        # The 1.1 beta must not expose a Fleet-era release as installable.
+        self.assertEqual(ext.HOST_PLUGIN_API, '1.1')
+        self.publish_version('acme/hello', '1.0.0', 'hello')
+        self.publish_version('acme/hello', '2.0.0', 'hello', plugin_api='1.2')
+        registry = ext.load_registries()
+        rows = ext.collect_status(registry['plugins'], {}, registry['sources'])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['version'], rows[0]['latest_version']), ('1.0.0', '2.0.0'))
+        with self.quiet():
+            ext.cmd_install('hello')
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '1.0.0')
+
+    def test_plugin_api_12_only_release_is_incompatible_on_host_11(self):
+        # A registry with no 1.1-compatible release must remain visible but unavailable.
+        self.assertEqual(ext.HOST_PLUGIN_API, '1.1')
+        self.publish_version('acme/hello', '2.0.0', 'hello', plugin_api='1.2')
+        registry = ext.load_registries()
+        rows = ext.collect_status(registry['plugins'], {}, registry['sources'])
+        self.assertEqual(rows[0]['state'], 'incompatible')
+        self.assertIsNone(rows[0]['compatible_version'])
+        with self.assertRaisesRegex(ext.ExtError, 'needs plugin API 1.2, host provides 1.1'):
+            ext.cmd_install('hello')
+
+    def test_manual_install_remains_an_api_conflict(self):
+        # Version search must preserve the API's ownership conflict response.
+        self.put_manual()
+        self.publish_version('acme/hello', '2.0.0', 'hello')
+        with self.assertRaises(ext.ExtError) as raised:
+            ext.api_update({'id': 'acme/hello'})
+        self.assertEqual(raised.exception.status, 409)
+
+    def test_other_registry_remains_an_api_conflict(self):
+        # The resolver checks ownership before an archive can replace foreign code.
+        entry = {'id': 'acme/hello', 'dir': 'hello', 'version': '1.0.0',
+                 'pluginApi': ext.HOST_PLUGIN_API, '_source': 'official'}
+        official_url = 'https://example.com/official/registry.json'
+        foreign_url = 'https://example.com/mine/registry.json'
+        sources = [{'name': 'official', 'official': True, 'url': official_url},
+                   {'name': 'mine', 'official': False, 'url': foreign_url}]
+        installed = {'acme/hello': {'dir': 'hello', 'version': '7.0.0',
+                                    'origin': {'registry': foreign_url}}}
+        with self.assertRaises(ext.ExtError) as raised:
+            ext.resolve_plan('acme/hello', [entry], installed, 'official', sources)
+        self.assertEqual(raised.exception.status, 409)
+
+    def test_core_and_transitive_dependency_fallback(self):
+        self.publish_version('acme/owner', '1.0.0', 'owner')
+        self.publish_version('acme/owner', '2.0.0', 'owner', plugin_api='1.3')
+        self.publish_version('acme/hello', '1.0.0', 'hello', dependencies={'acme/owner': '1.0.0'})
+        self.publish_version('acme/hello', '2.0.0', 'hello', dependencies={'acme/owner': '2.0.0'})
+        with self.quiet():
+            ext.cmd_install('hello')
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '1.0.0')
+        self.assertEqual(ext.scan_installed()['acme/owner']['version'], '1.0.0')
+
+    def test_core_version_falls_back(self):
+        self.publish_version('acme/hello', '1.0.0', 'hello')
+        self.publish_version('acme/hello', '2.0.0', 'hello',
+                             dependencies={'@core/system': '9.0.0'})
+        with open(ext.CORE_PLUGINS_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'@core/system': '5.0.0'}, f)
+        with self.quiet():
+            ext.cmd_install('hello')
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '1.0.0')
+
+    def test_versioned_archive_requirements_must_match_registry(self):
+        entry = self.publish_version('acme/hello', '1.0.0', 'hello')
+        entry['dependencies'] = {'@core/system': '1.0.0'}
+        entry['requires'] = ['@core/system']
+        entry['versions'][0]['dependencies'] = entry['dependencies']
+        entry['versions'][0]['requires'] = entry['requires']
+        with open(os.path.join(self.registry, 'registry.json'), 'w', encoding='utf-8') as f:
+            json.dump({'schema': 1, 'plugins': self.entries}, f)
+        with self.assertRaisesRegex(ext.ExtError, 'Archive requirements'), self.quiet():
+            ext.cmd_install('hello')
+
+    def test_update_installs_new_dependency_from_selected_release(self):
+        self.publish_version('acme/hello', '1.0.0', 'hello')
+        with self.quiet():
+            ext.cmd_install('hello')
+        self.publish_version('acme/owner', '1.0.0', 'owner')
+        self.publish_version('acme/hello', '2.0.0', 'hello',
+                             dependencies={'acme/owner': '1.0.0'})
+        with self.quiet():
+            result = ext.api_update({'id': 'acme/hello'})
+        self.assertEqual(result['version'], '2.0.0')
+        self.assertEqual([(d['id'], d['version']) for d in result['dependencies']],
+                         [('acme/owner', '1.0.0')])
+        self.assertEqual(ext.scan_installed()['acme/owner']['version'], '1.0.0')
+
+    def test_update_does_not_downgrade_after_registry_branch_change(self):
+        self.publish_version('acme/hello', '2.0.0', 'hello')
+        with self.quiet():
+            ext.cmd_install('hello')
+        # A branch can expose an older release after the newer one is installed.
+        self.publish(extension_files('acme/hello', '1.0.0'), version='1.0.0')
+        with self.quiet():
+            self.assertFalse(ext.cmd_update('hello'))
+        self.assertEqual(ext.scan_installed()['acme/hello']['version'], '2.0.0')
+
+    def test_rejects_duplicate_versions_and_mismatched_latest(self):
+        entry = self.publish_version('acme/hello', '1.0.0', 'hello')
+        entry['versions'].append(dict(entry['versions'][0]))
+        with open(os.path.join(self.registry, 'registry.json'), 'w', encoding='utf-8') as f:
+            json.dump({'schema': 1, 'plugins': self.entries}, f)
+        with self.assertRaises(ext.ExtError):
+            ext.load_registry()
+
+    def test_shared_dependency_constraints_backtrack_to_older_release(self):
+        def release(pid, version, dependencies=None, api=None):
+            return {'id': pid, 'dir': pid.split('/')[-1], 'version': version,
+                    'pluginApi': api or ext.HOST_PLUGIN_API,
+                    'dependencies': dependencies or {}}
+        entries = [
+            release('acme/root', '1.0.0', {'acme/owner': '1.0.0', 'acme/other': '1.0.0'}),
+            release('acme/owner', '2.0.0', {'acme/other': '2.0.0'}),
+            release('acme/owner', '1.0.0', {'acme/other': '1.0.0'}),
+            release('acme/other', '2.0.0', api='1.3'),
+            release('acme/other', '1.0.0'),
+        ]
+        _root, chosen, order, missing = ext.resolve_plan('acme/root', entries, {})
+        self.assertEqual(chosen['acme/owner']['version'], '1.0.0')
+        self.assertEqual(chosen['acme/other']['version'], '1.0.0')
+        self.assertEqual(order, ['acme/other', 'acme/owner', 'acme/root'])
+        self.assertEqual(missing, [])
+
+
 class SourceTests(Base):
     def test_only_https_and_local(self):
         for url in ('http://example.com/a', 'ftp://example.com/a'):

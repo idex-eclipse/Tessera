@@ -281,7 +281,7 @@
     {:else}
       <div class="plugin-list">
         {#each registryPlugins as plugin (pluginKey(plugin))}
-          {@const apiProblem = plugin.state === 'available' || plugin.state === 'update' ? pluginApiProblem(plugin.pluginApi) : null}
+          {@const apiProblem = plugin.state === 'available' || plugin.state === 'update' || plugin.state === 'incompatible' ? pluginApiProblem(plugin.pluginApi) : null}
           {@const key = pluginKey(plugin)}
           <div class="plugin-row">
             <div class="plugin-info">
@@ -301,6 +301,9 @@
               {#if apiProblem}
                 <span class="warning">{apiProblem}</span>
               {/if}
+              {#if plugin.state === 'incompatible' && !apiProblem}
+                <span class="warning">{i18n.t('settings.registryNoCompatibleVersion')}</span>
+              {/if}
               {#if plugin.state === 'conflict'}
                 <span class="warning">{i18n.t('settings.sourceConflict')}</span>
               {/if}
@@ -314,6 +317,8 @@
                 <button class="btn btn-primary" onclick={() => installFromRegistry(plugin)} disabled={installer.busyId !== null || apiProblem !== null}>
                   {i18n.t('common.install')}
                 </button>
+              {:else if plugin.state === 'incompatible'}
+                <!-- No selectable release exists for this host; the server keeps the latest for context. -->
               {:else}
                 {#if plugin.state === 'update'}
                   <span class="badge update">v{plugin.installedVersion} → v{plugin.version}</span>
