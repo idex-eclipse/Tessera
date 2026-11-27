@@ -35,6 +35,23 @@ describe('matchPrinter', () => {
     expect(matchPrinter(printer, printing, '', new Set(['idle']))).toBe(false);
   });
 
+  it('requires every selected tag in AND mode, including tags from another plugin', () => {
+    const withAlert: FleetIndexEntry = {
+      tags: [PRINTING, { id: 'obico-alert', labelKey: 'k.obico' }],
+      searchText: 'Benchy_0.2mm.gcode',
+    };
+    const selected = new Set(['printing', 'obico-alert']);
+    expect(matchPrinter(printer, withAlert, '', selected, 'and')).toBe(true);
+    expect(matchPrinter(printer, printing, '', selected, 'and')).toBe(false);
+    expect(matchPrinter(printer, printing, '', selected, 'or')).toBe(true);
+    expect(matchPrinter(printer, withAlert, 'cube', selected, 'and')).toBe(false);
+  });
+
+  it('returns no result for mutually exclusive states in AND mode', () => {
+    expect(matchPrinter(printer, printing, '', new Set(['printing', 'idle']), 'and')).toBe(false);
+    expect(matchPrinter(printer, printing, '', new Set(), 'and')).toBe(true);
+  });
+
   it('a printer without an index never passes a tag filter', () => {
     expect(matchPrinter(printer, null, '', new Set(['idle']))).toBe(false);
   });

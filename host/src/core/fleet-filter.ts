@@ -15,16 +15,25 @@ export interface FleetTagCount {
   count: number;
 }
 
+/** Chooses whether every selected fleet tag or any selected tag must match. */
+export type FleetFilterMode = 'or' | 'and';
+
 /**
- * Принтер проходит фильтр, если:
- * - запрос пуст ИЛИ входит (без учёта регистра) в имя принтера или searchText;
- * - И активных тегов нет ИЛИ у принтера есть хотя бы один из них (OR).
+ * Matches a printer by name or published search text, then applies the selected
+ * opaque tags with the requested mode. An empty tag selection matches all tags.
+ * @param printer Printer identity supplied by the host.
+ * @param entry Merged plugin index for this printer, or null when absent.
+ * @param query User-entered search text.
+ * @param activeTagIds Selected opaque tag identifiers.
+ * @param mode Whether any or all selected tags must be present.
+ * @returns Whether the printer remains visible in fleet mode.
  */
 export function matchPrinter(
   printer: FleetFilterPrinter,
   entry: FleetIndexEntry | null,
   query: string,
   activeTagIds: ReadonlySet<string>,
+  mode: FleetFilterMode = 'or',
 ): boolean {
   const q = query.trim().toLocaleLowerCase();
   if (q) {
@@ -35,7 +44,11 @@ export function matchPrinter(
 
   if (activeTagIds.size > 0) {
     if (!entry) return false;
-    if (!entry.tags.some((t) => activeTagIds.has(t.id))) return false;
+    const present = new Set(entry.tags.map((tag) => tag.id));
+    const matches = mode === 'and'
+      ? [...activeTagIds].every((id) => present.has(id))
+      : [...activeTagIds].some((id) => present.has(id));
+    if (!matches) return false;
   }
 
   return true;

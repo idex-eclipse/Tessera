@@ -197,7 +197,7 @@ api.settingsFor(printerId).onChange((_key, all) => {
 <a id="fleet"></a>
 
 `api.fleet` lets a **fleet panel** (see [surfaces.md](surfaces.md#6-fleet-panels))
-feed the search box and filter buttons of fleet mode. It is a plugin → host data
+feed the search box and filter popover of fleet mode. It is a plugin → host data
 channel (the other one is [`api.notifications`](#notifications), write only; the rest are signals: `mpu:banner-expand`, `mpu:banner-collapse`,
 `mpu:auth-logout`); the host stores the values and never interprets them.
 
@@ -209,10 +209,12 @@ api.fleet.publish(printerId, {
 api.fleet.retract(printerId);   // when the panel goes away
 ```
 
-- `tags` — one filter button per distinct `id` across all printers, with a counter.
-  The label is `i18n.t(labelKey)`; `icon` is a name from the shared icon set (on
-  narrow screens only the icon is shown); `order` sorts the buttons. Selected tags
-  are OR-ed; with the search text they are AND-ed.
+- `tags` — one checkbox per distinct `id` across all printers, with a counter.
+  The label is `i18n.t(labelKey)`; `icon` is a name from the shared icon set;
+  `order` sorts the options. Users choose whether any (OR, the default) or all
+  (AND) selected tags must match. Search text is AND-ed with the tag result.
+  The mode and selection reset when fleet mode closes; Reset clears the selection
+  and search while keeping the mode until then.
 - `searchText` — matched as a case-insensitive substring. The host already matches
   the printer name itself, so put only extra text here (for example the file being
   printed).

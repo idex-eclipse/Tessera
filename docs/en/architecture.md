@@ -202,9 +202,10 @@ data channel from plugin to host for fleet mode (the other one, write-only, is t
   and withdraws it with `api.fleet.retract(printerId)`.
 - `tags` are `{ id, labelKey, icon?, order? }`; `searchText` is a plain string.
 - The host **stores and compares strings only**. It does not know what `printing`
-  or a file name means: it builds filter buttons from the published tags (label via
-  `i18n.t(labelKey)`) and matches the search query against the printer name and
-  `searchText`.
+  or a file name means: it lists published tags as checkboxes in a filter popover
+  (label via `i18n.t(labelKey)`) and matches the search query against the printer
+  name and `searchText`. The user can match any or all selected tags; search is
+  combined with the tag result using AND.
 - Records are keyed by (plugin, printer); several plugins can publish for one
   printer and the host merges them. Unchanged records are deduplicated, and records
   of removed printers are dropped.

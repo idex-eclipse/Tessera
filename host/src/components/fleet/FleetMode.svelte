@@ -15,10 +15,12 @@
   import { getAppContext } from '../../app-context.ts';
   import { getPluginApi } from '../../core/plugin-api-cache.ts';
   import { collectTags, matchPrinter } from '../../core/fleet-filter.ts';
+  import type { FleetFilterMode } from '../../core/fleet-filter.ts';
   import type { FleetTag } from '../../../../plugin-sdk/src/types.ts';
 
   import Icon from '../../../../plugins/shared/icons/Icon.svelte';
   import ConnectionStatus from '../connection-status/ConnectionStatus.svelte';
+  import FleetFiltersPopover from './FleetFiltersPopover.svelte';
   import PluginElementHost from '../plugin-element-host.svelte';
 
   import type { Router } from '../../core/router.svelte.ts';
@@ -63,13 +65,13 @@
 
   let query = $state('');
   let activeTags = $state<ReadonlySet<string>>(new Set());
+  let filterMode = $state<FleetFilterMode>('or');
   let searchEl = $state<HTMLInputElement | null>(null);
 
   let entries = $derived(printers.map((p) => ctx.fleetIndex.forPrinter(p.id)));
   let tagCounts = $derived(collectTags(entries));
 
-  // Тег, который был виден, но у которого сейчас 0 принтеров, остаётся кнопкой
-  // (пока он активен), иначе фильтр «пропал бы» вместе с последним совпадением.
+  // An active tag stays selectable with a zero count after its last matching printer disappears.
   let seenTags = $state<Record<string, FleetTag>>({});
   $effect(() => {
     const fresh = tagCounts.filter(({ tag }) => seenTags[tag.id]?.labelKey !== tag.labelKey);
@@ -79,7 +81,7 @@
     seenTags = next;
   });
 
-  let filterButtons = $derived.by(() => {
+  let filterOptions = $derived.by(() => {
     const live = new Set(tagCounts.map(({ tag }) => tag.id));
     const kept = [...activeTags]
       .filter((id) => !live.has(id) && seenTags[id])
@@ -90,7 +92,7 @@
   let visibleIds = $derived(
     new Set(
       printers
-        .filter((p, i) => matchPrinter(p, entries[i] ?? null, query, activeTags))
+        .filter((p, i) => matchPrinter(p, entries[i] ?? null, query, activeTags, filterMode))
         .map((p) => p.id),
     ),
   );
@@ -412,24 +414,15 @@
       </div>
     {/if}
     <div class="fleet-header-actions">
-      {#if filterButtons.length > 0}
-        <div class="fleet-filters" role="group" aria-label={i18n.t('fleet.filters')}>
-          {#each filterButtons as { tag, count } (tag.id)}
-            {@const label = i18n.t(tag.labelKey)}
-            <button
-              class="fleet-edit-btn fleet-filter-btn"
-              class:on={activeTags.has(tag.id)}
-              aria-pressed={activeTags.has(tag.id)}
-              onclick={() => toggleTag(tag.id)}
-              title={label}
-              aria-label={label}
-            >
-              {#if tag.icon}<Icon name={tag.icon} size={16} />{/if}
-              <span class="btn-label">{label}</span>
-              <span class="fleet-filter-count">{count}</span>
-            </button>
-          {/each}
-        </div>
+      {#if filterOptions.length > 0}
+        <FleetFiltersPopover
+          {i18n}
+          tags={filterOptions}
+          activeTagIds={activeTags}
+          mode={filterMode}
+          onToggleTag={toggleTag}
+          onModeChange={(next) => (filterMode = next)}
+        />
       {/if}
       {#if registryPanels.length > 0}
         <button
@@ -712,6 +705,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-xs);
+    min-height: 36px;
     padding: var(--space-xs) var(--space-sm);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -788,26 +782,6 @@
     cursor: pointer;
   }
   .fleet-search-clear:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-
-  .fleet-filters {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-  }
-  .fleet-filter-btn.on {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-  .fleet-filter-count {
-    min-width: 18px;
-    padding-inline: 5px;
-    border-radius: 999px;
-    background: var(--bg-surface-hover);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-    text-align: center;
-  }
 
   .fleet-result {
     display: flex;
