@@ -16,6 +16,11 @@ function fakeMoonraker() {
       db[body.key] = body.value;
       return new Response('{"result":{}}', { status: 200 });
     }
+    if (init?.method === 'DELETE') {
+      const delKey = url.searchParams.get('key');
+      if (delKey !== null) delete db[delKey];
+      return new Response('{"result":{}}', { status: 200 });
+    }
     const key = url.searchParams.get('key');
     if (key === null) return new Response(JSON.stringify({ result: { value: db } }), { status: 200 });
     return key in db
@@ -49,7 +54,9 @@ describe('settings mirror + store, two browsers and two printers', () => {
     const b1 = await boot(s1, fetchImpl);
     await b1.mirror.flush();
 
-    // Browser 2 imported the same printer list (export/import copies mpu:v2 keys).
+    // Browser 2 imported the same printer list (export/import copies mpu:v2 keys,
+    // so both browsers address the same settings:<printerId> records — this is the
+    // explicit sync channel; a printer added by hand would get a fresh random id).
     const s2 = new MemoryStorage();
     for (let i = 0; i < s1.length; i += 1) {
       const k = s1.key(i)!;

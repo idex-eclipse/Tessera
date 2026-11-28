@@ -7,8 +7,10 @@ import {
   encodeRemoteKey,
   localKeyFor,
   pickHomePrinter,
+  REMOTE_SCHEMA,
   routeKey,
   type RemoteEnvelope,
+  type RouteContext,
 } from '../settings-remote';
 
 /** A tiny in-memory Moonraker: one namespace store per printer base URL. */
@@ -26,6 +28,11 @@ function fakeMoonraker() {
       db[body.key] = body.value;
       return new Response(JSON.stringify({ result: {} }), { status: 200 });
     }
+    if (init?.method === 'DELETE') {
+      const delKey = url.searchParams.get('key');
+      if (delKey !== null) delete db[delKey];
+      return new Response(JSON.stringify({ result: {} }), { status: 200 });
+    }
     const key = url.searchParams.get('key');
     if (key === null) {
       return new Response(JSON.stringify({ result: { namespace: 'tessera', value: db } }), { status: 200 });
@@ -38,6 +45,7 @@ function fakeMoonraker() {
 
 const PRINTERS = [{ id: 'p1', name: 'A', url: 'http://printer-a:7125' }];
 const DB = 'http://printer-a:7125';
+const CTX: RouteContext = { homePrinterId: 'p1', deviceId: 'dev-1' };
 
 /** One simulated browser: its own localStorage, the shared fake Moonraker. */
 function setup(fm = fakeMoonraker(), storage = new MemoryStorage()) {
@@ -51,26 +59,60 @@ function setup(fm = fakeMoonraker(), storage = new MemoryStorage()) {
   return { fm, storage, mirror };
 }
 
+/** A record as the mirror writes it; `key` is filled by the test when it matters. */
+function envelope(data: unknown, rev = 1, schema = REMOTE_SCHEMA): RemoteEnvelope {
+  return {
+    app: 'tessera',
+    kind: 'settings',
+    schema,
+    key: '',
+    rev,
+    updatedAt: 1,
+    writer: { deviceId: 'other', host: '', userAgent: '' },
+    data,
+  };
+}
+
+/** The remote key under which this mirror's device-wide record lives. */
+function devKey(mirror: ReturnType<typeof createSettingsMirror>, name: string): string {
+  return `dev:${mirror.deviceId()}:${name}`;
+}
+
 describe('settings-remote / key routing', () => {
   it('escapes dots so Moonraker does not read them as a path', () => {
-    expect(decodeRemoteKey(encodeRemoteKey('plugin-settings:tessera/a.b'))).toBe('plugin-settings:tessera/a.b');
+    expect(decodeRemoteKey(encodeRemoteKey('plugin-settings:p1:tessera/a.b'))).toBe('plugin-settings:p1:tessera/a.b');
     expect(encodeRemoteKey('a.b')).not.toContain('.');
   });
 
-  it('routes per-printer keys to that printer without the local id in the remote key', () => {
-    expect(routeKey('mpu:v2:settings:p1', 'p1')).toEqual({ printerId: 'p1', remoteKey: 'settings' });
-    expect(routeKey('mpu:v2:plugin-settings:p2:tessera/x', 'p1')).toEqual({
+  it('routes per-printer keys to that printer under a key with the local printer id', () => {
+    expect(routeKey('mpu:v2:settings:p1', CTX)).toEqual({ printerId: 'p1', remoteKey: 'settings:p1' });
+    expect(routeKey('mpu:v2:plugin-settings:p2:tessera/x', CTX)).toEqual({
       printerId: 'p2',
-      remoteKey: 'plugin-settings:tessera/x',
+      remoteKey: 'plugin-settings:p2:tessera/x',
     });
-    expect(localKeyFor('plugin-settings:tessera/x', 'p2', 'p1')).toBe('mpu:v2:plugin-settings:p2:tessera/x');
+    expect(localKeyFor('plugin-settings:p2:tessera/x', 'p2', CTX)).toBe('mpu:v2:plugin-settings:p2:tessera/x');
+    // A record of some other printer id found in this DB is not ours
+    expect(localKeyFor('plugin-settings:p9:tessera/x', 'p2', CTX)).toBeNull();
+    expect(localKeyFor('settings:p1', 'p2', CTX)).toBeNull();
   });
 
-  it('routes global keys to the home printer and never mirrors device-only keys', () => {
-    expect(routeKey('mpu:v2:ui', 'p1')).toEqual({ printerId: 'p1', remoteKey: 'ui' });
-    expect(routeKey('mpu:v2:custom-font', 'p1')).toEqual({ printerId: 'p1', remoteKey: 'custom-font' });
-    expect(localKeyFor('custom-font', 'p1', 'p1')).toBe('mpu:v2:custom-font');
-    expect(routeKey('mpu:v2:plugin-settings:GLOBAL:tessera/x', 'p1')?.printerId).toBe('p1');
+  it('routes device-wide keys to the home printer under the device id', () => {
+    expect(routeKey('mpu:v2:ui', CTX)).toEqual({ printerId: 'p1', remoteKey: 'dev:dev-1:ui' });
+    expect(routeKey('mpu:v2:custom-font', CTX)).toEqual({ printerId: 'p1', remoteKey: 'dev:dev-1:custom-font' });
+    expect(localKeyFor('dev:dev-1:custom-font', 'p1', CTX)).toBe('mpu:v2:custom-font');
+    expect(routeKey('mpu:v2:plugin-settings:GLOBAL:tessera/x', CTX)).toEqual({
+      printerId: 'p1',
+      remoteKey: 'dev:dev-1:plugin-settings:GLOBAL:tessera/x',
+    });
+    expect(localKeyFor('dev:dev-1:plugin-settings:GLOBAL:tessera/x', 'p1', CTX)).toBe(
+      'mpu:v2:plugin-settings:GLOBAL:tessera/x',
+    );
+    // Another device's record, and our record in a non-home DB, are ignored
+    expect(localKeyFor('dev:dev-2:ui', 'p1', CTX)).toBeNull();
+    expect(localKeyFor('dev:dev-1:ui', 'p2', CTX)).toBeNull();
+  });
+
+  it('never mirrors device-only keys', () => {
     for (const k of [
       'mpu:v2:printers',
       'mpu:v2:activePrinter',
@@ -78,10 +120,8 @@ describe('settings-remote / key routing', () => {
       'mpu:v2:deviceId',
       'mpu:v2:settingsSync',
     ]) {
-      expect(routeKey(k, 'p1')).toBeNull();
+      expect(routeKey(k, CTX)).toBeNull();
     }
-    // A global record found in a non-home DB is ignored
-    expect(localKeyFor('ui', 'p2', 'p1')).toBeNull();
   });
 
   it('home printer is the one on the page origin, else the first', () => {
@@ -103,14 +143,12 @@ describe('settings-remote / mirror', () => {
     const font = { name: 'sample.woff2', dataUrl: 'data:font/woff2;base64,d09GMg==' };
     a.mirror.storage.setItem('mpu:v2:custom-font', JSON.stringify(font));
     await a.mirror.flush();
-    expect((fm.dbs.get(DB)?.['custom-font'] as RemoteEnvelope).data).toEqual(font);
+    expect((fm.dbs.get(DB)?.[devKey(a.mirror, 'custom-font')] as RemoteEnvelope).data).toEqual(font);
 
-    const b = setup(fm);
-    expect((await b.mirror.pull()).keys).toContain('mpu:v2:custom-font');
-    expect(JSON.parse(b.storage.getItem('mpu:v2:custom-font')!)).toEqual(font);
-    b.mirror.storage.setItem('mpu:v2:ui', JSON.stringify({ fontScale: 150 }));
-    await b.mirror.flush();
-    expect(JSON.stringify((fm.dbs.get(DB)?.ui as RemoteEnvelope).data)).not.toContain('data:font');
+    a.mirror.storage.setItem('mpu:v2:ui', JSON.stringify({ fontScale: 150 }));
+    await a.mirror.flush();
+    const uiRec = fm.dbs.get(DB)?.[devKey(a.mirror, 'ui')] as RemoteEnvelope;
+    expect(JSON.stringify(uiRec.data)).not.toContain('data:font');
   });
 
   it('migrates existing local settings into an empty DB with app, rev and writer', async () => {
@@ -119,9 +157,10 @@ describe('settings-remote / mirror', () => {
     await mirror.pull();
     await mirror.flush();
 
-    const rec = fm.dbs.get(DB)?.settings as RemoteEnvelope;
+    const rec = fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope;
     expect(rec.app).toBe('tessera');
     expect(rec.kind).toBe('settings');
+    expect(rec.schema).toBe(REMOTE_SCHEMA);
     expect(rec.rev).toBe(1);
     expect(rec.data).toEqual({ pages: { jobs: false } });
     expect(rec.writer.deviceId).toBe(storage.getItem('mpu:v2:deviceId'));
@@ -134,22 +173,40 @@ describe('settings-remote / mirror', () => {
     await mirror.flush();
     mirror.storage.setItem('mpu:v2:settings:p1', JSON.stringify({ n: 2 }));
     await mirror.flush();
-    const rec = fm.dbs.get(DB)?.settings as RemoteEnvelope;
+    const rec = fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope;
     expect(rec.rev).toBe(2);
     expect(rec.data).toEqual({ n: 2 });
   });
 
-  it('a second browser receives the newer copy', async () => {
+  it('a browser that imported the printer list shares the per-printer records', async () => {
     const fm = fakeMoonraker();
     const a = setup(fm);
     await a.mirror.pull();
     a.mirror.storage.setItem('mpu:v2:settings:p1', JSON.stringify({ n: 1 }));
     await a.mirror.flush();
 
+    // The import copies mpu:v2 keys, so the second browser knows printer id p1 too.
     const b = setup(fm);
     const res = await b.mirror.pull();
     expect(res.changed).toBe(true);
     expect(JSON.parse(b.storage.getItem('mpu:v2:settings:p1')!)).toEqual({ n: 1 });
+  });
+
+  it('device-wide settings stay per device: another browser never sees the ui record', async () => {
+    const fm = fakeMoonraker();
+    const a = setup(fm);
+    await a.mirror.pull();
+    a.mirror.storage.setItem('mpu:v2:ui', JSON.stringify({ theme: 'dark' }));
+    a.mirror.storage.setItem('mpu:v2:custom-font', JSON.stringify({ name: 'f.woff2' }));
+    await a.mirror.flush();
+
+    const b = setup(fm);
+    const res = await b.mirror.pull();
+    expect(res.keys).not.toContain('mpu:v2:ui');
+    expect(res.keys).not.toContain('mpu:v2:custom-font');
+    expect(b.storage.getItem('mpu:v2:ui')).toBeNull();
+    // a's records stay untouched in the DB
+    expect(fm.dbs.get(DB)?.[devKey(a.mirror, 'ui')]).toBeDefined();
   });
 
   it('last write wins by revision: a stale browser publishes above the remote revision', async () => {
@@ -165,7 +222,7 @@ describe('settings-remote / mirror', () => {
     b.mirror.storage.setItem('mpu:v2:settings:p1', JSON.stringify({ from: 'b' }));
     await b.mirror.flush();
 
-    const rec = fm.dbs.get(DB)?.settings as RemoteEnvelope;
+    const rec = fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope;
     expect(rec.data).toEqual({ from: 'b' });
     expect(rec.rev).toBe(2);
     // a picks it up on the next pull
@@ -199,7 +256,7 @@ describe('settings-remote / mirror', () => {
 
     fm.down.clear();
     await mirror.flush();
-    expect(fm.dbs.get(DB)?.settings).toBeDefined();
+    expect(fm.dbs.get(DB)?.['settings:p1']).toBeDefined();
   });
 
   it('keeps the background image and device-only keys out of the DB', async () => {
@@ -210,31 +267,83 @@ describe('settings-remote / mirror', () => {
     await mirror.flush();
 
     const db = fm.dbs.get(DB) ?? {};
-    expect((db.ui as RemoteEnvelope).data).toEqual({ theme: 'dark' });
+    expect((db[devKey(mirror, 'ui')] as RemoteEnvelope).data).toEqual({ theme: 'dark' });
     expect(JSON.stringify(db)).not.toContain('secret-token');
     expect(Object.keys(db).some((k) => k.includes('auth') || k.includes('printers'))).toBe(false);
   });
 
-  it('a pulled ui record keeps the background image of this device', async () => {
-    const fm = fakeMoonraker();
-    const a = setup(fm);
-    a.storage.setItem('mpu:v2:ui', JSON.stringify({ theme: 'dark' }));
-    await a.mirror.pull();
-    await a.mirror.flush();
+  it('ignores DB records that are not Tessera settings', async () => {
+    const { fm, storage, mirror } = setup();
+    fm.dbs.set(DB, { 'settings:p1': { foo: 1 } });
+    await mirror.pull();
+    expect(storage.getItem('mpu:v2:settings:p1')).toBeNull();
+  });
+});
 
-    const b = setup(fm);
-    b.storage.setItem('mpu:v2:ui', JSON.stringify({ theme: 'light', bgImage: 'data:image/png;base64,BBBB' }));
-    await b.mirror.pull();
-    expect(JSON.parse(b.storage.getItem('mpu:v2:ui')!)).toEqual({
+describe('settings-remote / schema-2 migration', () => {
+  it('adopts legacy records, deletes them and republishes under the addressed keys', async () => {
+    const fm = fakeMoonraker();
+    fm.dbs.set(DB, {
+      // The id-less shared layout written by schema 2
+      settings: envelope({ pages: { jobs: false } }, 4, 2),
+      ui: envelope({ theme: 'dark' }, 2, 2),
+    });
+    const { storage, mirror } = setup(fm);
+    // The local ui has a device-only background that must survive the adoption
+    storage.setItem('mpu:v2:ui', JSON.stringify({ theme: 'light', bgImage: 'data:image/png;base64,BBBB' }));
+
+    const res = await mirror.pull();
+    expect(res.changed).toBe(true);
+    expect(JSON.parse(storage.getItem('mpu:v2:settings:p1')!)).toEqual({ pages: { jobs: false } });
+    expect(JSON.parse(storage.getItem('mpu:v2:ui')!)).toEqual({
       theme: 'dark',
       bgImage: 'data:image/png;base64,BBBB',
     });
+    // Legacy records are gone, addressed records appear after the push
+    await mirror.flush();
+    const db = fm.dbs.get(DB) ?? {};
+    expect(db.settings).toBeUndefined();
+    expect(db.ui).toBeUndefined();
+    const rec = db['settings:p1'] as RemoteEnvelope;
+    expect(rec.schema).toBe(REMOTE_SCHEMA);
+    expect(rec.rev).toBe(5); // the legacy lineage continues: max(0, 4) + 1
+    expect((db[devKey(mirror, 'ui')] as RemoteEnvelope).rev).toBe(3);
+
+    // A second pull does not re-apply anything
+    expect((await mirror.pull()).changed).toBe(false);
   });
 
-  it('ignores DB records that are not Tessera settings', async () => {
-    const { fm, storage, mirror } = setup();
-    fm.dbs.set(DB, { settings: { foo: 1 } });
+  it('a newer local edit survives the adoption of a stale legacy record', async () => {
+    const fm = fakeMoonraker();
+    fm.dbs.set(DB, { settings: envelope({ n: 'remote-old' }, 2, 2) });
+    const { storage, mirror } = setup(fm);
+    // A dirty edit existed before the pull (written through the wrapper)
+    mirror.storage.setItem('mpu:v2:settings:p1', JSON.stringify({ n: 'local-new' }));
+
     await mirror.pull();
-    expect(storage.getItem('mpu:v2:settings:p1')).toBeNull();
+    expect(JSON.parse(storage.getItem('mpu:v2:settings:p1')!)).toEqual({ n: 'local-new' });
+    await mirror.flush();
+    expect(fm.dbs.get(DB)?.settings).toBeUndefined();
+    expect((fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope).data).toEqual({ n: 'local-new' });
+  });
+
+  it('upgrades the legacy bare meta map and republishes the known keys', async () => {
+    const fm = fakeMoonraker();
+    const storage = new MemoryStorage();
+    storage.setItem('mpu:v2:printers', JSON.stringify(PRINTERS));
+    storage.setItem('mpu:v2:settings:p1', JSON.stringify({ pages: { jobs: false } }));
+    // Schema-2 bookkeeping: a bare key → entry map without a version
+    storage.setItem('mpu:v2:remote-meta', JSON.stringify({ 'mpu:v2:settings:p1': { rev: 3, updatedAt: 1 } }));
+
+    const mirror = createSettingsMirror({ storage, fetch: fm.fetch, origin: DB, pushDelayMs: 1 });
+    // The meta file is rewritten in the versioned form
+    const saved = JSON.parse(storage.getItem('mpu:v2:remote-meta')!);
+    expect(saved.v).toBe(3);
+    expect(saved.entries['mpu:v2:settings:p1'].dirty).toBe(true);
+
+    await mirror.flush();
+    const rec = fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope;
+    expect(rec.schema).toBe(REMOTE_SCHEMA);
+    expect(rec.rev).toBe(4); // the lineage continues above the legacy rev
   });
 });
