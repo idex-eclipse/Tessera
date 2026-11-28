@@ -171,16 +171,24 @@ seen are published on the first start).
 | `ui`, `custom-font`, `plugins`, `editor-colors`, `settings:*`, `plugin-settings:*` | `printers`, `activePrinter`, `auth:*` (tokens), `deviceId`, `settingsSync`, the background image (`ui.bgImage`) |
 
 Where a key goes: per-printer keys (`settings:<id>`, `plugin-settings:<id>:*`) to that
-printer's own DB; global keys (`ui`, `plugins`, `GLOBAL` sets) to the DB of the printer
-that serves the page (the same origin, else the first printer). Records are stored
-without the browser's local printer ids, so a second browser that imported the same
-printer list sees them.
+printer's own DB, under a remote key that carries the local printer id
+(`settings:<id>`). Device-wide keys (`ui`, `plugins`, `editor-colors`, `custom-font`,
+`GLOBAL` sets) go to the DB of the printer that serves the page (the same origin, else
+the first printer), under `dev:<deviceId>:<key>`.
 
-A record in the DB (key = the `mpu:v2` key without the prefix, `.` written as `%2E`
-because Moonraker reads a dot as a path separator):
+The ids make the records **private to the browser that wrote them** (schema 3): both
+the printer id and the device id are random per browser. Two devices that add the same
+printer by hand get different ids and never see each other's records — theme,
+dashboard layout and chips no longer clash. Sharing is an explicit choice: a settings
+**import** copies the printer ids (but never the device id), so an imported browser
+addresses the same per-printer records and keeps them in sync by `rev`, while `ui`
+stays per device. Records of other printers and devices are ignored on read.
+
+A record in the DB (`.` in the key is written as `%2E` because Moonraker reads a dot
+as a path separator):
 
 ```json
-{ "app": "tessera", "kind": "settings", "schema": 2, "key": "mpu:v2:settings:…",
+{ "app": "tessera", "kind": "settings", "schema": 3, "key": "mpu:v2:settings:…",
   "rev": 7, "updatedAt": 1767225600000,
   "writer": { "deviceId": "…", "host": "192.168.1.20:8000", "userAgent": "…" },
   "data": { } }
@@ -197,10 +205,15 @@ Rules:
   older remote copy.
 - Writes are debounced (about 0.5 s) and retried while Moonraker is unreachable.
 - Moonraker has no change notification for its DB, so other browsers pick changes up at
-  start, when the window gets focus and on every printer switch. Newer copies are applied
-  in place (a changed plugin list needs a page reload, which the host does by itself).
+  start, when the window gets focus and on every printer switch — but only for records
+  addressed to them (see the id rule above). Newer copies are applied in place (a
+  changed plugin list needs a page reload, which the host does by itself).
 - Export/Import skip `deviceId` and the mirror's bookkeeping; an import is pushed to the
   DB. Records in the namespace that are not marked `app: "tessera"` are ignored.
+- Records written before schema 3 (id-less shared keys) are adopted once under the
+  same revision rules, republished under the addressed keys and deleted from the DB.
+  Devices that upgrade split apart from that point on; update Tessera on all devices
+  so none of them republishes the old shared keys.
 
 ## What the host keeps outside localStorage and the Moonraker DB
 

@@ -11,6 +11,13 @@
  * the settings store is created (the store reads `localStorage` once at start), and
  * the proxy needs the store's printer list first.
  *
+ * Remote keys are *addressed* (schema 3): per-printer records carry the local
+ * printer id (`settings:<printerId>`), device-wide records carry the device id
+ * (`dev:<deviceId>:ui`). Two devices that add the same printer by hand get different
+ * random ids and never share records; sharing happens only after an explicit
+ * settings import, which copies the printer ids. The device id never leaves the
+ * browser, so appearance (`ui`) is per device even then.
+ *
  * Conflict rule: last write wins, ordered by a revision counter (`rev`). A write
  * reads the remote revision first and publishes `max(remote, local) + 1`, so a stale
  * browser can never produce a lower revision than the one it overwrites.
@@ -25,6 +32,15 @@ import type { StorageLike } from './storage';
 /** Moonraker DB namespace that holds the mirrored settings. */
 export const REMOTE_NAMESPACE = 'tessera';
 
+/**
+ * Layout of the remote keys. 2 = id-less shared keys (any browser on the printer
+ * saw them); 3 = addressed keys with the local printer id / device id.
+ */
+export const REMOTE_SCHEMA = 3;
+
+/** Version of the `remote-meta` bookkeeping; bumps together with {@link REMOTE_SCHEMA}. */
+const META_VERSION = 3;
+
 const KEY_PREFIX = 'mpu:v2:';
 const META_KEY = 'mpu:v2:remote-meta';
 const DEVICE_ID_KEY = 'mpu:v2:deviceId';
@@ -32,6 +48,8 @@ const PRINTERS_KEY = 'mpu:v2:printers';
 const GLOBAL_SETTINGS = 'settings:GLOBAL';
 const GLOBAL_PLUGIN_PREFIX = 'plugin-settings:GLOBAL:';
 const PLUGIN_PREFIX = 'plugin-settings:';
+/** Remote prefix of device-wide records: `dev:<deviceId>:<local key without mpu:v2:>`. */
+const DEVICE_PREFIX = 'dev:';
 
 /** Debounce for pushes: a slider drag must not become dozens of DB writes. */
 const PUSH_DELAY_MS = 500;
@@ -49,7 +67,8 @@ export interface RemoteWriter {
 export interface RemoteEnvelope {
   app: 'tessera';
   kind: 'settings';
-  schema: 2;
+  /** See {@link REMOTE_SCHEMA}; records of other layouts are migrated, not applied. */
+  schema: number;
   /** The original `localStorage` key, for humans reading the DB. */
   key: string;
   rev: number;
@@ -90,6 +109,12 @@ export interface KeyRoute {
   remoteKey: string;
 }
 
+/** Routing inputs that differ per device: the home printer and this device's id. */
+export interface RouteContext {
+  homePrinterId: string | null;
+  deviceId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Key routing
 // ---------------------------------------------------------------------------
@@ -105,51 +130,93 @@ export function decodeRemoteKey(key: string): string {
 
 /**
  * Maps a `localStorage` key to its place in the DB, or null when the key is not
- * mirrored. Per-printer data goes to that printer's own DB *without* the local
- * printer id (ids differ between browsers; the DB itself identifies the printer).
- * Everything else lives in the DB of the home printer.
+ * mirrored. Per-printer data goes to that printer's own DB under a key with the
+ * local printer id; device-wide data goes to the home printer's DB under a key with
+ * the device id. The ids are random per browser, so records of two browsers never
+ * collide unless one of them imported the other's settings file.
  */
-export function routeKey(localKey: string, homePrinterId: string | null): KeyRoute | null {
+export function routeKey(localKey: string, ctx: RouteContext): KeyRoute | null {
   if (!localKey.startsWith(KEY_PREFIX)) return null;
   const rest = localKey.slice(KEY_PREFIX.length);
 
   if (rest === 'ui' || rest === 'plugins' || rest === 'editor-colors' || rest === 'custom-font' || rest === GLOBAL_SETTINGS) {
-    return homePrinterId ? { printerId: homePrinterId, remoteKey: rest } : null;
+    return ctx.homePrinterId
+      ? { printerId: ctx.homePrinterId, remoteKey: `${DEVICE_PREFIX}${ctx.deviceId}:${rest}` }
+      : null;
   }
   if (rest.startsWith(GLOBAL_PLUGIN_PREFIX)) {
-    return homePrinterId ? { printerId: homePrinterId, remoteKey: rest } : null;
+    return ctx.homePrinterId
+      ? { printerId: ctx.homePrinterId, remoteKey: `${DEVICE_PREFIX}${ctx.deviceId}:${rest}` }
+      : null;
   }
   if (rest.startsWith('settings:')) {
     const printerId = rest.slice('settings:'.length);
-    return printerId ? { printerId, remoteKey: 'settings' } : null;
+    return printerId ? { printerId, remoteKey: `settings:${printerId}` } : null;
   }
   if (rest.startsWith(PLUGIN_PREFIX)) {
     const tail = rest.slice(PLUGIN_PREFIX.length);
     const sep = tail.indexOf(':');
     if (sep <= 0 || sep === tail.length - 1) return null;
-    return {
-      printerId: tail.slice(0, sep),
-      remoteKey: `${PLUGIN_PREFIX}${tail.slice(sep + 1)}`,
-    };
+    // The remote key already carries the printer id: plugin-settings:<id>:<pluginId>.
+    return { printerId: tail.slice(0, sep), remoteKey: rest };
   }
   return null;
 }
 
 /**
- * Inverse of {@link routeKey} for a record found in a printer's DB. Global keys are
- * only accepted from the home printer's DB.
+ * Inverse of {@link routeKey} for a schema-3 record found in a printer's DB.
+ * Records of other printers and other devices are ignored; device records are only
+ * accepted from the home printer's DB.
  */
-export function localKeyFor(
-  remoteKey: string,
-  printerId: string,
-  homePrinterId: string | null,
-): string | null {
-  if (remoteKey === 'settings') return `${KEY_PREFIX}settings:${printerId}`;
-  if (remoteKey.startsWith(GLOBAL_PLUGIN_PREFIX) || remoteKey === GLOBAL_SETTINGS) {
-    return printerId === homePrinterId ? `${KEY_PREFIX}${remoteKey}` : null;
+export function localKeyFor(remoteKey: string, printerId: string, ctx: RouteContext): string | null {
+  if (remoteKey.startsWith(DEVICE_PREFIX)) {
+    if (printerId !== ctx.homePrinterId) return null;
+    const rest = remoteKey.slice(DEVICE_PREFIX.length);
+    const sep = rest.indexOf(':');
+    if (sep <= 0 || sep === rest.length - 1) return null;
+    if (rest.slice(0, sep) !== ctx.deviceId) return null;
+    const name = rest.slice(sep + 1);
+    if (
+      name === 'ui' ||
+      name === 'plugins' ||
+      name === 'editor-colors' ||
+      name === 'custom-font' ||
+      name === GLOBAL_SETTINGS ||
+      name.startsWith(GLOBAL_PLUGIN_PREFIX)
+    ) {
+      return `${KEY_PREFIX}${name}`;
+    }
+    return null;
+  }
+  if (remoteKey.startsWith('settings:')) {
+    // Only this printer's own record, found in its own DB.
+    const pid = remoteKey.slice('settings:'.length);
+    return pid && pid === printerId ? `${KEY_PREFIX}settings:${pid}` : null;
   }
   if (remoteKey.startsWith(PLUGIN_PREFIX)) {
-    return `${KEY_PREFIX}${PLUGIN_PREFIX}${printerId}:${remoteKey.slice(PLUGIN_PREFIX.length)}`;
+    const tail = remoteKey.slice(PLUGIN_PREFIX.length);
+    const sep = tail.indexOf(':');
+    if (sep <= 0 || sep === tail.length - 1) return null;
+    if (tail.slice(0, sep) !== printerId) return null;
+    return `${KEY_PREFIX}${remoteKey}`;
+  }
+  return null;
+}
+
+/**
+ * Maps a schema-2 remote key (the id-less shared layout) to its local key, for the
+ * one-time adoption of records written before the schema-3 migration.
+ */
+function legacyLocalKeyFor(remoteKey: string, printerId: string, homePrinterId: string | null): string | null {
+  if (remoteKey === 'settings') return `${KEY_PREFIX}settings:${printerId}`;
+  if (remoteKey === GLOBAL_SETTINGS || remoteKey.startsWith(GLOBAL_PLUGIN_PREFIX)) {
+    return printerId === homePrinterId ? `${KEY_PREFIX}${remoteKey}` : null;
+  }
+  // Legacy plugin keys had a single colon (plugin ids never contain one).
+  if (remoteKey.startsWith(PLUGIN_PREFIX)) {
+    const tail = remoteKey.slice(PLUGIN_PREFIX.length);
+    if (tail.includes(':')) return null; // schema-3 key read by a downgraded record: not ours
+    return `${KEY_PREFIX}${PLUGIN_PREFIX}${printerId}:${tail}`;
   }
   if (remoteKey === 'ui' || remoteKey === 'plugins' || remoteKey === 'editor-colors' || remoteKey === 'custom-font') {
     return printerId === homePrinterId ? `${KEY_PREFIX}${remoteKey}` : null;
@@ -157,8 +224,15 @@ export function localKeyFor(
   return null;
 }
 
+/** Placeholder context for "is this key mirrored at all" checks (no real ids needed). */
+const PROBE_CTX: RouteContext = { homePrinterId: 'probe', deviceId: 'probe' };
+
+function isMirroredKey(localKey: string): boolean {
+  return routeKey(localKey, PROBE_CTX) !== null;
+}
+
 /**
- * The printer that serves this page (same origin), else the first one. Global
+ * The printer that serves this page (same origin), else the first one. Device-wide
  * settings are kept in its DB.
  */
 export function pickHomePrinter(printers: PrinterRef[], origin: string): string | null {
@@ -212,7 +286,7 @@ function isEnvelope(value: unknown): value is RemoteEnvelope {
 // Mirror
 // ---------------------------------------------------------------------------
 
-/** Receives local writes made behind the wrapper's back (see settings-sync). */
+/** Receives local writes made behind the wrapper's back (see section-about import). */
 let activeNotify: ((key: string) => void) | null = null;
 
 /** Tells the active mirror that a mirrored key was written directly to localStorage. */
@@ -238,19 +312,42 @@ export function createSettingsMirror(options: MirrorOptions) {
   const pushDelay = options.pushDelayMs ?? PUSH_DELAY_MS;
   const origin = options.origin ?? (typeof location !== 'undefined' ? location.origin : '');
 
-  let meta: Record<string, MetaEntry> = loadMeta();
+  let meta: Record<string, MetaEntry>;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pushing: Promise<void> | null = null;
   let lastFocusPull = 0;
 
-  function loadMeta(): Record<string, MetaEntry> {
+  /**
+   * Reads the bookkeeping, upgrading the legacy bare map to the versioned form.
+   * Legacy entries keep their rev (the lineage continues under the schema-3 keys)
+   * but are all marked dirty so everything is republished under the addressed keys.
+   */
+  function loadMeta(): void {
     const v = parseJson(inner.getItem(META_KEY));
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, MetaEntry>) : {};
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const rec = v as Record<string, unknown>;
+      if (rec.v === META_VERSION && rec.entries && typeof rec.entries === 'object' && !Array.isArray(rec.entries)) {
+        meta = rec.entries as Record<string, MetaEntry>;
+        return;
+      }
+      // Schema-2 meta was the bare entries map. An unknown future version is reset:
+      // its lineage cannot be trusted, and a full republish is the safe fallback.
+      const legacy = (rec.v === undefined ? rec : {}) as Record<string, MetaEntry>;
+      meta = {};
+      for (const [k, e] of Object.entries(legacy)) {
+        if (!e || typeof e.rev !== 'number' || !isMirroredKey(k)) continue;
+        meta[k] = { rev: e.rev, updatedAt: typeof e.updatedAt === 'number' ? e.updatedAt : now(), dirty: true };
+      }
+      saveMeta();
+      if (Object.keys(meta).length > 0) schedulePush();
+      return;
+    }
+    meta = {};
   }
 
   function saveMeta(): void {
     try {
-      inner.setItem(META_KEY, JSON.stringify(meta));
+      inner.setItem(META_KEY, JSON.stringify({ v: META_VERSION, entries: meta }));
     } catch {
       // Storage full or blocked: the mirror just forgets what it knew.
     }
@@ -357,11 +454,24 @@ export function createSettingsMirror(options: MirrorOptions) {
     }
   }
 
+  /** Removes an adopted legacy record; failures are retried by the next pull. */
+  async function deleteItem(p: PrinterRef, remoteKey: string): Promise<boolean> {
+    try {
+      const res = await doFetch(
+        `${baseUrl(p)}/server/database/item?namespace=${REMOTE_NAMESPACE}&key=${encodeURIComponent(encodeRemoteKey(remoteKey))}`,
+        { method: 'DELETE', headers: authHeaders(p.id) },
+      );
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   // ----- local change tracking ------------------------------------------
 
   /** Called for every write of a mirrored key; schedules a push. */
   function markDirty(key: string): void {
-    if (!routeKey(key, 'x')) return; // not a mirrored key
+    if (!isMirroredKey(key)) return;
     meta = { ...meta, [key]: { rev: meta[key]?.rev ?? 0, updatedAt: now(), dirty: true } };
     saveMeta();
     schedulePush();
@@ -387,10 +497,11 @@ export function createSettingsMirror(options: MirrorOptions) {
   async function pushDirty(): Promise<void> {
     const printers = readPrinters();
     const home = pickHomePrinter(printers, origin);
+    const ctx: RouteContext = { homePrinterId: home, deviceId: deviceId() };
     for (const key of Object.keys(meta)) {
       const entry = meta[key];
       if (!entry?.dirty) continue;
-      const route = routeKey(key, home);
+      const route = routeKey(key, ctx);
       const printer = route && printers.find((p) => p.id === route.printerId);
       if (!route || !printer) continue; // printer unknown now: keep dirty for later
 
@@ -404,7 +515,7 @@ export function createSettingsMirror(options: MirrorOptions) {
       const envelope: RemoteEnvelope = {
         app: 'tessera',
         kind: 'settings',
-        schema: 2,
+        schema: REMOTE_SCHEMA,
         key,
         rev,
         updatedAt: now(),
@@ -426,6 +537,8 @@ export function createSettingsMirror(options: MirrorOptions) {
   /**
    * Fetches the DB copies and applies the ones newer than ours. Local keys that
    * exist but were never mirrored are queued for a push (this is the migration).
+   * Schema-2 records are adopted once under the same revision rules and then
+   * deleted, so devices split apart instead of silently sharing the old keys.
    *
    * @param timeoutMs give up on slow printers after this long (boot must not hang)
    */
@@ -433,6 +546,7 @@ export function createSettingsMirror(options: MirrorOptions) {
     const printers = readPrinters();
     if (printers.length === 0) return { changed: false, keys: [], noPrinters: true };
     const home = pickHomePrinter(printers, origin);
+    const ctx: RouteContext = { homePrinterId: home, deviceId: deviceId() };
 
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const abortTimer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
@@ -447,20 +561,40 @@ export function createSettingsMirror(options: MirrorOptions) {
         if (!space) continue; // unreachable: leave its keys alone
         for (const [encoded, value] of Object.entries(space)) {
           if (!isEnvelope(value)) continue; // not ours
-          const localKey = localKeyFor(decodeRemoteKey(encoded), p.id, home);
+          const remoteKey = decodeRemoteKey(encoded);
+          const legacy = value.schema !== REMOTE_SCHEMA;
+          const localKey = legacy
+            ? legacyLocalKeyFor(remoteKey, p.id, home)
+            : localKeyFor(remoteKey, p.id, ctx);
           if (!localKey) continue;
           seen.add(localKey);
           const entry = meta[localKey];
-          if (entry?.dirty) continue; // our change is pending and will win by rev
-          if (entry && value.rev <= entry.rev) continue; // we are up to date
-          const local = parseJson(inner.getItem(localKey));
-          if (value.data === null) {
-            inner.removeItem(localKey);
-          } else {
-            inner.setItem(localKey, JSON.stringify(fromRemoteValue(localKey, value.data, local)));
+          // A pending local edit or an up-to-date copy wins over the remote record.
+          const skip = Boolean(entry?.dirty) || (entry !== undefined && value.rev <= entry.rev);
+          if (!skip) {
+            const local = parseJson(inner.getItem(localKey));
+            if (value.data === null) {
+              inner.removeItem(localKey);
+            } else {
+              inner.setItem(localKey, JSON.stringify(fromRemoteValue(localKey, value.data, local)));
+            }
+            meta = { ...meta, [localKey]: { rev: value.rev, updatedAt: value.updatedAt } };
+            changedKeys.push(localKey);
           }
-          meta = { ...meta, [localKey]: { rev: value.rev, updatedAt: value.updatedAt } };
-          changedKeys.push(localKey);
+          if (legacy) {
+            // Republish under the addressed key (dirty push below) so the DB
+            // converges to schema 3 at once, then drop the shared legacy record.
+            const cur = meta[localKey];
+            meta = {
+              ...meta,
+              [localKey]: {
+                rev: Math.max(cur?.rev ?? 0, value.rev),
+                updatedAt: cur?.updatedAt ?? value.updatedAt,
+                dirty: true,
+              },
+            };
+            await deleteItem(p, remoteKey);
+          }
         }
       }
 
@@ -469,7 +603,7 @@ export function createSettingsMirror(options: MirrorOptions) {
       for (let i = 0; i < inner.length; i += 1) {
         const key = inner.key(i);
         if (!key || seen.has(key) || meta[key]) continue;
-        const route = routeKey(key, home);
+        const route = routeKey(key, ctx);
         if (route && reachable.has(route.printerId)) {
           meta = { ...meta, [key]: { rev: 0, updatedAt: now(), dirty: true } };
         }
@@ -518,6 +652,8 @@ export function createSettingsMirror(options: MirrorOptions) {
       markDirty(k);
     },
   };
+
+  loadMeta();
 
   activeNotify = markDirty;
 
