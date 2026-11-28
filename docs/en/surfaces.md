@@ -361,6 +361,8 @@ interpret it. What items exist and how they look is up to the plugin.
 - When `edit === '1'` (dashboard edit mode) the host draws its own affordances
   (frame, "+", close buttons, order buttons, drag-and-drop). The chip must not perform
   actions in this mode.
+- A chip showing *Klippy not ready* must not accept pointer or keyboard actions.
+  Remove it from the tab order and close any controls opened before Klippy lost readiness.
 - No item (a sensor disappeared) → draw the *missing* state: a dashed border and
   muted text.
 - A chip's actions are an ordinary `api.moonrakerFor(api.printer.id).request()`, so guards see them.

@@ -35,6 +35,67 @@ async function consoleCommand(page: Page, command: string): Promise<void> {
   await input.press('Enter');
 }
 
+/** Exercise every chip that substitutes the Klippy-not-ready placeholder. */
+async function assertChipReadiness(page: Page, app: Awaited<ReturnType<typeof startMockDev>>): Promise<void> {
+  await page.goto(`${app.url}/#/p/mock-ready?edit=1`);
+  await page.locator('.qa-btn').first().click();
+  const dialog = page.locator('.dialog[role="dialog"]');
+  // The default layout already includes temperature and Live Z chips.
+  for (const type of ['macro', 'output', 'led', 'tuning', 'filament']) {
+    const section = dialog.locator(`[data-chip-type="${type}"]`);
+    await section.locator('.pacc-head').first().click();
+    await section.locator('.picker-item').first().click();
+  }
+  await dialog.locator('.dialog-footer .btn').click();
+  await page.locator('.edit-toolbar .btn-primary').click();
+  await page.locator('.edit-toolbar').waitFor({ state: 'detached' });
+  const accordion = page.locator('.qa-toggle');
+  if (await accordion.count() && await accordion.getAttribute('aria-expanded') === 'false') await accordion.click();
+
+  const tags = [
+    'mpu-core-widgets-chip-temperature', 'mpu-core-calibrations-chip-livez',
+    'mpu-core-widgets-chip-macro', 'mpu-core-widgets-chip-output',
+    'mpu-core-widgets-chip-led', 'mpu-core-widgets-chip-tuning',
+    'mpu-core-widgets-chip-filament',
+  ];
+  for (const tag of tags) {
+    const chip = page.locator(`${tag} .chip`).first();
+    await chip.waitFor();
+    assert.equal(await chip.locator('.knr').count(), 0, `${tag} starts ready`);
+    assert.equal(await chip.evaluate((el) => el.classList.contains('interactive')), true, `${tag} starts interactive`);
+    await chip.dispatchEvent('click');
+    assert.equal(await page.locator(`${tag} .chip-popover`).count(), 1, `${tag} opens its controls`);
+  }
+
+  app.session.ready.setKlippyState('error');
+  for (const tag of tags) {
+    const chip = page.locator(`${tag} .chip`).first();
+    await chip.locator('.knr').waitFor();
+    assert.equal(await chip.evaluate((el) => el.classList.contains('interactive')), false, `${tag} is not interactive`);
+    // A temperature chip may lose its sensor metadata and become a plain div.
+    if (tag.endsWith('-led')) assert.equal(await chip.evaluate((el) => (el as HTMLButtonElement).disabled), true);
+    else assert.ok(await chip.evaluate((el) => el.tabIndex < 0), `${tag} leaves keyboard navigation`);
+    assert.equal(await page.locator(`${tag} .chip-popover`).count(), 0, `${tag} closes its controls`);
+    await chip.dispatchEvent('click');
+    await chip.dispatchEvent('keydown', { key: 'Enter', code: 'Enter' });
+    assert.equal(await page.locator(`${tag} .chip-popover`).count(), 0, `${tag} ignores input`);
+  }
+
+  // The placeholder must still fit the chip strip when layout direction changes.
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.locator('html').evaluate((element) => element.setAttribute('dir', 'rtl'));
+  await assertNoPageOverflow(page, 'Klippy-not-ready chips at 768px RTL');
+
+  app.session.ready.setKlippyState('ready');
+  const output = page.locator('mpu-core-widgets-chip-output .chip').first();
+  await output.locator('.knr').waitFor({ state: 'detached' });
+  assert.equal(await output.evaluate((el) => el.classList.contains('interactive')), true);
+  await output.dispatchEvent('click');
+  assert.equal(await page.locator('mpu-core-widgets-chip-output .chip-popover').count(), 1);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('html').evaluate((element) => element.setAttribute('dir', 'ltr'));
+}
+
 /** Exercises visible screens and verifies the resulting state through the shared mock engine. */
 async function main(): Promise<void> {
   const app = await startMockDev({ uiPort: 5175, readyPort: 17135, errorPort: 17136 });
@@ -352,6 +413,7 @@ async function main(): Promise<void> {
     }
 
     await page.setViewportSize({ width: 1440, height: 900 });
+    await assertChipReadiness(page, app);
     await open(page, app.url, '#/p/mock-error', 'Mock Klipper configuration error');
     assert.equal(app.session.error.klippyState, 'error');
     await page.getByRole('button', { name: 'Restart Klipper' }).click();

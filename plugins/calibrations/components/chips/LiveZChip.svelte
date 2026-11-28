@@ -42,7 +42,8 @@
   let pendingSave = $derived(store.livezState.hasUnsavedApply);
 
   let missing = $derived(klippy.state === 'ready' && refOffset == null);
-  let disabled = $derived(editMode);
+  /** A stored Z offset cannot authorize adjustment while Klippy is unavailable. */
+  let disabled = $derived(editMode || klippy.state !== 'ready');
 
   const POPOVER_WIDTH = 240;
   let chipEl = $state<HTMLDivElement | null>(null);
@@ -59,6 +60,14 @@
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    // Close both stages of the save flow if Klippy loses readiness.
+    if (klippy.state !== 'ready') {
+      popoverOpen = false;
+      saveOpen = false;
+    }
+  });
 
   function fmtSigned(v: number): string {
     return `${v < 0 ? '-' : '+'}${Math.abs(v).toFixed(3)}`;
@@ -108,6 +117,7 @@
     bind:this={chipEl}
     onclick={openPopover}
     role="button"
+    aria-disabled={disabled}
     tabindex={disabled ? -1 : 0}
     onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
   >
@@ -128,7 +138,7 @@
     {/if}
   </div>
 
-  {#if popoverOpen && !missing}
+  {#if popoverOpen && !missing && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="cluster">
@@ -170,7 +180,7 @@
   {/if}
 </div>
 
-{#if saveOpen}
+{#if saveOpen && klippy.state === 'ready'}
   <ConfirmDialog
     open={saveOpen}
     title={i18n.t('calibrations.liveZ.saveConfirmTitle')}

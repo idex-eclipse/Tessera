@@ -22,7 +22,8 @@
   let label = $derived(customLabel || sensor?.name || sensorId);
 
   let missing = $derived(klippy.state === 'ready' && sensor === null);
-  let disabled = $derived(editMode || missing);
+  /** Cached sensor data must not enable the chip during a Klippy error. */
+  let disabled = $derived(editMode || missing || klippy.state !== 'ready');
 
   //state
   let statusText = $derived.by(() => {
@@ -69,6 +70,11 @@
   function closePopover(): void { popoverOpen = false; }
 
   $effect(() => {
+    // An open sensor menu must disappear with the ready state.
+    if (klippy.state !== 'ready') popoverOpen = false;
+  });
+
+  $effect(() => {
     if (!popoverOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popoverOpen = false; };
     window.addEventListener('keydown', onKey);
@@ -94,6 +100,7 @@
     bind:this={chipEl}
     onclick={openPopover}
     role="button"
+    aria-disabled={disabled}
     tabindex={disabled ? -1 : 0}
     onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
   >
@@ -118,7 +125,7 @@
     {/if}
   </div>
 
-  {#if popoverOpen && sensor && sensorState}
+  {#if popoverOpen && sensor && sensorState && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{label}</div>

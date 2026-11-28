@@ -46,7 +46,8 @@
     );
   });
   let isPrinting = $derived(printState === 'printing' || printState === 'paused');
-  let disabled = $derived(editMode || missing || isPrinting);
+  /** A known macro cannot run while Klippy is not ready for commands. */
+  let disabled = $derived(editMode || missing || isPrinting || klippy.state !== 'ready');
 
   let chipEl = $state<HTMLDivElement | null>(null);
   let popoverOpen = $state(false);
@@ -72,6 +73,16 @@
   function closePopover(): void { popoverOpen = false; }
 
   $effect(() => {
+    // Discard every stage of a pending macro run when Klippy becomes unavailable.
+    if (klippy.state !== 'ready') {
+      popoverOpen = false;
+      paramsMenuOpen = false;
+      confirmOpen = false;
+      pendingValues = null;
+    }
+  });
+
+  $effect(() => {
     if (!popoverOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popoverOpen = false; };
     window.addEventListener('keydown', onKey);
@@ -82,6 +93,7 @@
   let pendingValues: Record<string, string> | null = null;
 
   function requestRun(values: Record<string, string>): void {
+    if (klippy.state !== 'ready') return;
     if (item.confirm) {
       pendingValues = values;
       confirmOpen = true;
@@ -91,6 +103,8 @@
   }
 
   function doRun(values: Record<string, string> | null): void {
+    // A confirmation callback may race with the readiness transition.
+    if (klippy.state !== 'ready') return;
     const v = values ?? pendingValues ?? {};
     const script = hasParams ? buildMacroScript(macroName, macroParams, v) : macroName;
     api
@@ -114,6 +128,7 @@
     bind:this={chipEl}
     onclick={openChip}
     role="button"
+    aria-disabled={disabled}
     tabindex={disabled ? -1 : 0}
     onkeydown={(e) => {
       if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
@@ -142,7 +157,7 @@
     {/if}
   </div>
 
-  {#if popoverOpen && known && !hasParams}
+  {#if popoverOpen && known && !hasParams && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{macroName}</div>
@@ -152,7 +167,7 @@
     </div>
   {/if}
 
-  {#if paramsMenuOpen && paramsAnchor}
+  {#if paramsMenuOpen && paramsAnchor && klippy.state === 'ready'}
     <MacroParamsMenu
       name={macroName}
       params={macroParams}
@@ -166,7 +181,7 @@
   {/if}
 </div>
 
-{#if confirmOpen}
+{#if confirmOpen && klippy.state === 'ready'}
   <ConfirmDialog
     open={confirmOpen}
     title={i18n.t('widgets.macros.confirmTitle')}

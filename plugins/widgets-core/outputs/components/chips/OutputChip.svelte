@@ -50,7 +50,8 @@
 
   let missing = $derived(klippy.state === 'ready' && item === null);
 
-  let disabled = $derived(editMode || missing || item === null);
+  /** Cached output items must not stay interactive while Klippy is unavailable. */
+  let disabled = $derived(editMode || missing || item === null || klippy.state !== 'ready');
 
   // --- поповер ---
   let chipEl = $state<HTMLDivElement | null>(null);
@@ -66,6 +67,11 @@
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    // Hide controls that were open when Klippy lost readiness.
+    if (klippy.state !== 'ready') popoverOpen = false;
+  });
 
   $effect(() => {
     if (!popoverOpen) return;
@@ -141,6 +147,7 @@
     bind:this={chipEl}
     onclick={openPopover}
     role="button"
+    aria-disabled={disabled}
     tabindex={disabled ? -1 : 0}
     onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
     title={readOnly ? i18n.t('widgets.outputs.autoNote') : undefined}
@@ -170,7 +177,7 @@
     {/if}
   </div>
 
-  {#if popoverOpen && item}
+  {#if popoverOpen && item && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{label}</div>

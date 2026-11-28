@@ -234,9 +234,15 @@
   let missing = $derived(
     klippy.state === 'ready' && (subject === 'retraction' && !tools.meta.hasRetraction),
   );
-  let disabled = $derived(editMode || missing || !subject);
+  /** Do not expose tuning controls from a cached toolhead while Klippy is down. */
+  let disabled = $derived(editMode || missing || !subject || klippy.state !== 'ready');
 
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    // The open editor must close when its command target is unavailable.
+    if (klippy.state !== 'ready') popoverOpen = false;
+  });
 
   $effect(() => {
     if (!popoverOpen) return;
@@ -254,6 +260,7 @@
     bind:this={chipEl}
     onclick={openPopover}
     role="button"
+    aria-disabled={disabled}
     tabindex={disabled ? -1 : 0}
     onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
   >
@@ -274,7 +281,7 @@
     {/if}
   </div>
 
-  {#if popoverOpen && subject && !missing}
+  {#if popoverOpen && subject && !missing && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="pop-title">{label}</div>
