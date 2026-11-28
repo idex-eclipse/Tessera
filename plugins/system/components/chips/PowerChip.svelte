@@ -80,9 +80,11 @@
     top: 0;
     bottom: 0;
     width: 3px;
+    /* Match the off-state stripe opacity of other switchable chips. */
     background: var(--text-muted);
+    opacity: 0.55;
   }
-  .chip.on .stripe { background: var(--accent); }
+  .chip.on .stripe { background: var(--accent); opacity: 1; }
 
   .body {
     display: flex;
