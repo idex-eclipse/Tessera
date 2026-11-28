@@ -42,6 +42,8 @@
     return p == null ? null : Math.min(100, Math.max(0, Math.round(p * 100)));
   });
   let missing = $derived(temp.klippyState === 'ready' && !sensor);
+  /** Only ready, present, controllable sensors expose the target editor. */
+  let disabled = $derived(editMode || !controlled || missing || !sensor || klippy.state !== 'ready');
   let kindLit = $derived(kind === 'fan' ? fanSpeed > 0 : targetActive);
 
   // popover
@@ -61,7 +63,7 @@
   const POPOVER_HEIGHT_HOLD = 220;
 
   function openPopover(): void {
-    if (editMode || !sensor || !controlled || missing) return;
+    if (disabled) return;
     const rect = chipEl?.getBoundingClientRect();
     if (rect) {
       // поповер выравнивается по начальному краю чипа (в RTL — по правому)
@@ -71,6 +73,11 @@
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    // A target editor opened while ready cannot remain usable after Klippy stops.
+    if (klippy.state !== 'ready') popoverOpen = false;
+  });
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') closePopover();
@@ -111,11 +118,12 @@
     class:active={chipActive}
     class:fan={kind === 'fan'}
     class:missing
-    class:interactive={!editMode && controlled && !missing}
+    class:interactive={!disabled}
     bind:this={chipEl}
     onclick={openPopover}
     role={controlled ? 'button' : undefined}
-    tabindex={controlled && !editMode && !missing ? 0 : undefined}
+    aria-disabled={controlled ? disabled : undefined}
+    tabindex={controlled ? (disabled ? -1 : 0) : undefined}
     onkeydown={(e) => { if (e.key === 'Enter' && controlled) openPopover(); }}
   >
   {#if klippy.state != 'ready'}
@@ -147,7 +155,7 @@
  {/if}
   </div>
 
-  {#if popoverOpen && sensor}
+  {#if popoverOpen && sensor && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <form onsubmit={handleSetTarget}>

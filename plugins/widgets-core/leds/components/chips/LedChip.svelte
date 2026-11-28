@@ -41,7 +41,8 @@
   });
 
   let missing = $derived(klippy.state === 'ready' && item === null);
-  let disabled = $derived(editMode || missing || item === null);
+  /** A stale LED snapshot must not make the not-ready placeholder actionable. */
+  let disabled = $derived(editMode || missing || item === null || klippy.state !== 'ready');
 
   // --- поповер ---
   let chipEl = $state<HTMLButtonElement | null>(null);
@@ -56,6 +57,11 @@
     popoverOpen = true;
   }
   function closePopover(): void { popoverOpen = false; }
+
+  $effect(() => {
+    // Drop controls opened before Klippy stopped accepting LED commands.
+    if (klippy.state !== 'ready') popoverOpen = false;
+  });
 
   $effect(() => {
     if (!popoverOpen) return;
@@ -110,7 +116,7 @@
     {/if}
   </button>
 
-  {#if popoverOpen && item}
+  {#if popoverOpen && item && klippy.state === 'ready'}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="pop-head">
