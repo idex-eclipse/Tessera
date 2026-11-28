@@ -2,11 +2,13 @@
   import '../../../../shared/input/inputs.css';
   import ColorPickerMenu from '../../../../shared/color-picker/ColorPickerMenu.svelte';
   import SliderField from '../../../../shared/slider-field/SliderField.svelte';
+  import Icon from '../../../../shared/icons/Icon.svelte';
   import {
     OFF,
     brightnessOf,
     colorToCss,
     hexToRgbw,
+    isLit,
     rgbwToHex,
     withBrightness,
     type LedItem,
@@ -21,6 +23,7 @@
     i18n,
     layer = 460,
     onDone = null,
+    powerPreset = false,
   }: {
     store: LedsStore;
     item: LedItem;
@@ -31,11 +34,21 @@
     layer?: number;
     /** после коммит-действий (пресет, шаблон) — например, закрыть поповер */
     onDone?: (() => void) | null;
+    /** In chips, the first preset toggles the current selection instead of setting Off. */
+    powerPreset?: boolean;
   } = $props();
 
   let indices = $derived(selected.length > 0 ? selected : null);
   let current = $derived<Rgbw>(store.colors[item.id]?.[selected[0] ?? 0] ?? OFF);
+  // The picker edits RGB while its trigger previews the visible RGBW mix.
   let hex = $derived(brightnessOf(current) > 0.001 ? rgbwToHex(current) : null);
+  let swatchColor = $derived(hex ? colorToCss(current) : null);
+  /** The chip's power icon reflects only the selected pixels, or all when All is active. */
+  let selectionLit = $derived.by(() => {
+    const pixels = store.colors[item.id] ?? [];
+    const targets = indices ?? pixels.map((_, i) => i);
+    return targets.some((i) => isLit(pixels[i] ?? OFF));
+  });
 
   const PRESETS: Array<{ key: string; color: (w: boolean) => Rgbw }> = [
     { key: 'off', color: () => OFF },
@@ -91,19 +104,34 @@
   <div class="row presets" role="group" aria-label={i18n.t('widgets.leds.presets.title')}>
     {#each PRESETS as p (p.key)}
       {@const c = p.color(item.hasWhite)}
-      <button
-        class="preset"
-        title={i18n.t(`widgets.leds.presets.${p.key}`)}
-        onclick={() => {
-          send(c);
-          onDone?.();
-        }}
-      >
-        <span class="dot" class:off={p.key === 'off'} style:--c={colorToCss(c)}></span>
-      </button>
+      {#if p.key === 'off' && powerPreset}
+        <!-- Keep the chip popover open so the selected pixels can be switched back on. -->
+        <button
+          type="button"
+          class="preset power-preset"
+          class:on={selectionLit}
+          title={i18n.t(selectionLit ? 'widgets.leds.turnOff' : 'widgets.leds.turnOn')}
+          aria-label={i18n.t(selectionLit ? 'widgets.leds.turnOff' : 'widgets.leds.turnOn')}
+          onclick={() => store.toggleSelection(item.id, indices)}
+        >
+          <Icon name="kind-power" size={16} />
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="preset"
+          title={i18n.t(`widgets.leds.presets.${p.key}`)}
+          onclick={() => {
+            send(c);
+            onDone?.();
+          }}
+        >
+          <span class="dot" class:off={p.key === 'off'} style:--c={colorToCss(c)}></span>
+        </button>
+      {/if}
     {/each}
     <span class="spacer"></span>
-    <ColorPickerMenu value={hex} {i18n} {layer} {onPick} />
+    <ColorPickerMenu value={hex} {swatchColor} {i18n} {layer} {onPick} />
   </div>
 
   <SliderField
@@ -206,6 +234,14 @@
     transition: background var(--transition-fast);
   }
   .preset:hover { background: var(--bg-surface-hover); }
+  .preset:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+
+  .power-preset { color: var(--text-secondary); }
+  .power-preset.on {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-subtle-strong);
+  }
 
   .dot {
     width: 14px;

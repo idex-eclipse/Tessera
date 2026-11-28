@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSetLed,
+  buildSetLedPixels,
   buildSetTemplate,
   colorToCss,
   gcodeValue,
   parseColorData,
   parseLedItems,
   parseTemplates,
+  rgbwToDisplayHex,
   withBrightness,
   type LedItem,
 } from '../lib/led-data';
@@ -96,6 +98,18 @@ describe('G-code', () => {
     );
   });
 
+  it('restores distinct pixel colors in one transmission', () => {
+    expect(buildSetLedPixels(strip, [
+      { index: 0, color: [1, 0, 0, 0] },
+      { index: 2, color: [0, 0, 1, 0] },
+    ])).toBe(
+      'SET_LED LED=case RED=1 GREEN=0 BLUE=0 INDEX=1 TRANSMIT=0\n' +
+        'SET_LED LED=case RED=0 GREEN=0 BLUE=1 INDEX=3 TRANSMIT=1',
+    );
+    expect(buildSetLedPixels({ ...rgbw, count: 1 }, [{ index: 0, color: [0, 0, 0, 1] }]))
+      .toBe('SET_LED LED=bar RED=0 GREEN=0 BLUE=0 WHITE=1');
+  });
+
   it('clamps channels and ignores out-of-range indices', () => {
     expect(buildSetLed(strip, [2, -1, NaN, 0], [9])).toBe('SET_LED LED=case RED=1 GREEN=0 BLUE=0');
   });
@@ -126,6 +140,8 @@ describe('colors', () => {
 
   it('mixes white into the preview', () => {
     expect(colorToCss([1, 0, 0, 0.5])).toBe('rgb(255, 128, 128)');
+    expect(rgbwToDisplayHex([1, 0, 0, 0.5])).toBe('FF8080');
+    expect(rgbwToDisplayHex([0, 0, 0, 1])).toBe('FFFFFF');
   });
 
   it('scales brightness, lighting a dark LED in white', () => {

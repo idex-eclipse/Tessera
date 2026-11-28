@@ -8,6 +8,25 @@ afterEach(() => {
 });
 
 describe('ColorPickerMenu viewport placement', () => {
+  it('shows an external swatch color without changing the editable RGB value', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const onPick = vi.fn();
+    const component = mount(ColorPickerMenu, {
+      target,
+      props: { value: '#000000', swatchColor: 'rgb(128, 128, 128)', onPick, i18n: { t: (key: string) => key } },
+    });
+    flushSync();
+    expect((target.querySelector('.swatch-btn .swatch') as HTMLElement).style.backgroundColor)
+      .toBe('rgb(128, 128, 128)');
+    (target.querySelector('.swatch-btn') as HTMLButtonElement).click();
+    flushSync();
+    expect((target.querySelector('.cp-hex') as HTMLInputElement).value).toBe('#000000');
+    (target.querySelector('.cp-grid .swatch:not(.none)') as HTMLButtonElement).click();
+    expect(onPick).toHaveBeenCalledWith('#4285f4');
+    await unmount(component);
+  });
+
   it('keeps the picker visible at the inline and block edges', async () => {
     // JSDOM has no layout, so measured rectangles model a trigger near the screen edge.
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {

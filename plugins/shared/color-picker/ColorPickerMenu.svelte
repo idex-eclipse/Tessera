@@ -7,11 +7,14 @@
 
   let {
     value = null,
+    swatchColor = undefined,
     onPick,
     i18n,
     layer = 460,
   }: {
     value: string | null;
+    /** Optional displayed color when the edited hex omits another channel, such as RGBW white. */
+    swatchColor?: string | null;
     onPick: (hex: string | null) => void;
     i18n: { t: (key: string) => string };
     /** z-index подложки меню; меню на 1 выше. Внутри поповеров чипов (z 1001) нужен слой выше. */
@@ -25,6 +28,8 @@
   ];
 
   let open = $state(false);
+  // Keep the trigger preview separate from the RGB value edited inside the menu.
+  let shownColor = $derived(swatchColor === undefined ? value : swatchColor);
   let btnEl = $state<HTMLButtonElement | null>(null);
   let pos = $state({ top: 0, start: 0 });
   let menuEl = $state<HTMLDivElement | null>(null);
@@ -198,7 +203,7 @@
   title={i18n.t('cp.color')}
   type="button"
 >
-  <span class="swatch" class:none={!value} style:background={value ?? undefined}></span>
+  <span class="swatch" class:none={!shownColor} style:background={shownColor ?? undefined}></span>
 </button>
 
 {#if open}

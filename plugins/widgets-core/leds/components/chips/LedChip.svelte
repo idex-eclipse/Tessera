@@ -5,7 +5,7 @@
   import KlippyNotReadyChip from '../../../../shared/klippy-state/KlippyNotReady.svelte';
   import Icon from '../../../../shared/icons/Icon.svelte';
   import { placeChipPopover } from '../../../../shared/popover-align';
-  import { colorToCss, isLit, OFF, rgbwToHex, type Rgbw } from '../../lib/led-data';
+  import { colorToCss, isLit, OFF, rgbwToDisplayHex, type Rgbw } from '../../lib/led-data';
   import LedStrip from '../shared/LedStrip.svelte';
   import LedControls from '../shared/LedControls.svelte';
 
@@ -29,21 +29,22 @@
   let active = $derived(litPixels.length > 0);
   let assigned = $derived(leds.assignedTemplate(objectId));
 
-  /** Цвет полосы чипа: первый горящий пиксель. */
-  let accent = $derived(active ? colorToCss(litPixels[0]!) : '');
+  /** Keep the chip tint tied to the first lit pixel while status indicators use theme colors. */
+  let ledColor = $derived(active ? colorToCss(litPixels[0]!) : '');
+  let hasColorValue = $derived(active && !assigned && pixels.length === 1);
 
   let stateText = $derived.by<string>(() => {
     if (!active) return i18n.t('widgets.leds.stateOff');
     if (assigned) return assigned;
     if (pixels.length > 1) return `${litPixels.length}/${pixels.length}`;
-    return rgbwToHex(pixels[0]!).toUpperCase();
+    return rgbwToDisplayHex(pixels[0]!);
   });
 
   let missing = $derived(klippy.state === 'ready' && item === null);
   let disabled = $derived(editMode || missing || item === null);
 
   // --- поповер ---
-  let chipEl = $state<HTMLDivElement | null>(null);
+  let chipEl = $state<HTMLButtonElement | null>(null);
   let popoverOpen = $state(false);
   let popoverStyle = $state('');
   let selected = $state<number[]>([]);
@@ -65,17 +66,17 @@
 </script>
 
 <div class="chip-root">
-  <div
+  <button
+    type="button"
     class="chip"
     class:active
     class:missing
     class:interactive={!disabled}
-    style:--led={accent || undefined}
+    style:--led={ledColor || undefined}
     bind:this={chipEl}
     onclick={openPopover}
-    role="button"
-    tabindex={disabled ? -1 : 0}
-    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) { e.preventDefault(); openPopover(); } }}
+    {disabled}
+    aria-expanded={popoverOpen}
   >
     {#if klippy.state !== 'ready'}
       <KlippyNotReadyChip />
@@ -89,7 +90,14 @@
           <span class="kind" class:lit={active}>
             <Icon name="kind-led" size={40} />
           </span>
-          <span class="state-text" title={assigned ?? undefined}>{stateText}</span>
+          <!-- Hex digits keep their visual order in RTL layouts. -->
+          <span
+            class="state-text"
+            class:color-value={hasColorValue}
+            style:--value-color={hasColorValue ? colorToCss(pixels[0]!) : undefined}
+            title={assigned ?? undefined}
+            dir={hasColorValue ? 'ltr' : undefined}
+          >{stateText}</span>
         </span>
       </span>
       {#if pixels.length > 1}
@@ -100,21 +108,13 @@
         </span>
       {/if}
     {/if}
-  </div>
+  </button>
 
   {#if popoverOpen && item}
     <div class="chip-popover-backdrop" onclick={closePopover} role="presentation"></div>
     <div class="chip-popover" style={popoverStyle}>
       <div class="pop-head">
         <span class="pop-title">{label}</span>
-        <button
-          class="power"
-          class:on={active}
-          title={active ? i18n.t('widgets.leds.turnOff') : i18n.t('widgets.leds.turnOn')}
-          onclick={() => leds.toggle(item!.id)}
-        >
-          <Icon name="kind-power" size={14} />
-        </button>
       </div>
       {#if pixels.length > 1}
         <LedStrip
@@ -124,7 +124,7 @@
           onSelect={(next) => (selected = next)}
         />
       {/if}
-      <LedControls store={leds} {item} {selected} {i18n} layer={1010} onDone={closePopover} />
+      <LedControls store={leds} {item} {selected} {i18n} layer={1010} onDone={closePopover} powerPreset />
     </div>
   {/if}
 </div>
@@ -137,9 +137,11 @@
 
   .chip {
     --led: var(--accent);
+    appearance: none;
     position: relative;
     display: flex;
     height: 100%;
+    width: 100%;
     min-width: 104px;
     max-width: 240px;
     padding-block: 4px 6px;
@@ -147,6 +149,8 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--bg-surface);
+    font: inherit;
+    text-align: start;
     overflow: hidden;
     isolation: isolate;
     transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -158,9 +162,11 @@
     top: 0;
     bottom: 0;
     width: 3px;
-    background: var(--accent);
+    /* Match the muted off bulb; the lit state uses the theme accent. */
+    background: var(--text-muted);
+    opacity: 0.55;
   }
-  .chip.active .stripe { background: var(--led); }
+  .chip.active .stripe { background: var(--accent); opacity: 1; }
 
   .body {
     display: flex;
@@ -205,6 +211,10 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
+  .state-text.color-value {
+    color: var(--value-color);
+    paint-order: stroke fill;
+  }
 
   .kind {
     display: flex;
@@ -215,8 +225,8 @@
   }
   .kind.lit {
     opacity: 1;
-    color: var(--led);
-    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--led) 60%, transparent));
+    color: var(--accent);
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent));
   }
 
   .bar {
@@ -238,6 +248,7 @@
     box-shadow: var(--shadow-sm);
     border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
   }
+  .chip.interactive:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
   .chip.interactive:active { transform: translateY(1px); }
   .chip.missing { border-style: dashed; }
   .chip.missing .label, .chip.missing .state-text { color: var(--text-muted); }
@@ -278,25 +289,5 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .power {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-  .power:hover { background: var(--bg-surface-hover); }
-  .power.on {
-    color: var(--accent);
-    border-color: var(--accent);
-    background: var(--accent-subtle-strong);
   }
 </style>
