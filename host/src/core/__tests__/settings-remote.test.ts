@@ -17,6 +17,8 @@ import {
 function fakeMoonraker() {
   const dbs = new Map<string, Record<string, unknown>>();
   const down = new Set<string>();
+  /** A rejected write exercises migration retries without losing the old record. */
+  const failPosts = new Set<string>();
   const impl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
     const base = url.origin;
@@ -24,6 +26,7 @@ function fakeMoonraker() {
     const db = dbs.get(base) ?? {};
     dbs.set(base, db);
     if (init?.method === 'POST') {
+      if (failPosts.has(base)) return new Response('{}', { status: 503 });
       const body = JSON.parse(String(init.body)) as { namespace: string; key: string; value: unknown };
       db[body.key] = body.value;
       return new Response(JSON.stringify({ result: {} }), { status: 200 });
@@ -40,7 +43,7 @@ function fakeMoonraker() {
     if (!(key in db)) return new Response('{}', { status: 404 });
     return new Response(JSON.stringify({ result: { value: db[key] } }), { status: 200 });
   };
-  return { dbs, down, fetch: impl as typeof fetch };
+  return { dbs, down, failPosts, fetch: impl as typeof fetch };
 }
 
 const PRINTERS = [{ id: 'p1', name: 'A', url: 'http://printer-a:7125' }];
@@ -339,11 +342,63 @@ describe('settings-remote / schema-2 migration', () => {
     // The meta file is rewritten in the versioned form
     const saved = JSON.parse(storage.getItem('mpu:v2:remote-meta')!);
     expect(saved.v).toBe(3);
-    expect(saved.entries['mpu:v2:settings:p1'].dirty).toBe(true);
+    expect(saved.entries['mpu:v2:settings:p1'].dirty).toBe(false);
+    expect(saved.entries['mpu:v2:settings:p1'].migrate).toBe(true);
 
+    await mirror.pull();
     await mirror.flush();
     const rec = fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope;
     expect(rec.schema).toBe(REMOTE_SCHEMA);
     expect(rec.rev).toBe(4); // the lineage continues above the legacy rev
+  });
+
+  it('adopts a newer legacy revision before republishing old local settings', async () => {
+    const fm = fakeMoonraker();
+    fm.dbs.set(DB, { settings: envelope({ value: 'new-remote' }, 5, 2) });
+    const storage = new MemoryStorage();
+    storage.setItem('mpu:v2:printers', JSON.stringify(PRINTERS));
+    storage.setItem('mpu:v2:settings:p1', JSON.stringify({ value: 'old-local' }));
+    storage.setItem('mpu:v2:remote-meta', JSON.stringify({ 'mpu:v2:settings:p1': { rev: 1, updatedAt: 1 } }));
+    const mirror = createSettingsMirror({ storage, fetch: fm.fetch, origin: DB, pushDelayMs: 1 });
+
+    expect((await mirror.pull()).keys).toContain('mpu:v2:settings:p1');
+    await mirror.flush();
+    expect(JSON.parse(storage.getItem('mpu:v2:settings:p1')!)).toEqual({ value: 'new-remote' });
+    expect((fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope).data).toEqual({ value: 'new-remote' });
+    expect((fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope).rev).toBe(6);
+  });
+
+  it('keeps an existing addressed copy when the legacy record is older', async () => {
+    const fm = fakeMoonraker();
+    // The legacy key comes first in the namespace, as it would after an
+    // interrupted migration that already published the addressed record.
+    fm.dbs.set(DB, {
+      settings: envelope({ value: 'legacy' }, 4, 2),
+      'settings:p1': envelope({ value: 'addressed' }, 6),
+    });
+    const { storage, mirror } = setup(fm);
+
+    await mirror.pull();
+    await mirror.flush();
+    expect(JSON.parse(storage.getItem('mpu:v2:settings:p1')!)).toEqual({ value: 'addressed' });
+    expect((fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope).data).toEqual({ value: 'addressed' });
+    expect(fm.dbs.get(DB)?.settings).toBeUndefined();
+  });
+
+  it('keeps the legacy record until its addressed replacement is saved', async () => {
+    const fm = fakeMoonraker();
+    fm.dbs.set(DB, { settings: envelope({ value: 'legacy' }, 4, 2) });
+    fm.failPosts.add(DB);
+    const { mirror } = setup(fm);
+
+    await mirror.pull();
+    await mirror.flush();
+    expect(fm.dbs.get(DB)?.settings).toBeDefined();
+    expect(fm.dbs.get(DB)?.['settings:p1']).toBeUndefined();
+
+    fm.failPosts.delete(DB);
+    await mirror.flush();
+    expect(fm.dbs.get(DB)?.settings).toBeUndefined();
+    expect((fm.dbs.get(DB)?.['settings:p1'] as RemoteEnvelope).data).toEqual({ value: 'legacy' });
   });
 });
