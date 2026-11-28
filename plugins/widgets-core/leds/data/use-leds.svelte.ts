@@ -8,6 +8,7 @@ import {
 import {
   OFF,
   buildSetLed,
+  buildSetLedPixels,
   buildSetTemplate,
   isLit,
   parseColorData,
@@ -43,6 +44,8 @@ function createLedsCore(api: PluginApi, printerId: string) {
   let hidden = $state<string[]>([]);
   /** последний «включённый» цвет — для переключателя вкл/выкл */
   const lastOn = new Map<string, Rgbw>();
+  /** Keep each lit pixel's color so the chip can restore a mixed chain. */
+  const lastOnPixels = new Map<string, Array<Rgbw | null>>();
 
   let generation = 0;
   let unsubMeta: (() => void) | null = null;
@@ -73,6 +76,9 @@ function createLedsCore(api: PluginApi, printerId: string) {
       next[it.id] = px;
       const on = px.find(isLit);
       if (on) lastOn.set(it.id, on);
+      const remembered = [...(lastOnPixels.get(it.id) ?? Array<Rgbw | null>(it.count).fill(null))];
+      px.forEach((color, index) => { if (isLit(color)) remembered[index] = color; });
+      lastOnPixels.set(it.id, remembered);
       changed = true;
     }
     if (changed) colors = next;
@@ -157,11 +163,22 @@ function createLedsCore(api: PluginApi, printerId: string) {
   }
 
   // --- Actions ---
+  /** Resolve the chip's All selection to every pixel, preserving display order. */
+  function selectedIndices(it: LedItem, indices?: readonly number[] | null): number[] {
+    if (!indices || indices.length === 0) return Array.from({ length: it.count }, (_, i) => i);
+    return [...new Set(indices)].filter((i) => Number.isInteger(i) && i >= 0 && i < it.count).sort((a, b) => a - b);
+  }
+
   /** Ручной цвет: шаблон снимаем, иначе Klipper перезапишет цвет на следующем рендере. */
   function setColor(id: string, color: Rgbw, indices?: readonly number[] | null): void {
     const it = find(id);
     if (!it) return;
-    if (isLit(color)) lastOn.set(id, color);
+    if (isLit(color)) {
+      lastOn.set(id, color);
+      const remembered = [...(lastOnPixels.get(id) ?? Array<Rgbw | null>(it.count).fill(null))];
+      for (const index of selectedIndices(it, indices)) remembered[index] = color;
+      lastOnPixels.set(id, remembered);
+    }
     remember(it, null, indices);
     script(`${buildSetTemplate(it, null, {}, indices)}\n${buildSetLed(it, color, indices)}`);
   }
@@ -174,6 +191,31 @@ function createLedsCore(api: PluginApi, printerId: string) {
     const lit = (colors[id] ?? []).some(isLit);
     if (lit) setOff(id);
     else setColor(id, lastOn.get(id) ?? [1, 1, 1, 0]);
+  }
+
+  /**
+   * Toggle the chip selection and restore each pixel's own last lit color.
+   * @param id Klipper LED object ID.
+   * @param indices Zero-based selected pixels; an empty selection targets all pixels.
+   * @returns Nothing; the resulting G-code is sent through Moonraker.
+   */
+  function toggleSelection(id: string, indices?: readonly number[] | null): void {
+    const it = find(id);
+    if (!it) return;
+    const selected = selectedIndices(it, indices);
+    if (selected.length === 0) return;
+    const current = colors[id] ?? [];
+    if (selected.some((index) => isLit(current[index] ?? OFF))) {
+      setOff(id, selected);
+      return;
+    }
+
+    const remembered = lastOnPixels.get(id) ?? [];
+    const fallback: Rgbw = it.hasWhite ? [0, 0, 0, 1] : [1, 1, 1, 0];
+    const restore = selected.map((index) => ({ index, color: remembered[index] ?? fallback }));
+    // Clear templates for the same pixels before applying their remembered colors.
+    remember(it, null, selected);
+    script(`${buildSetTemplate(it, null, {}, selected)}\n${buildSetLedPixels(it, restore)}`);
   }
 
   function setTemplate(
@@ -263,6 +305,7 @@ function createLedsCore(api: PluginApi, printerId: string) {
     setColor,
     setOff,
     toggle,
+    toggleSelection,
     setTemplate,
     assignedTemplate,
     setTemplateHidden,

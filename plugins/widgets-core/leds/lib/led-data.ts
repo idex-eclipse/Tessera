@@ -112,6 +112,13 @@ function fmt(v: number): string {
   return String(Math.round(c * 1000) / 1000);
 }
 
+/** Build the shared SET_LED fields before adding a chain index or transmit flag. */
+function setLedBase(item: LedItem, color: Rgbw): string {
+  const [r, g, b, w] = color;
+  return `SET_LED LED=${gcodeValue(item.name)} RED=${fmt(r)} GREEN=${fmt(g)} BLUE=${fmt(b)}` +
+    (item.hasWhite ? ` WHITE=${fmt(w)}` : '');
+}
+
 /** Индексы 0-based → 1-based INDEX; null = вся цепочка (без INDEX). */
 function targets(item: LedItem, indices: readonly number[] | null | undefined): Array<number | null> {
   if (!indices || indices.length === 0) return [null];
@@ -126,16 +133,28 @@ function targets(item: LedItem, indices: readonly number[] | null | undefined): 
  */
 export function buildSetLed(item: LedItem, color: Rgbw, indices?: readonly number[] | null): string {
   const t = targets(item, indices);
-  const [r, g, b, w] = color;
-  const base =
-    `SET_LED LED=${gcodeValue(item.name)} RED=${fmt(r)} GREEN=${fmt(g)} BLUE=${fmt(b)}` +
-    (item.hasWhite ? ` WHITE=${fmt(w)}` : '');
+  const base = setLedBase(item, color);
   return t
     .map((idx, i) => {
       if (idx === null) return base;
       return `${base} INDEX=${idx} TRANSMIT=${i === t.length - 1 ? 1 : 0}`;
     })
     .join('\n');
+}
+
+/**
+ * Restore distinct chain colors in one transmission.
+ * @param item LED configuration and chain length.
+ * @param pixels Zero-based pixel indices with their remembered colors.
+ * @returns A newline-delimited SET_LED script.
+ */
+export function buildSetLedPixels(item: LedItem, pixels: readonly { index: number; color: Rgbw }[]): string {
+  const valid = pixels.filter(({ index }) => Number.isInteger(index) && index >= 0 && index < item.count);
+  return valid.map(({ index, color }, i) => {
+    const base = setLedBase(item, color);
+    if (item.count === 1) return base;
+    return `${base} INDEX=${index + 1} TRANSMIT=${i === valid.length - 1 ? 1 : 0}`;
+  }).join('\n');
 }
 
 /** SET_LED_TEMPLATE; template = null снимает шаблон. */
@@ -185,6 +204,17 @@ export function colorToCss(c: Rgbw): string {
 export function rgbwToHex(c: Rgbw): string {
   const h = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
   return `#${h(c[0])}${h(c[1])}${h(c[2])}`;
+}
+
+/**
+ * Show the RGBW preview color as an uppercase chip label without a leading hash.
+ * @param c Normalized red, green, blue and white channels.
+ * @returns The visible six-digit RGB color.
+ */
+export function rgbwToDisplayHex(c: Rgbw): string {
+  const [r, g, b, w] = c;
+  const hex = (v: number) => Math.round(Math.min(1, v + w) * 255).toString(16).padStart(2, '0');
+  return `${hex(r)}${hex(g)}${hex(b)}`.toUpperCase();
 }
 
 export function hexToRgbw(hex: string, white = 0): Rgbw | null {
