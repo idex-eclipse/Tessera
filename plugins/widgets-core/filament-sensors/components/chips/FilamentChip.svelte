@@ -172,7 +172,8 @@
   }
   .stripe.ok { background: var(--success); }
   .stripe.error { background: var(--danger); }
-  .stripe.muted { background: var(--text-muted); }
+  /* Disabled or unknown sensors use the same muted off stripe as other switches. */
+  .stripe.muted { background: var(--text-muted); opacity: 0.55; }
 
   .body {
     display: flex;

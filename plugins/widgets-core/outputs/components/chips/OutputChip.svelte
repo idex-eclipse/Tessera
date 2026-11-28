@@ -245,8 +245,11 @@
     top: 0;
     bottom: 0;
     width: 3px;
-    background: var(--accent);
+    /* Off outputs share the muted stripe used by the LED chip. */
+    background: var(--text-muted);
+    opacity: 0.55;
   }
+  .chip.active .stripe { opacity: 1; }
   .chip.fan.active .stripe {
     background: var(--cool);
   }

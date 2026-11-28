@@ -32,6 +32,10 @@
   let fanSpeed = $derived(kind === 'fan' ? (sensor?.speed ?? sensor?.power ?? 0) : 0);
 
   let targetActive = $derived(controlled && (target ?? 0) > 0);
+  /** Preserve the chip's existing active state for heaters and temperature fans. */
+  let chipActive = $derived(targetActive || (kind === 'fan' && (sensor?.speed ?? 0) > 0));
+  /** Only controlled devices have an off state; passive sensors keep their own color. */
+  let stripeOff = $derived(controlled && !chipActive);
   let powerPct = $derived.by<number | null>(() => {
     if (!sensor || !controlled) return null;
     const p = sensor.kind === 'fan' ? (sensor.speed ?? sensor.power) : sensor.power;
@@ -104,7 +108,7 @@
   <div
     class="chip"
     class:controlled
-    class:active={targetActive || (kind === 'fan' && (sensor?.speed ?? 0) > 0)}
+    class:active={chipActive}
     class:fan={kind === 'fan'}
     class:missing
     class:interactive={!editMode && controlled && !missing}
@@ -117,7 +121,7 @@
   {#if klippy.state != 'ready'}
     <KlippyNotReadyChip/>
   {:else}
-    <span class="stripe" style:background={sensor?.color ?? 'var(--border-color)'}></span>
+    <span class="stripe" class:off={stripeOff} style:background={stripeOff ? 'var(--text-muted)' : sensor?.color ?? 'var(--border-color)'}></span>
     <span class="body">
       <span class="top">
         <span class="label">{label}</span>
@@ -209,6 +213,7 @@
     bottom: 0;
     width: 3px;
   }
+  .stripe.off { opacity: 0.55; }
 
   .body {
     display: flex;
