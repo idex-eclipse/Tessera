@@ -67,7 +67,7 @@ export interface RemoteWriter {
 export interface RemoteEnvelope {
   app: 'tessera';
   kind: 'settings';
-  /** See {@link REMOTE_SCHEMA}; records of other layouts are migrated, not applied. */
+  /** See {@link REMOTE_SCHEMA}; only schema 2 is eligible for migration. */
   schema: number;
   /** The original `localStorage` key, for humans reading the DB. */
   key: string;
@@ -83,6 +83,8 @@ interface MetaEntry {
   updatedAt: number;
   /** A local change that is not in the DB yet. */
   dirty?: boolean;
+  /** A schema-2 entry that must be compared with the DB before republishing. */
+  migrate?: boolean;
 }
 
 interface PrinterRef {
@@ -316,11 +318,13 @@ export function createSettingsMirror(options: MirrorOptions) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pushing: Promise<void> | null = null;
   let lastFocusPull = 0;
+  /** Legacy records remain in Moonraker until their addressed replacements are saved. */
+  const legacyDeletes = new Map<string, { printer: PrinterRef; remoteKey: string; rev: number }>();
 
   /**
    * Reads the bookkeeping, upgrading the legacy bare map to the versioned form.
-   * Legacy entries keep their rev (the lineage continues under the schema-3 keys)
-   * but are all marked dirty so everything is republished under the addressed keys.
+   * Legacy entries keep their rev and real pending edits. Clean entries wait for a
+   * namespace read, so a newer schema-2 copy can win before republishing.
    */
   function loadMeta(): void {
     const v = parseJson(inner.getItem(META_KEY));
@@ -336,10 +340,14 @@ export function createSettingsMirror(options: MirrorOptions) {
       meta = {};
       for (const [k, e] of Object.entries(legacy)) {
         if (!e || typeof e.rev !== 'number' || !isMirroredKey(k)) continue;
-        meta[k] = { rev: e.rev, updatedAt: typeof e.updatedAt === 'number' ? e.updatedAt : now(), dirty: true };
+        meta[k] = {
+          rev: e.rev,
+          updatedAt: typeof e.updatedAt === 'number' ? e.updatedAt : now(),
+          dirty: e.dirty === true,
+          migrate: true,
+        };
       }
       saveMeta();
-      if (Object.keys(meta).length > 0) schedulePush();
       return;
     }
     meta = {};
@@ -527,6 +535,9 @@ export function createSettingsMirror(options: MirrorOptions) {
         const still = meta[key];
         meta = { ...meta, [key]: { rev, updatedAt: envelope.updatedAt, dirty: still?.updatedAt !== entry.updatedAt } };
         saveMeta();
+        // The old shared key is the fallback until its addressed copy is durable.
+        const legacy = legacyDeletes.get(key);
+        if (legacy && await deleteItem(legacy.printer, legacy.remoteKey)) legacyDeletes.delete(key);
       }
     }
     if (Object.values(meta).some((m) => m.dirty)) schedulePush();
@@ -537,8 +548,8 @@ export function createSettingsMirror(options: MirrorOptions) {
   /**
    * Fetches the DB copies and applies the ones newer than ours. Local keys that
    * exist but were never mirrored are queued for a push (this is the migration).
-   * Schema-2 records are adopted once under the same revision rules and then
-   * deleted, so devices split apart instead of silently sharing the old keys.
+   * Schema-2 records are adopted under the same revision rules; pushDirty deletes
+   * them only after the addressed replacement has been saved.
    *
    * @param timeoutMs give up on slow printers after this long (boot must not hang)
    */
@@ -562,7 +573,9 @@ export function createSettingsMirror(options: MirrorOptions) {
         for (const [encoded, value] of Object.entries(space)) {
           if (!isEnvelope(value)) continue; // not ours
           const remoteKey = decodeRemoteKey(encoded);
-          const legacy = value.schema !== REMOTE_SCHEMA;
+          // Unknown future layouts must not be mistaken for schema-2 records.
+          if (value.schema !== 2 && value.schema !== REMOTE_SCHEMA) continue;
+          const legacy = value.schema === 2;
           const localKey = legacy
             ? legacyLocalKeyFor(remoteKey, p.id, home)
             : localKeyFor(remoteKey, p.id, ctx);
@@ -582,24 +595,28 @@ export function createSettingsMirror(options: MirrorOptions) {
             changedKeys.push(localKey);
           }
           if (legacy) {
-            // Republish under the addressed key (dirty push below) so the DB
-            // converges to schema 3 at once, then drop the shared legacy record.
-            const cur = meta[localKey];
-            meta = {
-              ...meta,
-              [localKey]: {
-                rev: Math.max(cur?.rev ?? 0, value.rev),
-                updatedAt: cur?.updatedAt ?? value.updatedAt,
-                dirty: true,
-              },
-            };
-            await deleteItem(p, remoteKey);
+            // Defer dirty marking until every record is compared: a schema-3
+            // copy in this namespace may already have a newer revision.
+            legacyDeletes.set(localKey, { printer: p, remoteKey, rev: value.rev });
           }
         }
       }
 
-      // Migration: local keys the DB has never seen are published.
+      // A clean schema-2 meta entry may be republished only after its printer's
+      // namespace was read; offline printers keep their old revision for retry.
       const reachable = new Set(spaces.filter((s) => s.space).map((s) => s.p.id));
+      for (const [key, entry] of Object.entries(meta)) {
+        const route = routeKey(key, ctx);
+        if (!route || !reachable.has(route.printerId)) continue;
+        const legacy = legacyDeletes.get(key);
+        if (!entry.migrate && !legacy) continue;
+        meta = {
+          ...meta,
+          [key]: { ...entry, rev: Math.max(entry.rev, legacy?.rev ?? 0), dirty: true },
+        };
+      }
+
+      // Migration: local keys the DB has never seen are published.
       for (let i = 0; i < inner.length; i += 1) {
         const key = inner.key(i);
         if (!key || seen.has(key) || meta[key]) continue;
